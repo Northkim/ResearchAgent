@@ -1,0 +1,69 @@
+{
+  "id": "guided-literature-review",
+  "version": "1.0.0",
+  "name": "Guided literature review",
+  "schema_version": "reagent/v1alpha1",
+  "input_schema": {
+    "query": {
+      "type": "string",
+      "required": true,
+      "description": "The research topic or question to investigate.",
+      "default": "persistent research agents"
+    }
+  },
+  "steps": [
+    {
+      "id": "search",
+      "kind": "skill",
+      "needs": [],
+      "uses": "mock_paper_search@1.0.0",
+      "input_mapping": {
+        "query": "${inputs.query}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "approve_sources",
+      "kind": "approval",
+      "needs": [
+        "search"
+      ],
+      "uses": null,
+      "input_mapping": {},
+      "timeout_seconds": 300,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": "project_reviewer"
+    },
+    {
+      "id": "summarize",
+      "kind": "skill",
+      "needs": [
+        "approve_sources"
+      ],
+      "uses": "mock_summary@1.0.0",
+      "input_mapping": {
+        "papers": "${nodes.search.outputs.papers}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    }
+  ],
+  "outputs": {
+    "summary": "${nodes.summarize.outputs.summary}"
+  }
+}

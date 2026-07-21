@@ -1,0 +1,21 @@
+name: reagent-dev
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.11
+  - pytest=8.4
+  - sqlalchemy=2
+  - alembic
+  # Psycopg 3 provides both sync and async PostgreSQL connections. The frozen
+  # repository ports use its sync SQLAlchemy dialect; API/worker composition
+  # can use the async dialect without changing the driver dependency.
+  - psycopg=3
+  # Phase 7A HTTP boundary. Pydantic is listed explicitly because API DTOs
+  # import it directly; HTTPX2 is the TestClient transport selected by the
+  # current Starlette release and is used only by API contract tests.
+  - fastapi
+  - pydantic=2
+  - uvicorn
+  - httpx2

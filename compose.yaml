@@ -1,0 +1,141 @@
+name: reagent-demo
+
+x-backend-image: &backend-image
+  image: reagent-demo-backend:local
+  build:
+    context: .
+    dockerfile: docker/backend.Dockerfile
+
+services:
+  db:
+    image: postgres:18.4-alpine3.23
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:${REAGENT_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - reagent_postgres_data:/var/lib/postgresql
+      - ./demo/postgres/init-test-db.sh:/docker-entrypoint-initdb.d/10-create-test-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  migration:
+    <<: *backend-image
+    command:
+      - micromamba
+      - run
+      - --no-capture-output
+      - -n
+      - reagent-dev
+      - alembic
+      - upgrade
+      - head
+    environment:
+      REAGENT_DATABASE_URL: ${REAGENT_DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    <<: *backend-image
+    command:
+      - micromamba
+      - run
+      - --no-capture-output
+      - -n
+      - reagent-dev
+      - python
+      - -m
+      - backend.demo.seed
+    environment:
+      REAGENT_DATABASE_URL: ${REAGENT_DATABASE_URL}
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+    restart: "no"
+
+  backend:
+    <<: *backend-image
+    environment:
+      REAGENT_DATABASE_URL: ${REAGENT_DATABASE_URL}
+    ports:
+      - "127.0.0.1:${REAGENT_BACKEND_PORT:-8000}:8000"
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - micromamba
+        - run
+        - --no-capture-output
+        - -n
+        - reagent-dev
+        - python
+        - -c
+        - "import json,sys,urllib.request; data=json.load(urllib.request.urlopen('http://127.0.0.1:8000/workflows', timeout=2)); sys.exit(0 if any(item.get('id') == 'guided-literature-review' and item.get('version') == '1.0.0' for item in data) else 1)"
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  frontend:
+    image: reagent-demo-frontend:local
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        REAGENT_API_URL: ${REAGENT_API_URL}
+    environment:
+      REAGENT_API_URL: ${REAGENT_API_URL}
+    ports:
+      - "127.0.0.1:${REAGENT_FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  integration-test:
+    <<: *backend-image
+    profiles: ["test"]
+    command:
+      - micromamba
+      - run
+      - --no-capture-output
+      - -n
+      - reagent-dev
+      - python
+      - -m
+      - pytest
+      - -q
+      - backend/integration/tests/test_http_postgresql_demo.py
+    environment:
+      REAGENT_E2E_DATABASE_URL: ${REAGENT_TEST_DATABASE_URL}
+      REAGENT_ALLOW_DATABASE_RESET: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  reagent_postgres_data:
+    name: reagent_postgres_data
