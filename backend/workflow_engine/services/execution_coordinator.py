@@ -80,7 +80,10 @@ class WorkflowExecutionCoordinator:
         if isinstance(decision, WaitingApproval):
             if decision.requires_ready_transition:
                 self.domain.mark_step_ready(
-                    execution, step_id=decision.step_id, checkpoint=False
+                    execution,
+                    step_id=decision.step_id,
+                    inputs=decision.resolved_inputs,
+                    checkpoint=False,
                 )
             self.domain.update_step_state(
                 execution,

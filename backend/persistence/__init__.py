@@ -5,6 +5,7 @@ from .models import (
     CheckpointBoundary,
     CheckpointRecord,
     MemoryRevision,
+    ProviderOperationRecord,
     WorkflowExecutionRecord,
 )
 from .ports import (
@@ -14,6 +15,7 @@ from .ports import (
     DuplicateEntityError,
     MemoryRepository,
     PersistenceError,
+    ProviderOperationRepository,
     StaleStateError,
     UnitOfWork,
     WorkflowRepository,
@@ -30,6 +32,8 @@ __all__ = [
     "MemoryRepository",
     "MemoryRevision",
     "PersistenceError",
+    "ProviderOperationRecord",
+    "ProviderOperationRepository",
     "StaleStateError",
     "UnitOfWork",
     "WorkflowExecutionRecord",

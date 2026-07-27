@@ -10,6 +10,7 @@ from .approval_repository import ApprovalRepository
 from .artifact_repository import ArtifactRepository
 from .checkpoint_repository import CheckpointRepository
 from .memory_repository import MemoryRepository
+from .provider_operation_repository import ProviderOperationRepository
 from .workflow_repository import WorkflowRepository
 
 
@@ -37,6 +38,10 @@ class UnitOfWork(ABC):
     @property
     @abstractmethod
     def events(self) -> ExecutionEventStore: ...
+
+    @property
+    @abstractmethod
+    def provider_operations(self) -> ProviderOperationRepository: ...
 
     @abstractmethod
     def commit(self) -> None:

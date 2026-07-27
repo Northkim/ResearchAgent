@@ -3,25 +3,37 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Callable
 
+from backend.research.ports import ProviderError
 from backend.skill_system._immutability import freeze_json
 from backend.skill_system.exceptions import (
     SkillDecisionMismatchError,
+    SkillCapabilityDeniedError,
     SkillExecutionFailure,
     SkillValidationError,
 )
-from backend.skill_system.models import SkillExecutionContext, SkillReference
+from backend.skill_system.models import (
+    SkillCapabilities,
+    SkillExecutionContext,
+    SkillReference,
+)
 from backend.skill_system.registry import SkillRegistry
-from backend.skill_system.results import SkillError, SkillResult
+from backend.skill_system.results import SkillError, SkillExecutionOutput, SkillResult
 from backend.workflow_engine.models import StepReady
 
 
 class SkillExecutor:
     """Validate, execute, and normalize a skill without mutating workflow state."""
 
-    def __init__(self, registry: SkillRegistry) -> None:
+    def __init__(
+        self,
+        registry: SkillRegistry,
+        *,
+        capability_provider: Callable[[StepReady], SkillCapabilities] | None = None,
+    ) -> None:
         self._registry = registry
+        self._capability_provider = capability_provider
 
     async def execute(
         self,
@@ -63,6 +75,11 @@ class SkillExecutor:
                 execution_metadata=metadata,
             )
 
+        granted_capabilities = (
+            self._capability_provider(decision)
+            if self._capability_provider is not None
+            else SkillCapabilities()
+        ).restricted_to(registered.definition.metadata.capabilities)
         context = SkillExecutionContext(
             workflow_run_id=decision.workflow_run_id,
             workflow_id=decision.workflow_id,
@@ -70,13 +87,31 @@ class SkillExecutor:
             step_id=decision.step_id,
             step_run_id=decision.step_run_id,
             attempt=decision.attempt,
+            capabilities=granted_capabilities,
         )
 
         try:
-            raw_output = await registered.execute(validated_input, context)
+            raw_result = await registered.execute(validated_input, context)
+            if isinstance(raw_result, SkillExecutionOutput):
+                raw_output = raw_result.output_data
+                emitted_artifacts = raw_result.emitted_artifacts
+                provider_usage = raw_result.provider_usage
+            else:
+                raw_output = raw_result
+                emitted_artifacts = ()
+                provider_usage = ()
             validated_output = registered.definition.output_schema.validate(
                 raw_output,
                 label="output",
+            )
+        except SkillCapabilityDeniedError as exc:
+            return SkillResult.failed(
+                SkillError(
+                    code="CAPABILITY_DENIED",
+                    message=str(exc),
+                    retryable=False,
+                ),
+                execution_metadata=metadata,
             )
         except SkillExecutionFailure as exc:
             return SkillResult.failed(
@@ -85,6 +120,16 @@ class SkillExecutor:
                     message=exc.message,
                     retryable=exc.retryable,
                     details=exc.details,
+                ),
+                execution_metadata=metadata,
+            )
+        except ProviderError as exc:
+            return SkillResult.failed(
+                SkillError(
+                    code=exc.category.value,
+                    message=str(exc),
+                    retryable=exc.retryable,
+                    details=exc.safe_details,
                 ),
                 execution_metadata=metadata,
             )
@@ -112,6 +157,8 @@ class SkillExecutor:
         return SkillResult.succeeded(
             validated_output,
             execution_metadata=metadata,
+            emitted_artifacts=emitted_artifacts,
+            provider_usage=provider_usage,
         )
 
 

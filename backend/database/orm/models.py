@@ -7,6 +7,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -298,6 +299,13 @@ class ArtifactORM(Base):
             "project_id",
             "logical_artifact_id",
         ),
+        Index(
+            "ix_artifacts_run_kind_created",
+            "producer_run_id",
+            "kind",
+            "created_at",
+        ),
+        Index("ix_artifacts_project_checksum", "project_id", "checksum"),
     )
 
     id: Mapped[str] = mapped_column(String(255), primary_key=True)
@@ -433,3 +441,97 @@ class ExecutionEventORM(Base):
         String(255),
         ForeignKey("execution_events.id"),
     )
+
+
+class ProviderOperationORM(Base):
+    __tablename__ = "provider_operations"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workflow_run_id"],
+            ["workflow_runs.project_id", "workflow_runs.id"],
+            name="fk_provider_operations_run_scope",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["workflow_run_id", "step_run_id"],
+            ["workflow_step_runs.workflow_run_id", "workflow_step_runs.id"],
+            name="fk_provider_operations_step_scope",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "idempotency_key",
+            name="uq_provider_operations_project_idempotency",
+        ),
+        CheckConstraint(
+            "status IN ('RESERVED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED')",
+            name="provider_operation_status_valid",
+        ),
+        CheckConstraint(
+            "settlement_state IN ('UNSETTLED', 'SETTLED', 'RELEASED')",
+            name="provider_operation_settlement_valid",
+        ),
+        CheckConstraint("row_version >= 0", name="provider_operation_row_version_nonnegative"),
+        CheckConstraint(
+            "persistence_version > 0",
+            name="provider_operation_persistence_version_positive",
+        ),
+        CheckConstraint(
+            "reserved_request_count >= 0 AND reserved_input_tokens >= 0 "
+            "AND reserved_output_tokens >= 0 AND reserved_cost_minor_units >= 0",
+            name="provider_operation_reservation_nonnegative",
+        ),
+        CheckConstraint("retry_count >= 0", name="provider_operation_retry_nonnegative"),
+        Index(
+            "ix_provider_operations_run_created",
+            "workflow_run_id",
+            "created_at",
+            "id",
+        ),
+        Index(
+            "ix_provider_operations_status_updated",
+            "status",
+            "updated_at",
+        ),
+        Index(
+            "ix_provider_operations_provider_failure_created",
+            "provider_identity",
+            "failure_category",
+            "created_at",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_run_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    logical_step_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    step_run_id: Mapped[str | None] = mapped_column(String(255))
+    provider_category: Mapped[str] = mapped_column(String(50), nullable=False)
+    operation_kind: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider_identity: Mapped[str] = mapped_column(String(255), nullable=False)
+    adapter_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_or_endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    request_fingerprint: Mapped[str] = mapped_column(String(255), nullable=False)
+    reserved_request_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    reserved_input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reserved_output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reserved_cost_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cost_currency: Mapped[str] = mapped_column(String(10), nullable=False)
+    is_live_provider: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    settlement_state: Mapped[str] = mapped_column(String(50), nullable=False)
+    actual_usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    failure_category: Mapped[str | None] = mapped_column(String(100))
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    diagnostic_metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    row_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    persistence_version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __mapper_args__ = {
+        "version_id_col": persistence_version,
+        "version_id_generator": False,
+    }

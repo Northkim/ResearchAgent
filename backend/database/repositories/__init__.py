@@ -5,6 +5,7 @@ from .artifact import SQLAlchemyArtifactRepository
 from .checkpoint import SQLAlchemyCheckpointRepository
 from .events import SQLAlchemyExecutionEventStore
 from .memory import SQLAlchemyMemoryRepository
+from .provider_operation import SQLAlchemyProviderOperationRepository
 from .workflow import SQLAlchemyWorkflowRepository
 
 __all__ = [
@@ -13,5 +14,6 @@ __all__ = [
     "SQLAlchemyCheckpointRepository",
     "SQLAlchemyExecutionEventStore",
     "SQLAlchemyMemoryRepository",
+    "SQLAlchemyProviderOperationRepository",
     "SQLAlchemyWorkflowRepository",
 ]

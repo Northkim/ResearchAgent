@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from collections.abc import Mapping
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -45,6 +43,10 @@ from backend.workflow_engine.models import (
 )
 from backend.workflow_engine.services import WorkflowExecutionCoordinator
 
+from .approval_fingerprint import (
+    approval_action_fingerprint,
+    build_resolved_approval_action,
+)
 from .runtime_result import RuntimeResult
 
 
@@ -168,6 +170,7 @@ class AgentRuntime:
                     step_run_id=decision.step_run_id,
                     attempt=decision.attempt,
                     policy_key=decision.approval_policy,
+                    resolved_inputs=decision.resolved_inputs,
                 )
                 self._emit_event(
                     execution,
@@ -724,28 +727,30 @@ class AgentRuntime:
         step_run_id: str,
         attempt: int,
         policy_key: str,
+        resolved_inputs: Mapping[str, Any],
     ) -> ApprovalRequest:
         requested_at = self._clock()
-        requested_action = {
-            "kind": "workflow_approval",
-            "workflow_id": execution.workflow.id,
-            "workflow_version": execution.workflow.version,
-            "workflow_run_id": execution.workflow_run.id,
-            "step_id": step_id,
-            "step_run_id": step_run_id,
-            "attempt": attempt,
-            "policy_key": policy_key,
-            "workflow_inputs": thaw_json(execution.workflow_run.inputs),
+        expires_at = requested_at + self._approval_ttl
+        skill_versions = {
+            step.id: step.uses
+            for step in execution.workflow.steps
+            if step.uses is not None
         }
-        canonical_action = json.dumps(
-            requested_action,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
+        requested_action = build_resolved_approval_action(
+            project_id=execution.workflow_run.project_id,
+            workflow_id=execution.workflow.id,
+            workflow_version=execution.workflow.version,
+            workflow_run_id=execution.workflow_run.id,
+            approval_step_id=step_id,
+            step_run_id=step_run_id,
+            attempt=attempt,
+            policy_key=policy_key,
+            approval_role=policy_key,
+            expires_at=expires_at,
+            resolved_inputs=resolved_inputs,
+            skill_versions=skill_versions,
         )
-        fingerprint = "sha256:" + hashlib.sha256(
-            canonical_action.encode("utf-8")
-        ).hexdigest()
+        fingerprint = approval_action_fingerprint(requested_action)
         approval = ApprovalRequest(
             id=self._id_factory("approval"),
             project_id=execution.workflow_run.project_id,
@@ -758,7 +763,7 @@ class AgentRuntime:
             requested_by=execution.agent_session.id,
             permitted_approver_role=policy_key,
             requested_at=requested_at,
-            expires_at=requested_at + self._approval_ttl,
+            expires_at=expires_at,
         )
         self.uow.approvals.save(approval, expected_version=None)
         return approval
@@ -787,6 +792,7 @@ class AgentRuntime:
             step_run_id=step_run.id,
             attempt=step_run.attempt,
             policy_key=step.approval_policy,
+            resolved_inputs=step_run.inputs,
         )
         self._emit_event(
             execution,

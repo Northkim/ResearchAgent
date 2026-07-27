@@ -48,7 +48,11 @@ class WaitingApproval(EngineDecision):
     attempt: int
     expected_step_version: int
     approval_policy: str
+    resolved_inputs: Mapping[str, Any] = field(default_factory=dict)
     requires_ready_transition: bool = False
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "resolved_inputs", freeze(self.resolved_inputs))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

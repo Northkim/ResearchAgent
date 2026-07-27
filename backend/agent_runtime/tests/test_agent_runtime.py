@@ -6,7 +6,13 @@ import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime
 
-from backend.agent_runtime import AgentRuntime, CheckpointBoundary
+import pytest
+
+from backend.agent_runtime import (
+    AgentRuntime,
+    CheckpointBoundary,
+    approval_action_fingerprint,
+)
 from backend.domain.enums import (
     ApprovalRequestStatus,
     StepRunStatus,
@@ -14,6 +20,7 @@ from backend.domain.enums import (
     WorkflowStepKind,
 )
 from backend.domain.models import Workflow, WorkflowStep
+from backend.domain.exceptions import DomainValidationError
 from backend.domain.services import ExecutionCoordinator
 from backend.execution_events import ExecutionEventType
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
@@ -353,6 +360,100 @@ def test_approval_pause_and_resume() -> None:
     restored = runtime.load_execution(execution.workflow_run.id)
     assert completed.status is WorkflowRunStatus.COMPLETED
     assert restored.latest_step_run("approve").status is StepRunStatus.COMPLETED
+
+
+def test_resolved_approval_fingerprint_binds_paper_ids_and_artifact_checksum() -> None:
+    registry = SkillRegistry()
+    register_fake_skills(registry)
+    runtime, domain, _ = _runtime(registry)
+    workflow = Workflow(
+        id="research-approval-binding",
+        version="2.0.0",
+        name="Research approval binding",
+        input_schema={
+            "topic": {"type": "string"},
+            "query_hash": {"type": "string"},
+            "selected_papers_artifact_checksum": {"type": "string"},
+        },
+        steps=(
+            WorkflowStep(
+                id="search",
+                kind=WorkflowStepKind.SKILL,
+                uses="mock_paper_search@1.0.0",
+                input_mapping={"query": "${inputs.topic}"},
+            ),
+            WorkflowStep(
+                id="approve_sources",
+                kind=WorkflowStepKind.APPROVAL,
+                needs=("search",),
+                approval_policy="research_reviewer",
+                input_mapping={
+                    "query_hash": "${inputs.query_hash}",
+                    "selected_paper_ids": "${nodes.search.outputs.papers}",
+                    "selected_papers_artifact_checksum": (
+                        "${inputs.selected_papers_artifact_checksum}"
+                    ),
+                    "ranker_version": "research.rank_papers@1.0.0",
+                    "approval_role": "research_reviewer",
+                },
+            ),
+        ),
+    )
+    execution = _execution(
+        domain,
+        workflow,
+        {
+            "topic": "synthetic agents",
+            "query_hash": "sha256:" + "1" * 64,
+            "selected_papers_artifact_checksum": "sha256:" + "2" * 64,
+        },
+    )
+
+    waiting = asyncio.run(runtime.run(execution))
+    assert waiting.status is WorkflowRunStatus.WAITING_FOR_APPROVAL
+    approval = runtime.uow.approvals.list_pending_for_run(
+        "project-1",
+        execution.workflow_run.id,
+    )[0]
+    action = approval.requested_action
+    resolved = action["resolved_inputs"]
+    assert tuple(resolved["selected_paper_ids"]) == (
+        "Mock Foundations of synthetic agents",
+        "Mock Advances in synthetic agents",
+    )
+    assert resolved["selected_papers_artifact_checksum"] == "sha256:" + "2" * 64
+    assert action["workflow_id"] == workflow.id
+    assert action["workflow_version"] == workflow.version
+    assert action["approval_step_id"] == "approve_sources"
+    assert action["skill_versions"] == {"search": "mock_paper_search@1.0.0"}
+
+    changed_papers = dict(action)
+    changed_papers["resolved_inputs"] = {
+        **dict(resolved),
+        "selected_paper_ids": ["different-paper"],
+    }
+    with pytest.raises(DomainValidationError):
+        approval.approve(
+            resolved_by="reviewer-1",
+            decision_idempotency_key="changed-paper-decision",
+            current_fingerprint=approval_action_fingerprint(changed_papers),
+            at=_clock(),
+        )
+
+    changed_checksum = dict(action)
+    changed_checksum["resolved_inputs"] = {
+        **dict(resolved),
+        "selected_papers_artifact_checksum": "sha256:" + "3" * 64,
+    }
+    with pytest.raises(DomainValidationError):
+        approval.approve(
+            resolved_by="reviewer-1",
+            decision_idempotency_key="changed-checksum-decision",
+            current_fingerprint=approval_action_fingerprint(changed_checksum),
+            at=_clock(),
+        )
+
+    assert approval.status is ApprovalRequestStatus.PENDING
 
 
 def test_completed_resume_is_idempotent() -> None:

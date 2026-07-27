@@ -25,11 +25,17 @@ class FieldSchema:
     items: FieldSchema | None = None
     properties: Mapping[str, FieldSchema] = field(default_factory=dict)
     allow_extra: bool = False
+    enum_values: tuple[Any, ...] = ()
+    min_length: int | None = None
+    max_length: int | None = None
+    minimum: float | None = None
+    maximum: float | None = None
 
     def __post_init__(self) -> None:
         if self.kind not in _FIELD_KINDS:
             raise ValueError(f"Unsupported field schema kind: {self.kind}")
         object.__setattr__(self, "properties", MappingProxyType(dict(self.properties)))
+        object.__setattr__(self, "enum_values", tuple(self.enum_values))
         if self.kind == "array" and self.items is None:
             raise ValueError("Array fields must define an items schema")
         if self.kind != "array" and self.items is not None:
@@ -43,6 +49,18 @@ class FieldSchema:
                 raise ValueError("Object property names must be non-empty strings")
             if not isinstance(schema, FieldSchema):
                 raise ValueError("Object properties must contain FieldSchema values")
+        if self.min_length is not None and self.min_length < 0:
+            raise ValueError("min_length cannot be negative")
+        if self.max_length is not None and self.max_length < 0:
+            raise ValueError("max_length cannot be negative")
+        if (
+            self.min_length is not None
+            and self.max_length is not None
+            and self.min_length > self.max_length
+        ):
+            raise ValueError("min_length cannot exceed max_length")
+        if self.minimum is not None and self.maximum is not None and self.minimum > self.maximum:
+            raise ValueError("minimum cannot exceed maximum")
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,9 +129,19 @@ def _validate_field(value: Any, schema: FieldSchema, *, path: str) -> Any:
             return None
         raise SkillValidationError(path, "cannot be null")
 
+    if schema.enum_values and value not in schema.enum_values:
+        raise SkillValidationError(path, f"must be one of {schema.enum_values!r}")
+
     if schema.kind == "string":
         if not isinstance(value, str):
             raise SkillValidationError(path, "must be a string")
+        if schema.min_length is not None and len(value) < schema.min_length:
+            raise SkillValidationError(
+                path,
+                f"must contain at least {schema.min_length} characters",
+            )
+        if schema.max_length is not None and len(value) > schema.max_length:
+            raise SkillValidationError(path, f"must contain at most {schema.max_length} characters")
         return value
     if schema.kind == "boolean":
         if not isinstance(value, bool):
@@ -122,12 +150,14 @@ def _validate_field(value: Any, schema: FieldSchema, *, path: str) -> Any:
     if schema.kind == "integer":
         if not isinstance(value, int) or isinstance(value, bool):
             raise SkillValidationError(path, "must be an integer")
+        _validate_number_bounds(value, schema, path)
         return value
     if schema.kind == "number":
         if not isinstance(value, (int, float)) or isinstance(value, bool):
             raise SkillValidationError(path, "must be a number")
         if isinstance(value, float) and not math.isfinite(value):
             raise SkillValidationError(path, "must be finite")
+        _validate_number_bounds(value, schema, path)
         return value
     if schema.kind == "array":
         if not isinstance(value, (list, tuple)):
@@ -147,3 +177,10 @@ def _validate_field(value: Any, schema: FieldSchema, *, path: str) -> Any:
             path=path,
         )
     raise AssertionError(f"Unhandled schema kind: {schema.kind}")
+
+
+def _validate_number_bounds(value: int | float, schema: FieldSchema, path: str) -> None:
+    if schema.minimum is not None and value < schema.minimum:
+        raise SkillValidationError(path, f"must be at least {schema.minimum}")
+    if schema.maximum is not None and value > schema.maximum:
+        raise SkillValidationError(path, f"must be at most {schema.maximum}")

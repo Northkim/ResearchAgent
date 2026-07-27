@@ -24,10 +24,10 @@ def postgres_engine() -> Iterator[Engine]:
     engine = create_postgres_engine(database_url)
     with engine.connect() as connection:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-    if revision != "20260721_0001":
+    if revision != "20260721_0002":
         engine.dispose()
         pytest.fail(
-            "PostgreSQL test database must be migrated to revision 20260721_0001"
+            "PostgreSQL test database must be migrated to revision 20260721_0002"
         )
     yield engine
     engine.dispose()

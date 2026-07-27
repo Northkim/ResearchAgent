@@ -7,7 +7,13 @@ from .checkpoint import (
 )
 from .context import AgentExecutionContext, ExecutionContextBuilder
 from .memory import MemoryRepository, MemoryRevision
-from .runtime import AgentRuntime, AgentRuntimeError, RuntimeResult
+from .runtime import (
+    AgentRuntime,
+    AgentRuntimeError,
+    RuntimeResult,
+    approval_action_fingerprint,
+    build_resolved_approval_action,
+)
 
 __all__ = [
     "AgentExecutionContext",
@@ -20,4 +26,6 @@ __all__ = [
     "MemoryRepository",
     "MemoryRevision",
     "RuntimeResult",
+    "approval_action_fingerprint",
+    "build_resolved_approval_action",
 ]

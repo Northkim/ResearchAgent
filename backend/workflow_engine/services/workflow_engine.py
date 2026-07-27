@@ -137,6 +137,19 @@ class WorkflowEngine:
         step = scheduled.definition
         step_run = scheduled.step_run
         if step.kind is WorkflowStepKind.APPROVAL:
+            try:
+                resolved_inputs = self._resolver.resolve_step_inputs(
+                    definition, step, snapshot
+                )
+            except InvalidReferenceError as error:
+                return self._workflow_failed(
+                    definition,
+                    snapshot,
+                    error_code="INVALID_APPROVAL_INPUT_REFERENCE",
+                    message=str(error),
+                    failed_step_id=step.id,
+                    expected_step_version=step_run.row_version,
+                )
             return WaitingApproval(
                 **self._base(
                     definition,
@@ -149,6 +162,7 @@ class WorkflowEngine:
                 attempt=step_run.attempt,
                 expected_step_version=step_run.row_version,
                 approval_policy=step.approval_policy or "",
+                resolved_inputs=resolved_inputs,
                 requires_ready_transition=scheduled.requires_ready_transition,
             )
 

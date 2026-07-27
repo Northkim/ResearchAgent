@@ -185,6 +185,79 @@ Implemented across `demo/`, `backend/demo/`, `backend/integration/`, Docker/Make
 
 No frozen Domain, Workflow Engine, Skill System, Runtime lifecycle, or persistence port contract changed. The demo publisher is an administrative PostgreSQL adapter entrypoint because the frozen `WorkflowRepository` intentionally has no definition-publication operation. No ADR was required.
 
+### Phase 9A-0: First Real Research Vertical Slice Contract
+
+Documentation-only architecture/product contract completed in `.agent_read/progress/real_research_vertical_slice_contract.md`:
+
+- proposed immutable `guided-literature-review@2.0.0` sequential DAG from query validation through real search, deterministic normalization/ranking, approval, permitted source retrieval, grounded synthesis, report generation, and artifact persistence
+- frozen conceptual schemas for ResearchQuery, PaperRecord, SourceContent, RankedPaper, CitationReference, EvidenceUnit, GroundedClaim, ResearchReport, and ProviderUsage
+- provider-neutral PaperSearchProvider, SourceContentProvider, LLMProvider, and ArtifactContentStorage boundaries
+- claim -> evidence -> paper -> citation validation gates and immutable artifact set (`papers.json`, selected papers, source content, summaries, evidence, `report.md`, provenance, usage)
+- additive application/API/frontend plan for catalog-pinned run creation, candidate approval preview, report/citation display, artifact retrieval, and provider usage
+- normalized provider failures, durable budget reservation, restart behavior, four-level test plan, conditional provider recommendations, milestones, and acceptance gates
+
+Proposed ADR `.agent_read/decisions/0003-real-research-provider-and-artifact-boundaries.md` is **not accepted**. It documents two verified implementation blockers: provider calls need a durable pre-call operation/budget ledger, and approval-node inputs must be resolved by Workflow Engine so Runtime can fingerprint the exact paper selection without taking over reference resolution. The proposal adds ports and one UoW repository but does not change Domain lifecycle or module ownership.
+
+Provider/model capabilities, pricing, rate limits, authentication, and terms were not checked online because Phase 9A-0 prohibited external-service calls. OpenAlex and OpenAI are conditional initial recommendations only; owner approval and current official-document verification remain required before real adapter work.
+
+### Phase 9A-1: Contract Substrate and Local Artifact Storage
+
+Implemented the provider-independent substrate for
+`guided-literature-review@2.0.0` without a real provider, network call, SDK, or
+credential:
+
+- immutable, canonical-JSON research contracts for queries, papers, source
+  scope, ranking, citations, evidence, grounded claims, reports, provider
+  identity/usage/budgets/operations, and provenance manifests;
+- a pure fail-closed provenance validator connecting report labels ->
+  CitationReference -> selected PaperRecord and GroundedClaim -> EvidenceUnit
+  -> checksum-matched SourceContent, with version, DOI, source-scope, artifact
+  checksum, and unsettled-provider-operation gates;
+- framework-independent PaperSearchProvider, SourceContentProvider, LLMProvider,
+  and ArtifactContentStorage ports plus network-free deterministic synthetic
+  provider adapters;
+- injected-root LocalFilesystemArtifactStorage with default composition root
+  `runtime_data/artifacts`, relative keys, traversal/symlink rejection,
+  immutable atomic-create semantics, idempotent replay, and read-time SHA-256
+  verification;
+- ProviderOperationRepository added to UnitOfWork, InMemory and SQLAlchemy
+  adapters, fail-closed reservation/settlement services, and Alembic revision
+  `20260721_0002`;
+- `WaitingApproval.resolved_inputs`, Engine-owned approval reference resolution,
+  and Runtime fingerprints binding workflow/run/step/expiry, resolved candidate
+  selection, artifact checksum, role, and pinned Skill versions;
+- deny-by-default Skill capabilities, an optional rich SkillExecutionOutput,
+  ProviderUsage/artifact propagation, provider-error normalization, and the
+  minimal enum/string/numeric constraints needed by research Skills;
+- an application-facing artifact gateway that writes immutable bytes first,
+  stages existing ArtifactMetadata through UnitOfWork, lists run artifacts, and
+  verifies content before reads.
+
+ADR 0003 is accepted only for the additive UnitOfWork provider-operation
+repository, Engine-resolved approval inputs, ArtifactContentStorage boundary,
+adapter/composition-owned SDK clients, and durable auditable usage/budget
+state. It does not select any provider, model, price, key, or live mode. Domain
+lifecycle and frozen module ownership did not change.
+
+### Phase 9A-1.5: PostgreSQL Persistence Acceptance Gate
+
+Migration `20260721_0002` and the SQL ProviderOperation adapter are now
+accepted against the dedicated local PostgreSQL 18.1 database
+`reagent_9a1_acceptance`; `ProjectDB` was never targeted. Verification covers
+base/head/downgrade/re-upgrade, two clean Alembic drift checks, schema
+constraints/indexes, shared InMemory/SQL lifecycle semantics, budget
+reservation and both settlement policies, project-scoped idempotency,
+persistence/domain optimistic versions, cross-repository rollback, restart
+visibility, actual usage and sanitized diagnostics, project/run/step foreign
+keys, and the unsettled-operation provenance gate.
+
+One narrow application-service defect was corrected: failure settlement now
+accepts and persists already-normalized diagnostic metadata. Migration `0002`,
+persistence ports, lifecycle states, and frozen ownership were unchanged. With
+all PostgreSQL and isolated HTTP-test switches enabled, the full backend result
+is `123 passed, 0 skipped`; the dedicated database remains at Alembic head for
+owner inspection.
+
 ## Domain contract refinements in Phase 2
 
 - `WorkflowStep` now carries `retry_backoff`, `retry_initial_seconds`, and `retry_max_seconds` in addition to `max_attempts`.
@@ -206,18 +279,27 @@ Frontend verification passes with 4 Vitest files/5 tests, ESLint, and the Next.j
 
 The Compose YAML and initialization shell syntax were checked, but Docker/Compose was not installed in the validation environment. `make demo-config-check` therefore failed at `docker: No such file or directory`; image builds, Compose model validation, clean Compose startup, health state, reset/restart, and Compose-hosted Playwright were not executed and must not be inferred as passing.
 
+Phase 9A-1.5 validation used PostgreSQL 18.1 through `reagent-dev` and the
+isolated `reagent_9a1_acceptance` database. The expanded SQL adapter suite
+passes 13 tests, and the full backend suite passes 123 tests with zero skips
+when both database variables and isolated-reset opt-in are set. Python
+compilation passes, `alembic heads` returns only `20260721_0002`, and both
+pre/post migration-replay drift checks report no upgrade operations. Frontend
+tests were not rerun because no HTTP endpoint, frontend source, package, or
+shared generated API type changed.
+
 ## Current limitations and risks
 
 - General workflow publication/catalog administration is not implemented. The Phase 8B demo publisher is intentionally restricted to one hash-pinned fixture and verifies its pinned fake Skill references.
-- The Phase 3 schema model is an intentionally small object-schema subset; it does not support unions, enums, constraints, or full JSON Schema import/export.
-- Skill execution has no deadline/cancellation facade, permission policy, artifact/memory gateway, or usage telemetry beyond deterministic correlation metadata.
+- The Skill schema model remains an intentionally small object-schema subset. It now supports enums plus basic string/numeric bounds, but not unions, full JSON Schema import/export, or cross-field rules.
+- Skill execution now has explicit deny-by-default provider/artifact capabilities and usage/artifact results, but it still has no Runtime-enforced deadline/cancellation facade, authorization policy, or general memory gateway.
 - InMemory adapters remain test-only. PostgreSQL is now the durable adapter, but worker leases/claims, `not_before` dispatch, and explicit row-lock policies are not implemented.
 - The SQL adapter stores immutable Workflow definitions as normalized JSONB with a canonical hash. The catalog API lists definitions already persisted by run creation; independent publication, review state, and catalog administration are not implemented.
 - Repository ports remain synchronous. Direct use from an async API event loop requires a thread boundary or a future separately reviewed async persistence contract.
 - Retry delay is decision metadata only; the next explicit `run()` call resumes without a clock-based dispatcher or persisted `not_before` enforcement.
 - Runtime creates approvals automatically and the API exposes discovery and decisions, but approval-role authorization and proactive expiry scheduling are not implemented. Expiry is enforced when a decision is attempted.
 - Execution events are durable audit-stream contracts, not a delivery outbox; post-commit notification delivery, consumer deduplication records, and retention policy remain unimplemented.
-- ArtifactRepository stores metadata only; bytes/object storage, outbox delivery, and retention policies remain unimplemented.
+- ArtifactRepository continues to store metadata only; local immutable bytes now use ArtifactContentStorage, but S3/object storage, atomic cross-resource commit, orphan-content collection, download APIs, and retention enforcement remain unimplemented.
 - The Phase 7B API is request/response only. `SyncExecutionDispatcher` executes inline until a terminal/yield state; no worker queue, lease, durable dispatch record, timeout facade, progress stream, or cancellation signal exists.
 - No authentication/authorization, project/user repository, LLM provider, upload API, or external artifact byte storage exists. List APIs are not yet protected or scoped by an authenticated actor.
 - API endpoints currently call frozen synchronous repository ports from async path operations. This is correct functionally but can block the event loop under PostgreSQL load; add an explicit worker-thread execution boundary or separately reviewed async ports before production concurrency.
@@ -231,7 +313,17 @@ The Compose YAML and initialization shell syntax were checked, but Docker/Compos
 - The backend catalog contains the seeded immutable demo definition, but there is still no general workflow publication/review lifecycle.
 - Docker/Compose could not be executed in the Phase 8B validation host. Its dependency graph and files are implemented but require validation on a Docker-capable machine.
 - The in-app browser surface was unavailable. Visual QA used five real Playwright screenshots from system Chrome; loading, empty, and failure components are covered by implementation/unit inspection rather than a separate manual interactive browser session.
+- Real research implementation still requires the complete deterministic Guided Literature Review v2 Skills/DAG, artifact APIs/UI, approved provider/model/cost/retention choices, and opt-in live adapters. The provider-independent contracts, local storage, provider-operation persistence, provenance validation, and approval binding are now implemented.
+- ADR 0003 is accepted only within its recorded additive scope. No real paper provider, LLM provider/model, price, API key, live network mode, S3 backend, or retention policy has been selected.
+- The dedicated Phase 9A-1.5 database is intentionally retained at head for inspection; it is test-only and must not be mistaken for a production database.
 
 ## Next recommended phase
 
-Remediation of demo integration: execute `make demo-config-check`, a clean `make demo-start`, service health inspection, Compose-hosted integration/Playwright tests, `make demo-reset`, and a second clean startup on a Docker-capable machine. Once that environment-specific evidence is green, begin the first real research vertical slice rather than expanding the demo surface.
+Implement exactly the complete deterministic fake-provider Guided Literature
+Review v2 vertical slice: publish the immutable v2 workflow, add provider-
+independent research Skills using the new capability/operation/artifact
+substrate, persist all planned artifacts, and add artifact application/API and
+minimal report/approval UI behavior. Keep all real providers, credentials,
+network calls, production workers, authentication, and Docker remediation out
+of that milestone. Phase 9A-1.5 has satisfied its migration and shared SQL
+provider-operation entry gate on an isolated PostgreSQL database.

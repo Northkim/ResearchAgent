@@ -5,6 +5,10 @@ from backend.persistence.tests.adapter_contracts import (
     exercise_event_and_approval_recovery,
     exercise_full_repository_round_trip,
     exercise_optimistic_concurrency,
+    exercise_provider_operation_contract,
+    exercise_provider_operation_failure_and_budget_contract,
+    exercise_provider_operation_logical_version_contract,
+    exercise_provider_operation_update_rollback_contract,
     exercise_transaction_rollback,
 )
 
@@ -27,3 +31,29 @@ def test_in_memory_event_and_approval_recovery_contract() -> None:
 def test_in_memory_optimistic_concurrency_contract() -> None:
     database = InMemoryDatabase()
     exercise_optimistic_concurrency(lambda: InMemoryUnitOfWork(database))
+
+
+def test_in_memory_provider_operation_contract() -> None:
+    database = InMemoryDatabase()
+    exercise_provider_operation_contract(lambda: InMemoryUnitOfWork(database))
+
+
+def test_in_memory_provider_operation_failure_and_budget_contract() -> None:
+    database = InMemoryDatabase()
+    exercise_provider_operation_failure_and_budget_contract(
+        lambda: InMemoryUnitOfWork(database)
+    )
+
+
+def test_in_memory_provider_operation_logical_version_contract() -> None:
+    database = InMemoryDatabase()
+    exercise_provider_operation_logical_version_contract(
+        lambda: InMemoryUnitOfWork(database)
+    )
+
+
+def test_in_memory_provider_operation_update_rollback_contract() -> None:
+    database = InMemoryDatabase()
+    exercise_provider_operation_update_rollback_contract(
+        lambda: InMemoryUnitOfWork(database)
+    )

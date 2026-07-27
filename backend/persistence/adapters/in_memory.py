@@ -15,6 +15,7 @@ from backend.persistence.models import (
     CheckpointBoundary,
     CheckpointRecord,
     MemoryRevision,
+    ProviderOperationRecord,
     WorkflowExecutionRecord,
 )
 from backend.persistence.models._immutability import freeze_json, thaw_json
@@ -24,10 +25,12 @@ from backend.persistence.ports import (
     CheckpointRepository,
     DuplicateEntityError,
     MemoryRepository,
+    ProviderOperationRepository,
     StaleStateError,
     UnitOfWork,
     WorkflowRepository,
 )
+from backend.research.contracts import ProviderOperation, SettlementState
 
 
 @dataclass(slots=True)
@@ -46,6 +49,7 @@ class InMemoryDatabase:
     execution_events: dict[
         tuple[str, str], tuple[ExecutionEvent, ...]
     ] = field(default_factory=dict)
+    provider_operations: dict[str, ProviderOperationRecord] = field(default_factory=dict)
 
 
 class InMemoryWorkflowRepository(WorkflowRepository):
@@ -498,6 +502,127 @@ class InMemoryExecutionEventStore(ExecutionEventStore):
         return self._uow._execution_events.get((project_id, workflow_run_id), ())
 
 
+class InMemoryProviderOperationRepository(ProviderOperationRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def save(
+        self,
+        operation: ProviderOperation,
+        *,
+        expected_version: int | None,
+    ) -> int:
+        current = self._uow._provider_operations.get(operation.id)
+        if expected_version is None:
+            if current is not None:
+                raise StaleStateError(
+                    f"ProviderOperation {operation.id} already exists at persistence "
+                    f"version {current.persistence_version}"
+                )
+            owner = self.get_by_idempotency_key(
+                operation.project_id,
+                operation.idempotency_key,
+            )
+            if owner is not None and owner.id != operation.id:
+                raise DuplicateEntityError(
+                    "Provider operation idempotency key is already owned by "
+                    f"ProviderOperation {owner.id}"
+                )
+            next_version = 1
+        else:
+            if current is None:
+                raise StaleStateError(
+                    f"ProviderOperation {operation.id} does not exist"
+                )
+            if current.persistence_version != expected_version:
+                raise StaleStateError(
+                    f"ProviderOperation {operation.id} expected persistence version "
+                    f"{expected_version}; found {current.persistence_version}"
+                )
+            if operation.row_version != current.operation.row_version + 1:
+                raise StaleStateError(
+                    f"ProviderOperation {operation.id} domain row version must advance "
+                    f"from {current.operation.row_version} to "
+                    f"{current.operation.row_version + 1}"
+                )
+            if (
+                current.operation.project_id != operation.project_id
+                or current.operation.workflow_run_id != operation.workflow_run_id
+                or current.operation.logical_step_id != operation.logical_step_id
+                or current.operation.step_run_id != operation.step_run_id
+                or current.operation.provider_category is not operation.provider_category
+                or current.operation.operation_kind is not operation.operation_kind
+                or current.operation.provider_identity != operation.provider_identity
+                or current.operation.adapter_version != operation.adapter_version
+                or current.operation.model_or_endpoint != operation.model_or_endpoint
+                or current.operation.idempotency_key != operation.idempotency_key
+                or current.operation.request_fingerprint != operation.request_fingerprint
+                or current.operation.reservation != operation.reservation
+                or current.operation.is_live_provider is not operation.is_live_provider
+                or current.operation.created_at != operation.created_at
+            ):
+                raise DuplicateEntityError(
+                    "ProviderOperation immutable request identity cannot change"
+                )
+            next_version = expected_version + 1
+        self._uow._provider_operation_expected.setdefault(operation.id, expected_version)
+        self._uow._provider_operations[operation.id] = ProviderOperationRecord(
+            operation=operation,
+            persistence_version=next_version,
+        )
+        self._uow._dirty_provider_operations.add(operation.id)
+        return next_version
+
+    def get(self, operation_id: str) -> ProviderOperation | None:
+        record = self._uow._provider_operations.get(operation_id)
+        return record.operation if record is not None else None
+
+    def get_version(self, operation_id: str) -> int | None:
+        record = self._uow._provider_operations.get(operation_id)
+        return record.persistence_version if record is not None else None
+
+    def get_by_idempotency_key(
+        self,
+        project_id: str,
+        idempotency_key: str,
+    ) -> ProviderOperation | None:
+        matches = [
+            record.operation
+            for record in self._uow._provider_operations.values()
+            if record.operation.project_id == project_id
+            and record.operation.idempotency_key == idempotency_key
+        ]
+        return min(matches, key=lambda item: item.id) if matches else None
+
+    def list_for_run(
+        self,
+        project_id: str,
+        workflow_run_id: str,
+    ) -> tuple[ProviderOperation, ...]:
+        operations = [
+            record.operation
+            for record in self._uow._provider_operations.values()
+            if record.operation.project_id == project_id
+            and record.operation.workflow_run_id == workflow_run_id
+        ]
+        operations.sort(key=lambda item: (item.created_at, item.id))
+        return tuple(operations)
+
+    def list_unsettled(
+        self,
+        *,
+        project_id: str | None = None,
+    ) -> tuple[ProviderOperation, ...]:
+        operations = [
+            record.operation
+            for record in self._uow._provider_operations.values()
+            if record.operation.settlement_state is SettlementState.UNSETTLED
+            and (project_id is None or record.operation.project_id == project_id)
+        ]
+        operations.sort(key=lambda item: (item.updated_at, item.id))
+        return tuple(operations)
+
+
 class InMemoryUnitOfWork(UnitOfWork):
     """Reusable transactional view over a shared InMemoryDatabase."""
 
@@ -509,6 +634,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._artifact_repository = InMemoryArtifactRepository(self)
         self._approval_repository = InMemoryApprovalRepository(self)
         self._event_store = InMemoryExecutionEventStore(self)
+        self._provider_operation_repository = InMemoryProviderOperationRepository(self)
         self._refresh()
 
     @property
@@ -535,6 +661,10 @@ class InMemoryUnitOfWork(UnitOfWork):
     def events(self) -> ExecutionEventStore:
         return self._event_store
 
+    @property
+    def provider_operations(self) -> ProviderOperationRepository:
+        return self._provider_operation_repository
+
     def commit(self) -> None:
         self._validate_concurrency()
         for run_id in self._dirty_workflows:
@@ -549,6 +679,10 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.approvals[approval_id] = self._approvals[approval_id]
         for scope in self._dirty_event_streams:
             self.database.execution_events[scope] = self._execution_events[scope]
+        for operation_id in self._dirty_provider_operations:
+            self.database.provider_operations[operation_id] = self._provider_operations[
+                operation_id
+            ]
         self._refresh()
 
     def rollback(self) -> None:
@@ -637,6 +771,29 @@ class InMemoryUnitOfWork(UnitOfWork):
                     )
                 committed_event_ids.add(event.id)
 
+        committed_idempotency = {
+            (record.operation.project_id, record.operation.idempotency_key): operation_id
+            for operation_id, record in self.database.provider_operations.items()
+        }
+        for operation_id in self._dirty_provider_operations:
+            expected = self._provider_operation_expected[operation_id]
+            current = self.database.provider_operations.get(operation_id)
+            current_version = current.persistence_version if current is not None else None
+            if current_version != expected:
+                raise StaleStateError(
+                    f"ProviderOperation {operation_id} expected committed persistence "
+                    f"version {expected}; found {current_version}"
+                )
+            operation = self._provider_operations[operation_id].operation
+            key = (operation.project_id, operation.idempotency_key)
+            owner = committed_idempotency.get(key)
+            if owner is not None and owner != operation_id:
+                raise DuplicateEntityError(
+                    "Provider operation idempotency key was concurrently claimed by "
+                    f"ProviderOperation {owner}"
+                )
+            committed_idempotency[key] = operation_id
+
     def _refresh(self) -> None:
         self._executions = dict(self.database.executions)
         self._checkpoint_records = dict(self.database.checkpoint_records)
@@ -644,6 +801,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._artifacts = dict(self.database.artifacts)
         self._approvals = dict(self.database.approvals)
         self._execution_events = dict(self.database.execution_events)
+        self._provider_operations = dict(self.database.provider_operations)
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -658,9 +816,11 @@ class InMemoryUnitOfWork(UnitOfWork):
         }
         self._workflow_expected: dict[str, int | None] = {}
         self._approval_expected: dict[str, int | None] = {}
+        self._provider_operation_expected: dict[str, int | None] = {}
         self._dirty_workflows: set[str] = set()
         self._dirty_checkpoint_runs: set[str] = set()
         self._dirty_memory_scopes: set[tuple[str, str]] = set()
         self._dirty_artifacts: set[str] = set()
         self._dirty_approvals: set[str] = set()
         self._dirty_event_streams: set[tuple[str, str]] = set()
+        self._dirty_provider_operations: set[str] = set()

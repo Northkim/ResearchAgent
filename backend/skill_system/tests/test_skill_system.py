@@ -10,11 +10,26 @@ import pytest
 
 from backend.skill_system import (
     DuplicateSkillRegistrationError,
+    EmittedArtifactMetadata,
+    FieldSchema,
+    SkillCapabilities,
     SkillDecisionMismatchError,
+    SkillDefinition,
+    SkillExecutionOutput,
     SkillExecutor,
+    SkillMetadata,
     SkillReference,
     SkillRegistry,
+    SkillSchema,
 )
+from backend.research.adapters import FakeLLMProvider
+from backend.research.contracts import (
+    ProviderFailureCategory,
+    ProviderOperationKind,
+    ProviderUsage,
+    canonical_hash,
+)
+from backend.research.ports import LLMTextRequest, ProviderRequestContext
 from backend.skill_system.runtime import (
     MOCK_PAPER_SEARCH,
     MOCK_SUMMARY,
@@ -217,3 +232,180 @@ def test_executor_rejects_arguments_that_differ_from_step_ready() -> None:
             SkillReference.parse(decision.skill_ref),
             {"query": "changed"},
         )
+
+
+def _capability_test_definition(name: str) -> SkillDefinition:
+    return SkillDefinition(
+        name=name,
+        version="1.0.0",
+        description="Exercise explicit research capability injection.",
+        input_schema=SkillSchema(fields={}),
+        output_schema=SkillSchema(fields={"provider": FieldSchema(kind="string")}),
+        metadata=SkillMetadata(
+            capabilities=("llm",),
+            implementation_entrypoint="test:capability",
+        ),
+    )
+
+
+def test_skill_capabilities_are_denied_by_default() -> None:
+    registry = SkillRegistry()
+    definition = _capability_test_definition("research.denied_capability")
+
+    async def requires_llm(inputs, context):
+        del inputs
+        context.capabilities.require_llm()
+        return {"provider": "unreachable"}
+
+    registry.register(definition, requires_llm)
+    decision = _decision(skill_ref=str(definition.reference), resolved_inputs={})
+    result = _execute(
+        SkillExecutor(registry),
+        decision,
+        definition.reference,
+        {},
+    )
+
+    assert not result.success
+    assert result.error is not None
+    assert result.error.code == "CAPABILITY_DENIED"
+
+
+def test_skill_receives_only_composition_injected_provider() -> None:
+    registry = SkillRegistry()
+    definition = _capability_test_definition("research.injected_capability")
+    fake_llm = FakeLLMProvider()
+
+    async def identifies_llm(inputs, context):
+        del inputs
+        provider = context.capabilities.require_llm()
+        return {"provider": provider.identity.provider}
+
+    registry.register(definition, identifies_llm)
+    decision = _decision(skill_ref=str(definition.reference), resolved_inputs={})
+    result = _execute(
+        SkillExecutor(
+            registry,
+            capability_provider=lambda ready: SkillCapabilities(llm=fake_llm),
+        ),
+        decision,
+        definition.reference,
+        {},
+    )
+
+    assert result.success
+    assert result.output_data == {"provider": "synthetic-llm"}
+
+
+def test_composition_cannot_grant_capability_omitted_by_skill_definition() -> None:
+    registry = SkillRegistry()
+    declared = _capability_test_definition("research.undeclared_capability")
+    definition = replace(
+        declared,
+        metadata=replace(declared.metadata, capabilities=()),
+    )
+
+    async def requires_llm(inputs, context):
+        del inputs
+        context.capabilities.require_llm()
+        return {"provider": "unreachable"}
+
+    registry.register(definition, requires_llm)
+    decision = _decision(skill_ref=str(definition.reference), resolved_inputs={})
+    result = _execute(
+        SkillExecutor(
+            registry,
+            capability_provider=lambda ready: SkillCapabilities(llm=FakeLLMProvider()),
+        ),
+        decision,
+        definition.reference,
+        {},
+    )
+
+    assert not result.success
+    assert result.error is not None
+    assert result.error.code == "CAPABILITY_DENIED"
+
+
+def test_rich_skill_output_preserves_artifacts_and_provider_usage() -> None:
+    registry = SkillRegistry()
+    definition = _capability_test_definition("research.rich_output")
+    usage = ProviderUsage.zero_cost(
+        provider="synthetic-llm",
+        model_or_endpoint="deterministic-structured/v1",
+        operation_kind=ProviderOperationKind.GENERATE_STRUCTURED,
+    )
+    emitted = EmittedArtifactMetadata(
+        artifact_id="artifact-1",
+        storage_key="runs/run-1/report.md",
+        checksum=canonical_hash({"report": 1}),
+        media_type="text/markdown",
+        size=12,
+        logical_name="report.md",
+    )
+
+    async def returns_rich_output(inputs, context):
+        del inputs, context
+        return SkillExecutionOutput(
+            output_data={"provider": "synthetic-llm"},
+            emitted_artifacts=(emitted,),
+            provider_usage=(usage,),
+        )
+
+    registry.register(definition, returns_rich_output)
+    decision = _decision(skill_ref=str(definition.reference), resolved_inputs={})
+    result = _execute(
+        SkillExecutor(registry),
+        decision,
+        definition.reference,
+        {},
+    )
+
+    assert result.success
+    assert result.emitted_artifacts == (emitted,)
+    assert result.provider_usage == (usage,)
+    assert result.to_dict()["provider_usage"][0]["estimated_cost_minor_units"] == 0
+
+
+def test_provider_error_is_normalized_at_skill_execution_boundary() -> None:
+    registry = SkillRegistry()
+    definition = _capability_test_definition("research.provider_failure")
+    failing_llm = FakeLLMProvider(
+        failure=ProviderFailureCategory.PROVIDER_TIMEOUT
+    )
+
+    async def calls_provider(inputs, context):
+        del inputs
+        provider = context.capabilities.require_llm()
+        await provider.generate_text(
+            LLMTextRequest(
+                prompt_name="test",
+                prompt_version="test/v1",
+                messages=({"role": "user", "content": "synthetic"},),
+                max_output_tokens=1,
+            ),
+            context=ProviderRequestContext(
+                operation_id="operation-1",
+                idempotency_key="request-1",
+                request_fingerprint=canonical_hash({"request": 1}),
+            ),
+        )
+        return {"provider": "unreachable"}
+
+    registry.register(definition, calls_provider)
+    decision = _decision(skill_ref=str(definition.reference), resolved_inputs={})
+    result = _execute(
+        SkillExecutor(
+            registry,
+            capability_provider=lambda ready: SkillCapabilities(llm=failing_llm),
+        ),
+        decision,
+        definition.reference,
+        {},
+    )
+
+    assert not result.success
+    assert result.error is not None
+    assert result.error.code == "PROVIDER_TIMEOUT"
+    assert result.error.retryable
+    assert result.error.details == {"fake": True}

@@ -16,6 +16,7 @@ from backend.database.orm import (
     CheckpointRecordORM,
     ExecutionEventORM,
     MemoryRevisionORM,
+    ProviderOperationORM,
     StepRunORM,
     WorkflowDefinitionORM,
     WorkflowRunORM,
@@ -27,6 +28,7 @@ from backend.persistence.ports import (
     CheckpointRepository,
     DuplicateEntityError,
     MemoryRepository,
+    ProviderOperationRepository,
     StaleStateError,
     UnitOfWork,
     WorkflowRepository,
@@ -38,6 +40,7 @@ from .repositories import (
     SQLAlchemyCheckpointRepository,
     SQLAlchemyExecutionEventStore,
     SQLAlchemyMemoryRepository,
+    SQLAlchemyProviderOperationRepository,
     SQLAlchemyWorkflowRepository,
 )
 
@@ -50,6 +53,7 @@ _STALE_CONSTRAINTS = {
     "uq_checkpoint_records_boundary_identity",
     "uq_checkpoints_run_sequence",
     "uq_execution_events_run_sequence",
+    "pk_provider_operations",
 }
 
 
@@ -65,6 +69,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._artifacts = SQLAlchemyArtifactRepository(self.session)
         self._approvals = SQLAlchemyApprovalRepository(self.session)
         self._events = SQLAlchemyExecutionEventStore(self.session)
+        self._provider_operations = SQLAlchemyProviderOperationRepository(self.session)
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -89,6 +94,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     @property
     def events(self) -> ExecutionEventStore:
         return self._events
+
+    @property
+    def provider_operations(self) -> ProviderOperationRepository:
+        return self._provider_operations
 
     def commit(self) -> None:
         try:
@@ -136,6 +145,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(WorkflowRunORM)
         self._flush_type(AgentSessionORM)
         self._flush_type(StepRunORM)
+        self._flush_type(ProviderOperationORM)
 
         checkpoints = sorted(
             self._pending_or_dirty(CheckpointORM),

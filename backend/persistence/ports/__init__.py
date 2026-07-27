@@ -5,6 +5,7 @@ from .artifact_repository import ArtifactRepository
 from .checkpoint_repository import CheckpointRepository
 from .errors import DuplicateEntityError, PersistenceError, StaleStateError
 from .memory_repository import MemoryRepository
+from .provider_operation_repository import ProviderOperationRepository
 from .unit_of_work import UnitOfWork
 from .workflow_repository import WorkflowRepository
 
@@ -15,6 +16,7 @@ __all__ = [
     "DuplicateEntityError",
     "MemoryRepository",
     "PersistenceError",
+    "ProviderOperationRepository",
     "StaleStateError",
     "UnitOfWork",
     "WorkflowRepository",

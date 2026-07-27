@@ -39,6 +39,10 @@ class SkillDecisionMismatchError(SkillSystemError):
     """Raised when executor arguments do not match the immutable StepReady decision."""
 
 
+class SkillCapabilityDeniedError(SkillSystemError):
+    """Raised when a Skill requests a capability not granted by composition."""
+
+
 class SkillExecutionFailure(SkillSystemError):
     """A normalized failure deliberately reported by a skill implementation."""
 
