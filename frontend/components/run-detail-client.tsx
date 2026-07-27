@@ -8,6 +8,7 @@ import { EventTimeline } from "./event-timeline";
 import { PageHeader } from "./page-header";
 import { ErrorState, LoadingState } from "./query-state";
 import { RunStatusPanel } from "./run-status-panel";
+import { ResearchResults } from "./research-results";
 import { StepProgress } from "./step-progress";
 
 export function RunDetailClient({ runId }: { runId: string }) {
@@ -48,6 +49,13 @@ export function RunDetailClient({ runId }: { runId: string }) {
 
       {resume.isError ? <ErrorState title="Run could not continue" message={resume.error.message} /> : null}
       <RunStatusPanel run={run.data} />
+      <ResearchResults
+        runId={runId}
+        isResearchV2={
+          run.data.workflow_id === "guided-literature-review" &&
+          run.data.workflow_version === "2.0.0"
+        }
+      />
 
       <div className="detail-grid">
         <StepProgress steps={run.data.steps} />

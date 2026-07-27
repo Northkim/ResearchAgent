@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -141,9 +141,33 @@ class ProviderOperationService:
         repository: ProviderOperationRepository,
         *,
         evaluator: ProviderBudgetEvaluator | None = None,
+        commit_callback: Callable[[], None] | None = None,
     ) -> None:
         self.repository = repository
         self.evaluator = evaluator or ProviderBudgetEvaluator()
+        self._commit_callback = commit_callback
+
+    def commit_staged(self) -> None:
+        """Durably commit a provider lifecycle boundary when configured.
+
+        Research Skills receive this application service rather than a raw
+        UnitOfWork.  The composition root supplies the callback so reservation
+        and RUNNING state are durable before a provider adapter is invoked.
+        """
+
+        if self._commit_callback is None:
+            raise RuntimeError(
+                "ProviderOperationService has no durable commit callback"
+            )
+        self._commit_callback()
+
+    def list_for_run(
+        self,
+        *,
+        project_id: str,
+        workflow_run_id: str,
+    ) -> tuple[ProviderOperation, ...]:
+        return self.repository.list_for_run(project_id, workflow_run_id)
 
     def reserve(
         self,

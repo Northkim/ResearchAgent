@@ -18,7 +18,13 @@ from backend.application.errors import (
 )
 
 from .composition import ApplicationContainer
-from .routers import approvals_router, health_router, runs_router, workflows_router
+from .routers import (
+    approvals_router,
+    artifacts_router,
+    health_router,
+    runs_router,
+    workflows_router,
+)
 
 
 def create_app(container: ApplicationContainer | None = None) -> FastAPI:
@@ -39,6 +45,7 @@ def create_app(container: ApplicationContainer | None = None) -> FastAPI:
     application.include_router(runs_router)
     application.include_router(approvals_router)
     application.include_router(workflows_router)
+    application.include_router(artifacts_router)
 
     @application.exception_handler(ApplicationError)
     async def handle_application_error(

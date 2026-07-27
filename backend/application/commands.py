@@ -57,6 +57,17 @@ class CreateWorkflowRunCommand:
     inputs: Mapping[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True, kw_only=True)
+class CreateCatalogWorkflowRunCommand:
+    project_id: str
+    actor_user_id: str
+    idempotency_key: str
+    agent_profile_ref: str
+    workflow_id: str
+    workflow_version: str
+    inputs: Mapping[str, Any] = field(default_factory=dict)
+
+
 class ApprovalDecision(str, Enum):
     APPROVE = "APPROVE"
     REJECT = "REJECT"

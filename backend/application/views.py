@@ -12,7 +12,8 @@ from backend.domain.enums import (
     StepRunStatus,
     WorkflowRunStatus,
 )
-from backend.domain.models import ApprovalRequest
+from backend.domain.models import ApprovalRequest, ArtifactMetadata
+from backend.research.contracts import ProviderOperation
 from backend.domain.models import Workflow
 from backend.domain.services import ExecutionState
 from backend.execution_events import ExecutionEvent, ExecutionEventType, EventSeverity
@@ -275,4 +276,91 @@ class WorkflowDefinitionView:
                 )
                 for step in workflow.steps
             ),
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ArtifactView:
+    id: str
+    logical_name: str
+    version: int
+    kind: str
+    checksum: str
+    media_type: str
+    size: int
+    producer_run_id: str | None
+    producer_step_run_id: str | None
+    metadata: dict[str, Any]
+    created_at: datetime
+
+    @classmethod
+    def from_artifact(cls, artifact: ArtifactMetadata) -> ArtifactView:
+        return cls(
+            id=artifact.id,
+            logical_name=artifact.logical_name,
+            version=artifact.version,
+            kind=artifact.kind,
+            checksum=artifact.checksum,
+            media_type=artifact.media_type,
+            size=artifact.size,
+            producer_run_id=artifact.producer_run_id,
+            producer_step_run_id=artifact.producer_step_run_id,
+            metadata=_plain(artifact.metadata),
+            created_at=artifact.created_at,
+        )
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ArtifactContentView:
+    artifact: ArtifactView
+    content: bytes
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ProviderOperationView:
+    id: str
+    logical_step_id: str
+    provider_category: str
+    operation_kind: str
+    provider_identity: str
+    adapter_version: str
+    model_or_endpoint: str
+    status: str
+    settlement_state: str
+    request_count: int
+    input_tokens: int | None
+    output_tokens: int | None
+    estimated_cost_minor_units: int | None
+    cost_currency: str | None
+    failure_category: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+    @classmethod
+    def from_operation(cls, operation: ProviderOperation) -> ProviderOperationView:
+        usage = operation.actual_usage
+        return cls(
+            id=operation.id,
+            logical_step_id=operation.logical_step_id,
+            provider_category=operation.provider_category.value,
+            operation_kind=operation.operation_kind.value,
+            provider_identity=operation.provider_identity,
+            adapter_version=operation.adapter_version,
+            model_or_endpoint=operation.model_or_endpoint,
+            status=operation.status.value,
+            settlement_state=operation.settlement_state.value,
+            request_count=usage.request_count if usage else 0,
+            input_tokens=usage.input_tokens if usage else None,
+            output_tokens=usage.output_tokens if usage else None,
+            estimated_cost_minor_units=(
+                usage.estimated_cost_minor_units if usage else None
+            ),
+            cost_currency=usage.cost_currency if usage else None,
+            failure_category=(
+                operation.failure_category.value
+                if operation.failure_category is not None
+                else None
+            ),
+            created_at=operation.created_at,
+            finished_at=operation.finished_at,
         )

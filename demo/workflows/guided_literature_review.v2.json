@@ -1,0 +1,246 @@
+{
+  "id": "guided-literature-review",
+  "version": "2.0.0",
+  "name": "Guided Literature Review v2 (deterministic synthetic)",
+  "schema_version": "reagent/v1alpha1",
+  "input_schema": {
+    "topic": {
+      "type": "string",
+      "required": true,
+      "description": "Research topic for the deterministic synthetic review."
+    },
+    "year_from": {
+      "type": "integer",
+      "required": true,
+      "default": 2020
+    },
+    "year_to": {
+      "type": "integer",
+      "required": true,
+      "default": 2026
+    },
+    "max_papers": {
+      "type": "integer",
+      "required": true,
+      "default": 3,
+      "minimum": 3,
+      "maximum": 8
+    },
+    "workflow_hash": {
+      "type": "string",
+      "required": true,
+      "internal": true
+    }
+  },
+  "steps": [
+    {
+      "id": "validate_query",
+      "kind": "skill",
+      "needs": [],
+      "uses": "research.validate_research_query@1.0.0",
+      "input_mapping": {
+        "topic": "${inputs.topic}",
+        "year_from": "${inputs.year_from}",
+        "year_to": "${inputs.year_to}",
+        "max_papers": "${inputs.max_papers}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "search_papers",
+      "kind": "skill",
+      "needs": ["validate_query"],
+      "uses": "research.search_papers@1.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}"
+      },
+      "timeout_seconds": 60,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "normalize_and_deduplicate",
+      "kind": "skill",
+      "needs": ["search_papers"],
+      "uses": "research.normalize_paper_metadata@1.0.0",
+      "input_mapping": {
+        "papers": "${nodes.search_papers.outputs.papers}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "rank_and_select",
+      "kind": "skill",
+      "needs": ["normalize_and_deduplicate", "validate_query"],
+      "uses": "research.rank_papers@1.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "papers": "${nodes.normalize_and_deduplicate.outputs.papers}",
+        "max_papers": "${inputs.max_papers}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "approve_sources",
+      "kind": "approval",
+      "needs": ["rank_and_select", "validate_query"],
+      "uses": null,
+      "input_mapping": {
+        "query_hash": "${nodes.validate_query.outputs.query_hash}",
+        "selected_paper_ids": "${nodes.rank_and_select.outputs.selected_paper_ids}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "selected_papers_artifact": "${nodes.rank_and_select.outputs.selected_papers_artifact}",
+        "ranker_version": "${nodes.rank_and_select.outputs.ranker_version}",
+        "approval_preview": "${nodes.rank_and_select.outputs.approval_preview}",
+        "source_scope": "abstract_only"
+      },
+      "timeout_seconds": 86400,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": "project_reviewer"
+    },
+    {
+      "id": "retrieve_source_content",
+      "kind": "skill",
+      "needs": ["approve_sources", "rank_and_select"],
+      "uses": "research.retrieve_source_content@1.0.0",
+      "input_mapping": {
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "selected_paper_ids": "${nodes.rank_and_select.outputs.selected_paper_ids}",
+        "selected_papers_checksum": "${nodes.rank_and_select.outputs.selected_papers_checksum}"
+      },
+      "timeout_seconds": 60,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "summarize_sources",
+      "kind": "skill",
+      "needs": ["retrieve_source_content", "rank_and_select"],
+      "uses": "research.summarize_papers@1.0.0",
+      "input_mapping": {
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "source_contents": "${nodes.retrieve_source_content.outputs.source_contents}"
+      },
+      "timeout_seconds": 90,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "synthesize_findings",
+      "kind": "skill",
+      "needs": ["summarize_sources"],
+      "uses": "research.synthesize_literature@1.0.0",
+      "input_mapping": {
+        "paper_summaries": "${nodes.summarize_sources.outputs.paper_summaries}",
+        "evidence_units": "${nodes.summarize_sources.outputs.evidence_units}"
+      },
+      "timeout_seconds": 60,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "generate_report",
+      "kind": "skill",
+      "needs": [
+        "validate_query",
+        "rank_and_select",
+        "summarize_sources",
+        "synthesize_findings"
+      ],
+      "uses": "research.generate_research_report@1.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "ranked_papers": "${nodes.rank_and_select.outputs.ranked_papers}",
+        "paper_summaries": "${nodes.summarize_sources.outputs.paper_summaries}",
+        "synthesis": "${nodes.synthesize_findings.outputs.synthesis}",
+        "grounded_claims": "${nodes.synthesize_findings.outputs.grounded_claims}"
+      },
+      "timeout_seconds": 60,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "persist_artifacts",
+      "kind": "skill",
+      "needs": [
+        "validate_query",
+        "normalize_and_deduplicate",
+        "rank_and_select",
+        "retrieve_source_content",
+        "summarize_sources",
+        "synthesize_findings",
+        "generate_report"
+      ],
+      "uses": "research.persist_research_artifacts@1.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "papers": "${nodes.normalize_and_deduplicate.outputs.papers}",
+        "ranked_papers": "${nodes.rank_and_select.outputs.ranked_papers}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "source_contents": "${nodes.retrieve_source_content.outputs.source_contents}",
+        "paper_summaries": "${nodes.summarize_sources.outputs.paper_summaries}",
+        "evidence_units": "${nodes.synthesize_findings.outputs.evidence_units}",
+        "grounded_claims": "${nodes.synthesize_findings.outputs.grounded_claims}",
+        "report": "${nodes.generate_report.outputs.report}",
+        "citations": "${nodes.generate_report.outputs.citations}",
+        "workflow_hash": "${inputs.workflow_hash}"
+      },
+      "timeout_seconds": 60,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    }
+  ],
+  "outputs": {
+    "report_artifact": "${nodes.persist_artifacts.outputs.report_artifact}",
+    "provenance_artifact": "${nodes.persist_artifacts.outputs.provenance_artifact}",
+    "usage_artifact": "${nodes.persist_artifacts.outputs.usage_artifact}",
+    "publication": "${nodes.persist_artifacts.outputs.publication}"
+  }
+}

@@ -15,6 +15,8 @@ from .queries import (
     WorkflowRunSummaryResponse,
 )
 from .runs import CreateRunRequest, WorkflowRunResponse
+from .research import ArtifactResponse, ProviderOperationResponse
+from .runs import CreateCatalogRunRequest
 
 __all__ = [
     "ApprovalDecisionResponse",
@@ -22,6 +24,9 @@ __all__ = [
     "ApprovalResponse",
     "ApproveRequest",
     "CreateRunRequest",
+    "CreateCatalogRunRequest",
+    "ArtifactResponse",
+    "ProviderOperationResponse",
     "ErrorResponse",
     "ExecutionEventResponse",
     "HealthResponse",

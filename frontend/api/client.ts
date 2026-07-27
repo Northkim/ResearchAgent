@@ -4,8 +4,10 @@ import type {
   ApprovalDecisionResponse,
   ApprovalPage,
   ApprovalStatus,
-  CreateRunRequest,
+  Artifact,
+  CreateCatalogRunRequest,
   ExecutionEvent,
+  ProviderOperation,
   WorkflowDefinition,
   WorkflowRun,
   WorkflowRunPage,
@@ -52,6 +54,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+async function requestText(path: string): Promise<string> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { Accept: "text/markdown, application/json" },
+  });
+  if (!response.ok) {
+    throw new ApiError(
+      `Artifact content request failed with ${response.status}`,
+      response.status,
+      "ARTIFACT_CONTENT_FAILED",
+    );
+  }
+  return response.text();
+}
+
 function queryString(values: Record<string, string | number | undefined>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(values)) {
@@ -84,8 +100,8 @@ export const apiClient = {
     return request(`/runs/${encodeURIComponent(runId)}`);
   },
 
-  createRun(payload: CreateRunRequest): Promise<WorkflowRun> {
-    return request("/runs", {
+  createCatalogRun(payload: CreateCatalogRunRequest): Promise<WorkflowRun> {
+    return request("/runs/from-catalog", {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -99,6 +115,26 @@ export const apiClient = {
 
   listEvents(runId: string): Promise<ExecutionEvent[]> {
     return request(`/runs/${encodeURIComponent(runId)}/events`);
+  },
+
+  listArtifacts(runId: string): Promise<Artifact[]> {
+    return request(`/runs/${encodeURIComponent(runId)}/artifacts`);
+  },
+
+  getArtifact(artifactId: string): Promise<Artifact> {
+    return request(`/artifacts/${encodeURIComponent(artifactId)}`);
+  },
+
+  readArtifactContent(artifactId: string): Promise<string> {
+    return requestText(`/artifacts/${encodeURIComponent(artifactId)}/content`);
+  },
+
+  listProviderUsage(runId: string): Promise<ProviderOperation[]> {
+    return request(`/runs/${encodeURIComponent(runId)}/provider-usage`);
+  },
+
+  artifactContentUrl(artifactId: string): string {
+    return `${API_BASE}/artifacts/${encodeURIComponent(artifactId)}/content`;
   },
 
   listApprovals(options: {

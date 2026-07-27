@@ -1,9 +1,9 @@
 # ReAgent reproducible demo
 
-This guide runs the deterministic supervised research workflow through the real
+This guide runs the deterministic supervised research workflows through the real
 Next.js UI, FastAPI application, Agent Runtime, SQL Unit of Work, and
-PostgreSQL adapter. No LLM, external literature service, Redis, or worker queue
-is used.
+PostgreSQL adapter and local artifact storage. No real LLM, external literature
+service, credential, Redis, or worker queue is used.
 
 ## 1. Prerequisites
 
@@ -40,6 +40,7 @@ The example value below is a placeholder; use a local development credential:
 
 ```bash
 export REAGENT_DATABASE_URL='postgresql+psycopg://USER:PASSWORD@127.0.0.1:5432/reagent'
+export REAGENT_ARTIFACT_ROOT='runtime_data/artifacts'
 ```
 
 Apply the schema and publish the immutable demo workflow:
@@ -112,6 +113,7 @@ The default endpoints are:
 | `REAGENT_DATABASE_URL` | Backend, migration, and seed SQLAlchemy URL |
 | `REAGENT_TEST_DATABASE_URL` | Isolated Compose integration-test URL |
 | `REAGENT_API_URL` | Server-side Next.js rewrite destination |
+| `REAGENT_ARTIFACT_ROOT` | Immutable local artifact root; default `runtime_data/artifacts` |
 | `REAGENT_POSTGRES_PORT` | Optional host PostgreSQL port override |
 | `REAGENT_BACKEND_PORT` | Optional host FastAPI port override |
 | `REAGENT_FRONTEND_PORT` | Optional host Next.js port override |
@@ -138,8 +140,15 @@ every startup. Alembic is the schema authority; the application does not call
 
 ## 6. Demo seeding
 
-The fixture is `demo/workflows/guided_literature_review.v1.json`. Publish it
-locally with:
+The seed publishes both immutable fixtures:
+
+- `guided-literature-review@1.0.0` from
+  `demo/workflows/guided_literature_review.v1.json`
+- `guided-literature-review@2.0.0` from
+  `demo/workflows/guided_literature_review.v2.json`, canonical hash
+  `af3dd76540cfb7b08a73a7fbffda76679375a8170f0099611016c57d4c9d856a`
+
+Publish them locally with:
 
 ```bash
 conda run --no-capture-output -n reagent-dev python -m backend.demo.seed
@@ -173,6 +182,26 @@ make demo-reset         # stop and delete the demo PostgreSQL volume
 All targets are fail-fast and return the underlying non-zero exit status.
 
 ## 8. Manual walkthrough
+
+### Guided Literature Review v2
+
+1. Select **Guided Literature Review v2 (deterministic synthetic)** `2.0.0`.
+2. Enter topic, year range, and `max_papers >= 3`; create and execute.
+3. At **Waiting for approval**, confirm `papers.json` and
+   `selected_papers.json` already exist.
+4. Review the three synthetic titles, authors, years, venues, abstracts,
+   relevance scores, ranking explanations, provider identities, and the
+   abstract-only notice.
+5. Approve the exact set. The fingerprint binds project/run/workflow/step,
+   query hash, paper IDs, selected artifact checksum, ranker, Skills, role and
+   expiry; mutation or corruption fails closed.
+6. Confirm completion, `[P1]`–`[P3]`, eight artifacts, nine settled fake
+   provider operations, zero cost, and reload persistence.
+
+All content is invented; `example.invalid` citation URLs are synthetic
+identifiers and are not fetched. No source is full text.
+
+### Legacy v1 walkthrough
 
 1. Open `/workflows` and select **Guided literature review** version `1.0.0`.
 2. Confirm the query `persistent research agents`, then choose **Create &
@@ -234,6 +263,15 @@ video on failure and attaches screenshots of the workflow catalog, waiting run,
 approval center, completed persisted run, and mobile dashboard to the HTML
 report. Open `frontend/playwright-report/index.html` after a run.
 
+Local 9A-2 acceptance must use an isolated database, never `ProjectDB`:
+
+```bash
+export REAGENT_9A2_DATABASE_URL='postgresql+psycopg:///reagent_9a2_acceptance'
+export REAGENT_9A2_ARTIFACT_ROOT='/private/tmp/reagent_9a2_artifacts'
+conda run --no-capture-output -n reagent-dev pytest -q \
+  backend/integration/tests/test_http_postgresql_research_v2.py
+```
+
 To use an isolated local PostgreSQL database instead of Compose for the real
 backend suite, explicitly opt into destructive reset of that database:
 
@@ -261,9 +299,19 @@ make demo-reset
 make demo-start
 ```
 
-The second command recreates the database, migrates it, and seeds exactly one
-copy of the frozen workflow. Browser reports, traces, `.next`, and other build
-artifacts are ignored by Git.
+The second command recreates the database, migrates it, and seeds the frozen
+workflow catalog. Browser reports, traces, `.next`, `runtime_data/`, and other
+generated artifacts are ignored by Git.
+
+Filesystem and PostgreSQL cannot share one transaction, so a failed DB commit
+can leave immutable orphan bytes. Inspect before cleanup; ReAgent does not
+silently delete unknown files. Optional cleanup for explicitly disposable
+acceptance resources is:
+
+```bash
+dropdb reagent_9a2_acceptance
+rm -rf /private/tmp/reagent_9a2_artifacts
+```
 
 For a dedicated local test database only, a full schema reset is:
 
@@ -299,7 +347,8 @@ conda run --no-capture-output -n reagent-dev python -m backend.demo.seed
   durable queue, worker lease, clock scheduler, cancellation channel, or Redis.
 - Approval expiry is enforced on a decision attempt, not by a background job.
 - Research results and summaries are deterministic fake Skill outputs. There is
-  no real LLM, literature provider, citation retrieval, or artifact byte store.
+  no real LLM, literature provider, or live citation retrieval. Artifact bytes
+  use local filesystem storage only; remote storage and retention remain future.
 - Status updates use polling rather than server-sent events or WebSockets.
 - The browser suite currently targets one Chrome-compatible desktop engine plus
   a mobile-width layout assertion; it is not a cross-browser accessibility or

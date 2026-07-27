@@ -6,7 +6,7 @@ import { isActiveRun } from "@/lib/format";
 import type {
   Approval,
   ApprovalStatus,
-  CreateRunRequest,
+  CreateCatalogRunRequest,
   WorkflowRunStatus,
 } from "@/types/api";
 
@@ -63,8 +63,8 @@ export function useApprovals(status?: ApprovalStatus) {
 export function useCreateAndRun() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: CreateRunRequest) => {
-      const created = await apiClient.createRun(payload);
+    mutationFn: async (payload: CreateCatalogRunRequest) => {
+      const created = await apiClient.createCatalogRun(payload);
       return apiClient.resumeRun(created.id);
     },
     onSuccess: async (run) => {
@@ -78,6 +78,30 @@ export function useCreateAndRun() {
   });
 }
 
+export function useRunArtifacts(runId: string) {
+  return useQuery({
+    queryKey: queryKeys.artifacts(runId),
+    queryFn: () => apiClient.listArtifacts(runId),
+    refetchInterval: 3_000,
+  });
+}
+
+export function useArtifactContent(artifactId: string | undefined) {
+  return useQuery({
+    queryKey: queryKeys.artifactContent(artifactId ?? "none"),
+    queryFn: () => apiClient.readArtifactContent(artifactId as string),
+    enabled: Boolean(artifactId),
+  });
+}
+
+export function useProviderUsage(runId: string) {
+  return useQuery({
+    queryKey: queryKeys.providerUsage(runId),
+    queryFn: () => apiClient.listProviderUsage(runId),
+    refetchInterval: 3_000,
+  });
+}
+
 export function useResumeRun(runId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -88,6 +112,8 @@ export function useResumeRun(runId: string) {
         queryClient.invalidateQueries({ queryKey: queryKeys.runs }),
         queryClient.invalidateQueries({ queryKey: queryKeys.events(run.id) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.approvals }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(run.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.providerUsage(run.id) }),
       ]);
     },
   });
@@ -128,6 +154,12 @@ export function useApprovalDecision() {
         queryClient.invalidateQueries({ queryKey: queryKeys.runs }),
         queryClient.invalidateQueries({
           queryKey: queryKeys.events(result.workflow_run.id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.artifacts(result.workflow_run.id),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.providerUsage(result.workflow_run.id),
         }),
       ]);
     },

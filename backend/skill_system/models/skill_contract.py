@@ -83,6 +83,7 @@ class SkillExecutionContext:
     step_run_id: str
     attempt: int
     capabilities: SkillCapabilities = field(default_factory=SkillCapabilities)
+    project_id: str = ""
 
 
 class SkillImplementation(Protocol):

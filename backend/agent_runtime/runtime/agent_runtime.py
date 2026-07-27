@@ -12,7 +12,7 @@ from backend.agent_runtime._immutability import thaw_json
 from backend.agent_runtime.context import ExecutionContextBuilder
 from backend.domain.enums import StepRunStatus, WorkflowRunStatus
 from backend.domain.exceptions import ExecutionNotResumableError
-from backend.domain.models import ApprovalRequest, Checkpoint
+from backend.domain.models import ApprovalRequest, ArtifactMetadata, Checkpoint
 from backend.domain.models._utils import utc_now
 from backend.domain.services import ExecutionState
 from backend.execution_events import (
@@ -442,9 +442,31 @@ class AgentRuntime:
             decision,
             SkillReference.parse(decision.skill_ref),
             context.resolved_inputs,
+            project_id=execution.workflow_run.project_id,
         )
 
         if result.success:
+            for emitted in result.emitted_artifacts:
+                self.uow.artifacts.save(
+                    ArtifactMetadata(
+                        id=emitted.artifact_id,
+                        project_id=execution.workflow_run.project_id,
+                        logical_artifact_id=(
+                            emitted.logical_artifact_id or emitted.artifact_id
+                        ),
+                        logical_name=emitted.logical_name,
+                        version=emitted.version,
+                        kind=emitted.kind,
+                        storage_ref=emitted.storage_key,
+                        checksum=emitted.checksum,
+                        media_type=emitted.media_type,
+                        size=emitted.size,
+                        producer_run_id=execution.workflow_run.id,
+                        producer_step_run_id=decision.step_run_id,
+                        metadata=emitted.metadata,
+                        created_at=self._clock(),
+                    )
+                )
             checkpoint = self.workflow.domain.update_step_state(
                 execution,
                 step_id=decision.step_id,
@@ -462,6 +484,10 @@ class AgentRuntime:
                     "skill_ref": decision.skill_ref,
                     "success": True,
                     "output_fields": sorted(result.output_data),
+                    "artifact_ids": [
+                        item.artifact_id for item in result.emitted_artifacts
+                    ],
+                    "provider_usage_count": len(result.provider_usage),
                 },
                 step_run_id=decision.step_run_id,
             )
@@ -505,6 +531,7 @@ class AgentRuntime:
                 "success": False,
                 "error_code": result.error.code,
                 "retryable": result.error.retryable,
+                "error_details": result.error.details,
             },
             severity=EventSeverity.WARNING
             if result.error.retryable

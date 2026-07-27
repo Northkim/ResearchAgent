@@ -7,7 +7,9 @@ const EXPECTED_SUMMARY =
 
 test("completes and reloads the supervised literature demo", async ({ page }, testInfo) => {
   await page.goto("/workflows");
-  await expect(page.getByRole("heading", { name: WORKFLOW_NAME })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: WORKFLOW_NAME, exact: true }),
+  ).toBeVisible();
 
   const workflow = page.getByRole("group", {
     name: `${WORKFLOW_NAME} version 1.0.0`,
@@ -42,19 +44,22 @@ test("completes and reloads the supervised literature demo", async ({ page }, te
 
   await page.getByRole("link", { name: "Review approval" }).click();
   await expect(page).toHaveURL(/\/approvals$/);
+  const approvalCard = page.locator("article.approval-card").filter({
+    has: page.locator(`a[href="${new URL(runUrl).pathname}"]`),
+  });
   await expect(
-    page.getByRole("heading", {
+    approvalCard.getByRole("heading", {
       name: "Approval required for workflow step approve_sources",
     }),
   ).toBeVisible();
-  await page.getByRole("textbox", { name: /decision note/i }).fill(
+  await approvalCard.getByRole("textbox", { name: /decision note/i }).fill(
     "Deterministic sources reviewed for the demo.",
   );
   await testInfo.attach("approval-center-pending", {
     body: await page.screenshot({ fullPage: true }),
     contentType: "image/png",
   });
-  await page.getByRole("button", { name: "Approve & continue" }).click();
+  await approvalCard.getByRole("button", { name: "Approve & continue" }).click();
   await expect(page.getByRole("status")).toContainText("completed");
 
   await page.goto(runUrl);

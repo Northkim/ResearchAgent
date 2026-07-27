@@ -57,6 +57,9 @@ export interface WorkflowInputDefinition {
   required?: boolean;
   description?: string;
   default?: unknown;
+  internal?: boolean;
+  minimum?: number;
+  maximum?: number;
 }
 
 export interface WorkflowRunSummary {
@@ -161,6 +164,50 @@ export interface CreateRunRequest {
   agent_profile_ref: string;
   workflow: WorkflowDefinition;
   inputs: Record<string, unknown>;
+}
+
+export interface CreateCatalogRunRequest {
+  project_id: string;
+  actor_user_id: string;
+  idempotency_key: string;
+  agent_profile_ref: string;
+  workflow_id: string;
+  workflow_version: string;
+  inputs: Record<string, unknown>;
+}
+
+export interface Artifact {
+  id: string;
+  logical_name: string;
+  version: number;
+  kind: string;
+  checksum: string;
+  media_type: string;
+  size: number;
+  producer_run_id: string | null;
+  producer_step_run_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ProviderOperation {
+  id: string;
+  logical_step_id: string;
+  provider_category: string;
+  operation_kind: string;
+  provider_identity: string;
+  adapter_version: string;
+  model_or_endpoint: string;
+  status: string;
+  settlement_state: string;
+  request_count: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  estimated_cost_minor_units: number | null;
+  cost_currency: string | null;
+  failure_category: string | null;
+  created_at: string;
+  finished_at: string | null;
 }
 
 export interface ApprovalDecisionRequest {

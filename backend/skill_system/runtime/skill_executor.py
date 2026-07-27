@@ -40,6 +40,8 @@ class SkillExecutor:
         decision: StepReady,
         skill_reference: SkillReference,
         resolved_inputs: Mapping[str, Any],
+        *,
+        project_id: str = "",
     ) -> SkillResult:
         decision_reference = SkillReference.parse(decision.skill_ref)
         if decision_reference != skill_reference:
@@ -81,6 +83,7 @@ class SkillExecutor:
             else SkillCapabilities()
         ).restricted_to(registered.definition.metadata.capabilities)
         context = SkillExecutionContext(
+            project_id=project_id,
             workflow_run_id=decision.workflow_run_id,
             workflow_id=decision.workflow_id,
             workflow_version=decision.workflow_version,

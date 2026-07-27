@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { FormEvent, useMemo, useRef, useState } from "react";
 
 import { useCreateAndRun, useWorkflows } from "@/api/hooks";
-import type { CreateRunRequest, WorkflowDefinition } from "@/types/api";
+import type { CreateCatalogRunRequest, WorkflowDefinition } from "@/types/api";
 
 import { PageHeader } from "./page-header";
 import { EmptyState, ErrorState, LoadingState } from "./query-state";
@@ -18,7 +18,7 @@ function idempotencyKey(): string {
 
 function initialInputs(workflow: WorkflowDefinition): Record<string, string | boolean> {
   return Object.fromEntries(
-    Object.entries(workflow.input_schema).map(([name, definition]) => [
+    Object.entries(workflow.input_schema).filter(([, definition]) => !definition.internal).map(([name, definition]) => [
       name,
       definition.default === undefined ? (definition.type === "boolean" ? false : "") : String(definition.default),
     ]),
@@ -30,7 +30,7 @@ function normalizeInputs(
   values: Record<string, string | boolean>,
 ): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(workflow.input_schema).map(([name, definition]) => {
+    Object.entries(workflow.input_schema).filter(([, definition]) => !definition.internal).map(([name, definition]) => {
       const value = values[name];
       if (definition.type === "boolean") return [name, Boolean(value)];
       if (definition.type === "integer") return [name, Number.parseInt(String(value), 10)];
@@ -56,7 +56,7 @@ export function WorkflowCatalog() {
 
   const selectedKey = selected ? `${selected.id}@${selected.version}` : undefined;
   const inputEntries = useMemo(
-    () => (selected ? Object.entries(selected.input_schema) : []),
+    () => (selected ? Object.entries(selected.input_schema).filter(([, definition]) => !definition.internal) : []),
     [selected],
   );
 
@@ -72,12 +72,15 @@ export function WorkflowCatalog() {
     submitting.current = true;
     setFormError(null);
     try {
-      const payload: CreateRunRequest = {
+      const payload: CreateCatalogRunRequest = {
         project_id: projectId,
         actor_user_id: actorId,
         idempotency_key: idempotencyKey(),
-        agent_profile_ref: "deterministic-agent@1.0.0",
-        workflow: selected,
+        agent_profile_ref: selected.version === "2.0.0"
+          ? "deterministic-research-agent@2.0.0"
+          : "deterministic-agent@1.0.0",
+        workflow_id: selected.id,
+        workflow_version: selected.version,
         inputs: normalizeInputs(selected, inputValues),
       };
       const run = await createAndRun.mutateAsync(payload);
@@ -173,6 +176,8 @@ export function WorkflowCatalog() {
                       setInputValues((current) => ({ ...current, [name]: event.target.value }))
                     }
                     required={definition.required !== false}
+                    min={definition.minimum}
+                    max={definition.maximum}
                   />
                 )}
               </label>

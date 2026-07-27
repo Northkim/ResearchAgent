@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-07-21
+Last updated: 2026-07-27
 
 ## Project authority
 
@@ -258,6 +258,49 @@ all PostgreSQL and isolated HTTP-test switches enabled, the full backend result
 is `123 passed, 0 skipped`; the dedicated database remains at Alembic head for
 owner inspection.
 
+### Phase 9A-2: Deterministic Fake-Provider Guided Literature Review v2
+
+Implemented and accepted on 2026-07-27:
+
+- immutable `guided-literature-review@2.0.0`, canonical definition hash
+  `af3dd76540cfb7b08a73a7fbffda76679375a8170f0099611016c57d4c9d856a`,
+  with ten auditable steps from query validation through publication;
+- nine exact `research.*@1.0.0` Skills using only injected fake Paper Search,
+  Source Content, LLM, ProviderOperation, and ArtifactContentStorage
+  capabilities;
+- three synthetic selected papers, exact fingerprinted approval of paper IDs
+  plus immutable `selected_papers.json` checksum, and an application integrity
+  check before approval resolution;
+- durable zero-cost ProviderOperation reservation before every fake call,
+  RUNNING transition before invocation, and settled usage after invocation;
+- eight immutable artifacts: `papers.json`, `selected_papers.json`,
+  `source_content.json`, `paper_summaries.json`, `evidence.json`, `report.md`,
+  `provenance.json`, and `usage.json`;
+- fail-closed provenance linking four GroundedClaims to three EvidenceUnits,
+  abstract-only SourceContent, three approved PaperRecords, three citations,
+  report labels `[P1]`–`[P3]`, version evidence, artifact checksums, and nine
+  settled ProviderOperations;
+- catalog-pinned run creation, artifact/content and sanitized provider-usage
+  APIs, plus frontend input, candidate review, report/citation/artifact/usage,
+  reload, and mobile-width coverage.
+
+No migration was required; Alembic head remains `20260721_0002`. No real
+provider, model, price, credential, SDK, network call, worker, authentication,
+Redis, S3, or Docker remediation was added. Frozen ownership remained intact,
+ADR 0003 remains governing, and no new ADR was needed.
+
+Acceptance used only `reagent_9a2_acceptance` and isolated roots under
+`/private/tmp`; `ProjectDB` and `reagent_9a1_acceptance` were not modified.
+Final backend result with all PostgreSQL switches enabled: `130 passed, 0
+skipped`. Frontend: `5 passed`, lint success, production build success.
+Playwright real-stack result: `2 passed`, including the complete v2 path.
+
+The next milestone is supervised selection and verification of the first real
+Paper Search Provider boundary. It must not add a real LLM yet. Entry requires
+owner decisions on primary/fallback provider, credentials, abstract policy,
+recorded fixtures, request/cost caps, attribution and retention, followed by
+current official-provider documentation review.
+
 ## Domain contract refinements in Phase 2
 
 - `WorkflowStep` now carries `retry_backoff`, `retry_initial_seconds`, and `retry_max_seconds` in addition to `max_attempts`.
@@ -317,13 +360,33 @@ shared generated API type changed.
 - ADR 0003 is accepted only within its recorded additive scope. No real paper provider, LLM provider/model, price, API key, live network mode, S3 backend, or retention policy has been selected.
 - The dedicated Phase 9A-1.5 database is intentionally retained at head for inspection; it is test-only and must not be mistaken for a production database.
 
-## Next recommended phase
+## Phase 9B-0: Paper Search Provider evidence review
 
-Implement exactly the complete deterministic fake-provider Guided Literature
-Review v2 vertical slice: publish the immutable v2 workflow, add provider-
-independent research Skills using the new capability/operation/artifact
-substrate, persist all planned artifacts, and add artifact application/API and
-minimal report/approval UI behavior. Keep all real providers, credentials,
-network calls, production workers, authentication, and Docker remediation out
-of that milestone. Phase 9A-1.5 has satisfied its migration and shared SQL
-provider-operation entry gate on an isolated PostgreSQL database.
+Documentation-only evidence review completed on 2026-07-27 with
+`PASS_WITH_WARNINGS`. Current official OpenAlex, Semantic Scholar Academic Graph
+and Crossref REST contracts, independent coverage/metadata/search research,
+PRISMA-S, PaperQA2, OpenScholar, and the teacher-recommended Academic Research
+Skills repositories were reviewed. No provider API was called and no runtime,
+dependency, database, migration or application source was changed by Phase 9B-0.
+
+ADR 0004 (`.agent_read/decisions/0004-first-paper-search-provider.md`) is
+**Proposed**, not Accepted. Its evidence-backed target hypothesis is:
+
+```text
+OpenAlex discovery
+→ Semantic Scholar selected/ambiguous verification and enrichment
+→ Crossref agency-aware DOI fallback
+```
+
+No provider has been owner-selected. Unresolved owner decisions include provider
+roles, API-key availability, maximum live requests, zero/non-zero monetary
+budget, abstract/raw-response/live-artifact retention, fixture policy,
+attribution placement, Crossref polite-pool contact, whether real metadata may
+persist in an isolated acceptance database, evaluation-set size/thresholds,
+abstract-only scope, and verification scope.
+
+The next permitted milestone is **owner review to approve or revise ADR 0004**.
+Do not implement a real adapter until that decision and its blocking policies
+are resolved. Even after approval, the first implementation should replace only
+the Paper Search boundary (proposed OpenAlex); no real LLM or full-text provider
+is permitted.

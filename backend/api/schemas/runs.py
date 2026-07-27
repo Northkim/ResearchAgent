@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from backend.application.commands import (
+    CreateCatalogWorkflowRunCommand,
     CreateWorkflowRunCommand,
     StepSpec,
     WorkflowSpec,
@@ -85,6 +86,27 @@ class CreateRunRequest(StrictDTO):
             idempotency_key=self.idempotency_key,
             agent_profile_ref=self.agent_profile_ref,
             workflow=self.workflow.to_spec(),
+            inputs=self.inputs,
+        )
+
+
+class CreateCatalogRunRequest(StrictDTO):
+    project_id: str = Field(min_length=1)
+    actor_user_id: str = Field(min_length=1)
+    idempotency_key: str = Field(min_length=1)
+    agent_profile_ref: str = Field(min_length=1)
+    workflow_id: str = Field(min_length=1)
+    workflow_version: str = Field(min_length=1)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+
+    def to_command(self) -> CreateCatalogWorkflowRunCommand:
+        return CreateCatalogWorkflowRunCommand(
+            project_id=self.project_id,
+            actor_user_id=self.actor_user_id,
+            idempotency_key=self.idempotency_key,
+            agent_profile_ref=self.agent_profile_ref,
+            workflow_id=self.workflow_id,
+            workflow_version=self.workflow_version,
             inputs=self.inputs,
         )
 

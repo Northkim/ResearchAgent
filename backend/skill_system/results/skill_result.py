@@ -19,6 +19,10 @@ class EmittedArtifactMetadata:
     media_type: str
     size: int
     logical_name: str
+    logical_artifact_id: str = ""
+    version: int = 1
+    kind: str = "research"
+    metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -45,6 +49,13 @@ class EmittedArtifactMetadata:
             raise ValueError("EmittedArtifactMetadata.checksum must be SHA-256")
         if self.size < 0:
             raise ValueError("EmittedArtifactMetadata.size cannot be negative")
+        if self.version <= 0:
+            raise ValueError("EmittedArtifactMetadata.version must be positive")
+        object.__setattr__(
+            self,
+            "metadata",
+            freeze_json(self.metadata, path="artifact.metadata"),
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +65,10 @@ class EmittedArtifactMetadata:
             "media_type": self.media_type,
             "size": self.size,
             "logical_name": self.logical_name,
+            "logical_artifact_id": self.logical_artifact_id or self.artifact_id,
+            "version": self.version,
+            "kind": self.kind,
+            "metadata": thaw_json(self.metadata),
         }
 
 
