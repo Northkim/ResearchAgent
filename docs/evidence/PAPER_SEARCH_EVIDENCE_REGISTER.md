@@ -224,7 +224,7 @@ mechanism.
 
 Status: **Accepted for OpenAlex-only Phase 9B-1 scope**
 Evidence classes: A / B / C / D  
-Last verified: 2026-07-27  
+Last verified: 2026-07-28
 Candidate decision: OpenAlex 作为 ReAgent V1 primary discovery；第一实施里程碑只替换 `PaperSearchProvider` boundary。
 
 Sources:
@@ -499,9 +499,9 @@ Owner approval required: **Yes**.
 
 ## Decision PE-001: Evaluation before promotion
 
-Status: **Proposed**  
-Evidence classes: B / C / D  
-Last verified: 2026-07-27  
+Status: **Proposed**
+Evidence classes: B / C / D
+Last verified: 2026-07-28
 Candidate decision: execute `SEARCH_EVALUATION_PROTOCOL.md` comparing OpenAlex-only and layered architecture before production default.
 
 Sources:
@@ -517,6 +517,43 @@ Alternatives: 6-topic smoke set; 30-topic stronger set.
 Risk: small-set variance and pool incompleteness.  
 Revisit trigger: new domain, ranking change, provider contract/adapter version change.  
 Owner approval required: **Yes** for set size and thresholds.
+
+Phase 9B-2A implementation note（2026-07-28）：evaluation harness、12-topic
+engineering set、human review import/export、adjudication validation、pure
+metrics、report generator 和 retention policy 已实现并通过 synthetic
+network-free tests。**没有执行 live pilot、没有生成 human labels、没有完成
+PE-001 evaluation，也没有实现 layered architecture。** 因此 PE-001 仍为
+Proposed；owner 仍需批准 reviewers、retention 和 thresholds。
+
+## Decision PL-002: OpenAlex evaluation retention
+
+Status: **Proposed**
+Evidence classes: A / B / D
+Last verified: 2026-07-28
+Candidate decision: raw response/key never retained；normalized live pools and
+optional short abstract previews remain private/ignored；default 30-day pool
+review window and 14-day abstract-preview limit；pseudonymous judgments and
+no-abstract aggregate reports may be retained after owner review。
+
+Sources:
+1. OpenAlex Terms and CC0/pricing/citation sources already registered above
+   (Class A).
+2. PRISMA-S reporting evidence (Class B).
+3. `docs/evidence/OPENALEX_DATA_RETENTION_POLICY.md` (Class D policy).
+
+What the evidence supports: minimum-data collection、query/result accounting、
+provider attribution 和不把 dataset license 推断为第三方 abstract rights。
+What it does not support: legal certainty、universal retention duration 或公开
+redistribution rights。
+ReAgent inference: candidate pool 30 days、abstract preview 14 days、
+raw-response off、private checksum-chained ProviderOperation journal、explicit
+scoped cleanup。
+Alternatives: ephemeral-only；owner-approved longer private retention。
+Risk: protected-text retention、dynamic-index reproducibility loss、orphan
+filesystem bytes。
+Revisit trigger: owner/legal review、public/commercial distribution、provider
+term change、rights incident。
+Owner approval required: **Yes**。
 
 ## Failure policy summary
 

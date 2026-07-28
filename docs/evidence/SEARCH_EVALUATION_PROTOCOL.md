@@ -1,15 +1,39 @@
 # ReAgent Search Evaluation Protocol
 
-日期：2026-07-27；状态：**Proposed**。本协议评估 provider/architecture，
+日期：2026-07-28；状态：**Harness implemented / human evaluation pending**。本协议评估 provider/architecture，
 不评估真实 LLM，也不以截图作为证据。
+
+## Phase 9B-2A implementation status
+
+已实现 network-free infrastructure：immutable evaluation contracts、12-topic
+versioned engineering set、existing `PaperSearchProvider` +
+`ProviderOperationService` + `ArtifactContentStorage` candidate generator、
+evaluation-only append-only/checksum-chained ProviderOperation journal、JSON/CSV
+human review import/export、adjudication source-hash validation、
+deterministic metrics、report artifacts 和单一 module CLI：
+`python -m backend.research.evaluation`。
+
+Retrieval metrics are calculated independently for each topic. Summary
+Precision/nDCG values are medians of available per-topic values, and the report
+retains the per-topic results; candidates from different topics are never
+treated as one ranking.
+
+具体执行依据：
+
+- `OPENALEX_EVALUATION_TOPIC_SET.md`；
+- `OPENALEX_HUMAN_REVIEW_PROTOCOL.md`；
+- `OPENALEX_DATA_RETENTION_POLICY.md`。
+
+Phase 9B-2A 没有执行 live pilot、没有 human judgments，也没有比较 layered
+architecture。Semantic Scholar/Crossref 仍未授权或实现。
 
 ## Evaluation question
 
-比较至少：
+最终 provider promotion evaluation 应比较至少：
 
 1. **primary-only**：OpenAlex discovery；
-2. **layered**：同一 OpenAlex result 加 selected/ambiguous Semantic Scholar
-   verification 与 Crossref DOI fallback。
+2. **layered**：只有未来单独批准并实现后，才可对同一 OpenAlex result 加
+   selected/ambiguous verification/fallback。
 
 层次方案不会产生额外 discovery recall，除非未来批准 query expansion；
 本轮重点检验 identity、metadata、dedup、人工审查负担和 operational cost。
@@ -33,9 +57,13 @@ Topic selection:
 
 每个 topic 从两种 architecture 的 top-20 取 union，按 DOI/external IDs 做
 conservative clustering；去除 provider/score 标识后随机排序。两名 reviewer
-独立标注：
+独立使用下列 labels：
 
-- relevance: 0 irrelevant / 1 marginal / 2 relevant / 3 highly relevant；
+- `HIGHLY_RELEVANT`（gain 3）；
+- `RELEVANT`（gain 2）；
+- `PARTIALLY_RELEVANT`（gain 1）；
+- `NOT_RELEVANT`（gain 0）；
+- `CANNOT_JUDGE`（无 gain，绝不转成 0）；
 - identity cluster and version relation；
 - title/year/authors/DOI/venue/abstract presence/correctness；
 - inclusion decision + reason；
@@ -81,6 +109,10 @@ provider superiority。
 - missed duplicate rate；
 - unresolved-cluster rate；
 - preprint/published false collapse count。
+
+若 evaluation run 尚未导入可审计的 duplicate-pair/adjudication evidence，
+duplicate/false-merge metric 必须返回 unavailable；不得把缺失 evidence 报告
+为零。
 
 ### Engineering
 
@@ -136,8 +168,9 @@ prefer OpenAlex-only until a stronger use case.
    policy and are not committed.
 4. Blind and randomize pooled records.
 5. Annotate independently, adjudicate, lock gold set.
-6. Compute metrics with per-topic values and bootstrap confidence intervals where
-   meaningful; never report only a global mean.
+6. Compute metrics with per-topic values；bootstrap confidence intervals 只在
+   sample size 和 resampling assumptions 合理时加入，否则明确记录
+   unavailable/sample-size limitation；never report only a global mean.
 7. Perform failure injection separately for 429/timeout/5xx/malformed/pagination/
    contract drift; do not cause abusive live traffic.
 8. Rerun idempotently and after application restart; assert zero duplicate
@@ -167,4 +200,3 @@ prefer OpenAlex-only until a stronger use case.
   https://arxiv.org/abs/2401.16359 and https://arxiv.org/abs/2605.20168
 - ARS/PaperQA2/OpenScholar are Class C design experience for provenance,
   multi-provider metadata and failure testing, not universal thresholds.
-

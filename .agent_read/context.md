@@ -460,3 +460,51 @@ Next permitted milestone：**Phase 9B-2 human-reviewed OpenAlex discovery
 evaluation and retention review**。保持 OpenAlex supervised/opt-in、
 FakeSourceContent/FakeLLM、abstract-only；在 evaluation 证明具体 gap 前不实现
 Semantic Scholar、Crossref 或真实 LLM。
+
+## Phase 9B-2A: OpenAlex evaluation harness and retention policy
+
+2026-07-28 已实现 provider-evaluation infrastructure，未执行 live pilot：
+
+- pure package：`backend/research/evaluation/`；
+- immutable topic/candidate/judgment/adjudication/run/metric contracts；
+- 12-topic tracked engineering set：
+  `evaluation/topics/openalex_v1.json`；
+- candidate-pool generator 复用现有 `PaperSearchProvider`、
+  `ProviderOperationService`、`ProviderExecutionPolicy` 和
+  `ArtifactContentStorage`；
+- evaluation-only append-only/checksum-chained ProviderOperation journal
+  implements the existing repository port under the ignored run root；reserve、
+  RUNNING、settlement independently fsync，restart/tamper/unsettled fail closed；
+- per-topic immutable manifests/checksums、settled-operation evidence 和
+  completed-manifest resume；完整 manifest 存在时不重复 provider call；
+- JSON/CSV human review sheets、identity-bound import、human adjudication
+  source-hash validation；
+- deterministic Precision@5/10、nDCG@10、metadata/dedup/operations/manual
+  burden 和 Cohen kappa；invalid Recall、CANNOT_JUDGE 或 partial labels 返回
+  unavailable，不伪造 denominator；
+- deterministic evaluation artifacts/report；report 不复制 full abstracts，
+  区分 measured judgments、Class D thresholds、limitations 和 inference；
+- single CLI：`python -m backend.research.evaluation`；live generation 默认
+  拒绝，必须显式 `--live`，单批最多 3 topics；
+- proposed review/retention/topic policies 位于
+  `docs/evidence/OPENALEX_*`。
+
+本阶段没有新增 migration/schema、API/frontend、dependency、Semantic
+Scholar、Crossref、real LLM/full text。默认 output root
+`runtime_data/evaluations/openalex/` 继续 ignored；没有 live candidate pool、
+abstract、judgment 或 credential 生成/提交。
+
+验证：focused evaluation `22 passed`；完整 network-free backend
+`161 passed, 18 skipped`；compileall exit 0；isolated PostgreSQL adapter
+regression `14 passed`，Alembic current/head `20260721_0002`、check no drift。
+Live pilot not executed；frontend tests not required。
+
+一次 SQL composition probe 证明 production `provider_operations` FK 必须绑定
+真实 WorkflowRun，因此 evaluation harness 没有伪造 lifecycle row，改用
+journaled existing port。Probe database `reagent_9b2a_harness_test` retained at
+head（8,820,415 bytes，business rows zero）；不得误作产品数据库。
+
+当前阶段：**Phase 9B-2A implementation complete；human-reviewed evaluation
+尚未开始**。下一允许里程碑只有：owner 批准 reviewers、retention 和 thresholds
+后执行 **Phase 9B-2B bounded three-topic candidate-pool pilot + two-human
+review/adjudication**。在结果产生并 review 前不得推荐 S2、Crossref 或 real LLM。

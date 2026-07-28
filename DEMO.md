@@ -407,6 +407,107 @@ conda run --no-capture-output -n reagent-dev alembic upgrade head
 conda run --no-capture-output -n reagent-dev python -m backend.demo.seed
 ```
 
+## 11A. Phase 9B-2A OpenAlex evaluation harness
+
+The evaluation harness is separate from Agent Runtime and the frontend. Its
+default tests remain network-free.
+
+Initialize an ignored evaluation directory and bind the tracked topic-set hash:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  initialize openalex-eval-example
+```
+
+Live candidate generation is never implicit. It requires an owner-authorized
+key plus explicit `--live`, and one invocation is capped at three topics:
+
+```bash
+set -a
+source .env
+set +a
+
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  generate openalex-eval-example \
+  --live \
+  --topic cs-persistent-agents \
+  --topic biomed-long-covid-cognition \
+  --topic nonenglish-chinese-digital-humanities
+```
+
+Default output root is `runtime_data/evaluations/openalex/`, which is ignored
+by Git. The generator stores normalized candidates, SearchPlan/Execution/
+Statistics, tracked evaluation-topic context, per-topic immutable manifests,
+checksums and sanitized usage. It
+stores no raw response and creates no relevance labels. Abstract preview is
+off by default; explicit `--include-abstract-preview` makes the resulting
+ignored data subject to `OPENALEX_DATA_RETENTION_POLICY.md`.
+
+The CLI also stores a private mode-`0600`, append-only
+`provider_operations.journal.jsonl` inside that evaluation ID. It implements
+the existing ProviderOperation port for this Runtime-independent harness:
+reservation, RUNNING, and settlement are fsynced before the next boundary;
+restart validates the checksum chain and refuses missing/unsettled/stale
+operations. It is not a raw-response log and must not be committed.
+
+Export review sheets:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  export openalex-eval-example --format json
+
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  export openalex-eval-example --format csv
+```
+
+Import a human-completed sheet:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  import openalex-eval-example /path/to/reviewer-a.json \
+  --format json --require-complete
+```
+
+The `adjudicate` and `report` commands accept human-produced reviewer and
+adjudication files. They reject unknown candidates, changed identity hashes,
+duplicate judgments and unknown source-judgment hashes:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  adjudicate openalex-eval-example /path/to/adjudicated.json \
+  /path/to/reviewer-a-import.json /path/to/reviewer-b-import.json
+
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  report openalex-eval-example /path/to/adjudicated.json \
+  /path/to/reviewer-a-import.json /path/to/reviewer-b-import.json
+```
+
+Inspect state without mutation:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  status openalex-eval-example
+```
+
+Cleanup is explicit and scoped:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  clean openalex-eval-example --confirm openalex-eval-example
+```
+
+Do not execute cleanup before owner review. Phase 9B-2A did not run a live
+pilot; these commands document the future owner-supervised path.
+
 ## 12. Troubleshooting
 
 - `docker: command not found`: install Docker Desktop or another Docker Engine
