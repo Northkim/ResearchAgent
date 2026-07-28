@@ -1,6 +1,6 @@
 # ReAgent Provider Field Mapping
 
-日期：2026-07-27；状态：**Proposed implementation map**。  
+日期：2026-07-27；状态：**OpenAlex subset implemented; S2/Crossref proposed**。
 Source of truth: current ReAgent contracts in
 `backend/research/contracts/models.py` and official provider schemas:
 OpenAlex Developer/OpenAPI, Semantic Scholar Graph API 1.0, Crossref REST API
@@ -90,3 +90,36 @@ Do not mutate `paper-record/v1` in place. A future milestone may add:
 The first OpenAlex adapter can map only current `PaperRecord` fields and place
 missingness in `metadata_limitations`. No current field requires a migration.
 
+## Phase 9B-1 implemented OpenAlex mapping
+
+Implementation: `backend/research/adapters/openalex.py`, adapter
+`openalex@1.0.0`, contract snapshot `openalex-works-api/2026-07-27`.
+
+| Current `PaperRecord` field | Implemented mapping | Missing/invalid behavior |
+|---|---|---|
+| `paper_id` | `PaperRecord.internal_id`, normalized DOI preferred, otherwise namespaced OpenAlex ID | never fabricated |
+| `provider_id` | canonical `W…` extracted only from `https://openalex.org/W…`/`W…` | malformed/missing ID rejects that record |
+| `title` | `display_name`, Unicode NFC, C0/control removal, trim, max 500 | missing/empty/over-limit rejects record |
+| `authors` | first 100 `authorships[].author.display_name`, optional valid `A…` ID and ORCID string | malformed authors skipped; empty tuple plus `authors_missing` |
+| `abstract` | deterministic position reconstruction from `abstract_inverted_index`, max 10,000 tokens / 50,000 chars | missing/empty becomes `None` + `abstract_missing`; malformed/overlap/gaps reject record; normalization Skill excludes abstract-less records before selection |
+| `publication_year` | integer in 1000–2100 | `None` + limitation |
+| `publication_venue` | `primary_location.source.display_name`, NFC/max 500 | `None` + `venue_missing` |
+| `doi` | existing `normalize_doi` over `doi` | malformed/missing becomes `None` + limitation |
+| `source_provider` | `openalex@1.0.0` | fixed adapter identity |
+| `source_url` | canonical `https://openalex.org/{W…}` | no third-party landing URL is fetched |
+| `retrieved_at` | injected aware adapter clock at receipt | naive clock fails |
+| `raw_metadata_hash` | SHA-256 over canonical selected Work mapping received by adapter | raw body not retained |
+| `metadata_limitations` | always `identity_unverified_discovery_only`, plus field missingness | Semantic Scholar/Crossref verification is not claimed |
+
+Publication date, language, document type, OA state, citation count and provider
+updated time remain outside `paper-record/v1`. They are not used as hard gates.
+Citation count is not requested and does not affect ReAgent ranking.
+
+Implemented identity policy:
+
+1. duplicate exact normalized DOI is removed;
+2. duplicate exact OpenAlex ID is removed;
+3. normalized NFKC/casefold/whitespace title + year only increments an advisory
+   cluster count in `search_statistics.json`;
+4. fuzzy title/author matching, preprint/journal collapse and cross-provider
+   verification are absent by design.

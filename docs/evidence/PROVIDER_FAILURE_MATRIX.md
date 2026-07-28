@@ -1,8 +1,8 @@
 # ReAgent Paper Provider Failure Matrix
 
-日期：2026-07-27；状态：**Proposed Class D policy informed by current Class A contracts**。  
+日期：2026-07-27；状态：**OpenAlex Phase 9B-1 subset implemented; future providers proposed**。
 数值不是 provider 标准：request timeout 15 s、初次调用后最多 2 retries、
-exponential full-jitter backoff（base 1 s、cap 20 s），优先遵守合法
+deterministic exponential backoff（1 s、2 s；`Retry-After` cap 15 s），优先遵守合法
 `Retry-After`/provider reset header。每次 live attempt 都必须受
 `ProviderOperationService` reserve/start/settle 控制；idempotent replay 不得重复预留。
 
@@ -14,8 +14,8 @@ exponential full-jitter backoff（base 1 s、cap 20 s），优先遵守合法
 |---|---|---|---|---|---|---|
 | invalid query | `INVALID_QUERY/RESEARCH_INVALID_QUERY` | no | none | “检索条件无效”；sanitized validation path；event only code/hash | failed, zero actual cost unless provider charged | fail before/at discovery |
 | authentication failure (401) | `AUTHENTICATION/RESEARCH_AUTH_FAILED` | no | no silent provider switch | “Provider 认证失败”；never key/body; provider/status only | failed, record actual usage if known | primary fail; enrichment pause/degrade only per identity |
-| permission failure (403) | closest `AUTHENTICATION/RESEARCH_PERMISSION_DENIED` | no | none | permission message; endpoint/provider, no response body | failed | fail called role |
-| missing API key | `AUTHENTICATION/RESEARCH_KEY_MISSING` | no | anonymous only if explicitly configured/officially allowed | “配置缺少所需凭据”；env variable name allowed, value forbidden | no invocation; reservation released/failed per existing service | OpenAlex live discovery fail |
+| OpenAlex 403 | `PROVIDER_RATE_LIMIT/RESEARCH_RATE_LIMIT` per current official error contract | yes, max 2 | no silent fallback | status/retry presence only | actual request usage settled | final discovery fail |
+| missing API key | `AUTHENTICATION/RESEARCH_KEY_MISSING` | no | ReAgent does not use anonymous mode because `/rate-limit` key preflight is required | “配置缺少所需凭据”；env variable name allowed, value forbidden | composition fails before invocation | OpenAlex live discovery unavailable |
 | rate limit (429) | `RATE_LIMITED/RESEARCH_RATE_LIMIT` | yes, max 2; honor Retry-After | retain completed pages | bounded retry message; status/reset header allowlist | every attempt auditable, final failed or success settled | final primary fail; optional enrichment can degrade if unambiguous |
 | provider timeout | `TIMEOUT/RESEARCH_PROVIDER_TIMEOUT` | yes, max 2 | completed immutable pages kept diagnostic-only | timeout/provider/elapsed; no payload | failed attempt; no guessed usage | same as rate limit |
 | DNS/network failure | closest `UNAVAILABLE/RESEARCH_NETWORK_FAILURE` | yes, max 2 | completed pages retained | sanitized exception class; no host secrets/query | failed | primary fail; optional layer conditional degrade |
@@ -89,11 +89,31 @@ traces in public API/UI. Internal diagnostic text is length-bounded and sanitize
 ## Official-contract notes
 
 - OpenAlex current docs expose rate/credit headers and recommend bounded
-  backoff on 429; current key/credit values must be read from official docs/config
-  at implementation time.
+  backoff on transient failures. Current error docs classify 403 as rate-limit
+  exceeded and 429 as daily-limit exceeded; the adapter follows that current
+  contract. Values are rechecked in `PAPER_SEARCH_EVIDENCE_REGISTER.md`.
 - Semantic Scholar’s exact effective rate can depend on anonymous shared pool or
   issued key; do not encode ARS’s historical fixed limits.
 - Crossref current official limits distinguish single/list and public/polite pool;
   `mailto` and caching are recommended. Values are recorded in the evidence
   register and must be rechecked before implementation.
 
+## Phase 9B-1 implementation boundary
+
+`backend/research/adapters/openalex.py` implements invalid query, missing live
+configuration at composition, 401, official 403/429, timeout/network,
+malformed JSON/root/meta/results, response-size/schema drift, missing required
+record fields, 5xx, incomplete bounded page, free-credit exhaustion,
+cancellation/deadline and sanitized diagnostics. No fallback provider exists.
+
+Each supervised search reserves four request units before network I/O: one
+`/rate-limit` free-credit preflight plus initial Works request and up to two
+retry attempts. Success settles actual request/retry/latency data. A post-call
+failure carries safe actual counts into failed settlement; an already succeeded
+idempotency key is rejected before provider invocation so Runtime recovery must
+reuse the persisted Skill checkpoint.
+
+Cursor invalidation, duplicate multi-page loops and pagination restart are not
+executable Phase 9B-1 paths because the bounded policy requests one cursor page
+of at most 20 candidates. Semantic Scholar, Crossref, ambiguity resolution and
+provider disagreement rows remain future policy only.

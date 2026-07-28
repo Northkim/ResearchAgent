@@ -13,6 +13,9 @@ from backend.research.contracts import (
     ProviderFailureCategory,
     ProviderUsage,
     ResearchQuery,
+    SearchExecution,
+    SearchPlan,
+    SearchStatistics,
     SourceContent,
 )
 from backend.research.contracts._serialization import freeze_json, require_aware, require_non_empty
@@ -71,11 +74,19 @@ class PaperSearchResult:
     retrieved_at: datetime
     complete: bool = True
     warnings: tuple[str, ...] = ()
+    search_plan: SearchPlan | None = None
+    search_execution: SearchExecution | None = None
+    search_statistics: SearchStatistics | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "papers", tuple(self.papers))
         object.__setattr__(self, "warnings", tuple(self.warnings))
         require_aware(self.retrieved_at, "PaperSearchResult.retrieved_at")
+        evidence = (self.search_plan, self.search_execution, self.search_statistics)
+        if any(item is not None for item in evidence) and not all(
+            item is not None for item in evidence
+        ):
+            raise ValueError("PaperSearchResult search evidence must be all-or-none")
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +150,16 @@ class PaperSearchProvider(ABC):
     @property
     @abstractmethod
     def identity(self) -> ProviderIdentity: ...
+
+    def request_identity(
+        self,
+        query: ResearchQuery,
+        *,
+        limit: int,
+    ) -> Mapping[str, Any]:
+        """Return provider-specific, credential-free request identity metadata."""
+
+        return {"query": query.to_dict(), "limit": limit}
 
     @abstractmethod
     async def search(

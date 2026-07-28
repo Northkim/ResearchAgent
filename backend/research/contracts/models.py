@@ -29,6 +29,9 @@ PROVIDER_USAGE_SCHEMA_VERSION = "provider-usage/v1"
 PROVIDER_BUDGET_SCHEMA_VERSION = "provider-budget/v1"
 PROVIDER_OPERATION_SCHEMA_VERSION = "provider-operation/v1"
 PROVENANCE_MANIFEST_SCHEMA_VERSION = "provenance/v1"
+SEARCH_PLAN_SCHEMA_VERSION = "search-plan/v1"
+SEARCH_EXECUTION_SCHEMA_VERSION = "search-execution/v1"
+SEARCH_STATISTICS_SCHEMA_VERSION = "search-statistics/v1"
 
 _DOI_PREFIX = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.I)
 _DOI_SHAPE = re.compile(r"^10\.\d{4,9}/\S+$", re.I)
@@ -98,6 +101,152 @@ class ResearchQuery(SerializableContract):
     @property
     def query_hash(self) -> str:
         return self.canonical_hash()
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPlan(SerializableContract):
+    """Versioned, provider-specific plan recorded before discovery."""
+
+    topic: str
+    research_question: str | None
+    keywords: tuple[str, ...]
+    exact_query: str
+    year_from: int | None
+    year_to: int | None
+    language_policy: str
+    document_type_policy: str
+    inclusion_criteria: tuple[str, ...]
+    exclusion_criteria: tuple[str, ...]
+    maximum_results: int
+    pagination_policy: Mapping[str, Any]
+    sort_policy: str
+    provider: str
+    adapter_version: str
+    api_contract_snapshot: str
+    planned_at: datetime
+    schema_version: str = SEARCH_PLAN_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.topic, "SearchPlan.topic"),
+            (self.exact_query, "SearchPlan.exact_query"),
+            (self.language_policy, "SearchPlan.language_policy"),
+            (self.document_type_policy, "SearchPlan.document_type_policy"),
+            (self.sort_policy, "SearchPlan.sort_policy"),
+            (self.provider, "SearchPlan.provider"),
+            (self.adapter_version, "SearchPlan.adapter_version"),
+            (self.api_contract_snapshot, "SearchPlan.api_contract_snapshot"),
+        ):
+            require_non_empty(value, name)
+        if self.maximum_results <= 0:
+            raise ValueError("SearchPlan.maximum_results must be positive")
+        require_aware(self.planned_at, "SearchPlan.planned_at")
+        object.__setattr__(self, "keywords", _strings(self.keywords, "SearchPlan.keywords"))
+        object.__setattr__(
+            self,
+            "inclusion_criteria",
+            _strings(self.inclusion_criteria, "SearchPlan.inclusion_criteria"),
+        )
+        object.__setattr__(
+            self,
+            "exclusion_criteria",
+            _strings(self.exclusion_criteria, "SearchPlan.exclusion_criteria"),
+        )
+        object.__setattr__(self, "pagination_policy", freeze_json(self.pagination_policy))
+
+    @property
+    def fingerprint(self) -> str:
+        value = self.to_dict()
+        value.pop("planned_at")
+        return canonical_hash(value)
+
+
+@dataclass(frozen=True, slots=True)
+class SearchExecution(SerializableContract):
+    """Sanitized evidence about one provider search execution."""
+
+    search_plan_fingerprint: str
+    provider: str
+    adapter_version: str
+    endpoint: str
+    requested_fields: tuple[str, ...]
+    request_count: int
+    retry_count: int
+    complete: bool
+    cursor_pages: int
+    retrieved_at: datetime
+    provider_reported_cost_usd: str
+    provider_request_ids: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    identity_status: str = "discovery_only_unverified"
+    schema_version: str = SEARCH_EXECUTION_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        require_sha256(
+            self.search_plan_fingerprint,
+            "SearchExecution.search_plan_fingerprint",
+        )
+        for value, name in (
+            (self.provider, "SearchExecution.provider"),
+            (self.adapter_version, "SearchExecution.adapter_version"),
+            (self.endpoint, "SearchExecution.endpoint"),
+            (self.provider_reported_cost_usd, "SearchExecution.provider_reported_cost_usd"),
+            (self.identity_status, "SearchExecution.identity_status"),
+        ):
+            require_non_empty(value, name)
+        if min(self.request_count, self.retry_count, self.cursor_pages) < 0:
+            raise ValueError("SearchExecution counts cannot be negative")
+        require_aware(self.retrieved_at, "SearchExecution.retrieved_at")
+        object.__setattr__(
+            self,
+            "requested_fields",
+            _strings(self.requested_fields, "SearchExecution.requested_fields"),
+        )
+        object.__setattr__(
+            self,
+            "provider_request_ids",
+            _strings(self.provider_request_ids, "SearchExecution.provider_request_ids"),
+        )
+        object.__setattr__(
+            self,
+            "warnings",
+            _strings(self.warnings, "SearchExecution.warnings"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SearchStatistics(SerializableContract):
+    """Provider-neutral accounting for one discovery result set."""
+
+    search_plan_fingerprint: str
+    provider_reported_count: int
+    records_received: int
+    records_normalized: int
+    records_rejected: int
+    duplicate_doi_count: int
+    duplicate_provider_id_count: int
+    advisory_title_year_clusters: int
+    missing_abstract_count: int
+    incomplete: bool
+    schema_version: str = SEARCH_STATISTICS_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        require_sha256(
+            self.search_plan_fingerprint,
+            "SearchStatistics.search_plan_fingerprint",
+        )
+        values = (
+            self.provider_reported_count,
+            self.records_received,
+            self.records_normalized,
+            self.records_rejected,
+            self.duplicate_doi_count,
+            self.duplicate_provider_id_count,
+            self.advisory_title_year_clusters,
+            self.missing_abstract_count,
+        )
+        if min(values) < 0:
+            raise ValueError("SearchStatistics counts cannot be negative")
 
 
 @dataclass(frozen=True, slots=True)
@@ -703,6 +852,7 @@ class ProviderOperation(SerializableContract):
             status=ProviderOperationStatus.SUCCEEDED,
             settlement_state=SettlementState.SETTLED,
             actual_usage=usage,
+            retry_count=usage.retry_count,
             failure_category=None,
             updated_at=at,
             finished_at=at,
@@ -729,6 +879,7 @@ class ProviderOperation(SerializableContract):
                 else SettlementState.SETTLED
             ),
             actual_usage=usage,
+            retry_count=usage.retry_count if usage is not None else self.retry_count,
             failure_category=failure_category,
             diagnostic_metadata=diagnostic_metadata or {},
             updated_at=at,

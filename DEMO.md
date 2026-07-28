@@ -284,7 +284,83 @@ conda run --no-capture-output -n reagent-dev python -m pytest -q backend
 
 Never point those three variables at a shared or production database.
 
-## 10. Reset and cleanup
+## 10. Phase 9B-1 supervised OpenAlex discovery
+
+The normal demo remains deterministic and network-free:
+
+```bash
+export REAGENT_PAPER_SEARCH_PROVIDER=fake
+export REAGENT_OPENALEX_LIVE_ENABLED=false
+```
+
+`guided-literature-review@2.0.0` was not mutated. Composition chooses the
+adapter, so its canonical hash remains
+`af3dd76540cfb7b08a73a7fbffda76679375a8170f0099611016c57d4c9d856a`.
+
+OpenAlex mode requires three explicit server-side values:
+
+```bash
+export REAGENT_PAPER_SEARCH_PROVIDER=openalex
+export REAGENT_OPENALEX_LIVE_ENABLED=true
+export REAGENT_OPENALEX_API_KEY='<owner-supplied free key>'
+```
+
+The key is required by ReAgent—not because anonymous trial calls are impossible,
+but because the official `/rate-limit` endpoint requires a key and ReAgent must
+verify remaining free daily credit before the search. The value must never be
+placed in source control, logs, screenshots or commands copied into reports.
+
+Supervised limits are max 20 discovery candidates, selected-paper input 3–5,
+one cursor page, one preflight plus at
+most three Works attempts, 15 seconds per request, 90 seconds total provider
+operation, max 12 full-workflow provider request units, and zero out-of-pocket
+monetary cost. Search output is discovery-only/unverified. SourceContent and LLM
+providers remain deterministic fakes; no PDF/full text, Semantic Scholar,
+Crossref or real LLM is invoked.
+
+OpenAlex runs add three immutable artifacts before approval:
+
+- `search_plan.json`: exact query, filters/policies, adapter/contract identity,
+  planned maximum and one-page cursor policy;
+- `search_execution.json`: sanitized endpoint/fields, timestamps, actual
+  request/retry count, completeness, provider-reported credit cost and
+  discovery-only identity status;
+- `search_statistics.json`: received/normalized/rejected/missing/dedup/advisory
+  cluster counts.
+
+They appear alongside the existing eight research artifacts. Raw provider
+responses and credentials are never artifact content. Reports include an
+OpenAlex attribution and explicitly say that identity is unverified and
+downstream providers are fake.
+
+Network-free verification against an isolated Phase 9B-1 database:
+
+```bash
+createdb reagent_9b1_acceptance
+export REAGENT_TEST_DATABASE_URL='postgresql+psycopg:///reagent_9b1_acceptance'
+export REAGENT_9B1_DATABASE_URL="$REAGENT_TEST_DATABASE_URL"
+export REAGENT_9B1_ARTIFACT_ROOT='/tmp/reagent_9b1_artifacts'
+conda run --no-capture-output -n reagent-dev alembic upgrade head
+conda run --no-capture-output -n reagent-dev python -m pytest -q \
+  backend/database/tests \
+  backend/integration/tests/test_http_postgresql_openalex_contract.py
+```
+
+The opt-in real-provider test additionally requires
+`REAGENT_9B1_LIVE=true`, `REAGENT_9B1_QUERY`, and
+`REAGENT_OPENALEX_API_KEY`:
+
+```bash
+conda run --no-capture-output -n reagent-dev python -m pytest -q \
+  backend/integration/tests/test_http_postgresql_openalex_live.py
+```
+
+It is skipped by default. Phase 9B-1 implementation did **not** execute it
+because no owner-authorized key/query/real-data retention configuration was
+provided. Do not interpret the network-free OpenAlex-shaped contract test as a
+live API result.
+
+## 11. Reset and cleanup
 
 Stop while preserving all demo runs:
 
@@ -313,6 +389,16 @@ dropdb reagent_9a2_acceptance
 rm -rf /private/tmp/reagent_9a2_artifacts
 ```
 
+Phase 9B-1 acceptance resources are retained for review. Optional cleanup:
+
+```bash
+dropdb reagent_9b1_acceptance
+rm -rf /tmp/reagent_9b1_pg_artifacts.Xo4fgn
+```
+
+Do not substitute `ProjectDB`, `reagent_9a1_acceptance`, or
+`reagent_9a2_acceptance` in those commands.
+
 For a dedicated local test database only, a full schema reset is:
 
 ```bash
@@ -321,7 +407,7 @@ conda run --no-capture-output -n reagent-dev alembic upgrade head
 conda run --no-capture-output -n reagent-dev python -m backend.demo.seed
 ```
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 - `docker: command not found`: install Docker Desktop or another Docker Engine
   with the Compose v2 plugin; rerun `make demo-config-check` before startup.
@@ -339,16 +425,18 @@ conda run --no-capture-output -n reagent-dev python -m backend.demo.seed
 - A seed reports immutable-content conflict: do not overwrite the row. Reset a
   disposable demo database or publish a new workflow version and hash.
 
-## 12. Known limitations
+## 13. Known limitations
 
 - The demo uses fixed prototype project and actor identities; there is no
   authentication, authorization, or approval-role enforcement.
 - `SyncExecutionDispatcher` runs execution inline in HTTP requests; there is no
   durable queue, worker lease, clock scheduler, cancellation channel, or Redis.
 - Approval expiry is enforced on a decision attempt, not by a background job.
-- Research results and summaries are deterministic fake Skill outputs. There is
-  no real LLM, literature provider, or live citation retrieval. Artifact bytes
-  use local filesystem storage only; remote storage and retention remain future.
+- Fake mode remains wholly deterministic. OpenAlex live mode exists only for
+  supervised discovery and was not live-verified in Phase 9B-1; SourceContent
+  and LLM processing remain deterministic fakes, identity is unverified, and
+  there is no full text or live citation verification. Artifact bytes use local
+  filesystem storage only; remote storage and retention remain future.
 - Status updates use polling rather than server-sent events or WebSockets.
 - The browser suite currently targets one Chrome-compatible desktop engine plus
   a mobile-width layout assertion; it is not a cross-browser accessibility or

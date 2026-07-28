@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-07-27
+Last updated: 2026-07-28
 
 ## Project authority
 
@@ -352,12 +352,20 @@ shared generated API type changed.
 - The UI remains a development prototype: it has no authentication/authorization, project switcher, persisted user preferences, formal accessibility audit, localization, telemetry, or cross-browser suite.
 - Frontend mutations currently use fixed prototype actor/project identities. These must come from an authenticated project/user context before multi-user use.
 - Run and approval freshness uses polling. Server-sent events/WebSockets, offline behavior, notification delivery, and background worker progress remain future work.
-- The guided demo workflow uses the existing deterministic fake Skills. Real research-provider integration, artifact content/download views, uploads, and citation-oriented result presentation are not implemented.
+- Fake mode remains the default and deterministic. The opt-in OpenAlex Paper
+  Search adapter passed one supervised real-provider acceptance on 2026-07-28;
+  SourceContent and LLM remain fake and paper identity remains unverified.
 - The backend catalog contains the seeded immutable demo definition, but there is still no general workflow publication/review lifecycle.
 - Docker/Compose could not be executed in the Phase 8B validation host. Its dependency graph and files are implemented but require validation on a Docker-capable machine.
 - The in-app browser surface was unavailable. Visual QA used five real Playwright screenshots from system Chrome; loading, empty, and failure components are covered by implementation/unit inspection rather than a separate manual interactive browser session.
-- Real research implementation still requires the complete deterministic Guided Literature Review v2 Skills/DAG, artifact APIs/UI, approved provider/model/cost/retention choices, and opt-in live adapters. The provider-independent contracts, local storage, provider-operation persistence, provenance validation, and approval binding are now implemented.
-- ADR 0003 is accepted only within its recorded additive scope. No real paper provider, LLM provider/model, price, API key, live network mode, S3 backend, or retention policy has been selected.
+- The deterministic Guided Literature Review v2 Skills/DAG, artifact APIs/UI,
+  provider-independent contracts, local storage, provider-operation
+  persistence, provenance validation and approval binding are implemented.
+  Phase 9B-1 adds only OpenAlex discovery; no real SourceContent, LLM,
+  independent verifier, DOI fallback or full text exists.
+- ADR 0003 remains governing. ADR 0004 is Accepted only for OpenAlex primary
+  discovery and future candidate roles; no real LLM/model, S2/Crossref adapter,
+  live credential, S3 backend or retention enforcement has been selected.
 - The dedicated Phase 9A-1.5 database is intentionally retained at head for inspection; it is test-only and must not be mistaken for a production database.
 
 ## Phase 9B-0: Paper Search Provider evidence review
@@ -369,8 +377,9 @@ PRISMA-S, PaperQA2, OpenScholar, and the teacher-recommended Academic Research
 Skills repositories were reviewed. No provider API was called and no runtime,
 dependency, database, migration or application source was changed by Phase 9B-0.
 
-ADR 0004 (`.agent_read/decisions/0004-first-paper-search-provider.md`) is
-**Proposed**, not Accepted. Its evidence-backed target hypothesis is:
+At Phase 9B-0 completion ADR 0004 was **Proposed**. The owner subsequently
+accepted its limited OpenAlex-only implementation scope for Phase 9B-1. Its
+layered target remains:
 
 ```text
 OpenAlex discovery
@@ -378,15 +387,76 @@ OpenAlex discovery
 → Crossref agency-aware DOI fallback
 ```
 
-No provider has been owner-selected. Unresolved owner decisions include provider
-roles, API-key availability, maximum live requests, zero/non-zero monetary
-budget, abstract/raw-response/live-artifact retention, fixture policy,
-attribution placement, Crossref polite-pool contact, whether real metadata may
-persist in an isolated acceptance database, evaluation-set size/thresholds,
-abstract-only scope, and verification scope.
+The B0 unresolved decisions were intentionally surfaced rather than silently
+decided; Phase 9B-1 resolved only the OpenAlex role, zero-cost supervised caps,
+abstract-only scope, synthetic committed fixtures and attribution.
 
-The next permitted milestone is **owner review to approve or revise ADR 0004**.
-Do not implement a real adapter until that decision and its blocking policies
-are resolved. Even after approval, the first implementation should replace only
-the Paper Search boundary (proposed OpenAlex); no real LLM or full-text provider
-is permitted.
+## Phase 9B-1: Supervised OpenAlex Paper Search adapter
+
+ADR 0004 is **Accepted with limited scope**. Implemented:
+
+- `OpenAlexPaperSearchProvider` behind existing `PaperSearchProvider`;
+- injected HTTP/configuration and explicit fake-default/openalex-opt-in
+  composition (`REAGENT_PAPER_SEARCH_PROVIDER`,
+  `REAGENT_OPENALEX_LIVE_ENABLED`, `REAGENT_OPENALEX_API_KEY`);
+- versioned `SearchPlan`, `SearchExecution`, `SearchStatistics` contracts and
+  immutable `search_plan.json`, `search_execution.json`,
+  `search_statistics.json`;
+- deterministic OpenAlex Work → current `PaperRecord` mapping, exact DOI/ID
+  dedup, advisory title/year clusters, untrusted-content validation;
+- free-credit `/rate-limit` preflight, max 3 discovery attempts, 15-second
+  timeout, max 20 candidates, full-workflow request cap 12, monetary budget 0;
+- durable live `ProviderOperation` reservation/RUNNING/settlement/replay
+  behavior and sanitized failures;
+- provider-aware downstream fake SourceContent/Fake LLM report wording and
+  OpenAlex attribution without changing the immutable v2 workflow.
+
+Verification on 2026-07-27:
+
+- fast backend: `137 passed, 18 skipped`;
+- isolated `reagent_9b1_acceptance`: PostgreSQL contracts, fake-v2 HTTP
+  regression and OpenAlex-shaped network-free HTTP vertical slice:
+  `16 passed, 0 skipped`;
+- compileall exit 0; Alembic head remains `20260721_0002`;
+- live OpenAlex smoke/full path: **not executed** because no owner-supplied key,
+  query and live retention authorization were provided;
+- frontend regressions were not run because API DTOs, shared frontend types and
+  visible route/component behavior did not change.
+
+No migration, dependency, frontend source, Semantic Scholar, Crossref, real
+SourceContent, real LLM, full text, worker, authentication or Docker change was
+added. `ProjectDB`, `reagent_9a1_acceptance`, and
+`reagent_9a2_acceptance` were not modified. The dedicated
+`reagent_9b1_acceptance` and `/tmp/reagent_9b1_pg_artifacts.Xo4fgn` are retained
+for review.
+
+## Phase 9B-1 Live Acceptance
+
+Supervised real OpenAlex acceptance completed on 2026-07-28 with **PASS**:
+
+- query `persistent research agents`, years 2020–2026, one page/max 20；
+- final live gate `1 passed in 8.97s`；
+- final result：20 normalized candidates、3 technically selected、exact
+  approval、FakeSourceContent、FakeLLM、`publishable=true` provenance、
+  11 checksum-verified artifacts、restart/reload/idempotent completed resume；
+- final run has 9 `SUCCEEDED/SETTLED` operations and zero unsettled；OpenAlex
+  used 2 requests、0 retries、`$0.001` free provider credit、0 out-of-pocket；
+- three bounded live discovery attempts were used across diagnosis/final
+  acceptance，6 total OpenAlex calls、0 retries、`$0.003` free credit；
+- verified live remediations：discard credential-bearing httpx exception
+  context；use escaped term-level Boolean AND instead of a whole-topic exact
+  phrase；clamp 20-candidate rank scores to `[0,1]`；
+- credential leakage audit：tracked files、database、events/diagnostics、
+  artifacts 和 reports 全部 no；
+- retained DB：`reagent_9b1_live_acceptance`（15 MB）；
+- retained ignored root：
+  `runtime_data/acceptance/openalex-live/run.0wOip3`（564 KiB）；
+- `ProjectDB` and prior acceptance databases untouched；no commit。
+
+Evidence：
+`.agent_read/progress/openalex_live_acceptance.md`。
+
+Next permitted milestone：**Phase 9B-2 human-reviewed OpenAlex discovery
+evaluation and retention review**。保持 OpenAlex supervised/opt-in、
+FakeSourceContent/FakeLLM、abstract-only；在 evaluation 证明具体 gap 前不实现
+Semantic Scholar、Crossref 或真实 LLM。

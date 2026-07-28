@@ -43,10 +43,13 @@ from backend.research.adapters import (
     FakePaperSearchProvider,
     FakeSourceContentProvider,
     LocalFilesystemArtifactStorage,
+    OpenAlexConfiguration,
+    OpenAlexPaperSearchProvider,
 )
-from backend.research.ports import ArtifactContentStorage
+from backend.research.ports import ArtifactContentStorage, PaperSearchProvider
 from backend.research.services import (
     ArtifactApplicationGateway,
+    ProviderExecutionPolicy,
     ProviderOperationService,
 )
 from backend.research.skills import register_research_skills
@@ -90,6 +93,8 @@ class ApplicationContainer:
         clock: Callable[[], datetime] = utc_now,
         approval_ttl: timedelta = timedelta(hours=24),
         artifact_storage: ArtifactContentStorage | None = None,
+        paper_search_provider: PaperSearchProvider | None = None,
+        provider_execution_policy: ProviderExecutionPolicy | None = None,
         close_callback: Callable[[], None] | None = None,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
@@ -105,7 +110,16 @@ class ApplicationContainer:
             if artifact_storage is not None
             else LocalFilesystemArtifactStorage("runtime_data/artifacts")
         )
-        self.paper_search_provider = FakePaperSearchProvider()
+        self.paper_search_provider = (
+            paper_search_provider
+            if paper_search_provider is not None
+            else FakePaperSearchProvider()
+        )
+        self.provider_execution_policy = (
+            provider_execution_policy
+            if provider_execution_policy is not None
+            else ProviderExecutionPolicy.fake_only()
+        )
         self.source_content_provider = FakeSourceContentProvider()
         self.llm_provider = FakeLLMProvider()
         self._close_callback = close_callback
@@ -124,6 +138,7 @@ class ApplicationContainer:
                 llm=self.llm_provider,
                 artifact_storage=self.artifact_storage,
                 provider_operations=provider_operations,
+                provider_execution_policy=self.provider_execution_policy,
             )
 
         runtime = AgentRuntime(
@@ -207,6 +222,41 @@ class ApplicationContainer:
 
         engine = create_postgres_engine(database_url)
         session_factory = create_session_factory(engine)
+        provider_name = os.environ.get(
+            "REAGENT_PAPER_SEARCH_PROVIDER",
+            "fake",
+        ).strip().lower()
+        if provider_name == "fake":
+            paper_search_provider: PaperSearchProvider = FakePaperSearchProvider()
+            execution_policy = ProviderExecutionPolicy.fake_only()
+        elif provider_name == "openalex":
+            live_enabled = os.environ.get(
+                "REAGENT_OPENALEX_LIVE_ENABLED",
+                "",
+            ).strip().lower() in {"1", "true", "yes"}
+            if not live_enabled:
+                engine.dispose()
+                raise ValueError(
+                    "OpenAlex selection requires REAGENT_OPENALEX_LIVE_ENABLED=true"
+                )
+            api_key = os.environ.get("REAGENT_OPENALEX_API_KEY")
+            if not api_key:
+                engine.dispose()
+                raise ValueError(
+                    "Supervised OpenAlex mode requires REAGENT_OPENALEX_API_KEY "
+                    "for the free-credit preflight"
+                )
+            paper_search_provider = OpenAlexPaperSearchProvider(
+                OpenAlexConfiguration(
+                    api_key=api_key,
+                )
+            )
+            execution_policy = ProviderExecutionPolicy.supervised_openalex()
+        else:
+            engine.dispose()
+            raise ValueError(
+                "REAGENT_PAPER_SEARCH_PROVIDER must be 'fake' or 'openalex'"
+            )
         return cls(
             unit_of_work_factory=lambda: SQLAlchemyUnitOfWork(session_factory),
             artifact_storage=LocalFilesystemArtifactStorage(
@@ -215,5 +265,7 @@ class ApplicationContainer:
                     "runtime_data/artifacts",
                 )
             ),
+            paper_search_provider=paper_search_provider,
+            provider_execution_policy=execution_policy,
             close_callback=engine.dispose,
         )

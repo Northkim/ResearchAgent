@@ -1,7 +1,8 @@
 # ADR 0004: First Paper Search Provider
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-27
+- **Accepted:** 2026-07-27
 - **Decision owners:** ReAgent owner / architecture reviewer
 - **Evidence review:** `docs/evidence/PAPER_SEARCH_EVIDENCE_REGISTER.md`
 
@@ -28,6 +29,28 @@ Evidence classes:
   research/mature implementations.
 - **ReAgent project inference:** an engineering choice made for this architecture.
 - **Unresolved owner policy:** no implementation authority until approved.
+
+## Acceptance scope
+
+The owner accepted this ADR on 2026-07-27 with a deliberately limited scope:
+
+1. OpenAlex is approved as the first and only real primary discovery provider
+   implemented in Phase 9B-1.
+2. Semantic Scholar is approved only as a future verification/enrichment
+   candidate; this ADR does not authorize an adapter.
+3. Crossref is approved only as a future DOI metadata fallback candidate; this
+   ADR does not authorize an adapter.
+4. V1 remains metadata + abstract only. No real LLM, real SourceContent/full-text
+   provider, PDF retrieval, or secondary provider is authorized.
+5. Live usage must remain zero out-of-pocket monetary cost, low-volume,
+   supervised, opt-in, and bounded by the recorded ReAgent policy.
+6. Real provider bodies, abstracts, credentials, and live artifacts must not be
+   committed to Git.
+7. Current official OpenAlex contracts must be rechecked at implementation and
+   override stale evidence facts.
+
+Acceptance does not turn the full layered target into implemented architecture.
+It accepts the role boundaries and authorizes only the OpenAlex boundary change.
 
 ## Decision drivers
 
@@ -70,7 +93,7 @@ criteria, but role suitability overrides a raw total.
   evidence/citation and human-evaluation patterns as Class C experience; they
   are not provider contracts.
 
-### ReAgent project inferences
+### ReAgent decisions accepted for Phase 9B-1
 
 - OpenAlex is the best first adapter fit for `PaperSearchProvider`.
 - S2 should verify/enrich only selected and identity-ambiguous candidates.
@@ -79,13 +102,13 @@ criteria, but role suitability overrides a raw total.
   may degrade only for unambiguous identity.
 - First supervised live runs stay at zero monetary cost and small request caps.
 
-### Unresolved owner policy
+### Policy deliberately left unresolved or deferred
 
 Provider roles, credentials, request cap, retention/fixtures/attribution,
 Crossref contact email, real-data storage and evaluation thresholds remain
 unapproved.
 
-## Proposed decision
+## Accepted decision and staged target
 
 Adopt a **layered target architecture**, implemented in separately reviewed
 milestones:
@@ -105,7 +128,7 @@ own adapters are reviewed.
 
 ## Primary provider
 
-**Proposed: OpenAlex.**
+**Accepted for implementation: OpenAlex.**
 
 - API base: `https://api.openalex.org`.
 - Use server-side API key/credit headers according to the current official
@@ -117,7 +140,7 @@ own adapters are reviewed.
 
 ## Verification/enrichment provider
 
-**Proposed: Semantic Scholar Academic Graph API**, for selected (3–5) plus
+**Accepted only as a future candidate: Semantic Scholar Academic Graph API**, for selected (3–5) plus
 identity-ambiguous candidates only.
 
 - Compare DOI/external IDs/title/year/authors; add field-level assertions rather
@@ -130,7 +153,7 @@ identity-ambiguous candidates only.
 
 ## DOI fallback provider
 
-**Proposed: Crossref REST**, only for DOI-bearing unresolved/conflicting records.
+**Accepted only as a future candidate: Crossref REST**, only for DOI-bearing unresolved/conflicting records.
 
 - Confirm/handle registration agency; Crossref absence does not invalidate a
   non-Crossref DOI.
@@ -187,7 +210,7 @@ False merge fails the evaluation gate.
 
 ## Request budget
 
-Proposed owner policy:
+Accepted Phase 9B-1 supervised policy:
 
 - discovery: max 3 requests / 2 pages / 20 candidates;
 - verification: max 5 logical lookups;
@@ -286,10 +309,11 @@ raw content are excluded from events/logs/public diagnostics.
     selected artifact.
 11. **Composition configuration?** explicit mode/provider registry, injected
     HTTP transport/clock, budgets, server-only secret loading, no Skill env reads.
-12. **Environment variables?** proposed names:
-    `REAGENT_PAPER_SEARCH_MODE`, `OPENALEX_API_KEY`; later
+12. **Environment variables?** Phase 9B-1 uses:
+    `REAGENT_PAPER_SEARCH_PROVIDER`, `REAGENT_OPENALEX_LIVE_ENABLED`, and
+    `REAGENT_OPENALEX_API_KEY`; later candidates may use
     `S2_API_KEY`, `CROSSREF_POLITE_EMAIL`. Values never logged. Exact names need
-    implementation review.
+    separate implementation review for later providers.
 13. **Tests?** schema/field fixtures, query/pagination, 429/timeout/5xx/malformed/
     contract drift, identity/dedup conflicts, operation reservation/settlement/
     replay, secret sanitization, license/retention evidence, isolated live
@@ -367,21 +391,25 @@ Negative:
 - provider failure/429 >1% in supervised evaluation;
 - need for domain-specific systematic review.
 
-## Owner approvals required
+## Owner approvals and remaining gates
 
-Before implementation:
+Resolved for Phase 9B-1: OpenAlex primary discovery, abstract-only scope,
+synthetic-only committed fixtures, max 12 total requests / max 3 discovery
+attempts / max 20 candidates, 15 s timeout, two retries after the initial
+attempt, 90 s provider runtime, zero monetary budget, and user-facing OpenAlex
+attribution.
 
-1. approve/revise OpenAlex primary role;
-2. approve target S2/Crossref roles and selected/ambiguous verification scope;
-3. provide/authorize server-side API keys and monitored Crossref contact email;
-4. approve max 12 requests and monetary cost 0;
-5. approve abstract/raw/live-artifact retention and real metadata in isolated DB;
-6. approve synthetic-only fixture default and attribution placement;
-7. confirm V1 remains abstract-only;
-8. approve evaluation size (recommended 12 topics) and proposed thresholds.
+Still required before the first supervised live acceptance:
 
-Until these are resolved, the next milestone is **owner review and
-approve/revise ADR 0004**, not adapter implementation.
+1. provide/authorize a server-side free OpenAlex API key;
+2. explicitly enable live mode and approve one narrow query;
+3. approve the isolated `reagent_9b1_acceptance` database and ignored artifact
+   root for real normalized metadata/abstract retention;
+4. approve retention/cleanup timing for those live artifacts.
+
+Still required before later layered implementation: separate owner review of S2
+and Crossref credentials/terms, verification scope, Crossref contact email,
+evaluation size/thresholds, and any retention/public-display policy.
 
 ## Deliberately not decided
 
@@ -393,5 +421,4 @@ approve/revise ADR 0004**, not adapter implementation.
 - production deployment/Docker remediation;
 - a new verifier port or workflow version number before the implementation
   design spike;
-- acceptance of this ADR.
-
+- implementation of Semantic Scholar or Crossref.

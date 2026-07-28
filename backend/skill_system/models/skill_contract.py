@@ -12,7 +12,7 @@ from backend.research.ports import (
     PaperSearchProvider,
     SourceContentProvider,
 )
-from backend.research.services import ProviderOperationService
+from backend.research.services import ProviderExecutionPolicy, ProviderOperationService
 from backend.skill_system.exceptions import SkillCapabilityDeniedError
 
 if TYPE_CHECKING:
@@ -29,6 +29,9 @@ class SkillCapabilities:
     llm: LLMProvider | None = None
     artifact_storage: ArtifactContentStorage | None = None
     provider_operations: ProviderOperationService | None = None
+    provider_execution_policy: ProviderExecutionPolicy = field(
+        default_factory=ProviderExecutionPolicy.fake_only
+    )
 
     def restricted_to(self, declared: tuple[str, ...]) -> SkillCapabilities:
         """Remove grants not declared by the immutable Skill definition."""
@@ -44,6 +47,7 @@ class SkillCapabilities:
             provider_operations=(
                 self.provider_operations if "provider_operations" in allowed else None
             ),
+            provider_execution_policy=self.provider_execution_policy,
         )
 
     def require_paper_search(self) -> PaperSearchProvider:

@@ -179,6 +179,59 @@ def test_query_validation_rejects_reversed_year_range(tmp_path) -> None:
     asyncio.run(scenario())
 
 
+def test_ranker_handles_full_twenty_candidate_live_page(tmp_path) -> None:
+    async def scenario() -> None:
+        papers = [
+            {
+                "paper_id": f"openalex:W{index}",
+                "provider_id": f"W{index}",
+                "title": f"Candidate {index}",
+                "authors": [{"name": f"Author {index}"}],
+                "abstract": f"Abstract-only candidate {index}.",
+                "publication_year": 2026 - (index % 7),
+                "publication_venue": "Synthetic rank fixture",
+                "source_provider": "openalex@1.0.0",
+                "source_url": f"https://openalex.org/W{index}",
+                "doi": f"10.9999/rank-fixture.{index}",
+                "retrieved_at": "2026-07-28T00:00:00+00:00",
+                "raw_metadata_hash": "sha256:" + f"{index:064x}",
+                "metadata_limitations": ["identity_unverified_discovery_only"],
+            }
+            for index in range(1, 21)
+        ]
+        ranked = await rank_and_select_papers(
+            {
+                "query": {
+                    "topic": "persistent research agents",
+                    "keywords": [],
+                    "year_from": 2020,
+                    "year_to": 2026,
+                    "max_results": 3,
+                    "language": "en",
+                    "inclusion_criteria": [],
+                    "exclusion_criteria": [],
+                    "schema_version": "research-query/v1",
+                },
+                "papers": papers,
+                "max_papers": 3,
+            },
+            _context(
+                "rank_and_select",
+                uow=InMemoryUnitOfWork(),
+                storage=LocalFilesystemArtifactStorage(tmp_path),
+            ),
+        )
+        scores = [
+            item["relevance_score"] for item in ranked.output_data["ranked_papers"]
+        ]
+        assert len(scores) == 20
+        assert min(scores) == 0.0
+        assert max(scores) == 1.0
+        assert len(ranked.output_data["selected_paper_ids"]) == 3
+
+    asyncio.run(scenario())
+
+
 def test_complete_skill_chain_is_abstract_only_zero_cost_and_publishable(
     tmp_path,
 ) -> None:

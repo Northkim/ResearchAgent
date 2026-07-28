@@ -1,8 +1,9 @@
 # ReAgent Paper Search Evidence Register
 
 更新日期与统一访问日期：2026-07-27  
-阶段：Phase 9B-0（documentation-only）  
-结论状态：**Proposed**；本文件不表示 owner 已选择 provider。
+阶段：Phase 9B-1（OpenAlex adapter；official contract reverified）
+结论状态：ADR 0004 **Accepted with limited scope**；仅 OpenAlex discovery
+已获实现授权，Semantic Scholar/Crossref 仍是 future candidates。
 
 ## 证据标准与研究问题
 
@@ -32,7 +33,7 @@
 
 | Provider | 官方组织/目的 | 当前 access contract | 强项 | 关键限制 |
 |---|---|---|---|---|
-| OpenAlex | OurResearch；开放 scholarly graph | `https://api.openalex.org`；当前文档要求 free API key 才有常规额度，free credit `$1/day`；search/list 按 action 计费，100 RPS/credit 触发 429 | 跨学科 discovery、filter/search/cursor、稳定 OpenAlex ID、DOI/PMID 等 external IDs、CC0 dataset | abstract 可能缺失或有质量问题；index 会更新；第三方 publication 权利不由 OpenAlex 保证 |
+| OpenAlex | OurResearch；开放 scholarly graph | `https://api.openalex.org`；当前 Authentication 页面记录 no-key `$0.10/day`、free key `$1/day`；ReAgent live mode 要求 key 以先调用 `/rate-limit` 作 free-credit preflight；search/list 按 action 计费，100 RPS/credit exhaustion 触发 429 | 跨学科 discovery、filter/search/cursor、稳定 OpenAlex ID、DOI/PMID 等 external IDs、CC0 dataset | abstract 可能缺失或有质量问题；index 会更新；第三方 publication 权利不由 OpenAlex 保证 |
 | Semantic Scholar Academic Graph | Allen Institute for AI；scientific discovery graph | `https://api.semanticscholar.org/graph/v1`；多数 endpoint 可匿名，官方产品页记录 anonymous shared pool；API key 用 `x-api-key`，初始 key 限额较低且可变 | S2 paper/corpus IDs、DOI/external IDs、abstract、citation graph、batch paper lookup，适合 selected-item verification | API 与 S2 Data/third-party content 各有许可；at-will/change risk；commercial/retention 需审查，不宜作为默认可自由再分发数据 |
 | Crossref REST | Crossref member-governed DOI infrastructure | `https://api.crossref.org`；无需注册；`mailto` 进入 polite pool；2025-12-01 起 public/polite 有公开 request/concurrency limits | Crossref DOI 的 canonical deposited metadata、更新/更正关系、稳定 DOI、开放元数据检索 | 不是所有 DOI 的 registration agency；member-deposited 字段不齐；abstract 可能受版权；topic discovery/relevance 不是其首要用途 |
 
@@ -49,7 +50,7 @@ changes and disclaims completeness.
 
 **Access.** Current base URL is `https://api.openalex.org`. Current official
 documentation says a free `api_key` is required for normal scale and receives
-`$1/day` free credit; unauthenticated access has only `$0.01/day`. Current action
+`$1/day` free credit; unauthenticated access has `$0.10/day`. Current action
 prices distinguish singleton, list/filter, search and content. The documented
 ceiling is 100 requests/s, with 429 for rate/credit exhaustion and
 `X-RateLimit-*`/credit headers. `per_page` max is 100, basic paging is limited to
@@ -221,7 +222,7 @@ mechanism.
 
 ## Decision PS-001: Primary discovery provider
 
-Status: **Proposed**  
+Status: **Accepted for OpenAlex-only Phase 9B-1 scope**
 Evidence classes: A / B / C / D  
 Last verified: 2026-07-27  
 Candidate decision: OpenAlex 作为 ReAgent V1 primary discovery；第一实施里程碑只替换 `PaperSearchProvider` boundary。
@@ -251,6 +252,51 @@ Alternatives: S2 primary; Crossref search; domain-specific providers.
 Risk: API pricing/contract changes, abstract quality, dynamic index.  
 Revisit trigger: evaluation shows lower Recall@K/relevance than S2, license changes, or >5% blocking contract/malformed response rate.  
 Owner approval required: **Yes**.
+
+## Phase 9B-1 official OpenAlex contract re-verification
+
+Access date: **2026-07-27**. These Class A sources are the implementation source
+of truth for `backend/research/adapters/openalex.py`.
+
+| Official source | Current fact used | Implementation impact / limitation |
+|---|---|---|
+| OpenAlex, [Authentication & Pricing](https://developers.openalex.org/api-reference/authentication) | base `https://api.openalex.org`; `api_key` query parameter; no-key free daily usage `$0.10`, free key `$1`; search `$1/1000` calls; `/rate-limit`; `meta.cost_usd`; `X-RateLimit-*`; 100 requests/s; `per_page<=100`; basic paging 10,000; exponential backoff guidance | ReAgent injects, never logs/stores, the key; supervised mode requires a key so `/rate-limit` can prove remaining free credit before search; one search page, max 20; actual provider credit recorded as a decimal string while out-of-pocket `estimated_cost_minor_units=0`. Pricing/credits can drift and must be rechecked. |
+| OpenAlex, [Works](https://developers.openalex.org/api-reference/works) and [List Works](https://developers.openalex.org/api-reference/works/list-works) | Work fields include `id`, `doi`, `display_name/title`, `authorships`, `abstract_inverted_index`, publication fields, primary location, language/type; list response has `meta` + `results` | Adapter selects only required root fields, validates root/meta/results and maps optional missingness explicitly. Abstracts are reconstructed from the inverted index and remain third-party untrusted content. |
+| OpenAlex, [Search](https://developers.openalex.org/guides/searching) | `search` searches title/abstract/fulltext; Boolean operators are supported; default results include provider `relevance_score` and citation count influences it | Exact query is recorded. ReAgent performs its existing deterministic rank afterward and does not use citation count as a quality score. OpenAlex relevance is discovery ordering, not evidence of scientific quality. |
+| OpenAlex, [Page through Results](https://developers.openalex.org/guides/page-through-results) | `cursor=*`, then exact `next_cursor`; `per_page` 1–100 | Phase 9B-1 deliberately requests one cursor page because max candidates is 20. `complete` means the requested bounded plan was fulfilled, never an exhaustive result corpus. |
+| OpenAlex, [Select Fields](https://developers.openalex.org/guides/selecting-fields) | `select` supports top-level fields only | Requested-field identity is pinned in `ProviderOperation`; nested field selection is not attempted. |
+| OpenAlex, [Error Handling](https://developers.openalex.org/api-reference/errors) | 400 bad request, 403 rate exceeded, 404 not found, 429 daily limit, 500 transient; exponential backoff for transient failures | 400 is non-retryable invalid query; official 403 and 429 normalize to rate limit; 5xx/timeouts/network retry at most twice after initial call. Diagnostics exclude bodies, URLs and credentials. |
+| OpenAlex, [Check rate limit status](https://developers.openalex.org/api-reference/rate-limits/check-rate-limit-status) | `/rate-limit` requires an API key and exposes daily remaining and endpoint cost | This resolves the zero-out-of-pocket policy: live composition requires a key and blocks before `/works` if free daily remaining credit cannot cover search. Prepaid balance is never needed. |
+| OpenAlex, [Pricing / CC0](https://help.openalex.org/hc/en-us/articles/24397762024087-Pricing), [About us](https://help.openalex.org/hc/en-us/articles/24396686889751-About-us), [citation guidance](https://help.openalex.org/hc/en-us/articles/28761511652247-How-can-I-cite-OpenAlex), and [Terms](https://openalex.org/OpenAlex_termsofservice.pdf) | OpenAlex describes its dataset as CC0 and asks users to cite the OpenAlex paper; Terms preserve risks for linked publications/third-party material and disclaim completeness | Report displays OpenAlex attribution; normalized metadata, IDs, hashes and plan/execution evidence may persist privately. Raw responses and real abstracts are not committed. Abstract/publication rights are not inferred from dataset-level CC0. This is engineering risk assessment, not legal advice. |
+
+### Conflicts with Phase 9B-0 evidence
+
+1. Phase 9B-0 recorded unauthenticated allowance as `$0.01/day`; current official
+   Authentication & Pricing says `$0.10/day`. The current value controls and the
+   earlier value is retained here as a documented drift conflict.
+2. The OpenAlex help-center pricing page still presents an older “100k/day,
+   max 10/second” style table, while the current developer Authentication page
+   uses credit-based pricing and a 100 requests/s ceiling. The developer
+   contract controls adapter behavior; the conflict is a provider-drift risk.
+3. The general authentication page permits no-key trial usage, but the official
+   `/rate-limit` reference requires a key. ReAgent therefore makes the stricter
+   project decision to require a free key for supervised live mode so monetary
+   budget can fail closed before the billable search.
+
+### Phase 9B-1 Class D decisions
+
+- One cursor page / maximum 20 candidates / maximum 3 discovery attempts.
+- One free-credit preflight plus up to three Works attempts reserves four
+  request units; the full workflow hard cap remains 12.
+- 15-second request timeout, exponential delays 1/2 seconds (or bounded
+  `Retry-After`), 90-second provider-operation deadline.
+- Exact DOI then exact OpenAlex ID automatically deduplicate; normalized
+  title+year is advisory only; fuzzy/version merging is prohibited.
+- Full response bodies are not retained; selected raw-record canonical hashes
+  are retained. Live artifacts remain ignored and require owner-approved cleanup.
+
+These are ReAgent policies, not OpenAlex recommendations. Revisit when official
+contracts drift, live smoke reveals incompatible behavior, or evaluation begins.
 
 ## Decision PV-001: Verification and enrichment provider
 

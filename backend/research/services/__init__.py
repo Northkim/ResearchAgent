@@ -12,6 +12,7 @@ from .budget import (
     ProviderBudgetEvaluator,
     ProviderOperationService,
 )
+from .execution_policy import ProviderExecutionPolicy
 from .artifacts import (
     ArtifactApplicationGateway,
     ArtifactGatewayError,
@@ -27,6 +28,7 @@ __all__ = [
     "BudgetTotals",
     "ProviderBudgetEvaluator",
     "ProviderOperationService",
+    "ProviderExecutionPolicy",
     "ArtifactApplicationGateway",
     "ArtifactGatewayError",
     "CreateArtifactContent",

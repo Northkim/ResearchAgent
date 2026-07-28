@@ -13,6 +13,13 @@ from .local_artifact_storage import (
     InvalidStorageKeyError,
     LocalFilesystemArtifactStorage,
 )
+from .openalex import (
+    HttpxOpenAlexTransport,
+    OpenAlexConfiguration,
+    OpenAlexHttpResponse,
+    OpenAlexPaperSearchProvider,
+    OpenAlexTransport,
+)
 
 __all__ = [
     "ArtifactIntegrityError",
@@ -24,4 +31,9 @@ __all__ = [
     "ImmutableArtifactConflictError",
     "InvalidStorageKeyError",
     "LocalFilesystemArtifactStorage",
+    "HttpxOpenAlexTransport",
+    "OpenAlexConfiguration",
+    "OpenAlexHttpResponse",
+    "OpenAlexPaperSearchProvider",
+    "OpenAlexTransport",
 ]

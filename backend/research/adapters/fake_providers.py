@@ -182,7 +182,16 @@ class FakeSourceContentProvider(_FailureMixin, SourceContentProvider):
             retrieved_at=_FIXED_TIME,
             content_hash=sha256_bytes(paper.abstract.encode("utf-8")),
             access_limitation=AccessLimitation.ABSTRACT_ONLY,
-            license_or_usage_metadata={"fixture": "synthetic", "redistributable": True},
+            license_or_usage_metadata=(
+                {"fixture": "synthetic", "redistributable": True}
+                if paper.source_provider.startswith("synthetic-")
+                else {
+                    "fixture": "not_committed",
+                    "discovery_provider": paper.source_provider,
+                    "content_scope": "abstract_only",
+                    "redistribution_rights": "not_asserted",
+                }
+            ),
         )
         return SourceContentResult(
             content=content,
