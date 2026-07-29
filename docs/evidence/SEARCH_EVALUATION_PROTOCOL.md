@@ -1,7 +1,30 @@
 # ReAgent Search Evaluation Protocol
 
-日期：2026-07-28；状态：**Harness implemented / human evaluation pending**。本协议评估 provider/architecture，
-不评估真实 LLM，也不以截图作为证据。
+日期：2026-07-29；状态：**Harness implemented / automated silver contract
+Proposed / no labels generated**。本协议评估 provider/architecture，不评估论文
+科学质量，也不以截图作为证据。
+
+## Phase 9B-2C-0 proposed supersession
+
+For the current prototype, the working evaluation objective is proposed as:
+
+> **Automated silver-label relevance evaluation with targeted human audit.**
+
+This is not expert ground truth, scientific peer review, methodological-quality
+assessment, definitive paper-quality ranking, or a systematic-review gold
+standard. The original two-human blind protocol below remains the higher-rigor
+expert-gold design and is **deferred**, not deleted or declared incorrect.
+Existing blank reviewer A/B packets remain untouched.
+
+No real judge, multilingual search, human label, automated label, or retrieval
+metric was generated in Phase 9B-2C-0. ADR 0005 remains Proposed. Governing
+proposed contracts:
+
+- `AUTOMATED_RELEVANCE_RUBRIC.md`;
+- `SILVER_LABEL_AGGREGATION_POLICY.md`;
+- `HUMAN_AUDIT_PROTOCOL.md`;
+- `MULTILINGUAL_SEARCH_PLAN.md`;
+- `TWO_HUMAN_REVIEW_SUPERSESSION.md`.
 
 ## Phase 9B-2A implementation status
 
@@ -38,7 +61,7 @@ architecture。Semantic Scholar/Crossref 仍未授权或实现。
 层次方案不会产生额外 discovery recall，除非未来批准 query expansion；
 本轮重点检验 identity、metadata、dedup、人工审查负担和 operational cost。
 
-## Human-reviewed set
+## Deferred expert-gold human-reviewed set
 
 Proposed Class D default: 12 topics, four domain groups各 3：
 
@@ -79,6 +102,23 @@ version、timestamps，不保存不必要个人数据。
 candidate set”。小样本会有 domain/annotator variance，不得外推成 universal
 provider superiority。
 
+## Proposed automated silver set
+
+The existing 40 reviewable candidates remain the bounded pilot input. The empty
+Chinese topic remains coverage/normalization evidence and receives no fabricated
+candidate.
+
+Each candidate receives two pointwise judgments under separately versioned but
+equivalent prompt structures. A limited deterministic set of neighboring pairs
+receives mirrored-order pairwise consistency checks. Exact agreement with
+confidence/evidence/warning requirements may create `AUTO_ACCEPTED` or
+`AUTO_REJECTED`; every disagreement, partial label, cannot-judge state, low
+confidence, missing evidence, pairwise conflict, non-English uncertainty, or
+metadata warning becomes `NEEDS_HUMAN_REVIEW`.
+
+All thresholds, call counts, pair selection, and audit sampling are proposed
+**Class D ReAgent policy** and require owner approval.
+
 ## Metrics
 
 ### Retrieval
@@ -90,6 +130,27 @@ provider superiority。
 - unique relevant yield by provider/architecture。
 
 这些是 literature-established IR metrics；没有 universal passing threshold。
+
+### Automated silver relevance
+
+Silver-only names prevent a gold-standard claim:
+
+- Silver Precision@5;
+- Silver Precision@10;
+- Silver nDCG@10;
+- Silver Relevant-paper Yield;
+- Automated Judgment Agreement;
+- Human-audit Agreement;
+- Human Override Rate;
+- NEEDS_HUMAN_REVIEW Rate;
+- CANNOT_JUDGE Rate;
+- Non-English Uncertainty Rate.
+
+Reports must publish (1) raw-silver metrics, (2) human-audited-silver metrics
+using audit overrides where available, (3) audit agreement/override, (4)
+coverage and unavailable values, and (5) the explicit statement that expert-gold
+labels do not exist. Required-review items without audit are unavailable, never
+coerced to non-relevant.
 
 ### Metadata
 
@@ -134,7 +195,7 @@ duplicate/false-merge metric 必须返回 unavailable；不得把缺失 evidence
 - percentage of reportable records with provider/version/timestamp/request hash；
 - page reload/reconstruction completeness in later integration testing。
 
-## Proposed acceptance thresholds (Class D, owner approval required)
+## Deferred expert-gold acceptance thresholds (Class D, owner approval required)
 
 These are starting gates, not established standards:
 
@@ -158,7 +219,26 @@ uncertainty, must reduce identity/metadata unresolved rate or manual review burd
 and must remain inside request/legal/latency caps. If it adds no material value,
 prefer OpenAlex-only until a stronger use case.
 
-## Execution design
+## Proposed silver execution design
+
+1. Freeze candidate/topic checksums, schema/rubric/prompt/model/adapter identities,
+   retention, and owner-approved limits.
+2. Validate deterministic metadata without exposing rank/citation data.
+3. Reserve and execute pointwise A/B operations; validate structured output,
+   supporting spans, usage, identity, and settlement.
+4. Execute only selected mirrored pairwise consistency operations.
+5. Aggregate without letting a judge see another judge's result.
+6. Audit all required exceptions plus a deterministic consensus sample and
+   per-topic minimum.
+7. Report raw-silver and audited-silver metrics separately. Keep untouched human
+   packets and nonexistent expert-gold labels distinct.
+8. Fail closed on cost/token/call excess, unavailable model, repeated schema
+   failure, missing usage, or unresolved state.
+
+The current authorized judge budget is USD 0.00. No execution may begin until
+ADR 0005 and provider/model/cost/retention decisions are approved.
+
+## Deferred expert-gold execution design
 
 1. Freeze evaluation manifest, schemas, adapter versions, official-contract review
    date and owner-approved limits.
@@ -186,6 +266,10 @@ prefer OpenAlex-only until a stronger use case.
 - observed live false merge, DOI mismatch, >1% 429/failure, or abstract integrity
   incident；
 - shift from abstract-only or future commercial/public distribution。
+- judge provider/model/snapshot, prompt, rubric, schema, aggregation, audit, or
+  translation change;
+- audit override/uncertainty exceeds approved policy;
+- expert/publication/systematic-review claim is planned.
 
 ## Evidence basis
 

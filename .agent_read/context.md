@@ -537,3 +537,58 @@ Current state: **WAITING_FOR_HUMAN_REVIEW**. Next permitted milestone is only
 **Phase 9B-2B-2 — import two human judgment files, independent human
 adjudication, then metric report**. Do not implement S2, Crossref, real LLM or
 full text.
+
+## Phase 9B-2C-0: Automated silver evaluation and multilingual search contract
+
+2026-07-29 documentation/evidence/architecture contract completed. The proposed
+prototype objective is now:
+
+**Automated silver-label relevance evaluation with targeted human audit.**
+
+This proposal does not create expert ground truth and does not assess scientific
+method, credibility, novelty, venue quality, causal validity, claim truth, or
+overall merit. The higher-rigor two-human blind method is deferred due to scope
+and reviewer availability, not declared incorrect. Existing blank reviewer A/B
+packets remain retained and untouched.
+
+Proposed ADR:
+
+`.agent_read/decisions/0005-automated-relevance-judge-and-multilingual-search.md`
+— status **Proposed**, not Accepted.
+
+The contract freezes conceptual immutable judgment/audit schemas, a five-label
+preview-only rubric, two pointwise prompt versions, limited mirrored pairwise
+consistency, conservative automated dispositions, targeted/random human audit,
+raw versus audited silver metrics, provider-independent judge/prompt registry,
+reuse of ArtifactContentStorage + evaluation journal + ProviderOperationService,
+fail-closed cost limits, and deterministic multilingual QueryVariant/
+MultilingualSearchPlan provenance, exact DOI/ID merge, advisory title/year
+clusters, and coverage diagnostics.
+
+Conditional provider recommendation is to calibrate OpenAI `gpt-5.6-terra` and
+compare a bounded subset with Anthropic `claude-sonnet-5`; this is Class D policy
+and not approval. `gpt-oss-20b` is the local/open-weight comparison. Current
+authorized judge budget remains USD 0.00.
+
+The Chinese topic remains one provider result and zero candidates. Current
+evidence records a generic field-length rejection but not the field or measured
+length, so the exact triggered field/limit is unavailable. The later plan adds
+safe field-specific diagnostics and fixtures without loosening the boundary or
+fabricating a candidate.
+
+No real judge implementation/call, no multilingual search execution, no
+translation, no OpenAlex call, no label/import/adjudication/metric, no backend/
+frontend/migration/workflow/dependency/database change, and no packet deletion
+occurred in Phase 9B-2C-0.
+
+Open owner decisions: adopt silver labels; provider/model/version/key; monetary,
+call, token, runtime and failure budgets; repetitions/pairwise policy; confidence
+threshold; random audit/cap; treatment of partial and non-English cases;
+abstract-preview retention; machine translation; Chinese/English query variants;
+silver gain mapping; packet cleanup; and whether expert gold is deferred or
+cancelled.
+
+Next permitted milestone: **approve or revise ADR 0005**. Automated judge and
+multilingual SearchPlan implementation remain separate later milestones. Do not
+implement a real judge until ADR 0005 and provider/model/cost/retention policies
+are approved.

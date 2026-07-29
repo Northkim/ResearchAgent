@@ -300,8 +300,8 @@ contracts drift, live smoke reveals incompatible behavior, or evaluation begins.
 
 ## Decision PV-001: Verification and enrichment provider
 
-Status: **Proposed**  
-Evidence classes: A / B / C / D  
+Status: **Proposed**
+Evidence classes: A / B / C / D
 Last verified: 2026-07-27  
 Candidate decision: S2 verification runs only on selected papers and identity-ambiguous ranked candidates, not every discovery result.
 
@@ -566,6 +566,56 @@ pseudonymous review packets were generated. **No human labels, relevance
 metrics, adjudication or provider-quality conclusion exists**, so PE-001
 remains Proposed and provider promotion is not authorized.
 
+## Decision PE-002: Automated silver relevance and multilingual expansion
+
+Status: **Proposed**
+Evidence classes: A / B / C / D
+Last verified: 2026-07-29
+
+Candidate decision: replace full two-human review for the current prototype with
+**automated silver-label relevance evaluation with targeted human audit**, while
+retaining the two-human method and packets for future expert-gold work. Add an
+explicit, versioned multilingual SearchPlan in a separate later milestone.
+
+Evidence:
+
+1. Official OpenAI, Anthropic, gpt-oss, and vLLM contracts are registered with
+   source title/URL/date/claim/limitation in
+   `LLM_JUDGE_PROVIDER_MATRIX.md` (Class A/C).
+2. Primary relevance/judge research on pointwise/pairwise ranking, position
+   bias, prompt sensitivity, multilingual variance, self-preference, and
+   human/LLM disagreement is registered in
+   `AUTOMATED_RELEVANCE_JUDGE_EVIDENCE.md` (Class B).
+3. `SILVER_LABEL_AGGREGATION_POLICY.md`,
+   `HUMAN_AUDIT_PROTOCOL.md`, and `MULTILINGUAL_SEARCH_PLAN.md` are ReAgent
+   Class D proposals.
+
+What the evidence supports: a bounded, versioned, audited silver proxy; two
+pointwise prompts; limited mirrored pairwise consistency; conservative human
+routing; exact query-variant provenance; exact DOI/ID merge; visible coverage
+diagnostics.
+
+What it does not support: expert ground truth, scientific-quality judgment,
+universal confidence thresholds, reliable multilingual judgment without local
+audit, unrestricted LLM query expansion, Chinese recall claims, or a selected
+provider/model.
+
+Current recommendation: conditionally calibrate OpenAI `gpt-5.6-terra` and
+compare a bounded subset with Anthropic `claude-sonnet-5`; use no provider until
+pinning, key, cost, retention, and audit policies are approved. Current monetary
+authorization is USD 0.00.
+
+Chinese-topic limitation: retained evidence proves one generic field-length
+rejection but does not record the field or measured length. Exact cause at the
+field level is unavailable and was not inferred. The safety gate remains.
+
+Revisit triggers: any provider/model/API/price/retention change, audit override
+or multilingual uncertainty above owner policy, query/rubric change, or an
+expert/publication claim.
+
+Owner approval required: **Yes; ADR 0005 remains Proposed and implementation is
+not authorized.**
+
 ## Failure policy summary
 
 The complete matrix is in `PROVIDER_FAILURE_MATRIX.md`. Primary discovery failure is blocking after bounded retries. Verification/enrichment may degrade only when core identity is unambiguous; any ambiguous identity, DOI mismatch, corrupted/malformed payload, contract drift or inability to settle all operations fails/pauses before approval. Partial pages are retained as diagnostic artifacts but are never silently represented as a complete search.
@@ -586,7 +636,7 @@ This adapts ARS’s instruction/data boundary to ReAgent’s existing `Skill` + 
 
 ## Source inventory
 
-### Class A — official contracts (13)
+### Class A — official contracts (13 paper-search sources, plus PE-002 provider sources)
 
 1. OpenAlex Developer Overview, Authentication & Pricing, Search, paging/OpenAPI/deprecations — OurResearch — live — https://developers.openalex.org/  
    Supports base URL, key/credit/rate headers, search/filter/pagination/schema; limitation: mutable live docs.
@@ -613,7 +663,12 @@ This adapts ARS’s instruction/data boundary to ReAgent’s existing `Skill` + 
 12. ARS upstream LICENSE — repository owner — CC BY-NC 4.0 — https://github.com/Imbad0202/academic-research-skills/blob/main/LICENSE
 13. ARS-Codex LICENSE/manifest — repository owner — CC BY-NC 4.0 — https://github.com/Imbad0202/academic-research-skills-codex
 
-### Class B — primary/peer-reviewed research (9)
+PE-002 dynamic judge-provider sources are maintained in
+`LLM_JUDGE_PROVIDER_MATRIX.md`; its access date is 2026-07-29. That matrix is the
+authoritative detail register to avoid duplicating mutable model/pricing/
+retention facts here.
+
+### Class B — primary/peer-reviewed research (paper-search set plus PE-002 judge research)
 
 1. Priem et al. 2022 OpenAlex platform paper (preprint).
 2. Culbert et al. 2024 OpenAlex reference coverage (preprint).
@@ -624,6 +679,11 @@ This adapts ARS’s instruction/data boundary to ReAgent’s existing `Skill` + 
 7. Gusenbauer & Haddaway 2020 search-system evaluation, peer reviewed.
 8. Bramer et al. 2017 database combinations, peer reviewed.
 9. Asai et al. OpenScholar, Nature 2026, peer reviewed.
+
+PE-002 primary judge/relevance research is maintained in
+`AUTOMATED_RELEVANCE_JUDGE_EVIDENCE.md`, including Faggioli et al., Sun et al.,
+Qin et al., Zheng et al., Shi et al., Liu et al., Fu and Liu, Karpinska et al.,
+and Hashemi et al., with claim and limitation.
 
 ### Class C — mature open-source experience (4 systems/repositories)
 
@@ -656,3 +716,12 @@ All matrix weights/scores, request/time/size caps, selected-only verification, m
 | evaluation set size | 12 topics × pooled top-20 | 6 smoke / 30 stronger | blocks architecture promotion, not adapter implementation |
 | abstract-only V1 | remain abstract-only | metadata-only / full text | **blocks workflow scope if changed** |
 | verification scope | selected + ambiguous | all / selected-only / DOI-only | blocks layered DAG finalization |
+| automated silver objective | approve with targeted audit and no-gold language | full two-human now | **blocks judge substrate** |
+| judge provider/model | calibrate `gpt-5.6-terra`; compare `claude-sonnet-5` | Anthropic primary; local | **blocks judge substrate** |
+| judge key / monetary cap | scoped key; at most USD 1.00 proposed after approval | USD 0 / defer | **blocks any real judge call** |
+| judge calls / threshold | 2 pointwise + 10 mirrored pairwise total; 0.80 proposed | lower/higher | **blocks aggregation implementation** |
+| human audit | all exceptions + 10% deterministic consensus, cap 20 | 5% / 20% | **blocks audit implementation** |
+| non-English / partial cases | audit all initially | allow automated consensus | **blocks aggregation implementation** |
+| machine translation | off until separate provenance/retention approval | manual or approved machine translation | blocks translated execution |
+| Chinese variants | owner-review the four proposals | original only / revised set | **blocks multilingual implementation** |
+| expert gold / packets | defer expert gold; retain blank packets until cleanup | execute now / cancel | blocks supersession decision; packets unchanged |
