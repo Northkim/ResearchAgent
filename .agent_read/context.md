@@ -508,3 +508,32 @@ head（8,820,415 bytes，business rows zero）；不得误作产品数据库。
 尚未开始**。下一允许里程碑只有：owner 批准 reviewers、retention 和 thresholds
 后执行 **Phase 9B-2B bounded three-topic candidate-pool pilot + two-human
 review/adjudication**。在结果产生并 review 前不得推荐 S2、Crossref 或 real LLM。
+
+## Phase 9B-2B-1: Three-topic OpenAlex pilot
+
+2026-07-28 bounded live pilot completed with **PASS_WITH_WARNINGS** and stopped
+at `WAITING_FOR_HUMAN_REVIEW`:
+
+- evaluation ID `openalex-three-topic-pilot-v1`;
+- selected existing topics: `cs-machine-unlearning`,
+  `social-algorithmic-management`,
+  `nonenglish-chinese-digital-humanities`;
+- six requests total (three free-credit preflights + three Works pages), zero
+  retries, `$0.003` provider-reported free credit, zero owner out-of-pocket;
+- first two topics normalized 20 candidates each; Chinese/Unicode topic returned
+  one record which was rejected by the frozen safe field-length gate, leaving
+  an empty third pool; no replacement was fabricated;
+- all three ProviderOperations `SUCCEEDED/SETTLED`, zero unsettled;
+- replay returned `resumed` and kept request count 6;
+- two independent blank JSON/CSV packets plus blank adjudication template and
+  checksum manifest generated under ignored private storage;
+- shared review set: 40 candidates; no label, judgment, adjudication or quality
+  metric generated;
+- abstract previews expire 2026-08-11 UTC; pools/journal expire 2026-08-27 UTC;
+- focused evaluation `24 passed`; full backend `163 passed, 18 skipped`;
+  compileall exit 0; no PostgreSQL/frontend test required.
+
+Current state: **WAITING_FOR_HUMAN_REVIEW**. Next permitted milestone is only
+**Phase 9B-2B-2 — import two human judgment files, independent human
+adjudication, then metric report**. Do not implement S2, Crossref, real LLM or
+full text.

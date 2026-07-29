@@ -9,7 +9,7 @@ import os
 import shutil
 import sys
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +67,17 @@ def build_parser() -> argparse.ArgumentParser:
     export = subparsers.add_parser("export")
     export.add_argument("evaluation_id")
     export.add_argument("--format", choices=("json", "csv"), required=True)
+    export.add_argument("--reviewer-id")
+
+    packets = subparsers.add_parser("packets")
+    packets.add_argument("evaluation_id")
+    packets.add_argument(
+        "--reviewer",
+        action="append",
+        dest="reviewers",
+        required=True,
+        help="Exactly two distinct pseudonymous reviewer IDs.",
+    )
 
     import_command = subparsers.add_parser("import")
     import_command.add_argument("evaluation_id")
@@ -183,13 +194,27 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "export":
             candidates = _load_candidates(storage, args.evaluation_id)
             content = (
-                export_review_json(candidates)
+                export_review_json(
+                    candidates,
+                    reviewer_id=args.reviewer_id or "",
+                )
                 if args.format == "json"
-                else export_review_csv(candidates)
+                else export_review_csv(
+                    candidates,
+                    reviewer_id=args.reviewer_id or "",
+                )
             )
             extension = args.format
+            reviewer_segment = (
+                _safe_segment(args.reviewer_id)
+                if args.reviewer_id
+                else "template"
+            )
             stored = storage.write_immutable(
-                f"{_safe_segment(args.evaluation_id)}/reviews/template.{extension}",
+                (
+                    f"{_safe_segment(args.evaluation_id)}/reviews/"
+                    f"{reviewer_segment}.{extension}"
+                ),
                 content,
                 media_type=(
                     "application/json"
@@ -198,6 +223,130 @@ def main(argv: list[str] | None = None) -> int:
                 ),
             )
             _print_result({"status": "exported", "storage_key": stored.storage_key})
+            return 0
+        if args.command == "packets":
+            evaluation_id = _safe_segment(args.evaluation_id)
+            reviewers = tuple(_safe_segment(item) for item in args.reviewers)
+            if len(reviewers) != 2 or len(set(reviewers)) != 2:
+                raise ValueError(
+                    "Review packet generation requires exactly two distinct reviewers"
+                )
+            candidates = _load_candidates(storage, evaluation_id)
+            run = _load_run(storage, evaluation_id)
+            candidate_identity = [
+                {
+                    "candidate_id": item.candidate_id,
+                    "identity_hash": item.identity_hash,
+                }
+                for item in candidates
+            ]
+            from backend.research.contracts import canonical_hash
+
+            candidate_set_checksum = canonical_hash(candidate_identity)
+            created_at = run.completed_at.astimezone(UTC)
+            candidate_expiry = created_at + timedelta(days=30)
+            preview_expiry = created_at + timedelta(days=14)
+            packet_artifacts: list[dict[str, Any]] = []
+            for reviewer in reviewers:
+                for extension, content, media_type in (
+                    (
+                        "json",
+                        export_review_json(candidates, reviewer_id=reviewer),
+                        "application/json",
+                    ),
+                    (
+                        "csv",
+                        export_review_csv(candidates, reviewer_id=reviewer),
+                        "text/csv; charset=utf-8",
+                    ),
+                ):
+                    stored = storage.write_immutable(
+                        (
+                            f"{evaluation_id}/reviews/{reviewer}/"
+                            f"review.{extension}"
+                        ),
+                        content,
+                        media_type=media_type,
+                    )
+                    packet_artifacts.append(
+                        {
+                            "reviewer_id": reviewer,
+                            "format": extension,
+                            "storage_key": stored.storage_key,
+                            "checksum": stored.checksum,
+                            "size": stored.size,
+                            "media_type": stored.media_type,
+                        }
+                    )
+            adjudication_document = {
+                "schema_version": "openalex-adjudication-template/v1",
+                "evaluation_id": evaluation_id,
+                "candidate_set_checksum": candidate_set_checksum,
+                "instructions": (
+                    "Human adjudicator completes this only after two independent "
+                    "review files have been imported."
+                ),
+                "judgments": [
+                    {
+                        "topic_id": item.topic_id,
+                        "candidate_id": item.candidate_id,
+                        "candidate_identity_hash": item.identity_hash,
+                        "final_relevance_label": "",
+                        "adjudicator_id": "",
+                        "source_judgment_hashes": [],
+                        "disagreement_reason": "",
+                        "final_notes": "",
+                        "adjudicated_at": "",
+                    }
+                    for item in candidates
+                ],
+            }
+            adjudication = storage.write_immutable(
+                f"{evaluation_id}/reviews/adjudication_template.json",
+                canonical_json(adjudication_document).encode("utf-8"),
+                media_type="application/json",
+            )
+            packet_artifacts.append(
+                {
+                    "reviewer_id": None,
+                    "format": "json",
+                    "storage_key": adjudication.storage_key,
+                    "checksum": adjudication.checksum,
+                    "size": adjudication.size,
+                    "media_type": adjudication.media_type,
+                    "purpose": "blank_adjudication_template",
+                }
+            )
+            packet_manifest = {
+                "schema_version": "openalex-review-packet-manifest/v1",
+                "evaluation_id": evaluation_id,
+                "candidate_count": len(candidates),
+                "candidate_set_checksum": candidate_set_checksum,
+                "reviewer_ids": list(reviewers),
+                "created_at": created_at.isoformat(),
+                "normalized_metadata_expires_at": candidate_expiry.isoformat(),
+                "abstract_previews_expire_at": preview_expiry.isoformat(),
+                "judgment_fields_prefilled": False,
+                "relevance_labels_prefilled": False,
+                "human_review_required": True,
+                "artifacts": packet_artifacts,
+            }
+            manifest = storage.write_immutable(
+                f"{evaluation_id}/reviews/review_packet_manifest.json",
+                canonical_json(packet_manifest).encode("utf-8"),
+                media_type="application/json",
+            )
+            _print_result(
+                {
+                    "status": "review_packets_generated",
+                    "evaluation_id": evaluation_id,
+                    "candidate_count": len(candidates),
+                    "candidate_set_checksum": candidate_set_checksum,
+                    "manifest_storage_key": manifest.storage_key,
+                    "manifest_checksum": manifest.checksum,
+                    "human_labels_generated": False,
+                }
+            )
             return 0
         if args.command == "import":
             candidates = _load_candidates(storage, args.evaluation_id)

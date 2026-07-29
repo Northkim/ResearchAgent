@@ -107,6 +107,30 @@ def test_json_export_import_round_trip_records_checksum_without_filling_labels()
     assert result.file_checksum.startswith("sha256:")
 
 
+def test_reviewer_specific_exports_assign_only_pseudonym_not_labels() -> None:
+    candidates = (_candidate(1), _candidate(2))
+    json_value = json.loads(
+        export_review_json(candidates, reviewer_id="reviewer_A")
+    )
+    csv_rows = list(
+        csv.DictReader(
+            io.StringIO(
+                export_review_csv(
+                    candidates,
+                    reviewer_id="reviewer_A",
+                ).decode()
+            )
+        )
+    )
+    assert json_value["assigned_reviewer_id"] == "reviewer_A"
+    assert all(row["reviewer_id"] == "reviewer_A" for row in json_value["rows"])
+    assert all(row["reviewer_id"] == "reviewer_A" for row in csv_rows)
+    assert all(row["relevance_label"] == "" for row in json_value["rows"])
+    assert all(row["confidence"] == "" for row in json_value["rows"])
+    with pytest.raises(ValueError, match="safe pseudonymous"):
+        export_review_json(candidates, reviewer_id="../reviewer")
+
+
 def test_csv_export_import_round_trip() -> None:
     candidates = (_candidate(1), _candidate(2))
     rows = list(csv.DictReader(io.StringIO(export_review_csv(candidates).decode())))

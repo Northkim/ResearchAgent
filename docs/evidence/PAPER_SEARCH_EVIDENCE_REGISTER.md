@@ -555,6 +555,17 @@ Revisit trigger: owner/legal review、public/commercial distribution、provider
 term change、rights incident。
 Owner approval required: **Yes**。
 
+Phase 9B-2B-1 pilot note（2026-07-28）：owner approved the 30-day normalized
+pool/journal and 14-day abstract-preview policy for one bounded three-topic
+pilot. `cs-machine-unlearning` and `social-algorithmic-management` each produced
+20 normalized candidates. `nonenglish-chinese-digital-humanities` returned one
+provider record that was rejected by the existing safe field-length validation,
+so its normalized pool is empty. Six requests, zero retries and `$0.003` free
+provider credit were recorded; all three operations settled. Two blank
+pseudonymous review packets were generated. **No human labels, relevance
+metrics, adjudication or provider-quality conclusion exists**, so PE-001
+remains Proposed and provider promotion is not authorized.
+
 ## Failure policy summary
 
 The complete matrix is in `PROVIDER_FAILURE_MATRIX.md`. Primary discovery failure is blocking after bounded retries. Verification/enrichment may degrade only when core identity is unambiguous; any ambiguous identity, DOI mismatch, corrupted/malformed payload, contract drift or inability to settle all operations fails/pauses before approval. Partial pages are retained as diagnostic artifacts but are never silently represented as a complete search.

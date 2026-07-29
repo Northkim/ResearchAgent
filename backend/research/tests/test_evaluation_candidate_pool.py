@@ -221,6 +221,54 @@ def test_candidate_pool_generation_is_immutable_resumable_and_network_free(tmp_p
     assert all(not item.storage_key.startswith("/") for item in first.artifacts)
 
 
+def test_candidate_pool_uses_topic_maximum_candidates(tmp_path) -> None:
+    rate = _response(
+        {
+            "rate_limit": {
+                "daily_remaining_usd": "1",
+                "prepaid_remaining_usd": "0",
+                "endpoint_costs_usd": {"search": "0.001"},
+            }
+        }
+    )
+    works = _response(
+        {
+            "meta": {
+                "count": 20,
+                "per_page": 20,
+                "next_cursor": None,
+                "cost_usd": "0.001",
+            },
+            "results": [_work(index) for index in range(1, 21)],
+        }
+    )
+    transport = SyntheticTransport([rate, works])
+    provider = OpenAlexPaperSearchProvider(
+        OpenAlexConfiguration(api_key="synthetic-only"),
+        transport=transport,
+        clock=lambda: NOW,
+        sleeper=lambda _: None,
+    )
+    uow = InMemoryUnitOfWork()
+    result = asyncio.run(
+        CandidatePoolGenerator(
+            provider=provider,
+            provider_operations=ProviderOperationService(
+                uow.provider_operations,
+                commit_callback=uow.commit,
+            ),
+            execution_policy=ProviderExecutionPolicy.supervised_openalex(),
+            artifact_storage=LocalFilesystemArtifactStorage(tmp_path),
+            clock=lambda: NOW,
+        ).generate(
+            evaluation_id="twenty-candidate-evaluation",
+            topic_set=_topic_set(),
+        )
+    )
+    assert len(result.candidates) == 20
+    assert transport.calls[1][1]["per_page"] == "20"
+
+
 def test_candidate_pool_budget_fails_before_transport_call(tmp_path) -> None:
     transport = SyntheticTransport([])
     provider = OpenAlexPaperSearchProvider(

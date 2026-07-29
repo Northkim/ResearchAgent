@@ -58,11 +58,20 @@ class JudgmentImportResult:
     missing_candidate_ids: tuple[str, ...]
 
 
-def export_review_json(candidates: Iterable[EvaluationCandidate]) -> bytes:
-    rows = [_review_row(candidate) for candidate in _ordered_candidates(candidates)]
+def export_review_json(
+    candidates: Iterable[EvaluationCandidate],
+    *,
+    reviewer_id: str = "",
+) -> bytes:
+    reviewer_id = _reviewer_id(reviewer_id)
+    rows = [
+        _review_row(candidate, reviewer_id=reviewer_id)
+        for candidate in _ordered_candidates(candidates)
+    ]
     return canonical_json(
         {
             "schema_version": "openalex-review-sheet/v1",
+            "assigned_reviewer_id": reviewer_id or None,
             "instructions": (
                 "Human reviewer must complete judgment fields; no label is inferred "
                 "from rank or metadata."
@@ -72,12 +81,17 @@ def export_review_json(candidates: Iterable[EvaluationCandidate]) -> bytes:
     ).encode("utf-8")
 
 
-def export_review_csv(candidates: Iterable[EvaluationCandidate]) -> bytes:
+def export_review_csv(
+    candidates: Iterable[EvaluationCandidate],
+    *,
+    reviewer_id: str = "",
+) -> bytes:
+    reviewer_id = _reviewer_id(reviewer_id)
     buffer = io.StringIO(newline="")
     writer = csv.DictWriter(buffer, fieldnames=_REVIEW_COLUMNS, lineterminator="\n")
     writer.writeheader()
     for candidate in _ordered_candidates(candidates):
-        row = _review_row(candidate)
+        row = _review_row(candidate, reviewer_id=reviewer_id)
         row["authors"] = json.dumps(row["authors"], ensure_ascii=False)
         row["metadata_error_flags"] = "[]"
         writer.writerow(row)
@@ -246,7 +260,11 @@ def _import_rows(
     )
 
 
-def _review_row(candidate: EvaluationCandidate) -> dict[str, Any]:
+def _review_row(
+    candidate: EvaluationCandidate,
+    *,
+    reviewer_id: str = "",
+) -> dict[str, Any]:
     return {
         "topic_id": candidate.topic_id,
         "topic_title": candidate.topic_title,
@@ -263,7 +281,7 @@ def _review_row(candidate: EvaluationCandidate) -> dict[str, Any]:
         "openalex_id": candidate.openalex_id,
         "abstract_available": candidate.abstract_available,
         "abstract_preview": candidate.abstract_preview,
-        "reviewer_id": "",
+        "reviewer_id": reviewer_id,
         "relevance_label": "",
         "confidence": "",
         "exclusion_reason": "",
@@ -273,6 +291,16 @@ def _review_row(candidate: EvaluationCandidate) -> dict[str, Any]:
         "reviewer_note": "",
         "judged_at": "",
     }
+
+
+def _reviewer_id(value: str) -> str:
+    normalized = value.strip()
+    if normalized and (
+        len(normalized) > 80
+        or not all(character.isalnum() or character in "-_." for character in normalized)
+    ):
+        raise ValueError("Reviewer ID must be a safe pseudonymous identifier")
+    return normalized
 
 
 def _validate_candidate_row(

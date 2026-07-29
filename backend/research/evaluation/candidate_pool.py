@@ -181,7 +181,7 @@ class CandidatePoolGenerator:
             keywords=topic.keywords,
             year_from=topic.year_from,
             year_to=topic.year_to,
-            max_results=5,
+            max_results=topic.maximum_candidates,
             language=topic.language_policy,
             inclusion_criteria=(
                 "Candidate is topically relevant under human review.",
@@ -190,7 +190,11 @@ class CandidatePoolGenerator:
                 "Candidate is not relevant or cannot be judged from permitted metadata.",
             ),
         )
-        request_identity = self.provider.request_identity(query, limit=5)
+        selected_paper_limit = min(5, topic.maximum_candidates)
+        request_identity = self.provider.request_identity(
+            query,
+            limit=selected_paper_limit,
+        )
         fingerprint = canonical_hash(request_identity)
         operation = self._operation(
             evaluation_id=evaluation_id,
@@ -227,7 +231,11 @@ class CandidatePoolGenerator:
             + timedelta(seconds=self.execution_policy.operation_timeout_seconds),
         )
         try:
-            result = await self.provider.search(query, limit=5, context=context)
+            result = await self.provider.search(
+                query,
+                limit=selected_paper_limit,
+                context=context,
+            )
         except ProviderError as error:
             usage = self._failure_usage(error)
             self.provider_operations.settle_failure(

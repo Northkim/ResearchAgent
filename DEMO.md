@@ -508,6 +508,67 @@ conda run --no-capture-output -n reagent-dev \
 Do not execute cleanup before owner review. Phase 9B-2A did not run a live
 pilot; these commands document the future owner-supervised path.
 
+## 11B. Phase 9B-2B-1 retained three-topic review packet
+
+The owner-authorized pilot uses:
+
+```bash
+set -a
+source .env
+set +a
+
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  initialize openalex-three-topic-pilot-v1
+
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  generate openalex-three-topic-pilot-v1 \
+  --live \
+  --include-abstract-preview \
+  --topic cs-machine-unlearning \
+  --topic social-algorithmic-management \
+  --topic nonenglish-chinese-digital-humanities
+
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  packets openalex-three-topic-pilot-v1 \
+  --reviewer reviewer_A \
+  --reviewer reviewer_B
+```
+
+The actual retained private root is:
+
+```text
+runtime_data/evaluations/openalex/openalex-three-topic-pilot-v1/
+```
+
+It contains three immutable topic manifests, a mode-`0600` operation journal,
+reviewer_A/reviewer_B JSON and CSV packets, a blank adjudication template and a
+packet checksum manifest. It is ignored and must not be committed.
+
+Reviewers must follow
+`docs/evidence/OPENALEX_THREE_TOPIC_PILOT_REVIEW_GUIDE.md`. No judgment file has
+been imported. Do not run `adjudicate` or `report` before two independent human
+files are returned.
+
+Retention deadlines:
+
+- abstract previews: 2026-08-11 UTC or adjudication, whichever is earlier;
+- normalized pools and operation journal: 2026-08-27 UTC.
+
+Optional owner-authorized cleanup after review/cancellation:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  clean openalex-three-topic-pilot-v1 \
+  --confirm openalex-three-topic-pilot-v1
+```
+
+This command deletes only the named ignored evaluation root. Do not execute it
+before preserving approved aggregate evidence.
+
 ## 12. Troubleshooting
 
 - `docker: command not found`: install Docker Desktop or another Docker Engine
