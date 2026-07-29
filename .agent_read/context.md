@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-07-28
+Last updated: 2026-07-29
 
 ## Project authority
 
@@ -592,3 +592,52 @@ Next permitted milestone: **approve or revise ADR 0005**. Automated judge and
 multilingual SearchPlan implementation remain separate later milestones. Do not
 implement a real judge until ADR 0005 and provider/model/cost/retention policies
 are approved.
+
+## Phase 9B-2C-1: Multilingual SearchPlan and safe diagnostics
+
+ADR 0005 is now **Accepted with limited scope**. Accepted implementation scope:
+explicit immutable owner-approved QueryVariants, separate per-variant
+ProviderOperations, exact DOI/OpenAlex-ID merge, no fuzzy automatic merge,
+query provenance, coverage diagnostics, and safe future field-rejection
+diagnostics. Blank reviewer A/B packets remain retained and untouched.
+
+Implemented under the evaluation boundary:
+
+- `reagent-query-variant/v1` and
+  `reagent-multilingual-search-plan/v1` canonical contracts;
+- four manual Chinese/English variants in
+  `evaluation/topics/openalex_chinese_multilingual_v1.json`;
+- deterministic definition-order execution, immutable artifacts, exact merge,
+  conflict/advisory reporting, and replay without duplicate provider calls;
+- field/normalized-length/configured-limit/hash/80-character safe preview
+  diagnostics without relaxing validation or storing full rejected values;
+- multilingual provenance in new evaluation candidates/review exports;
+- evaluation CLI `generate-multilingual`, explicit `--live` only.
+
+Live evaluation `openalex-chinese-multilingual-v1-live` used eight OpenAlex
+requests, settled four operations, and produced 20 merged candidates: original
+Chinese 1 received/0 normalized/1 safely rejected; Chinese synonym 0; English
+pivot 20 normalized from one bounded page; bilingual 0. All declared candidate
+languages were English. There were zero exact merges, advisory clusters,
+identity conflicts, or cap exclusions. This is coverage/normalization evidence,
+not relevance or scientific-quality evidence. Replay was network-free.
+
+The historical Phase 9B-2B-1 rejection remains details unavailable; new evidence
+does not backfill it. Retained ignored roots are
+`openalex-chinese-multilingual-v1` (local transport failure evidence) and
+`openalex-chinese-multilingual-v1-live` (successful acceptance). No database was
+created.
+
+Verification: focused research `90 passed`; full backend
+`173 passed, 18 skipped`; compileall exit 0. No SQL-specific or frontend tests
+were required. No workflow definition, dependency, migration, frontend, API DTO,
+real judge, translation, relevance label, or secondary provider changed.
+
+Deferred ADR scope remains: every real AutomatedRelevanceJudge, judge provider/
+model/adapter/call/key/non-zero budget, confidence/random-audit threshold,
+machine translation, unrestricted query expansion, and real judge prompt.
+
+Next permitted milestone: **automated-relevance-judge substrate using only a
+Fake Judge**, including immutable contracts, aggregation input boundary, and
+audit-queue scaffolding. Do not implement a real judge until that substrate is
+verified and provider/model/cost policies are explicitly approved.

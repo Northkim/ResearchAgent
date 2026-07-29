@@ -21,7 +21,7 @@ from .contracts import (
     RelevanceLabel,
 )
 
-_REVIEW_COLUMNS = (
+_REVIEW_REQUIRED_COLUMNS = (
     "topic_id",
     "topic_title",
     "topic",
@@ -46,6 +46,14 @@ _REVIEW_COLUMNS = (
     "metadata_error_flags",
     "reviewer_note",
     "judged_at",
+)
+_REVIEW_COLUMNS = (
+    *_REVIEW_REQUIRED_COLUMNS,
+    "first_seen_variant_id",
+    "all_matched_variant_ids",
+    "matched_query_checksums",
+    "provider_operation_ids",
+    "source_query_language",
 )
 
 
@@ -74,7 +82,8 @@ def export_review_json(
             "assigned_reviewer_id": reviewer_id or None,
             "instructions": (
                 "Human reviewer must complete judgment fields; no label is inferred "
-                "from rank or metadata."
+                "from rank or metadata. Rank is deterministic packet position, not "
+                "provider rank."
             ),
             "rows": rows,
         }
@@ -94,6 +103,12 @@ def export_review_csv(
         row = _review_row(candidate, reviewer_id=reviewer_id)
         row["authors"] = json.dumps(row["authors"], ensure_ascii=False)
         row["metadata_error_flags"] = "[]"
+        for field_name in (
+            "all_matched_variant_ids",
+            "matched_query_checksums",
+            "provider_operation_ids",
+        ):
+            row[field_name] = json.dumps(row[field_name], ensure_ascii=False)
         writer.writerow(row)
     return buffer.getvalue().encode("utf-8")
 
@@ -123,7 +138,9 @@ def import_review_csv(
 ) -> JudgmentImportResult:
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
-    if reader.fieldnames is None or not set(_REVIEW_COLUMNS).issubset(reader.fieldnames):
+    if reader.fieldnames is None or not set(_REVIEW_REQUIRED_COLUMNS).issubset(
+        reader.fieldnames
+    ):
         raise ValueError("Review CSV is missing required columns")
     rows: list[dict[str, Any]] = []
     for raw in reader:
@@ -133,6 +150,12 @@ def import_review_csv(
             row.get("metadata_error_flags", ""),
             "metadata_error_flags",
         )
+        for field_name in (
+            "all_matched_variant_ids",
+            "matched_query_checksums",
+            "provider_operation_ids",
+        ):
+            row[field_name] = _json_array(row.get(field_name, ""), field_name)
         rows.append(row)
     return _import_rows(
         rows,
@@ -290,6 +313,11 @@ def _review_row(
         "metadata_error_flags": [],
         "reviewer_note": "",
         "judged_at": "",
+        "first_seen_variant_id": candidate.first_seen_variant_id,
+        "all_matched_variant_ids": list(candidate.all_matched_variant_ids),
+        "matched_query_checksums": list(candidate.matched_query_checksums),
+        "provider_operation_ids": list(candidate.provider_operation_ids),
+        "source_query_language": candidate.source_query_language,
     }
 
 
@@ -344,6 +372,35 @@ def _validate_candidate_row(
     }
     if actual != expected:
         raise ValueError(f"Candidate review metadata changed: {candidate.candidate_id}")
+    if "first_seen_variant_id" in row:
+        provenance_expected = {
+            "first_seen_variant_id": candidate.first_seen_variant_id,
+            "all_matched_variant_ids": tuple(candidate.all_matched_variant_ids),
+            "matched_query_checksums": tuple(candidate.matched_query_checksums),
+            "provider_operation_ids": tuple(candidate.provider_operation_ids),
+            "source_query_language": candidate.source_query_language,
+        }
+        provenance_actual = {
+            "first_seen_variant_id": _optional_text(
+                row.get("first_seen_variant_id")
+            ),
+            "all_matched_variant_ids": tuple(
+                row.get("all_matched_variant_ids", ())
+            ),
+            "matched_query_checksums": tuple(
+                row.get("matched_query_checksums", ())
+            ),
+            "provider_operation_ids": tuple(
+                row.get("provider_operation_ids", ())
+            ),
+            "source_query_language": _optional_text(
+                row.get("source_query_language")
+            ),
+        }
+        if provenance_actual != provenance_expected:
+            raise ValueError(
+                f"Candidate query provenance changed: {candidate.candidate_id}"
+            )
 
 
 def _ordered_candidates(

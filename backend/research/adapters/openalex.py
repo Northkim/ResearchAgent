@@ -22,6 +22,7 @@ from typing import Any, Protocol
 import httpx
 
 from backend.research.contracts import (
+    FieldRejectionDiagnostic,
     PaperAuthor,
     PaperRecord,
     ProviderFailureCategory,
@@ -31,8 +32,10 @@ from backend.research.contracts import (
     SearchExecution,
     SearchPlan,
     SearchStatistics,
+    SearchDiagnosticCode,
     canonical_hash,
     normalize_doi,
+    sha256_bytes,
 )
 from backend.research.ports import (
     PaperSearchProvider,
@@ -44,7 +47,13 @@ from backend.research.ports import (
 
 _OPENALEX_ID = re.compile(r"^(?:https://openalex\.org/)?(W\d+)$")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_SECRET_LIKE = re.compile(
+    r"(?i)(?:(?:api[_-]?key|authorization|bearer|token|secret)\s*[:=]\s*\S+"
+    r"|sk-[a-z0-9_-]{8,})"
+)
 _CONTRACT_SNAPSHOT = "openalex-works-api/2026-07-27"
+_VALIDATOR_VERSION = "openalex-field-validator/v2"
+_SAFE_PREVIEW_LIMIT = 80
 _REQUESTED_FIELDS = (
     "id",
     "doi",
@@ -96,6 +105,12 @@ class OpenAlexHttpResponse:
     status_code: int
     body: bytes
     headers: Mapping[str, str] = field(default_factory=dict)
+
+
+class _FieldRejection(ValueError):
+    def __init__(self, diagnostic: FieldRejectionDiagnostic) -> None:
+        self.diagnostic = diagnostic
+        super().__init__(diagnostic.category.value)
 
 
 class OpenAlexTransport(Protocol):
@@ -420,6 +435,7 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
             search_plan=plan,
             search_execution=execution,
             search_statistics=statistics,
+            rejection_diagnostics=mapping["rejection_diagnostics"],
         )
 
     def _search_plan(
@@ -552,6 +568,7 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
         doi_seen: set[str] = set()
         provider_seen: set[str] = set()
         title_year: Counter[tuple[str, int | None]] = Counter()
+        rejection_diagnostics: list[FieldRejectionDiagnostic] = []
         for index, raw in enumerate(results):
             if not isinstance(raw, Mapping):
                 rejected += 1
@@ -559,6 +576,13 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
                 continue
             try:
                 paper = self._map_work(raw, retrieved_at=retrieved_at)
+            except _FieldRejection as error:
+                rejected += 1
+                rejection_diagnostics.append(error.diagnostic)
+                warnings.append(
+                    f"record[{index}] rejected: {error.diagnostic.category.value}"
+                )
+                continue
             except ValueError as error:
                 rejected += 1
                 warnings.append(f"record[{index}] rejected: {str(error)[:120]}")
@@ -585,6 +609,7 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
             "advisory_clusters": advisory,
             "missing_abstract": missing_abstract,
             "warnings": tuple(warnings),
+            "rejection_diagnostics": tuple(rejection_diagnostics),
         }
 
     def _map_work(self, raw: Mapping[str, Any], *, retrieved_at: datetime) -> PaperRecord:
@@ -595,7 +620,12 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
         if match is None:
             raise ValueError("malformed OpenAlex work ID")
         provider_id = match.group(1)
-        title = self._clean_required(raw.get("display_name"), "title", maximum=500)
+        title = self._clean_required(
+            raw.get("display_name"),
+            "title",
+            maximum=500,
+            record_identity=provider_id,
+        )
         limitations: list[str] = ["identity_unverified_discovery_only"]
         authors: list[PaperAuthor] = []
         authorships = raw.get("authorships")
@@ -606,11 +636,21 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
                 author = authorship.get("author")
                 if not isinstance(author, Mapping):
                     continue
-                name = self._clean_optional(author.get("display_name"), maximum=300)
+                name = self._clean_optional(
+                    author.get("display_name"),
+                    field_name="author.display_name",
+                    maximum=300,
+                    record_identity=provider_id,
+                )
                 if not name:
                     continue
                 author_id = self._openalex_optional_id(author.get("id"), prefix="A")
-                orcid = self._clean_optional(author.get("orcid"), maximum=50)
+                orcid = self._clean_optional(
+                    author.get("orcid"),
+                    field_name="author.orcid",
+                    maximum=50,
+                    record_identity=provider_id,
+                )
                 authors.append(
                     PaperAuthor(
                         name=name,
@@ -620,7 +660,10 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
                 )
         if not authors:
             limitations.append("authors_missing")
-        abstract = self._reconstruct_abstract(raw.get("abstract_inverted_index"))
+        abstract = self._reconstruct_abstract(
+            raw.get("abstract_inverted_index"),
+            record_identity=provider_id,
+        )
         if abstract is None:
             limitations.append("abstract_missing")
         doi: str | None = None
@@ -641,9 +684,22 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
         if isinstance(location, Mapping):
             source = location.get("source")
             if isinstance(source, Mapping):
-                venue = self._clean_optional(source.get("display_name"), maximum=500)
+                venue = self._clean_optional(
+                    source.get("display_name"),
+                    field_name="primary_location.source.display_name",
+                    maximum=500,
+                    record_identity=provider_id,
+                )
         if venue is None:
             limitations.append("venue_missing")
+        language = self._clean_optional(
+            raw.get("language"),
+            field_name="language",
+            maximum=20,
+            record_identity=provider_id,
+        )
+        if language is None:
+            limitations.append("language_missing")
         return PaperRecord(
             paper_id=PaperRecord.internal_id(
                 provider=self.identity.provider,
@@ -661,17 +717,28 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
             doi=doi,
             retrieved_at=retrieved_at,
             raw_metadata_hash=canonical_hash(raw),
+            language=language,
             metadata_limitations=tuple(dict.fromkeys(limitations)),
         )
 
-    def _reconstruct_abstract(self, value: Any) -> str | None:
+    def _reconstruct_abstract(
+        self,
+        value: Any,
+        *,
+        record_identity: str | None = None,
+    ) -> str | None:
         if value is None:
             return None
         if not isinstance(value, Mapping):
             raise ValueError("abstract_inverted_index is not an object")
         positions: dict[int, str] = {}
         for token, indexes in value.items():
-            clean = self._clean_required(token, "abstract token", maximum=200)
+            clean = self._clean_required(
+                token,
+                "abstract_inverted_index.token",
+                maximum=200,
+                record_identity=record_identity,
+            )
             if not isinstance(indexes, list):
                 raise ValueError("abstract positions are not an array")
             for index in indexes:
@@ -686,7 +753,15 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
             raise ValueError("abstract positions are incomplete or too large")
         abstract = " ".join(positions[index] for index in range(len(positions)))
         if len(abstract) > 50_000:
-            raise ValueError("abstract exceeds the safe length limit")
+            raise _FieldRejection(
+                self._field_rejection(
+                    category=SearchDiagnosticCode.FIELD_LENGTH_REJECTED,
+                    field_name="abstract",
+                    normalized_value=abstract,
+                    configured_limit=50_000,
+                    record_identity=record_identity,
+                )
+            )
         return abstract
 
     def _decode_json(
@@ -827,23 +902,101 @@ class OpenAlexPaperSearchProvider(PaperSearchProvider):
             raise ValueError("OpenAlex adapter clock must return an aware datetime")
         return value
 
-    @staticmethod
-    def _clean_required(value: Any, field_name: str, *, maximum: int) -> str:
-        cleaned = OpenAlexPaperSearchProvider._clean_optional(value, maximum=maximum)
+    @classmethod
+    def _clean_required(
+        cls,
+        value: Any,
+        field_name: str,
+        *,
+        maximum: int,
+        record_identity: str | None = None,
+    ) -> str:
+        cleaned = cls._clean_optional(
+            value,
+            field_name=field_name,
+            maximum=maximum,
+            record_identity=record_identity,
+        )
         if cleaned is None:
             raise ValueError(f"{field_name} is missing")
         return cleaned
 
-    @staticmethod
-    def _clean_optional(value: Any, *, maximum: int) -> str | None:
+    @classmethod
+    def _clean_optional(
+        cls,
+        value: Any,
+        *,
+        maximum: int,
+        field_name: str = "provider_text",
+        record_identity: str | None = None,
+    ) -> str | None:
         if not isinstance(value, str):
             return None
-        cleaned = unicodedata.normalize("NFC", _CONTROL.sub("", value)).strip()
+        try:
+            value.encode("utf-8", errors="strict")
+            cleaned = unicodedata.normalize("NFC", value).strip()
+        except (UnicodeEncodeError, UnicodeError):
+            raise _FieldRejection(
+                cls._field_rejection(
+                    category=SearchDiagnosticCode.INVALID_UNICODE,
+                    field_name=field_name,
+                    normalized_value=value,
+                    configured_limit=maximum,
+                    record_identity=record_identity,
+                )
+            ) from None
         if not cleaned:
             return None
+        if _CONTROL.search(cleaned):
+            raise _FieldRejection(
+                cls._field_rejection(
+                    category=SearchDiagnosticCode.CONTROL_CHARACTER_REJECTED,
+                    field_name=field_name,
+                    normalized_value=cleaned,
+                    configured_limit=maximum,
+                    record_identity=record_identity,
+                )
+            )
         if len(cleaned) > maximum:
-            raise ValueError("provider text exceeds the safe length limit")
+            raise _FieldRejection(
+                cls._field_rejection(
+                    category=SearchDiagnosticCode.FIELD_LENGTH_REJECTED,
+                    field_name=field_name,
+                    normalized_value=cleaned,
+                    configured_limit=maximum,
+                    record_identity=record_identity,
+                )
+            )
         return cleaned
+
+    @classmethod
+    def _field_rejection(
+        cls,
+        *,
+        category: SearchDiagnosticCode,
+        field_name: str,
+        normalized_value: str,
+        configured_limit: int,
+        record_identity: str | None,
+    ) -> FieldRejectionDiagnostic:
+        preview = normalized_value.encode("utf-8", errors="replace").decode("utf-8")
+        preview = _CONTROL.sub("", preview)
+        preview = " ".join(preview.split())
+        preview = _SECRET_LIKE.sub("[REDACTED]", preview)[:_SAFE_PREVIEW_LIMIT]
+        return FieldRejectionDiagnostic(
+            category=category,
+            field_name=field_name,
+            measured_normalized_length=len(normalized_value),
+            configured_limit=configured_limit,
+            record_identity=record_identity,
+            value_sha256=sha256_bytes(
+                normalized_value.encode("utf-8", errors="surrogatepass")
+            ),
+            safe_preview=preview,
+            preview_length=len(preview),
+            adapter_version=cls.IDENTITY.adapter_version,
+            validator_version=_VALIDATOR_VERSION,
+        )
 
     @staticmethod
     def _normalize_title(value: str) -> str:

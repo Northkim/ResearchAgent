@@ -613,8 +613,10 @@ Revisit triggers: any provider/model/API/price/retention change, audit override
 or multilingual uncertainty above owner policy, query/rubric change, or an
 expert/publication claim.
 
-Owner approval required: **Yes; ADR 0005 remains Proposed and implementation is
-not authorized.**
+Owner approval status: **ADR 0005 is Accepted with limited scope.** Phase
+9B-2C-1 multilingual execution and safe diagnostics are authorized. Every judge
+provider/model/call/key/budget/label/threshold and machine-generated translation
+remains deferred.
 
 ## Failure policy summary
 
@@ -696,6 +698,31 @@ and Hashemi et al., with claim and limitation.
 
 All matrix weights/scores, request/time/size caps, selected-only verification, merge conservatism, artifact set and proposed thresholds are ReAgent decisions. They require owner approval where marked and must be revalidated against current official contracts immediately before implementation.
 
+### PE-003 — Phase 9B-2C-1 implementation evidence
+
+Evidence date: 2026-07-29. Evidence class: **Class D engineering
+implementation and network-free verification**.
+
+- ADR 0005 was accepted only for explicit multilingual variants, exact merge,
+  provenance, and safe diagnostics; judge/provider/model recommendations remain
+  unaccepted.
+- `reagent-query-variant/v1` and
+  `reagent-multilingual-search-plan/v1` use canonical JSON and stable SHA-256.
+- Four owner-approved manual Chinese/English variants are versioned in
+  `evaluation/topics/openalex_chinese_multilingual_v1.json`; no LLM or machine
+  translation produced them.
+- Every variant owns a separate ProviderOperation and result evidence envelope.
+- Exact DOI then exact OpenAlex ID are the only automatic merge identities.
+  Title/year is advisory and fuzzy automatic merge is prohibited.
+- Future length rejection evidence records field, normalized length, configured
+  limit, SHA-256 and an at-most-80-character safe preview. Historical evidence
+  is not backfilled.
+- Network-free focused verification is recorded in
+  `.agent_read/progress/multilingual_search_and_safe_diagnostics.md`.
+
+These are project implementation facts, not evidence that multilingual recall or
+scientific relevance improved.
+
 ## Owner decisions
 
 | Decision | Recommendation | Alternatives | Consequence / blocker |
@@ -723,5 +750,5 @@ All matrix weights/scores, request/time/size caps, selected-only verification, m
 | human audit | all exceptions + 10% deterministic consensus, cap 20 | 5% / 20% | **blocks audit implementation** |
 | non-English / partial cases | audit all initially | allow automated consensus | **blocks aggregation implementation** |
 | machine translation | off until separate provenance/retention approval | manual or approved machine translation | blocks translated execution |
-| Chinese variants | owner-review the four proposals | original only / revised set | **blocks multilingual implementation** |
+| Chinese variants | four manual V1 variants approved for Phase 9B-2C-1 | original only / publish a new revised version | accepted; any text change requires a new immutable version |
 | expert gold / packets | defer expert gold; retain blank packets until cleanup | execute now / cancel | blocks supersession decision; packets unchanged |

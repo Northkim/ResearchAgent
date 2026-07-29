@@ -273,6 +273,7 @@ class PaperRecord(SerializableContract):
     doi: str | None
     retrieved_at: datetime
     raw_metadata_hash: str
+    language: str | None = None
     normalized_metadata_version: str = "paper-normalization/v1"
     metadata_limitations: tuple[str, ...] = ()
     schema_version: str = PAPER_RECORD_SCHEMA_VERSION
@@ -290,6 +291,8 @@ class PaperRecord(SerializableContract):
         require_sha256(self.raw_metadata_hash, "PaperRecord.raw_metadata_hash")
         if self.source_url is not None and not self.source_url.startswith("https://"):
             raise ValueError("PaperRecord.source_url must use HTTPS")
+        if self.language is not None:
+            require_non_empty(self.language, "PaperRecord.language")
         object.__setattr__(self, "authors", tuple(self.authors))
         object.__setattr__(self, "doi", normalize_doi(self.doi))
         object.__setattr__(

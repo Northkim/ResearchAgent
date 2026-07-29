@@ -154,6 +154,13 @@ class EvaluationCandidate(SerializableContract):
     provider: str
     adapter_version: str
     abstract_preview: str | None = None
+    first_seen_variant_id: str | None = None
+    all_matched_variant_ids: tuple[str, ...] = ()
+    matched_query_checksums: tuple[str, ...] = ()
+    provider_operation_ids: tuple[str, ...] = ()
+    source_query_language: str | None = None
+    retrieval_timestamp: datetime | None = None
+    original_paper_checksum: str | None = None
     schema_version: str = EVALUATION_CANDIDATE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -189,6 +196,55 @@ class EvaluationCandidate(SerializableContract):
             if len(preview) > 500:
                 raise ValueError("EvaluationCandidate.abstract_preview exceeds 500 chars")
             object.__setattr__(self, "abstract_preview", preview or None)
+        provenance_present = self.first_seen_variant_id is not None
+        if provenance_present:
+            require_non_empty(
+                self.first_seen_variant_id or "",
+                "EvaluationCandidate.first_seen_variant_id",
+            )
+            if not self.all_matched_variant_ids:
+                raise ValueError("Multilingual candidate requires matched variant IDs")
+            if self.all_matched_variant_ids[0] != self.first_seen_variant_id:
+                raise ValueError("First-seen variant must lead matched variant IDs")
+            if len(set(self.all_matched_variant_ids)) != len(
+                self.all_matched_variant_ids
+            ):
+                raise ValueError("Matched variant IDs must be unique")
+            if len(self.matched_query_checksums) != len(
+                self.all_matched_variant_ids
+            ):
+                raise ValueError("Every matched variant requires a query checksum")
+            if len(self.provider_operation_ids) != len(
+                self.all_matched_variant_ids
+            ):
+                raise ValueError("Every matched variant requires a ProviderOperation ID")
+            for checksum in self.matched_query_checksums:
+                require_sha256(checksum, "EvaluationCandidate.matched_query_checksum")
+            require_non_empty(
+                self.source_query_language or "",
+                "EvaluationCandidate.source_query_language",
+            )
+            if self.retrieval_timestamp is None:
+                raise ValueError("Multilingual candidate requires retrieval timestamp")
+            require_aware(
+                self.retrieval_timestamp,
+                "EvaluationCandidate.retrieval_timestamp",
+            )
+            require_sha256(
+                self.original_paper_checksum or "",
+                "EvaluationCandidate.original_paper_checksum",
+            )
+        elif any(
+            (
+                self.all_matched_variant_ids,
+                self.matched_query_checksums,
+                self.provider_operation_ids,
+                self.source_query_language,
+                self.retrieval_timestamp,
+                self.original_paper_checksum,
+            )
+        ):
+            raise ValueError("Candidate query provenance must be all-or-none")
 
     @property
     def identity_hash(self) -> str:
@@ -210,6 +266,11 @@ class EvaluationCandidate(SerializableContract):
                 "search_execution_id": self.search_execution_id,
                 "provider": self.provider,
                 "adapter_version": self.adapter_version,
+                "first_seen_variant_id": self.first_seen_variant_id,
+                "all_matched_variant_ids": self.all_matched_variant_ids,
+                "matched_query_checksums": self.matched_query_checksums,
+                "provider_operation_ids": self.provider_operation_ids,
+                "original_paper_checksum": self.original_paper_checksum,
             }
         )
 
@@ -242,6 +303,35 @@ class EvaluationCandidate(SerializableContract):
                 None
                 if value.get("abstract_preview") is None
                 else str(value["abstract_preview"])
+            ),
+            first_seen_variant_id=(
+                None
+                if value.get("first_seen_variant_id") is None
+                else str(value["first_seen_variant_id"])
+            ),
+            all_matched_variant_ids=tuple(
+                str(item) for item in value.get("all_matched_variant_ids", ())
+            ),
+            matched_query_checksums=tuple(
+                str(item) for item in value.get("matched_query_checksums", ())
+            ),
+            provider_operation_ids=tuple(
+                str(item) for item in value.get("provider_operation_ids", ())
+            ),
+            source_query_language=(
+                None
+                if value.get("source_query_language") is None
+                else str(value["source_query_language"])
+            ),
+            retrieval_timestamp=(
+                None
+                if value.get("retrieval_timestamp") is None
+                else datetime.fromisoformat(str(value["retrieval_timestamp"]))
+            ),
+            original_paper_checksum=(
+                None
+                if value.get("original_paper_checksum") is None
+                else str(value["original_paper_checksum"])
             ),
             schema_version=str(
                 value.get("schema_version", EVALUATION_CANDIDATE_SCHEMA_VERSION)

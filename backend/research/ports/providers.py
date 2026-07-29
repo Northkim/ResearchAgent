@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 from backend.research.contracts import (
+    FieldRejectionDiagnostic,
     PaperRecord,
     ProviderFailureCategory,
     ProviderUsage,
@@ -77,10 +78,16 @@ class PaperSearchResult:
     search_plan: SearchPlan | None = None
     search_execution: SearchExecution | None = None
     search_statistics: SearchStatistics | None = None
+    rejection_diagnostics: tuple[FieldRejectionDiagnostic, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "papers", tuple(self.papers))
         object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(
+            self,
+            "rejection_diagnostics",
+            tuple(self.rejection_diagnostics),
+        )
         require_aware(self.retrieved_at, "PaperSearchResult.retrieved_at")
         evidence = (self.search_plan, self.search_execution, self.search_statistics)
         if any(item is not None for item in evidence) and not all(

@@ -1,7 +1,21 @@
 # Multilingual SearchPlan Contract
 
-Contract status: Proposed; no multilingual search execution is authorized  
-Expansion version: `multilingual-search-expansion/v1`
+Contract status: Implemented under ADR 0005 limited acceptance
+Expansion version: `manual-query-expansion/1.0.0`
+Implementation date: 2026-07-29
+
+## Phase 9B-2C-1 implementation record
+
+The additive implementation is in:
+
+- `backend/research/contracts/multilingual.py`;
+- `backend/research/evaluation/multilingual.py`;
+- `evaluation/topics/openalex_chinese_multilingual_v1.json`;
+- evaluation CLI command `generate-multilingual`.
+
+The existing single-query path remains the default. Multilingual execution
+requires an explicit immutable plan and explicit `--live`; it is not embedded in
+the OpenAlex transport or the frozen workflow.
 
 ## Boundary
 
@@ -20,21 +34,21 @@ of one current execution.
 
 ## QueryVariant
 
-Immutable schema: `query-variant/v1`
+Immutable schema: `reagent-query-variant/v1`
 
 - `variant_id`
 - `source_query`
-- `query_language`
+- `source_language`
 - `variant_language`
 - `variant_type`: `ORIGINAL`, `MANUAL_SYNONYM`, `MANUAL_TRANSLATION`,
   `QUOTED_TERM`, `BOOLEAN_EXPANSION`, `ENGLISH_PIVOT`, or
   `BILINGUAL_MIXED`
 - `generated_by` (human identity or deterministic compiler identity)
-- `generation_method_version`
+- `generation_method` and `generation_version`
 - `exact_provider_query`
 - `checksum`
 - `owner_approved`
-- optional `translation_source_checksum` and `review_note`
+- `created_at` and `schema_version`
 
 The source expression and exact provider query are distinct. The adapter freezes
 the exact provider query after provider-specific compilation so quoting,
@@ -42,9 +56,9 @@ Boolean operators, escaping, and term joining are replayable.
 
 ## MultilingualSearchPlan
 
-Immutable schema: `multilingual-search-plan/v1`
+Immutable schema: `reagent-multilingual-search-plan/v1`
 
-- `original_research_query`
+- `plan_id` and original `ResearchQuery`
 - `original_language`
 - ordered `query_variants`
 - optional `language_filter`
@@ -53,28 +67,31 @@ Immutable schema: `multilingual-search-plan/v1`
 - `per_variant_request_limit`
 - `total_request_limit`
 - `expansion_version`
-- `provenance`
-- `coverage_warning_policy_version`
-- `planned_at`, provider/adapter identity, and canonical fingerprint
+- `candidate_limit`
+- immutable `coverage_warning_policy`
+- `plan_checksum` and `schema_version`
 
 Every executable variant must be owner-approved and unique by checksum. Search
 requests are separate and bounded; a failed variant cannot be silently replaced
 or combined with another request.
 
-## Proposed V1 execution policy
+## Accepted V1 execution policy
 
-All values are **Class D ReAgent project-policy proposals**:
+All limits are **Class D ReAgent project policy accepted only for this bounded
+multilingual implementation**:
 
 - maximum four approved variants per topic;
 - one provider request page per variant;
 - maximum 20 provider records per variant;
-- maximum four provider requests per topic;
+- maximum eight HTTP requests total: one free-credit preflight plus one Works
+  request per variant, with retries disabled for the supervised acceptance;
 - deterministic merge after all attempted variants;
 - candidate-pool cap and truncation reason recorded separately;
 - no automatic fuzzy deduplication;
 - no automatic LLM expansion or machine translation.
 
-These limits require owner approval and current OpenAlex budget revalidation.
+The monetary cap is USD 0.00 out-of-pocket. Provider free-credit availability is
+checked before each Works call.
 
 ## Existing Chinese topic
 
@@ -85,18 +102,20 @@ The frozen topic `nonenglish-chinese-digital-humanities` currently contains:
 - keywords: `数字人文`, `文本分析`, `中国`;
 - 2015–2026 range; Chinese/bilingual preference.
 
-Proposed variants for human review—not executable or hard-coded by this phase:
+The owner-approved immutable V1 variants are:
 
 | Type | Proposed source expression | Rationale |
 |---|---|---|
 | ORIGINAL | `中国 数字人文 文本分析` | preserves the frozen topic query |
 | MANUAL_SYNONYM | `中国 数字人文 计算文本分析` | tests a manually reviewed Chinese methodological synonym |
-| MANUAL_TRANSLATION / ENGLISH_PIVOT | `Chinese digital humanities text analysis` | tests English-indexed metadata without replacing Chinese intent |
-| BILINGUAL_MIXED | `("数字人文" OR "digital humanities") ("文本分析" OR "text analysis") 中国` | tests bilingual metadata with explicit term provenance |
+| ENGLISH_PIVOT | `Chinese digital humanities text analysis China` | manually reviewed English-indexed pivot without machine translation |
+| BILINGUAL_MIXED | `中国 数字人文 Chinese digital humanities 文本分析 text analysis` | manually reviewed bilingual conjunction |
 
-The exact OpenAlex query for each must be produced and reviewed against the
-current adapter compiler before implementation. The owner may revise or reject
-any phrase. No claim about Chinese recall follows from these proposals.
+The configuration records the adapter-compiled quoted `AND` expression and a
+stable checksum for each variant. The current compiler treats whitespace tokens
+as conjunctions; it does not pass raw Boolean syntax through. Changing any text,
+order, method, version, approval, or timestamp creates a new checksum and plan
+version. No claim about Chinese recall follows from manual selection.
 
 ## Per-variant provenance
 
@@ -107,8 +126,7 @@ Each returned record carries:
 - exact provider query checksum;
 - first-seen variant;
 - ordered all-matched variant IDs;
-- provider result position within each variant, stored only as provenance and
-  hidden from relevance judging/audit;
+- no provider rank or citation count is used in merge or candidate ordering;
 - provider/adapter versions and retrieval time;
 - normalization/rejection outcome and safe diagnostic reference.
 
@@ -119,14 +137,15 @@ Each returned record carries:
 3. Merge exact OpenAlex ID matches.
 4. Create a title/year advisory cluster only; it requires human resolution and
    never performs an automatic fuzzy merge.
-5. Preserve the first-seen record by variant order, then record every matching
-   variant and field conflict.
-6. Sort the merged candidate set by the existing deterministic candidate policy;
+5. Preserve the first-seen record under immutable variant order, then record
+   every matching variant and field conflict.
+6. Sort the merged candidate set deterministically by normalized paper identity;
    do not use the number of matching variants, provider citation count, or
    provider rank as a quality score.
 
-If DOI and OpenAlex ID imply incompatible clusters, retain separate candidates,
-emit `BILINGUAL_METADATA_CONFLICT`, and require review.
+If DOI and OpenAlex ID imply incompatible clusters, retain separate candidates
+and emit `IDENTITY_CONFLICT`. Candidate-cap exclusions are recorded explicitly;
+no paper disappears silently.
 
 ## Diagnostics contract
 
@@ -149,16 +168,20 @@ Normalized warnings/reasons:
 
 - `ZERO_RESULTS`
 - `LOW_RESULT_COUNT`
-- `REJECTED_RECORDS`
+- `NO_NORMALIZED_RESULTS`
 - `MISSING_ABSTRACT`
-- `FIELD_LENGTH_VIOLATION`
-- `UNICODE_OR_CONTROL_CHARACTER_REJECTION`
+- `FIELD_LENGTH_REJECTED`
+- `CONTROL_CHARACTER_REJECTED`
+- `INVALID_UNICODE`
 - `LANGUAGE_MISMATCH`
-- `PROVIDER_LANGUAGE_FIELD_MISSING`
+- `LANGUAGE_FIELD_MISSING`
 - `DUPLICATE_CONCENTRATION`
-- `ONLY_ENGLISH_RESULTS_FOR_NON_ENGLISH_QUERY`
+- `ONLY_ENGLISH_RESULTS`
 - `ONLY_ORIGINAL_LANGUAGE_RESULTS`
-- `BILINGUAL_METADATA_CONFLICT`
+- `IDENTITY_CONFLICT`
+- `PARTIAL_VARIANT_FAILURE`
+- `TOTAL_REQUEST_BUDGET_EXCEEDED`
+- `CANDIDATE_LIMIT_TRUNCATED`
 
 Thresholds for “low” and “duplicate concentration” are Class D policies and must
 be approved/versioned rather than embedded as provider facts.

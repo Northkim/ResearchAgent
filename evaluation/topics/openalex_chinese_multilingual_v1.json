@@ -1,0 +1,92 @@
+{
+  "schema_version": "reagent-multilingual-search-plan/v1",
+  "plan_id": "nonenglish-chinese-digital-humanities/openalex-expansion-v1",
+  "original_query": {
+    "topic": "中国 数字人文 文本分析",
+    "keywords": ["数字人文", "文本分析", "中国"],
+    "year_from": 2015,
+    "year_to": 2026,
+    "max_results": 20,
+    "language": "zh",
+    "inclusion_criteria": ["Candidate is screened later from permitted metadata only."],
+    "exclusion_criteria": ["No relevance label is generated during search expansion."],
+    "schema_version": "research-query/v1"
+  },
+  "original_language": "zh",
+  "query_variants": [
+    {
+      "variant_id": "zh-original-v1",
+      "source_query": "中国 数字人文 文本分析",
+      "source_language": "zh",
+      "variant_language": "zh",
+      "variant_type": "ORIGINAL",
+      "exact_provider_query": "\"中国\" AND \"数字人文\" AND \"文本分析\"",
+      "generated_by": "ReAgent owner-supervised Phase 9B-2C-1",
+      "generation_method": "Copied from the existing evaluation topic without translation",
+      "generation_version": "manual-query-expansion/1.0.0",
+      "owner_approved": true,
+      "created_at": "2026-07-29T00:00:00+08:00",
+      "checksum": "sha256:b028595ddf9e199743e8f4d07bb16fa4d247f3098e4ff59e43c2d9ec20c166f5",
+      "schema_version": "reagent-query-variant/v1"
+    },
+    {
+      "variant_id": "zh-manual-synonym-v1",
+      "source_query": "中国 数字人文 计算文本分析",
+      "source_language": "zh",
+      "variant_language": "zh",
+      "variant_type": "MANUAL_SYNONYM",
+      "exact_provider_query": "\"中国\" AND \"数字人文\" AND \"计算文本分析\"",
+      "generated_by": "ReAgent owner-supervised Phase 9B-2C-1",
+      "generation_method": "Manual Chinese method-term refinement; no model generation",
+      "generation_version": "manual-query-expansion/1.0.0",
+      "owner_approved": true,
+      "created_at": "2026-07-29T00:00:00+08:00",
+      "checksum": "sha256:feaa9ab3f6916990feb16801e71c08b3deb98bb56fdf7c3b24709682f271180d",
+      "schema_version": "reagent-query-variant/v1"
+    },
+    {
+      "variant_id": "en-manual-pivot-v1",
+      "source_query": "Chinese digital humanities text analysis China",
+      "source_language": "zh",
+      "variant_language": "en",
+      "variant_type": "ENGLISH_PIVOT",
+      "exact_provider_query": "\"Chinese\" AND \"digital\" AND \"humanities\" AND \"text\" AND \"analysis\" AND \"China\"",
+      "generated_by": "ReAgent owner-supervised Phase 9B-2C-1",
+      "generation_method": "Manual reviewed English pivot; no machine translation",
+      "generation_version": "manual-query-expansion/1.0.0",
+      "owner_approved": true,
+      "created_at": "2026-07-29T00:00:00+08:00",
+      "checksum": "sha256:cff41b4bcfd6335e731b80d6ee287a9863f8664390496bf54d35edb75301e45b",
+      "schema_version": "reagent-query-variant/v1"
+    },
+    {
+      "variant_id": "zh-en-bilingual-v1",
+      "source_query": "中国 数字人文 Chinese digital humanities 文本分析 text analysis",
+      "source_language": "zh",
+      "variant_language": "zh-en",
+      "variant_type": "BILINGUAL_MIXED",
+      "exact_provider_query": "\"中国\" AND \"数字人文\" AND \"Chinese\" AND \"digital\" AND \"humanities\" AND \"文本分析\" AND \"text\" AND \"analysis\"",
+      "generated_by": "ReAgent owner-supervised Phase 9B-2C-1",
+      "generation_method": "Manual reviewed bilingual conjunction; no model generation",
+      "generation_version": "manual-query-expansion/1.0.0",
+      "owner_approved": true,
+      "created_at": "2026-07-29T00:00:00+08:00",
+      "checksum": "sha256:75ab99b8561c5ba0d70a4fbb6bf2f01dfd03fd530992967885d50e73677505e1",
+      "schema_version": "reagent-query-variant/v1"
+    }
+  ],
+  "language_filter": null,
+  "merge_policy_version": "reagent-multilingual-merge/v1",
+  "deduplication_policy_version": "exact-doi-openalex-id/v1",
+  "per_variant_request_limit": 2,
+  "total_request_limit": 8,
+  "candidate_limit": 80,
+  "expansion_version": "manual-query-expansion/1.0.0",
+  "coverage_warning_policy": {
+    "low_result_count": 5,
+    "duplicate_concentration_ratio": 0.75,
+    "zero_results_visible": true,
+    "rejected_records_visible": true
+  },
+  "plan_checksum": "sha256:9b04cc0d10bd1952b13f1423e6ac3470670afe4f78a8ed6890cf1a70d440e85f"
+}

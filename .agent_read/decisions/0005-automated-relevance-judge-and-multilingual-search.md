@@ -1,9 +1,44 @@
 # ADR 0005: Automated Relevance Judge and Multilingual Search
 
-Status: **Proposed**  
-Date: 2026-07-29  
-Owners: ReAgent owner approval required  
-Scope: architecture contract only; implementation is not authorized
+Status: **Accepted with limited scope**
+Date: 2026-07-29
+Owners: ReAgent owner
+Scope: multilingual SearchPlan and safe-diagnostic implementation only
+
+## Limited acceptance record
+
+The owner accepted the following items for Phase 9B-2C-1:
+
+1. Later automated results must be called silver labels, never expert gold labels.
+2. Targeted human audit is preferred to mandatory full two-human review for the
+   current prototype.
+3. Multilingual search uses explicit, immutable, auditable `QueryVariant`
+   contracts.
+4. Every query variant retains independent execution provenance.
+5. Results merge deterministically using exact identity rules.
+6. Fuzzy automatic paper merging is prohibited.
+7. Non-English uncertainty and metadata warnings remain future human-audit
+   candidates.
+8. Existing blank two-human review packets are preserved.
+9. Multilingual SearchPlan execution and safe rejection diagnostics are
+   authorized for implementation.
+
+The following remain deferred and are not accepted:
+
+- a real `AutomatedRelevanceJudge`;
+- OpenAI, Anthropic, or local judge adapters;
+- real LLM API calls or judge API keys;
+- any non-zero judge budget;
+- automatic relevance labels;
+- confidence or random-audit thresholds;
+- machine-generated translations;
+- unrestricted query expansion;
+- real judge prompt implementation.
+
+The provider/model recommendation later in this ADR remains a proposal. Limited
+acceptance does not authorize a judge provider, model, key, prompt, label,
+threshold, or spend. No additional ADR was required for the additive
+evaluation-harness implementation.
 
 ## Context
 
@@ -163,8 +198,8 @@ with Anthropic `claude-sonnet-5`. Terra is recommended as a Class D balance of
 consequence and cost, not as proven superior. If a sufficiently pinned OpenAI
 identity cannot be established, prefer Sonnet 5 for the reproducibility pilot.
 
-No provider/model is approved by this Proposed ADR. No key or non-zero spend is
-authorized.
+No judge provider/model is approved by this limited acceptance. No judge key or
+non-zero judge spend is authorized.
 
 ## Prompt/rubric versioning
 
@@ -307,7 +342,7 @@ and false coverage claims. Controls reduce but do not eliminate these risks.
 | non-English audit | audit all initially | threshold-based after calibration | multilingual consistency varies | yes |
 | preview retention | allow bounded preview only under evaluation policy/provider terms | hashes/spans only; local-only | affects replay, privacy, and provider eligibility | yes |
 | machine translation | prohibit V1 unless separately approved and provenance-preserving | approved translator; manual only | translation may alter relevance evidence | blocks translated execution |
-| Chinese/English variants | review four proposals in multilingual plan | original only; revised set | affects coverage and call budget | blocks multilingual implementation |
+| Chinese/English variants | four manual V1 variants accepted for Phase 9B-2C-1 | original only; publish revised version | affects coverage and call budget | no for V1; changes require owner approval |
 | old blank packets | retain until owner-approved cleanup | retain indefinitely; later delete | provenance and future gold option | no, but cleanup needs approval |
 | expert gold | defer, not cancel | perform now; cancel | preserves future rigorous evaluation | yes for supersession policy |
 | metric gain mapping | retain versioned existing Class D mapping for silver | report binary only; new mapping | affects nDCG comparability | blocks metric implementation |
@@ -315,9 +350,10 @@ and false coverage claims. Controls reduce but do not eliminate these risks.
 
 ## Deliberately excluded decisions
 
-This ADR does not authorize a real judge call, OpenAlex search, query translation,
-backend/frontend/migration/workflow/dependency change, database, SDK install,
+This limited acceptance does not authorize a real judge call, judge adapter,
+judge key or budget, machine translation, unrestricted query expansion,
+frontend/migration/workflow/dependency change, database, SDK install,
 review-label import, metric calculation, source retrieval, or deletion of review
-packets. Automated judge and multilingual SearchPlan implementation must occur in
-separate later milestones after owner approval.
-
+packets. It authorizes only the additive multilingual evaluation-harness path,
+the four explicit manual V1 variants, and safe rejection diagnostics. A real
+judge remains a separate later decision.

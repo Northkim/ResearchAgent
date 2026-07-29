@@ -55,3 +55,22 @@ class ProviderExecutionPolicy:
             reservations={"openalex": ProviderReservation(request_count=4)},
             operation_timeout_seconds=90,
         )
+
+    @classmethod
+    def supervised_multilingual_openalex(cls) -> ProviderExecutionPolicy:
+        """Four one-page variants: one free-credit preflight and one Works call each."""
+
+        return cls(
+            budget=ProviderBudget(
+                max_provider_requests=8,
+                max_llm_calls=0,
+                max_input_tokens=0,
+                max_output_tokens=0,
+                max_cost_minor_units=0,
+                max_runtime_seconds=120,
+                live_provider_enabled=True,
+            ),
+            live_provider_names=frozenset({"openalex"}),
+            reservations={"openalex": ProviderReservation(request_count=2)},
+            operation_timeout_seconds=30,
+        )

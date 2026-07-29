@@ -569,6 +569,47 @@ conda run --no-capture-output -n reagent-dev \
 This command deletes only the named ignored evaluation root. Do not execute it
 before preserving approved aggregate evidence.
 
+### Multilingual Chinese-topic acceptance
+
+Phase 9B-2C-1 adds an evaluation-only command; it does not change
+`guided-literature-review@2.0.0` or enable multilingual expansion by default.
+The immutable plan is
+`evaluation/topics/openalex_chinese_multilingual_v1.json`.
+
+Initialize a new isolated ignored evaluation:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  initialize openalex-chinese-multilingual-v1
+```
+
+An owner-supervised live run, if free OpenAlex credit and the repository-root
+key are available, is:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  generate-multilingual openalex-chinese-multilingual-v1 \
+  --plan evaluation/topics/openalex_chinese_multilingual_v1.json \
+  --live
+```
+
+The command runs exactly four manual variants in definition order, disables
+Works retries, caps each variant at one free-credit preflight plus one Works
+request, retains no raw response, and generates no relevance label. Each variant
+has a separate ProviderOperation. Re-running a completed evaluation verifies
+immutable artifacts and performs no provider call.
+
+Optional cleanup, never automatic:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  clean openalex-chinese-multilingual-v1 \
+  --confirm openalex-chinese-multilingual-v1
+```
+
 ## 12. Troubleshooting
 
 - `docker: command not found`: install Docker Desktop or another Docker Engine

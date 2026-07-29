@@ -37,11 +37,18 @@ from .judgments import (
     import_review_json,
 )
 from .metrics import EvaluationMetrics
+from .multilingual import (
+    MultilingualCandidatePoolGenerator,
+    load_multilingual_plan,
+)
 from .operation_journal import JournaledProviderOperationUnit
 from .report import EvaluationReportGenerator
 from .topics import load_topic_set
 
 DEFAULT_TOPIC_SET = Path("evaluation/topics/openalex_v1.json")
+DEFAULT_MULTILINGUAL_PLAN = Path(
+    "evaluation/topics/openalex_chinese_multilingual_v1.json"
+)
 DEFAULT_EVALUATION_ROOT = Path("runtime_data/evaluations/openalex")
 
 
@@ -63,6 +70,17 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--topic", action="append", dest="topics")
     generate.add_argument("--live", action="store_true")
     generate.add_argument("--include-abstract-preview", action="store_true")
+
+    multilingual = subparsers.add_parser("generate-multilingual")
+    multilingual.add_argument("evaluation_id")
+    multilingual.add_argument("--topic-set", type=Path, default=DEFAULT_TOPIC_SET)
+    multilingual.add_argument(
+        "--plan",
+        type=Path,
+        default=DEFAULT_MULTILINGUAL_PLAN,
+    )
+    multilingual.add_argument("--live", action="store_true")
+    multilingual.add_argument("--include-abstract-preview", action="store_true")
 
     export = subparsers.add_parser("export")
     export.add_argument("evaluation_id")
@@ -188,6 +206,82 @@ def main(argv: list[str] | None = None) -> int:
                     "candidate_count": len(result.candidates),
                     "request_count": result.evaluation_run.request_count,
                     "api_key": "configured and redacted",
+                }
+            )
+            return 0
+        if args.command == "generate-multilingual":
+            if not args.live:
+                raise ValueError(
+                    "Multilingual candidate generation requires explicit --live; "
+                    "default execution remains network-free"
+                )
+            api_key = os.environ.get("REAGENT_OPENALEX_API_KEY")
+            if not api_key:
+                raise ValueError("OpenAlex API key is not configured")
+            topic_set = load_topic_set(args.topic_set)
+            plan = load_multilingual_plan(args.plan)
+            matches = tuple(
+                item
+                for item in topic_set.topics
+                if item.topic == plan.original_query.topic
+            )
+            if len(matches) != 1:
+                raise ValueError(
+                    "Multilingual plan must match exactly one evaluation topic"
+                )
+            topic = matches[0]
+            evaluation_id = _safe_segment(args.evaluation_id)
+            config = _load_json(
+                storage,
+                f"{evaluation_id}/evaluation_config.json",
+            )
+            if (
+                config.get("evaluation_id") != evaluation_id
+                or config.get("topic_set_version") != topic_set.version
+                or config.get("topic_set_hash") != topic_set.canonical_hash
+            ):
+                raise ValueError(
+                    "Evaluation configuration does not match the requested topic set"
+                )
+            operation_unit = JournaledProviderOperationUnit(
+                root / evaluation_id / "provider_operations.journal.jsonl"
+            )
+            service = ProviderOperationService(
+                operation_unit.provider_operations,
+                commit_callback=operation_unit.commit,
+            )
+            generator = MultilingualCandidatePoolGenerator(
+                provider=OpenAlexPaperSearchProvider(
+                    OpenAlexConfiguration(
+                        api_key=api_key,
+                        retries_after_initial=0,
+                        max_discovery_requests=1,
+                    )
+                ),
+                provider_operations=service,
+                execution_policy=(
+                    ProviderExecutionPolicy.supervised_multilingual_openalex()
+                ),
+                artifact_storage=storage,
+                include_abstract_preview=args.include_abstract_preview,
+            )
+            result = asyncio.run(
+                generator.generate(
+                    evaluation_id=evaluation_id,
+                    topic=topic,
+                    plan=plan,
+                    topic_set_version=topic_set.version,
+                )
+            )
+            _print_result(
+                {
+                    "status": "resumed" if result.resumed else "generated",
+                    "evaluation_id": result.evaluation_run.evaluation_id,
+                    "candidate_count": len(result.candidates),
+                    "request_count": result.evaluation_run.request_count,
+                    "diagnostic_count": len(result.diagnostics),
+                    "api_key": "configured and redacted",
+                    "relevance_labels_generated": False,
                 }
             )
             return 0
