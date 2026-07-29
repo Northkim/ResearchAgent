@@ -1,0 +1,238 @@
+{
+  "schema_version": "reagent-synthetic-silver-fixtures/v1",
+  "version": "synthetic-silver-v1",
+  "fixture_kind": "wholly-synthetic-no-real-paper-content",
+  "candidates": [
+    {
+      "candidate_id": "syn-01-highly",
+      "rank": 1,
+      "title": "A Synthetic Study of Orchard Sensor Calibration",
+      "abstract_preview": "This invented study centrally evaluates orchard sensor calibration for the synthetic topic.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.94, "supporting_text": "centrally evaluates orchard sensor calibration", "reason": "The synthetic central question directly matches."},
+        "relevance-pointwise-b/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.92, "supporting_text": "centrally evaluates orchard sensor calibration", "reason": "The stated contribution directly matches."}
+      }
+    },
+    {
+      "candidate_id": "syn-02-relevant",
+      "rank": 2,
+      "title": "Invented Orchard Monitoring with Calibrated Sensors",
+      "abstract_preview": "The fictional monitoring system requires orchard sensor calibration as a substantial component.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.91, "supporting_text": "requires orchard sensor calibration as a substantial component", "reason": "Calibration is necessary and substantial."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.90, "supporting_text": "requires orchard sensor calibration as a substantial component", "reason": "The topic is a necessary component."}
+      }
+    },
+    {
+      "candidate_id": "syn-03-not",
+      "rank": 3,
+      "title": "A Fictional Catalog of Ceramic Glazes",
+      "abstract_preview": "This synthetic catalog compares invented ceramic glaze colors and contains no sensor research.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "NOT_RELEVANT", "confidence": 0.96, "supporting_text": "contains no sensor research", "reason": "The stated subject is unrelated."},
+        "relevance-pointwise-b/v1": {"label": "NOT_RELEVANT", "confidence": 0.95, "supporting_text": "contains no sensor research", "reason": "No topical component is present."}
+      }
+    },
+    {
+      "candidate_id": "syn-04-relevant",
+      "rank": 4,
+      "title": "Synthetic Calibration Controls for Orchard Robots",
+      "abstract_preview": "The invented robot evaluation depends on orchard sensor calibration throughout its experiments.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.89, "supporting_text": "depends on orchard sensor calibration throughout", "reason": "The topic is substantial."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.88, "supporting_text": "depends on orchard sensor calibration throughout", "reason": "The topic is necessary to the contribution."}
+      }
+    },
+    {
+      "candidate_id": "syn-05-highly",
+      "rank": 5,
+      "title": "Invented Benchmark for Orchard Sensor Calibration",
+      "abstract_preview": "This wholly synthetic benchmark directly measures methods for orchard sensor calibration.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.93, "supporting_text": "directly measures methods for orchard sensor calibration", "reason": "The benchmark directly addresses the topic."},
+        "relevance-pointwise-b/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.91, "supporting_text": "directly measures methods for orchard sensor calibration", "reason": "The central contribution matches."}
+      }
+    },
+    {
+      "candidate_id": "syn-06-not",
+      "rank": 6,
+      "title": "Synthetic Tidal Pool Color Survey",
+      "abstract_preview": "This invented survey studies fictional tidal pool colors without orchards or sensors.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "NOT_RELEVANT", "confidence": 0.94, "supporting_text": "without orchards or sensors", "reason": "The topic is absent."},
+        "relevance-pointwise-b/v1": {"label": "NOT_RELEVANT", "confidence": 0.93, "supporting_text": "without orchards or sensors", "reason": "No meaningful overlap exists."}
+      }
+    },
+    {
+      "candidate_id": "syn-07-relevant",
+      "rank": 7,
+      "title": "Fictional Orchard Mapping after Sensor Calibration",
+      "abstract_preview": "Reliable synthetic orchard mapping uses sensor calibration as an essential processing stage.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.87, "supporting_text": "sensor calibration as an essential processing stage", "reason": "Calibration is essential."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.86, "supporting_text": "sensor calibration as an essential processing stage", "reason": "The topic is a substantial component."}
+      }
+    },
+    {
+      "candidate_id": "syn-08-relevant",
+      "rank": 8,
+      "title": "Synthetic Drift Correction in Orchard Sensors",
+      "abstract_preview": "The invented method performs orchard sensor calibration to correct measurement drift.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.90, "supporting_text": "performs orchard sensor calibration", "reason": "The topic is a substantial mechanism."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.89, "supporting_text": "performs orchard sensor calibration", "reason": "Calibration is required."}
+      }
+    },
+    {
+      "candidate_id": "syn-09-not",
+      "rank": 9,
+      "title": "Invented History of Paper Lantern Shapes",
+      "abstract_preview": "The synthetic narrative categorizes fictional paper lantern shapes and does not study calibration.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "NOT_RELEVANT", "confidence": 0.92, "supporting_text": "does not study calibration", "reason": "The topic is absent."},
+        "relevance-pointwise-b/v1": {"label": "NOT_RELEVANT", "confidence": 0.91, "supporting_text": "does not study calibration", "reason": "Only unrelated content is described."}
+      }
+    },
+    {
+      "candidate_id": "syn-10-highly",
+      "rank": 10,
+      "title": "A Synthetic Protocol for Calibrating Orchard Sensors",
+      "abstract_preview": "The fictional paper's primary contribution is a protocol for calibrating orchard sensors.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.95, "supporting_text": "primary contribution is a protocol for calibrating orchard sensors", "reason": "The primary contribution directly matches."},
+        "relevance-pointwise-b/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.94, "supporting_text": "primary contribution is a protocol for calibrating orchard sensors", "reason": "The central question directly matches."}
+      }
+    },
+    {
+      "candidate_id": "syn-11-partial",
+      "rank": 11,
+      "title": "Synthetic Orchard Logistics with a Calibration Note",
+      "abstract_preview": "The invented logistics study mentions orchard sensor calibration only in a secondary appendix.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "PARTIALLY_RELEVANT", "confidence": 0.86, "supporting_text": "only in a secondary appendix", "reason": "The topic is secondary."},
+        "relevance-pointwise-b/v1": {"label": "PARTIALLY_RELEVANT", "confidence": 0.84, "supporting_text": "only in a secondary appendix", "reason": "The topic has limited scope."}
+      }
+    },
+    {
+      "candidate_id": "syn-12-cannot",
+      "rank": 12,
+      "title": "Synthetic Orchard Instrument Study",
+      "abstract_preview": null,
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "CANNOT_JUDGE", "confidence": 0.30, "supporting_text": null, "reason": "No abstract preview is available.", "uncertainties": ["Topic scope is not stated."], "insufficient_information": true},
+        "relevance-pointwise-b/v1": {"label": "CANNOT_JUDGE", "confidence": 0.32, "supporting_text": null, "reason": "The title alone is insufficient.", "uncertainties": ["Central contribution is unknown."], "insufficient_information": true}
+      }
+    },
+    {
+      "candidate_id": "syn-13-disagreement",
+      "rank": 13,
+      "title": "Invented Sensor Maintenance in Orchards",
+      "abstract_preview": "The fictional study includes a calibration step while emphasizing general maintenance scheduling.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.84, "supporting_text": "includes a calibration step", "reason": "Calibration appears necessary."},
+        "relevance-pointwise-b/v1": {"label": "PARTIALLY_RELEVANT", "confidence": 0.83, "supporting_text": "emphasizing general maintenance scheduling", "reason": "Calibration appears secondary."}
+      }
+    },
+    {
+      "candidate_id": "syn-14-low-confidence",
+      "rank": 14,
+      "title": "Synthetic Orchard Signal Adjustment",
+      "abstract_preview": "The invented method adjusts orchard signals through a described sensor calibration procedure.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.74, "supporting_text": "sensor calibration procedure", "reason": "The topic seems substantial."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.72, "supporting_text": "sensor calibration procedure", "reason": "The evidence supports relevance with uncertainty."}
+      }
+    },
+    {
+      "candidate_id": "syn-15-missing-span",
+      "rank": 15,
+      "title": "Invented Orchard Calibration Pipeline",
+      "abstract_preview": "The synthetic pipeline uses calibration for its orchard sensing stage.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.88, "supporting_text": null, "reason": "The fixture intentionally omits evidence."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.87, "supporting_text": "uses calibration for its orchard sensing stage", "reason": "The topic is substantial."}
+      }
+    },
+    {
+      "candidate_id": "syn-16-pairwise-conflict",
+      "rank": 16,
+      "title": "Synthetic Comparative Orchard Calibration",
+      "abstract_preview": "This invented comparison substantially evaluates calibration for orchard sensors.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.90, "supporting_text": "substantially evaluates calibration for orchard sensors", "reason": "The topic is substantial."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.89, "supporting_text": "substantially evaluates calibration for orchard sensors", "reason": "The topic is necessary."}
+      }
+    },
+    {
+      "candidate_id": "syn-17-nonenglish",
+      "rank": 17,
+      "language": "zh",
+      "title": "合成的果园传感器校准研究",
+      "abstract_preview": "这是完全虚构的测试文本，核心内容是果园传感器校准。",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.91, "supporting_text": "核心内容是果园传感器校准", "reason": "合成文本直接描述主题。"},
+        "relevance-pointwise-b/v1": {"label": "HIGHLY_RELEVANT", "confidence": 0.90, "supporting_text": "核心内容是果园传感器校准", "reason": "合成文本的核心内容匹配。"}
+      }
+    },
+    {
+      "candidate_id": "syn-18-metadata-warning",
+      "rank": 18,
+      "title": "Synthetic Orchard Calibration with Missing Venue Metadata",
+      "abstract_preview": "The invented paper directly discusses orchard sensor calibration.",
+      "metadata_warnings": ["SYNTHETIC_MISSING_METADATA"],
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"label": "RELEVANT", "confidence": 0.91, "supporting_text": "directly discusses orchard sensor calibration", "reason": "The topic is substantial."},
+        "relevance-pointwise-b/v1": {"label": "RELEVANT", "confidence": 0.90, "supporting_text": "directly discusses orchard sensor calibration", "reason": "The topic directly contributes."}
+      }
+    },
+    {
+      "candidate_id": "syn-19-malformed",
+      "rank": 19,
+      "title": "Synthetic Malformed-output Fixture",
+      "abstract_preview": "This invented record exists only to test malformed structured output settlement.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"malformed": true},
+        "relevance-pointwise-b/v1": {"label": "NOT_RELEVANT", "confidence": 0.88, "supporting_text": "exists only to test malformed structured output", "reason": "The topic is absent."}
+      }
+    },
+    {
+      "candidate_id": "syn-20-timeout",
+      "rank": 20,
+      "title": "Synthetic Timeout Fixture",
+      "abstract_preview": "This invented record exists only to test deterministic timeout handling.",
+      "source_marker": "synthetic-silver-fixture",
+      "pointwise": {
+        "relevance-pointwise-a/v1": {"timeout": true},
+        "relevance-pointwise-b/v1": {"failure": true}
+      }
+    }
+  ],
+  "pairwise": [
+    {
+      "left_candidate_id": "syn-11-partial",
+      "right_candidate_id": "syn-16-pairwise-conflict",
+      "preferred_candidate_id": "syn-16-pairwise-conflict",
+      "mirrored_preferred_candidate_id": "syn-11-partial",
+      "reason": "The synthetic fixture intentionally encodes order inconsistency."
+    }
+  ]
+}

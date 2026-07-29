@@ -131,3 +131,17 @@ Pause rather than force completion when:
 Such a pause triggers policy/rubric revision or expert-gold planning; it does not
 authorize additional judge calls or live search.
 
+## Synthetic queue implementation boundary
+
+Phase 9B-2C-2 implements the queue contract without implementing human
+completion. All exception cases, non-English cases, and metadata warnings are
+included. High-confidence consensus sampling is deterministic and topic
+stratified. The committed 10% sample, per-topic minimum, and 20-item cap are
+explicitly `TEST_POLICY_ONLY`.
+
+`HumanAuditResult` is an immutable input contract only: the command never
+creates one. Consequently, the standard synthetic run reports raw-silver
+metrics and marks audited-silver metrics unavailable with a reason. Tests may
+construct synthetic human results to verify that overrides affect only the
+audited family. The reviewer question remains limited to topical relevance
+based on title and bounded preview; provider rank and citation count are absent.

@@ -131,3 +131,14 @@ Any change to label definitions, evidence requirements, examples, confidence
 meaning, translation handling, or prohibited inference creates a new rubric
 version and prompt hash. Completed judgments retain the original version.
 
+## Phase 9B-2C-2 synthetic implementation note
+
+The registry now exposes immutable pointwise prompt versions
+`relevance-pointwise-a/v1` and `relevance-pointwise-b/v1`, mirrored pairwise
+version `relevance-pairwise-mirrored/v1`, and this unchanged rubric version.
+The Fake Judge verifies that configured supporting spans are exact excerpts
+from committed synthetic previews. It does not infer labels from text.
+
+The implemented `0.80` boundary is named `TEST_POLICY_ONLY`. It exists solely
+to exercise every disposition path with synthetic fixtures; it is not
+calibrated, approved for a real model, or evidence of Judge reliability.

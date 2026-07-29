@@ -610,6 +610,34 @@ conda run --no-capture-output -n reagent-dev \
   --confirm openalex-chinese-multilingual-v1
 ```
 
+### Synthetic Fake Judge acceptance
+
+Phase 9B-2C-2 adds a network-free evaluation command. It never reads the live
+OpenAlex candidate pools and accepts only the source-marked synthetic fixture:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  judge-synthetic synthetic-silver-v1
+```
+
+The command runs fixture-defined pointwise A/B judgments and one mirrored
+pairwise check, settles zero-cost ProviderOperations, builds a pending audit
+queue, reports raw synthetic silver metrics, and verifies replay with zero
+additional Fake Judge calls. Audited metrics remain unavailable because no
+human result is auto-filled. The `0.80` confidence threshold, 10% sample, and
+20-item cap are `TEST_POLICY_ONLY`; output is architecture evidence, not model
+quality or expert ground truth.
+
+Generated evidence stays below the ignored evaluation root. Optional cleanup:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.evaluation \
+  clean synthetic-silver-v1 \
+  --confirm synthetic-silver-v1
+```
+
 ## 12. Troubleshooting
 
 - `docker: command not found`: install Docker Desktop or another Docker Engine

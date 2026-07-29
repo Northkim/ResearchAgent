@@ -50,6 +50,7 @@ DEFAULT_MULTILINGUAL_PLAN = Path(
     "evaluation/topics/openalex_chinese_multilingual_v1.json"
 )
 DEFAULT_EVALUATION_ROOT = Path("runtime_data/evaluations/openalex")
+DEFAULT_SYNTHETIC_FIXTURES = Path("evaluation/fixtures/synthetic_silver_v1.json")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +82,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     multilingual.add_argument("--live", action="store_true")
     multilingual.add_argument("--include-abstract-preview", action="store_true")
+
+    synthetic = subparsers.add_parser(
+        "judge-synthetic",
+        help="Run the deterministic Fake Judge on wholly synthetic fixtures only.",
+    )
+    synthetic.add_argument("evaluation_id")
+    synthetic.add_argument(
+        "--fixtures",
+        type=Path,
+        default=DEFAULT_SYNTHETIC_FIXTURES,
+    )
 
     export = subparsers.add_parser("export")
     export.add_argument("evaluation_id")
@@ -131,6 +143,65 @@ def main(argv: list[str] | None = None) -> int:
     try:
         root = _safe_root(args.root)
         storage = LocalFilesystemArtifactStorage(root)
+        if args.command == "judge-synthetic":
+            from collections import Counter
+
+            from .fake_judge import FakeAutomatedRelevanceJudge
+            from .silver_orchestrator import SyntheticSilverOrchestrator
+            from .synthetic_fixtures import load_synthetic_fixture_set
+
+            evaluation_id = _safe_segment(args.evaluation_id)
+            fixtures = load_synthetic_fixture_set(args.fixtures)
+            judge = FakeAutomatedRelevanceJudge(
+                pointwise=fixtures.pointwise_behaviors,
+                pairwise=fixtures.pairwise_behaviors,
+            )
+            operation_unit = JournaledProviderOperationUnit(
+                root / evaluation_id / "provider_operations.journal.jsonl"
+            )
+            service = ProviderOperationService(
+                operation_unit.provider_operations,
+                commit_callback=operation_unit.commit,
+            )
+            orchestrator = SyntheticSilverOrchestrator(
+                judge=judge,
+                provider_operations=service,
+                execution_policy=ProviderExecutionPolicy.synthetic_relevance_judge(),
+                artifact_storage=storage,
+            )
+            result = orchestrator.run(
+                evaluation_id=evaluation_id,
+                fixtures=fixtures,
+            )
+            before_replay = len(judge.call_log)
+            replay = orchestrator.run(
+                evaluation_id=evaluation_id,
+                fixtures=fixtures,
+            )
+            dispositions = Counter(
+                item.disposition.value for item in result.consensuses
+            )
+            _print_result(
+                {
+                    "status": "resumed" if result.resumed else "generated",
+                    "evaluation_id": evaluation_id,
+                    "synthetic_fixture_count": len(result.candidates),
+                    "successful_judgment_count": len(result.judgments),
+                    "provider_operation_count": result.provider_operation_count,
+                    "consensus_dispositions": dict(sorted(dispositions.items())),
+                    "audit_queue_count": len(result.audit_queue.requests),
+                    "raw_silver_synthetic_metrics": result.metrics.raw_silver.to_dict(),
+                    "audited_silver_available": (
+                        result.metrics.audited_silver.precision_at_5.available
+                    ),
+                    "replay_verified": replay.resumed,
+                    "replay_judge_calls": len(judge.call_log) - before_replay,
+                    "real_candidate_labels_generated": False,
+                    "expert_gold_labels_present": False,
+                    "network_called": False,
+                }
+            )
+            return 0
         if args.command == "initialize":
             topic_set = load_topic_set(args.topic_set)
             key = f"{_safe_segment(args.evaluation_id)}/evaluation_config.json"

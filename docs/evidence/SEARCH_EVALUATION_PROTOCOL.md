@@ -271,6 +271,20 @@ ADR 0005 and provider/model/cost/retention decisions are approved.
 - audit override/uncertainty exceeds approved policy;
 - expert/publication/systematic-review claim is planned.
 
+## Phase 9B-2C-2 synthetic automated-silver path
+
+The evaluation CLI adds `judge-synthetic`. It accepts only the committed,
+source-marked synthetic fixture schema, runs fixture-driven pointwise A/B and
+selected mirrored pairwise checks, records a separate zero-cost
+ProviderOperation per logical call, aggregates under `TEST_POLICY_ONLY`, emits
+an uncompleted human-audit queue, and calculates synthetic raw-silver metrics.
+Replay reconstructs the immutable result and makes no Fake Judge call.
+
+This path does not load the OpenAlex candidate manifests, does not call a
+network, does not generate a `CandidateJudgment` or `HumanAuditResult`, and does
+not calculate expert-gold metrics. Synthetic numbers demonstrate contract
+behavior only; they do not estimate provider/model relevance quality.
+
 ## Evidence basis
 
 - PRISMA-S (peer reviewed) supports exact source/query/date/limits/dedup reporting:

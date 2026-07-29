@@ -723,6 +723,25 @@ implementation and network-free verification**.
 These are project implementation facts, not evidence that multilingual recall or
 scientific relevance improved.
 
+### PE-004 — Phase 9B-2C-2 synthetic Judge substrate
+
+- **Class D implementation evidence, 2026-07-29:** immutable automated request,
+  judgment, mirrored pairwise, consensus, audit request/result/queue, and silver
+  metric contracts are implemented under `backend/research/evaluation/`.
+- The provider-independent port has one fixture-driven Fake adapter. It uses no
+  network, credentials, model server, or text heuristic. Its ProviderUsage is
+  fixed and zero cost.
+- The evaluation-private artifact storage, append-only operation journal, and
+  ProviderOperationService are reused. Every attempted A/B/pairwise call settles;
+  completed replay makes no Judge call.
+- The committed fixture set contains only invented titles/previews with an
+  enforced synthetic source marker. It does not contain OpenAlex candidate
+  content or relevance labels for a real record.
+- Confidence `0.80`, 10% topic-stratified sampling, and cap 20 are
+  `TEST_POLICY_ONLY`, not an update to the limited acceptance of ADR 0005.
+- Evidence and exact regression results are recorded in
+  `.agent_read/progress/fake_relevance_judge_substrate.md`.
+
 ## Owner decisions
 
 | Decision | Recommendation | Alternatives | Consequence / blocker |

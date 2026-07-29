@@ -74,3 +74,28 @@ class ProviderExecutionPolicy:
             reservations={"openalex": ProviderReservation(request_count=2)},
             operation_timeout_seconds=30,
         )
+
+    @classmethod
+    def synthetic_relevance_judge(cls) -> ProviderExecutionPolicy:
+        """Zero-cost, network-free budget for the Phase 9B-2C-2 test substrate."""
+
+        return cls(
+            budget=ProviderBudget(
+                max_provider_requests=100,
+                max_llm_calls=100,
+                max_input_tokens=6_400,
+                max_output_tokens=2_400,
+                max_cost_minor_units=0,
+                max_runtime_seconds=60,
+                live_provider_enabled=False,
+            ),
+            reservations={
+                "synthetic-relevance-judge": ProviderReservation(
+                    request_count=1,
+                    input_tokens=64,
+                    output_tokens=24,
+                    cost_minor_units=0,
+                )
+            },
+            operation_timeout_seconds=5,
+        )

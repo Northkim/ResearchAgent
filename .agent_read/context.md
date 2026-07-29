@@ -641,3 +641,55 @@ Next permitted milestone: **automated-relevance-judge substrate using only a
 Fake Judge**, including immutable contracts, aggregation input boundary, and
 audit-queue scaffolding. Do not implement a real judge until that substrate is
 verified and provider/model/cost policies are explicitly approved.
+
+## Phase 9B-2C-2: Fake automated relevance Judge substrate
+
+The synthetic-only automated-silver architecture is implemented. Immutable
+contracts cover requests, pointwise judgments, mirrored pairwise consistency,
+consensus, human-audit requests/results/queue, and separate raw/audited silver
+metric families. An immutable prompt registry exposes pointwise A/B and mirrored
+pairwise versions under rubric `reagent-topic-relevance/v1`.
+
+`FakeAutomatedRelevanceJudge` is fixture-driven: it does not interpret candidate
+text, uses no network/key/model server, returns fixed zero-cost usage, and can
+produce configured disagreement, malformed output, timeout/failure, missing
+evidence, and pairwise order bias. The orchestrator reuses immutable artifact
+storage, the append-only evaluation journal, and ProviderOperationService. It
+requires terminal settlement before aggregation and performs no Judge call on
+completed replay.
+
+The committed fixture has 20 wholly invented candidates. The standard synthetic
+run attempts 40 pointwise calls, records 37 successful judgments, makes two
+mirrored pairwise calls, settles 42 operations, produces 7 `AUTO_ACCEPTED`,
+3 `AUTO_REJECTED`, and 10 `NEEDS_HUMAN_REVIEW` consensuses, and queues 10
+required plus one deterministic random audit. Raw synthetic Precision@5 is 0.8
+and Precision@10 is 0.7; these are fixture-path checks, not provider-quality
+measurements. Audited metrics are unavailable because no `HumanAuditResult` is
+created. Replay produces zero additional Judge calls.
+
+Policy `reagent-silver-aggregation/TEST_POLICY_ONLY/v1` uses synthetic values
+0.80 confidence, 10% topic-stratified random audit with at least one eligible
+consensus per topic, and maximum burden 20 with explicit
+`AUDIT_CAP_EXCEEDED`. None is approved for a real Judge, and ADR 0005 remains
+Accepted with limited scope without extension.
+
+No real OpenAlex candidate was loaded or labeled. Existing live pools and blank
+reviewer A/B packets remain untouched. OpenAlex/multilingual search, default
+Fake paper search, workflow definitions, database schema, API/frontend, and
+dependencies are unchanged.
+
+Verification: focused substrate `15 passed`; focused research `105 passed`;
+full backend `188 passed, 18 skipped`; compileall exit 0. The network-free CLI
+acceptance `synthetic-silver-v1` is retained under the ignored evaluation root
+and verified zero-call replay. No PostgreSQL-specific or frontend run was
+required.
+
+Open owner decisions remain the real Judge provider/model/snapshot, pinning and
+deprecation response, key and non-zero budget, retention, production confidence
+and audit thresholds, candidate authorization, calibration subset/design, and
+human review responsibility.
+
+Next permitted milestone: **design and owner-approve a bounded real-Judge
+calibration contract and subset**. Do not execute calibration or judge the full
+live pool until provider/model/budget/retention and calibration inputs are
+explicitly approved.

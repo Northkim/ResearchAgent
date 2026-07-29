@@ -238,3 +238,23 @@ This document does not approve 0.80 confidence, 10% sampling, pair selection,
 gain mapping, or any non-zero provider spend. All require owner approval through
 ADR 0005.
 
+## Phase 9B-2C-2 synthetic substrate
+
+The code now implements policy
+`reagent-silver-aggregation/TEST_POLICY_ONLY/v1` for synthetic verification:
+
+- two pointwise fixture runs are required;
+- the provisional confidence boundary is `0.80`;
+- agreeing `HIGHLY_RELEVANT`/`RELEVANT` cases may be `AUTO_ACCEPTED`;
+- agreeing `NOT_RELEVANT` cases may be `AUTO_REJECTED`;
+- partial, insufficient, disagreeing, low-confidence, missing-evidence,
+  pairwise-conflict, non-English, metadata-warning, and incomplete cases route
+  to `NEEDS_HUMAN_REVIEW`;
+- every logical call must have a terminal ProviderOperation before aggregation.
+
+The synthetic audit policy samples 10% of eligible consensus per topic with a
+minimum of one, retains every required item, and reports
+`AUDIT_CAP_EXCEEDED` rather than dropping items above 20. These values are test
+fixtures only. Raw-silver metrics never change when a synthetic
+`HumanAuditResult` override is supplied; audited-silver metrics are unavailable
+when no result exists.
