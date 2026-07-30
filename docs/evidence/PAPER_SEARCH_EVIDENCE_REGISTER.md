@@ -1,11 +1,13 @@
 # ReAgent Paper Search Evidence Register
 
-更新日期：2026-07-29；provider/Judge sources access date: 2026-07-29
-阶段：Phase 9B-2C-3A（bounded real-Judge calibration contract）
+更新日期：2026-07-30；provider/model sources access date: 2026-07-30
+阶段：Phase 9C-0（first real grounded literature report contract）
 结论状态：ADR 0004 **Accepted with limited scope**；仅 OpenAlex discovery
 已获实现授权，Semantic Scholar/Crossref 仍是 future candidates。
-Judge 状态：Fake substrate 已验证；ADR 0006 **Proposed**；real Judge、
-hosted preview processing、non-zero spend 与 full-pool judgment 均未授权。
+Judge 状态：Optional Evaluation Module **Deferred**；ADR 0006 **Deferred**；
+real Judge、hosted preview processing、non-zero Judge spend 与 full-pool
+judgment 均未授权。Grounded report 状态：ADR 0007 **Proposed**；no real LLM
+call、real abstract processing 或 non-zero report spend 已授权。
 
 ## 证据标准与研究问题
 
@@ -767,7 +769,39 @@ scientific relevance improved.
   does not provide either.
 - No actual candidate is selected in committed evidence. No LLM/OpenAlex call,
   real label, human import, or real metric occurred.
-- Proposed ADR 0006 remains Proposed and full-pool judgment remains prohibited.
+- At completion of Phase 9B-2C-3A, ADR 0006 was Proposed and full-pool judgment
+  was prohibited. Phase 9C-0 subsequently marked it Deferred; the prohibition
+  remains.
+
+### PE-006 — Phase 9C-0 grounded report route and contract
+
+- **Route evidence, 2026-07-30:** Judge/calibration assets remain valid but are
+  classified as an Optional Evaluation Module, Deferred. ADR 0006 is retained
+  and marked Deferred; no execution permission follows.
+- **Source inspection evidence:** `guided-literature-review@2.0.0` remains
+  immutable at
+  `af3dd76540cfb7b08a73a7fbffda76679375a8170f0099611016c57d4c9d856a`.
+  Its current summary/report skills are Fake-oriented, so a new immutable V3
+  workflow/skill contract is proposed rather than an adapter-only swap.
+- **Class A evidence, accessed 2026-07-30:** current Anthropic Sonnet 5, OpenAI
+  GPT-5.6 Terra, and gpt-oss contracts are recorded in
+  `REAL_REPORT_LLM_PROVIDER_MATRIX.md`. Proposed primary is
+  `claude-sonnet-5`; it is unapproved and has not been called.
+- **Class B/C evidence:** summarization faithfulness, RAG, citation attribution,
+  atomic claim checking, long-context position effects, PaperQA2, OpenScholar,
+  and Academic Research Skills inform the staged design. None proves ReAgent
+  report correctness.
+- **Class D proposal:** 3–5 abstract-only papers; combined per-paper
+  summary/evidence, one synthesis, one report, optional one repair; 8 logical
+  calls, 11 attempts, 90k/32k tokens, 20 minutes, USD 1.25 hard cap. Authorized
+  spend remains USD 0.00.
+- Exact approval/checksums, deterministic `[P1]` labels, evidence-linked claims,
+  disclosures, settled ProviderOperations, and completed immutable artifact
+  writes are blocking publication gates. `literature_corpus.json` is a proposed
+  downstream handoff, not downstream execution authority.
+- No production/dependency/workflow source, live data, database, runtime data,
+  real abstract, report, relevance label, or provider API was changed or
+  generated.
 
 ## Owner decisions
 

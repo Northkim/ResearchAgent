@@ -1,9 +1,22 @@
 # ADR 0006: Bounded Real-Judge Calibration
 
-Status: **Proposed**
+Status: **Deferred**
 Date: 2026-07-29
 Owners: ReAgent owner
 Scope: calibration design and owner-approval boundary only
+
+## Route status update — 2026-07-30
+
+The owner has moved the V1 product priority to real grounded literature-report
+generation. This ADR is **Deferred**, not rejected or accepted for execution.
+The calibration design, Fake Judge substrate, tests, evidence, and blank review
+packets remain preserved as an Optional Evaluation Module. No real Judge call,
+non-zero Judge spend, calibration execution, relevance label, or full-pool
+screening is authorized.
+
+Resume requires an explicit owner decision after the grounded-report path is
+stable or when retrieval/screening evaluation becomes a product or research
+claim, with fresh provider/model/ZDR/abstract/human-reference/budget approval.
 
 ## Context
 
@@ -289,4 +302,3 @@ This ADR does **not** authorize:
 - production confidence thresholds;
 - automatic human-audit completion;
 - expert-gold or scientific-quality claims.
-

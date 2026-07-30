@@ -1,6 +1,52 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-07-29
+Last updated: 2026-07-30
+
+## Current route — Phase 9C-0
+
+The owner changed V1 priority from real relevance-Judge calibration to the first
+real Grounded Literature Report. The automated-relevance work is retained as:
+
+> **Optional Evaluation Module — DEFERRED**
+
+ADR 0006 is Deferred, not rejected or accepted for execution. Its Fake Judge,
+contracts, aggregation, audit queue, tests, evidence, calibration design, and
+blank review packets remain preserved. No real Judge, label, full-pool
+screening, Judge spend, or deletion is authorized.
+
+Proposed ADR 0007 defines an abstract-only path:
+
+real OpenAlex → exact owner-approved 3–5 papers → immutable
+`GroundedReportInput` → staged per-paper summary/evidence → cross-paper claims
+→ citation-aware Markdown report → blocking provenance → immutable artifacts
+and `literature_corpus.json` → API/UI/restart.
+
+Source inspection showed that `guided-literature-review@2.0.0` and its pinned
+skills are Fake-oriented; a real adapter swap alone is insufficient. The
+proposal is a new immutable `guided-literature-review@3.0.0` and v2 grounded
+skills while preserving the V2 hash
+`af3dd76540cfb7b08a73a7fbffda76679375a8170f0099611016c57d4c9d856a`.
+
+Proposed primary provider/model: Anthropic `claude-sonnet-5`; manual fallback
+candidate: OpenAI `gpt-5.6-terra`; local development option:
+`gpt-oss-20b`. No provider/model/key/ZDR/region/abstract processing or spend is
+approved. Current LLM budget is USD 0.00.
+
+Open blocking decisions: approve/revise ADR 0007; workflow route; provider,
+exact model and key; ZDR/region; real-abstract permission and 12,000-character
+limit; 3–5 papers; report language; staged call plan; private evidence-span and
+quote policy; 8 calls/11 attempts; 90k/32k tokens; USD 1.25; 20 minutes;
+retention; isolated acceptance storage; downloads/corpus use; repair/comparison
+calls; and continued full-text prohibition.
+
+No real LLM/OpenAlex call, report, abstract summary, relevance label, database,
+runtime-data, production source, workflow, migration, frontend, or dependency
+change occurred in Phase 9C-0.
+
+Next permitted milestone: **approve or revise ADR 0007**. Phase 9C-1 is
+Fake/synthetic adapter-substrate implementation only after its blocking
+architecture decisions are explicit. Real calls require additional
+provider/model/key/ZDR/abstract/budget approval.
 
 ## Project authority
 
@@ -697,9 +743,10 @@ explicitly approved.
 ## Phase 9B-2C-3A: Bounded real-Judge calibration contract
 
 The Fake Judge substrate remains verified. Phase 9B-2C-3A completed a
-documentation/evidence/owner-approval contract only. Proposed ADR
-`.agent_read/decisions/0006-bounded-real-judge-calibration.md` remains
-**Proposed**.
+documentation/evidence/owner-approval contract only. It originally produced
+Proposed ADR `.agent_read/decisions/0006-bounded-real-judge-calibration.md`;
+Phase 9C-0 subsequently changed its current status to **Deferred** without
+rewriting the design below.
 
 Proposed design:
 
@@ -741,5 +788,6 @@ limits; pass/warning gates; multilingual cases; retention; and whether a
 comparison model is allowed. Full-pool judgment remains prohibited after
 calibration unless separately authorized.
 
-Next permitted milestone: **approve or revise ADR 0006**. Do not execute the
-bounded calibration until every blocking decision is explicit.
+Historical next milestone was approval/revision of ADR 0006. Current route is
+governed by the Phase 9C-0 section at the top of this file; bounded calibration
+remains deferred and may not execute.
