@@ -6,6 +6,11 @@ from .provenance import (
     ProvenanceValidationResult,
     ProvenanceValidator,
 )
+from .grounded_provenance import (
+    GroundedProvenanceIssue,
+    GroundedProvenanceResult,
+    GroundedProvenanceValidator,
+)
 from .budget import (
     BudgetExceededError,
     BudgetTotals,
@@ -24,6 +29,9 @@ __all__ = [
     "ProvenanceIssueSeverity",
     "ProvenanceValidationResult",
     "ProvenanceValidator",
+    "GroundedProvenanceIssue",
+    "GroundedProvenanceResult",
+    "GroundedProvenanceValidator",
     "BudgetExceededError",
     "BudgetTotals",
     "ProviderBudgetEvaluator",

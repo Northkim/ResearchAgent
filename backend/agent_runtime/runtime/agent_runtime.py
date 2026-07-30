@@ -104,6 +104,7 @@ class AgentRuntime:
         execution_or_id: ExecutionState | str,
         *,
         approval_outcome: ApprovalOutcome | None = None,
+        approval_outputs: Mapping[str, Any] | None = None,
     ) -> RuntimeResult:
         """Run from a new aggregate or restore one by WorkflowRun ID."""
 
@@ -147,6 +148,7 @@ class AgentRuntime:
         preparation_result = self._prepare_resume(
             execution,
             approval_outcome=approval_outcome,
+            approval_outputs=approval_outputs,
         )
         if preparation_result is not None:
             return preparation_result
@@ -281,6 +283,7 @@ class AgentRuntime:
         execution: ExecutionState,
         *,
         approval_outcome: ApprovalOutcome | None,
+        approval_outputs: Mapping[str, Any] | None,
     ) -> RuntimeResult | None:
         status = execution.workflow_run.status
 
@@ -300,6 +303,7 @@ class AgentRuntime:
                 execution,
                 execution.latest_checkpoint,
                 outcome=approval_outcome,
+                outputs=approval_outputs,
             )
             boundary = (
                 CheckpointBoundary.APPROVAL_RESOLVED

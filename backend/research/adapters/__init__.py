@@ -20,10 +20,17 @@ from .openalex import (
     OpenAlexPaperSearchProvider,
     OpenAlexTransport,
 )
+from .anthropic_substrate import AnthropicStructuredAdapter, AnthropicStructuredTransport
+from .synthetic_grounded import (
+    SyntheticGroundedPaperSearchProvider,
+    SyntheticGroundedProvider,
+)
 
 __all__ = [
     "ArtifactIntegrityError",
     "ArtifactStorageError",
+    "AnthropicStructuredAdapter",
+    "AnthropicStructuredTransport",
     "DEFAULT_LOCAL_ARTIFACT_ROOT",
     "FakeLLMProvider",
     "FakePaperSearchProvider",
@@ -36,4 +43,6 @@ __all__ = [
     "OpenAlexHttpResponse",
     "OpenAlexPaperSearchProvider",
     "OpenAlexTransport",
+    "SyntheticGroundedProvider",
+    "SyntheticGroundedPaperSearchProvider",
 ]

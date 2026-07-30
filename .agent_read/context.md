@@ -2,7 +2,29 @@
 
 Last updated: 2026-07-30
 
-## Current route — Phase 9C-0
+## Current route — Phase 9C-1
+
+Phase 9C-1 implements the accepted Fake/synthetic grounded-report substrate.
+Immutable `guided-literature-review@3.0.0` has hash
+`c103aa95290ed13407cf5fa5e9984bcd9cd0efb7cc5451176b73c6fbcf1cb0ec`;
+V2 remains unchanged at
+`af3dd76540cfb7b08a73a7fbffda76679375a8170f0099611016c57d4c9d856a`.
+The static V3 path binds exact approval and abstract-only synthetic sources,
+performs one fixture-driven summary/evidence call per paper, one claim
+synthesis, one report composition, fail-closed provenance, and publishes 13
+checksum-bound artifacts including `literature_corpus.json`.
+
+The provider-independent structured-generation port and an inactive,
+transport-injected Anthropic `claude-sonnet-5` adapter substrate exist. Normal
+V3 validation uses only `SyntheticGroundedProvider`; no SDK, key lookup,
+network, real abstract, OpenAlex call, relevance label, or spend is present.
+The one-repair, ProviderOperation, budget, private checkpoint, restart, and
+zero-call replay boundaries are implemented.
+
+The Optional Evaluation Module remains **DEFERRED**. Phase 9C-2 remains blocked
+on a separate owner decision for exact provider/model/account/key, ZDR and
+retention, real-abstract transmission, exactly three real papers, non-zero
+budget, isolated storage, report language, and live acceptance gates.
 
 The owner changed V1 priority from real relevance-Judge calibration to the first
 real Grounded Literature Report. The automated-relevance work is retained as:

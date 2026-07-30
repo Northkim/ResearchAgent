@@ -133,3 +133,20 @@ The optional Judge module is Deferred. Grounded report generation does not
 perform automatic relevance screening: the owner approves the exact paper set
 first. No LLM/OpenAlex call, real abstract summary, report, relevance label, or
 retrieval metric was produced in Phase 9C-0.
+
+## Phase 9C-1 implementation evidence
+
+ADR 0007's limited scope is now implemented with network-free synthetic data.
+The immutable V3 hash is
+`c103aa95290ed13407cf5fa5e9984bcd9cd0efb7cc5451176b73c6fbcf1cb0ec`;
+the V2 hash remains unchanged. Additive V3 contracts preserve historical V2
+serialization. A provider-independent structured-generation port, immutable
+prompt registry, fixture-driven synthetic provider, and inactive
+transport-injected Anthropic `claude-sonnet-5` protocol adapter now exist.
+
+The successful synthetic path used three fictional papers, five grounded
+evidence units, five category-checked claims, three deterministic citations,
+five generation calls, thirteen artifacts, zero cost, and zero generation calls
+on completed replay. These are architecture-test facts, not evidence about
+Anthropic, scientific quality, retrieval quality, or real-report usefulness.
+No real API, key, title, abstract, identifier, or response was used.

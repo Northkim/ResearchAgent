@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from collections.abc import Mapping
+from typing import Any
 
 from backend.agent_runtime import AgentRuntime, RuntimeResult
 from backend.workflow_engine.models import ApprovalOutcome
@@ -13,6 +15,7 @@ from backend.workflow_engine.models import ApprovalOutcome
 class ExecutionRequest:
     workflow_run_id: str
     approval_outcome: ApprovalOutcome | None = None
+    approval_outputs: Mapping[str, Any] | None = None
 
 
 class ExecutionDispatcher(ABC):
@@ -30,7 +33,7 @@ class SyncExecutionDispatcher(ExecutionDispatcher):
         self.runtime = runtime
 
     async def submit(self, request: ExecutionRequest) -> RuntimeResult:
-        return await self.runtime.run(
-            request.workflow_run_id,
-            approval_outcome=request.approval_outcome,
-        )
+        arguments = {"approval_outcome": request.approval_outcome}
+        if request.approval_outputs is not None:
+            arguments["approval_outputs"] = request.approval_outputs
+        return await self.runtime.run(request.workflow_run_id, **arguments)

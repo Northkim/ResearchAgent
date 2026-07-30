@@ -1,0 +1,297 @@
+{
+  "id": "guided-literature-review",
+  "version": "3.0.0",
+  "name": "Guided Literature Review v3 (synthetic grounded report)",
+  "schema_version": "reagent/v1alpha1",
+  "input_schema": {
+    "topic": {
+      "type": "string",
+      "required": true,
+      "description": "Synthetic topic for the grounded-report architecture test."
+    },
+    "year_from": {
+      "type": "integer",
+      "required": true,
+      "default": 2020
+    },
+    "year_to": {
+      "type": "integer",
+      "required": true,
+      "default": 2026
+    },
+    "max_papers": {
+      "type": "integer",
+      "required": true,
+      "default": 3,
+      "minimum": 3,
+      "maximum": 5
+    },
+    "workflow_hash": {
+      "type": "string",
+      "required": true,
+      "internal": true
+    }
+  },
+  "steps": [
+    {
+      "id": "validate_query",
+      "kind": "skill",
+      "needs": [],
+      "uses": "research.validate_research_query@1.0.0",
+      "input_mapping": {
+        "topic": "${inputs.topic}",
+        "year_from": "${inputs.year_from}",
+        "year_to": "${inputs.year_to}",
+        "max_papers": "${inputs.max_papers}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "search_papers",
+      "kind": "skill",
+      "needs": ["validate_query"],
+      "uses": "research.search_papers@1.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}"
+      },
+      "timeout_seconds": 60,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "normalize_and_deduplicate",
+      "kind": "skill",
+      "needs": ["search_papers"],
+      "uses": "research.normalize_paper_metadata@1.0.0",
+      "input_mapping": {
+        "papers": "${nodes.search_papers.outputs.papers}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "rank_and_select",
+      "kind": "skill",
+      "needs": ["normalize_and_deduplicate", "validate_query"],
+      "uses": "research.rank_papers@1.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "papers": "${nodes.normalize_and_deduplicate.outputs.papers}",
+        "max_papers": "${inputs.max_papers}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "approve_sources",
+      "kind": "approval",
+      "needs": ["rank_and_select", "validate_query"],
+      "uses": null,
+      "input_mapping": {
+        "query_hash": "${nodes.validate_query.outputs.query_hash}",
+        "selected_paper_ids": "${nodes.rank_and_select.outputs.selected_paper_ids}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "selected_papers_artifact": "${nodes.rank_and_select.outputs.selected_papers_artifact}",
+        "ranker_version": "${nodes.rank_and_select.outputs.ranker_version}",
+        "approval_preview": "${nodes.rank_and_select.outputs.approval_preview}",
+        "source_scope": "abstract_only"
+      },
+      "timeout_seconds": 86400,
+      "max_attempts": 1,
+      "retry_backoff": "exponential",
+      "retry_initial_seconds": 1.0,
+      "retry_max_seconds": 30.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": "project_reviewer"
+    },
+    {
+      "id": "load_approved_source_content",
+      "kind": "skill",
+      "needs": ["approve_sources", "rank_and_select"],
+      "uses": "research.load_approved_source_content@2.0.0",
+      "input_mapping": {
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "selected_paper_ids": "${nodes.rank_and_select.outputs.selected_paper_ids}",
+        "selected_papers_checksum": "${nodes.rank_and_select.outputs.selected_papers_checksum}",
+        "approval": {
+          "approval_request_id": "${nodes.approve_sources.outputs.approval_request_id}",
+          "approval_fingerprint": "${nodes.approve_sources.outputs.approval_fingerprint}",
+          "approval_status": "${nodes.approve_sources.outputs.approval_status}",
+          "resolved_at": "${nodes.approve_sources.outputs.resolved_at}"
+        }
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "build_grounded_report_input",
+      "kind": "skill",
+      "needs": ["load_approved_source_content", "validate_query", "rank_and_select"],
+      "uses": "research.build_grounded_report_input@2.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "query_hash": "${nodes.validate_query.outputs.query_hash}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "selected_paper_ids": "${nodes.rank_and_select.outputs.selected_paper_ids}",
+        "selected_papers_artifact": "${nodes.rank_and_select.outputs.selected_papers_artifact}",
+        "selected_papers_checksum": "${nodes.rank_and_select.outputs.selected_papers_checksum}",
+        "approval": {
+          "approval_request_id": "${nodes.approve_sources.outputs.approval_request_id}",
+          "approval_fingerprint": "${nodes.approve_sources.outputs.approval_fingerprint}",
+          "approval_status": "${nodes.approve_sources.outputs.approval_status}",
+          "resolved_at": "${nodes.approve_sources.outputs.resolved_at}"
+        },
+        "source_contents": "${nodes.load_approved_source_content.outputs.source_contents}",
+        "citation_label_mapping": "${nodes.load_approved_source_content.outputs.citation_label_mapping}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "summarize_papers_and_extract_evidence",
+      "kind": "skill",
+      "needs": ["build_grounded_report_input", "load_approved_source_content", "rank_and_select"],
+      "uses": "research.summarize_papers_and_extract_evidence@2.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "grounded_report_input": "${nodes.build_grounded_report_input.outputs.grounded_report_input}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "source_contents": "${nodes.load_approved_source_content.outputs.source_contents}"
+      },
+      "timeout_seconds": 180,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "synthesize_grounded_claims",
+      "kind": "skill",
+      "needs": ["summarize_papers_and_extract_evidence", "build_grounded_report_input"],
+      "uses": "research.synthesize_grounded_claims@2.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "grounded_report_input": "${nodes.build_grounded_report_input.outputs.grounded_report_input}",
+        "paper_summaries": "${nodes.summarize_papers_and_extract_evidence.outputs.paper_summaries}",
+        "evidence_units": "${nodes.summarize_papers_and_extract_evidence.outputs.evidence_units}"
+      },
+      "timeout_seconds": 120,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "compose_grounded_report",
+      "kind": "skill",
+      "needs": ["synthesize_grounded_claims", "load_approved_source_content", "rank_and_select"],
+      "uses": "research.compose_grounded_report@2.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "grounded_report_input": "${nodes.build_grounded_report_input.outputs.grounded_report_input}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "paper_summaries": "${nodes.summarize_papers_and_extract_evidence.outputs.paper_summaries}",
+        "evidence_units": "${nodes.synthesize_grounded_claims.outputs.evidence_units}",
+        "grounded_claims": "${nodes.synthesize_grounded_claims.outputs.grounded_claims}",
+        "citations": "${nodes.load_approved_source_content.outputs.citations}"
+      },
+      "timeout_seconds": 120,
+      "max_attempts": 2,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "validate_grounded_provenance",
+      "kind": "skill",
+      "needs": ["compose_grounded_report", "synthesize_grounded_claims", "load_approved_source_content"],
+      "uses": "research.validate_grounded_provenance@2.0.0",
+      "input_mapping": {
+        "grounded_report_input": "${nodes.build_grounded_report_input.outputs.grounded_report_input}",
+        "source_contents": "${nodes.load_approved_source_content.outputs.source_contents}",
+        "paper_summaries": "${nodes.summarize_papers_and_extract_evidence.outputs.paper_summaries}",
+        "evidence_units": "${nodes.synthesize_grounded_claims.outputs.evidence_units}",
+        "grounded_claims": "${nodes.synthesize_grounded_claims.outputs.grounded_claims}",
+        "report": "${nodes.compose_grounded_report.outputs.report}"
+      },
+      "timeout_seconds": 30,
+      "max_attempts": 1,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    },
+    {
+      "id": "persist_grounded_artifacts",
+      "kind": "skill",
+      "needs": ["validate_grounded_provenance", "normalize_and_deduplicate", "rank_and_select"],
+      "uses": "research.persist_grounded_artifacts@2.0.0",
+      "input_mapping": {
+        "query": "${nodes.validate_query.outputs.query}",
+        "papers": "${nodes.normalize_and_deduplicate.outputs.papers}",
+        "selected_papers": "${nodes.rank_and_select.outputs.selected_papers}",
+        "source_contents": "${nodes.load_approved_source_content.outputs.source_contents}",
+        "grounded_report_input": "${nodes.build_grounded_report_input.outputs.grounded_report_input}",
+        "paper_summaries": "${nodes.summarize_papers_and_extract_evidence.outputs.paper_summaries}",
+        "evidence_units": "${nodes.synthesize_grounded_claims.outputs.evidence_units}",
+        "grounded_claims": "${nodes.synthesize_grounded_claims.outputs.grounded_claims}",
+        "citations": "${nodes.load_approved_source_content.outputs.citations}",
+        "report": "${nodes.compose_grounded_report.outputs.report}",
+        "validation": "${nodes.validate_grounded_provenance.outputs.validation}",
+        "workflow_hash": "${inputs.workflow_hash}"
+      },
+      "timeout_seconds": 60,
+      "max_attempts": 1,
+      "retry_backoff": "fixed",
+      "retry_initial_seconds": 0.0,
+      "retry_max_seconds": 0.0,
+      "checkpoint_policy": "after_success",
+      "approval_policy": null
+    }
+  ],
+  "outputs": {
+    "report_artifact": "${nodes.persist_grounded_artifacts.outputs.report_artifact}",
+    "provenance_artifact": "${nodes.persist_grounded_artifacts.outputs.provenance_artifact}",
+    "usage_artifact": "${nodes.persist_grounded_artifacts.outputs.usage_artifact}",
+    "literature_corpus_artifact": "${nodes.persist_grounded_artifacts.outputs.literature_corpus_artifact}",
+    "generation_manifest_artifact": "${nodes.persist_grounded_artifacts.outputs.generation_manifest_artifact}",
+    "publication": "${nodes.persist_grounded_artifacts.outputs.publication}"
+  }
+}

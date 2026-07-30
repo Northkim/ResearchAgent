@@ -253,6 +253,7 @@ class WorkflowEngine:
         *,
         step_id: str,
         outcome: ApprovalOutcome,
+        outputs: Mapping[str, Any] | None = None,
     ) -> ApprovalCompleted | WorkflowCancelled:
         self._validator.validate(definition)
         self._validate_snapshot_identity(definition, snapshot)
@@ -281,6 +282,7 @@ class WorkflowEngine:
                 step_id=step_id,
                 step_run_id=step_run.id,
                 expected_step_version=step_run.row_version,
+                outputs=outputs or {},
             )
 
         if (

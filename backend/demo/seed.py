@@ -24,6 +24,7 @@ from backend.skill_system.models import SkillReference
 from backend.skill_system.registry import SkillRegistry
 from backend.skill_system.runtime import register_fake_skills
 from backend.research.skills import register_research_skills
+from backend.research.grounded_skills import register_grounded_research_skills
 from backend.workflow_engine.models import WorkflowDefinition
 from backend.workflow_engine.services import WorkflowValidator
 
@@ -48,6 +49,16 @@ RESEARCH_FIXTURE_PATH = (
     / "demo"
     / "workflows"
     / "guided_literature_review.v2.json"
+)
+GROUNDED_RESEARCH_WORKFLOW_VERSION = "3.0.0"
+GROUNDED_RESEARCH_WORKFLOW_HASH = (
+    "c103aa95290ed13407cf5fa5e9984bcd9cd0efb7cc5451176b73c6fbcf1cb0ec"
+)
+GROUNDED_RESEARCH_FIXTURE_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "demo"
+    / "workflows"
+    / "guided_literature_review.v3.json"
 )
 
 
@@ -160,6 +171,66 @@ def load_research_workflow(
     return workflow
 
 
+def load_grounded_research_workflow(
+    fixture_path: Path = GROUNDED_RESEARCH_FIXTURE_PATH,
+) -> Workflow:
+    """Load and validate the immutable synthetic grounded-report v3 definition."""
+
+    try:
+        raw_document = json.loads(fixture_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise DemoSeedError(
+            f"Could not read grounded research fixture {fixture_path}: {error}"
+        ) from error
+    if not isinstance(raw_document, Mapping):
+        raise DemoSeedError("Grounded research workflow fixture must be one JSON object")
+    try:
+        workflow = workflow_from_document(raw_document)
+        WorkflowValidator().validate(WorkflowDefinition.from_domain(workflow))
+    except Exception as error:
+        raise DemoSeedError(
+            f"Grounded research workflow validation failed: {error}"
+        ) from error
+    canonical_hash = workflow_document_hash(workflow_to_document(workflow))
+    if (
+        workflow.id != RESEARCH_WORKFLOW_ID
+        or workflow.version != GROUNDED_RESEARCH_WORKFLOW_VERSION
+        or canonical_hash != GROUNDED_RESEARCH_WORKFLOW_HASH
+    ):
+        raise DemoSeedError(
+            "Grounded research workflow identity/hash differs from frozen contract"
+        )
+    registry = SkillRegistry()
+    register_fake_skills(registry)
+    register_research_skills(registry)
+    register_grounded_research_skills(registry)
+    for step in workflow.steps:
+        if step.kind is not WorkflowStepKind.SKILL or step.uses is None:
+            continue
+        try:
+            registered = registry.resolve(SkillReference.parse(step.uses))
+        except Exception as error:
+            raise DemoSeedError(
+                f"Grounded workflow references an unavailable Skill: {error}"
+            ) from error
+        declared = set(registered.definition.input_schema.fields)
+        supplied = set(step.input_mapping)
+        required = {
+            name
+            for name, field_schema in registered.definition.input_schema.fields.items()
+            if field_schema.required
+        }
+        if required - supplied or (
+            supplied - declared and not registered.definition.input_schema.allow_extra
+        ):
+            raise DemoSeedError(
+                f"Grounded workflow step {step.id} does not match its Skill schema; "
+                f"missing={sorted(required - supplied)}, "
+                f"unknown={sorted(supplied - declared)}"
+            )
+    return workflow
+
+
 def seed_demo_workflow(
     database_url: str,
     *,
@@ -261,6 +332,56 @@ def seed_research_workflow(
     )
 
 
+def seed_grounded_research_workflow(
+    database_url: str,
+    *,
+    fixture_path: Path = GROUNDED_RESEARCH_FIXTURE_PATH,
+) -> DemoSeedResult:
+    """Publish v3 immutably without modifying v1 or v2."""
+
+    workflow = load_grounded_research_workflow(fixture_path)
+    document = workflow_to_document(workflow)
+    canonical_hash = workflow_document_hash(document)
+    engine = create_postgres_engine(database_url)
+    session_factory = create_session_factory(engine)
+    created = False
+    try:
+        with session_factory() as session, session.begin():
+            existing = session.get(
+                WorkflowDefinitionORM,
+                (workflow.id, workflow.version),
+            )
+            if existing is None:
+                session.add(
+                    WorkflowDefinitionORM(
+                        workflow_id=workflow.id,
+                        version=workflow.version,
+                        schema_version=workflow.schema_version,
+                        name=workflow.name,
+                        definition_json=document,
+                        definition_hash=canonical_hash,
+                        created_at=utc_now(),
+                    )
+                )
+                created = True
+            elif (
+                existing.definition_hash != canonical_hash
+                or existing.definition_json != document
+            ):
+                raise DemoSeedError(
+                    f"Workflow {workflow.id}@{workflow.version} already exists with "
+                    "different immutable content"
+                )
+    finally:
+        engine.dispose()
+    return DemoSeedResult(
+        workflow_id=workflow.id,
+        version=workflow.version,
+        canonical_hash=canonical_hash,
+        created=created,
+    )
+
+
 def _result_document(result: DemoSeedResult) -> dict[str, Any]:
     return {
         "workflow_id": result.workflow_id,
@@ -279,6 +400,7 @@ def main() -> int:
         results = (
             seed_demo_workflow(database_url),
             seed_research_workflow(database_url),
+            seed_grounded_research_workflow(database_url),
         )
     except Exception as error:
         print(f"Demo seed failed: {error}", file=sys.stderr)

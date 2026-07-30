@@ -11,6 +11,7 @@ from backend.research.ports import (
     LLMProvider,
     PaperSearchProvider,
     SourceContentProvider,
+    StructuredGenerationProvider,
 )
 from backend.research.services import ProviderExecutionPolicy, ProviderOperationService
 from backend.skill_system.exceptions import SkillCapabilityDeniedError
@@ -27,6 +28,7 @@ class SkillCapabilities:
     paper_search: PaperSearchProvider | None = None
     source_content: SourceContentProvider | None = None
     llm: LLMProvider | None = None
+    structured_generation: StructuredGenerationProvider | None = None
     artifact_storage: ArtifactContentStorage | None = None
     provider_operations: ProviderOperationService | None = None
     provider_execution_policy: ProviderExecutionPolicy = field(
@@ -41,6 +43,11 @@ class SkillCapabilities:
             paper_search=self.paper_search if "paper_search" in allowed else None,
             source_content=self.source_content if "source_content" in allowed else None,
             llm=self.llm if "llm" in allowed else None,
+            structured_generation=(
+                self.structured_generation
+                if "structured_generation" in allowed
+                else None
+            ),
             artifact_storage=(
                 self.artifact_storage if "artifact_storage" in allowed else None
             ),
@@ -58,6 +65,9 @@ class SkillCapabilities:
 
     def require_llm(self) -> LLMProvider:
         return self._require("llm", self.llm)
+
+    def require_structured_generation(self) -> StructuredGenerationProvider:
+        return self._require("structured_generation", self.structured_generation)
 
     def require_artifact_storage(self) -> ArtifactContentStorage:
         return self._require("artifact_storage", self.artifact_storage)

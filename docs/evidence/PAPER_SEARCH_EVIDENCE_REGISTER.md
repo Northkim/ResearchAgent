@@ -812,6 +812,25 @@ scientific relevance improved.
   real abstract, report, relevance label, or provider API was changed or
   generated.
 
+### PE-007 — Phase 9C-1 synthetic grounded-report implementation
+
+- Immutable `guided-literature-review@3.0.0` is implemented at
+  `c103aa95290ed13407cf5fa5e9984bcd9cd0efb7cc5451176b73c6fbcf1cb0ec`;
+  V2 remains at its frozen hash.
+- The V3 static DAG retains search/approval and adds exact approved-source
+  binding, abstract-only materialization, structured summary/evidence,
+  category-checked claims, deterministic report composition, fail-closed
+  provenance, and immutable publication.
+- Provider architecture is network-free: a fixture-driven synthetic provider
+  is active only for V3; the Anthropic `claude-sonnet-5` adapter target has only
+  an injected transport protocol and is not registered as a live capability.
+- Synthetic evidence: 3 fictional papers, 3 summaries, 5 EvidenceUnits, 5
+  GroundedClaims, 3 citations, 13 artifacts, 5 generation calls, USD 0.00, and
+  0 replay calls. This is architecture evidence only.
+- No real OpenAlex/LLM/Judge call, credential, real abstract, live candidate
+  mutation, dependency, migration, frontend, or deferred-evaluation change
+  occurred.
+
 ## Owner decisions
 
 | Decision | Recommendation | Alternatives | Consequence / blocker |

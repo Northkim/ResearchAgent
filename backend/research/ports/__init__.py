@@ -18,6 +18,10 @@ from .providers import (
     ProviderRequestContext,
     SourceContentProvider,
     SourceContentResult,
+    StructuredFinishState,
+    StructuredGenerationProvider,
+    StructuredGenerationRequest,
+    StructuredGenerationResult,
 )
 
 __all__ = [
@@ -36,4 +40,8 @@ __all__ = [
     "SourceContentProvider",
     "SourceContentResult",
     "StoredArtifactContent",
+    "StructuredFinishState",
+    "StructuredGenerationProvider",
+    "StructuredGenerationRequest",
+    "StructuredGenerationResult",
 ]

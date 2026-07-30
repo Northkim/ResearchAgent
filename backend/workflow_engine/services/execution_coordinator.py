@@ -130,6 +130,7 @@ class WorkflowExecutionCoordinator:
                 execution,
                 step_id=decision.step_id,
                 target_status=StepRunStatus.COMPLETED,
+                outputs=decision.outputs,
             )
 
         if isinstance(decision, WorkflowCancelled):
@@ -148,6 +149,7 @@ class WorkflowExecutionCoordinator:
         checkpoint: Checkpoint,
         *,
         outcome: ApprovalOutcome,
+        outputs: Mapping[str, Any] | None = None,
     ) -> ApprovalCompleted | WorkflowCancelled:
         wait_reason = execution.workflow_run.wait_reason
         if not wait_reason or not wait_reason.startswith("approval:"):
@@ -162,6 +164,7 @@ class WorkflowExecutionCoordinator:
                 ExecutionSnapshot.from_execution(execution),
                 step_id=step_id,
                 outcome=outcome,
+                outputs=outputs,
             )
         else:
             decision = self.engine.evaluate_approval(

@@ -32,6 +32,9 @@ PROVENANCE_MANIFEST_SCHEMA_VERSION = "provenance/v1"
 SEARCH_PLAN_SCHEMA_VERSION = "search-plan/v1"
 SEARCH_EXECUTION_SCHEMA_VERSION = "search-execution/v1"
 SEARCH_STATISTICS_SCHEMA_VERSION = "search-statistics/v1"
+GROUNDED_REPORT_INPUT_SCHEMA_VERSION = "grounded-report-input/v1"
+PER_PAPER_SUMMARY_SCHEMA_VERSION = "per-paper-summary/v1"
+LITERATURE_CORPUS_SCHEMA_VERSION = "literature-corpus/v1"
 
 _DOI_PREFIX = re.compile(r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)", re.I)
 _DOI_SHAPE = re.compile(r"^10\.\d{4,9}/\S+$", re.I)
@@ -487,6 +490,16 @@ class ClaimKind(str, Enum):
     INFERENCE = "inference"
 
 
+class GroundedClaimCategory(str, Enum):
+    SOURCE_SUMMARY = "SOURCE_SUMMARY"
+    CROSS_SOURCE_THEME = "CROSS_SOURCE_THEME"
+    AGREEMENT = "AGREEMENT"
+    DISAGREEMENT = "DISAGREEMENT"
+    LIMITATION = "LIMITATION"
+    RESEARCH_GAP = "RESEARCH_GAP"
+    SYSTEM_INFERENCE = "SYSTEM_INFERENCE"
+
+
 @dataclass(frozen=True, slots=True)
 class GroundedClaim(SerializableContract):
     claim_id: str
@@ -592,6 +605,10 @@ class ProviderOperationKind(str, Enum):
     RETRIEVE = "retrieve"
     GENERATE_TEXT = "generate_text"
     GENERATE_STRUCTURED = "generate_structured"
+    SUMMARIZE_EVIDENCE = "summarize_evidence"
+    SYNTHESIZE_CLAIMS = "synthesize_claims"
+    COMPOSE_REPORT = "compose_report"
+    MECHANICAL_REPAIR = "mechanical_repair"
 
 
 class ProviderFailureCategory(str, Enum):

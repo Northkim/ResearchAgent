@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from backend.research.contracts import (
@@ -216,3 +217,105 @@ class LLMProvider(ABC):
 
     @abstractmethod
     async def cancel(self, provider_request_ref: str) -> bool: ...
+
+
+class StructuredFinishState(str, Enum):
+    COMPLETE = "COMPLETE"
+    MAX_TOKENS = "MAX_TOKENS"
+    REFUSED = "REFUSED"
+    CANCELLED = "CANCELLED"
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredGenerationRequest:
+    operation_kind: str
+    model_policy: Mapping[str, Any]
+    prompt_version: str
+    prompt_hash: str
+    system_instruction: str
+    untrusted_data_payload: Mapping[str, Any]
+    structured_output_schema: Mapping[str, Any]
+    maximum_output_tokens: int
+    timeout_seconds: int
+    request_fingerprint: str
+    input_checksum: str
+    schema_version: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.operation_kind, "operation_kind"),
+            (self.prompt_version, "prompt_version"),
+            (self.prompt_hash, "prompt_hash"),
+            (self.system_instruction, "system_instruction"),
+            (self.request_fingerprint, "request_fingerprint"),
+            (self.input_checksum, "input_checksum"),
+            (self.schema_version, "schema_version"),
+        ):
+            require_non_empty(value, f"StructuredGenerationRequest.{name}")
+        if self.maximum_output_tokens <= 0 or self.timeout_seconds <= 0:
+            raise ValueError("Structured generation token/timeout limits must be positive")
+        object.__setattr__(self, "model_policy", freeze_json(self.model_policy))
+        object.__setattr__(
+            self, "untrusted_data_payload", freeze_json(self.untrusted_data_payload)
+        )
+        object.__setattr__(
+            self, "structured_output_schema", freeze_json(self.structured_output_schema)
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredGenerationResult:
+    provider_identity: str
+    model_identity: str
+    model_version: str
+    adapter_version: str
+    provider_request_id: str
+    normalized_value: Mapping[str, Any]
+    raw_text_retained: bool
+    usage: ProviderUsage
+    estimated_cost_minor_units: int
+    cost_currency: str
+    latency_ms: int
+    retry_count: int
+    finish_state: StructuredFinishState
+    response_checksum: str
+    schema_version: str
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.provider_identity, "provider_identity"),
+            (self.model_identity, "model_identity"),
+            (self.model_version, "model_version"),
+            (self.adapter_version, "adapter_version"),
+            (self.provider_request_id, "provider_request_id"),
+            (self.cost_currency, "cost_currency"),
+            (self.response_checksum, "response_checksum"),
+            (self.schema_version, "schema_version"),
+        ):
+            require_non_empty(value, f"StructuredGenerationResult.{name}")
+        if min(
+            self.estimated_cost_minor_units,
+            self.latency_ms,
+            self.retry_count,
+        ) < 0:
+            raise ValueError("Structured generation counters cannot be negative")
+        object.__setattr__(self, "normalized_value", freeze_json(self.normalized_value))
+
+
+class StructuredGenerationProvider(ABC):
+    """Provider-independent structured generation port used by V3 only."""
+
+    @property
+    @abstractmethod
+    def identity(self) -> ProviderIdentity: ...
+
+    @abstractmethod
+    async def generate(
+        self,
+        request: StructuredGenerationRequest,
+        *,
+        context: ProviderRequestContext,
+    ) -> StructuredGenerationResult: ...
+
+    @abstractmethod
+    async def cancel(self, provider_request_id: str) -> bool: ...

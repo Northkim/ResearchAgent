@@ -638,6 +638,33 @@ conda run --no-capture-output -n reagent-dev \
   --confirm synthetic-silver-v1
 ```
 
+### Synthetic grounded-report V3 acceptance
+
+Phase 9C-1 adds immutable `guided-literature-review@3.0.0` while preserving V2.
+Run the isolated, network-free, fictional-paper acceptance with:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.research.synthetic_grounded_acceptance
+```
+
+The command pauses for an internal exact synthetic approval, resumes through
+three summary/evidence calls, one claims call, one report call, validates
+provenance, persists thirteen artifacts under the ignored
+`runtime_data/grounded_v3_synthetic_acceptance` root, reconstructs through a new
+in-memory process graph, and verifies zero duplicate generation calls. It
+performs no socket/HTTP call, key lookup, OpenAlex call, real model call, or
+spend.
+
+Optional cleanup after review:
+
+```bash
+rm -rf runtime_data/grounded_v3_synthetic_acceptance
+```
+
+The acceptance output is architecture evidence only. It is not a real
+literature report and does not authorize Phase 9C-2.
+
 ## 12. Troubleshooting
 
 - `docker: command not found`: install Docker Desktop or another Docker Engine

@@ -81,3 +81,15 @@ are explicitly outside V1 supervised acceptance.
 
 No level-4 execution is authorized in Phase 9C-0.
 
+## Phase 9C-1 code-gate disposition
+
+The network-free code path now implements immutable V3/V2 preservation,
+approved-source and checksum binding, structured synthetic generation,
+ProviderOperation settlement/replay, one mechanical-repair boundary,
+deterministic Markdown, blocking provenance, thirteen immutable artifacts, and
+the content-minimized literature corpus. The synthetic acceptance verifies
+restart with zero duplicate generation calls.
+
+This satisfies the code-gate architecture only. Real-provider and product gates
+remain unexecuted and unapproved. In particular, a passing synthetic suite does
+not authorize a key, abstract transmission, spend, or Phase 9C-2 live run.

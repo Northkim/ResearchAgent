@@ -81,6 +81,10 @@ class ApprovalCompleted(EngineDecision):
     step_id: str
     step_run_id: str
     expected_step_version: int
+    outputs: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "outputs", freeze(self.outputs))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

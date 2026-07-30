@@ -45,14 +45,22 @@ from backend.research.adapters import (
     LocalFilesystemArtifactStorage,
     OpenAlexConfiguration,
     OpenAlexPaperSearchProvider,
+    SyntheticGroundedPaperSearchProvider,
+    SyntheticGroundedProvider,
 )
-from backend.research.ports import ArtifactContentStorage, PaperSearchProvider
+from backend.research.ports import (
+    ArtifactContentStorage,
+    PaperSearchProvider,
+    StructuredGenerationProvider,
+)
 from backend.research.services import (
     ArtifactApplicationGateway,
     ProviderExecutionPolicy,
     ProviderOperationService,
 )
 from backend.research.skills import register_research_skills
+from backend.research.grounded_skills import register_grounded_research_skills
+from backend.research.synthetic_grounded_fixtures import provider_responses
 from backend.workflow_engine.services import WorkflowExecutionCoordinator
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
@@ -95,6 +103,8 @@ class ApplicationContainer:
         artifact_storage: ArtifactContentStorage | None = None,
         paper_search_provider: PaperSearchProvider | None = None,
         provider_execution_policy: ProviderExecutionPolicy | None = None,
+        structured_generation_provider: StructuredGenerationProvider | None = None,
+        grounded_paper_search_provider: PaperSearchProvider | None = None,
         close_callback: Callable[[], None] | None = None,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
@@ -102,6 +112,7 @@ class ApplicationContainer:
         if skill_registry is None:
             register_fake_skills(self.skill_registry)
             register_research_skills(self.skill_registry)
+            register_grounded_research_skills(self.skill_registry)
         self.dispatcher_factory = dispatcher_factory or SyncExecutionDispatcher
         self.clock = clock
         self.approval_ttl = approval_ttl
@@ -120,6 +131,16 @@ class ApplicationContainer:
             if provider_execution_policy is not None
             else ProviderExecutionPolicy.fake_only()
         )
+        self.structured_generation_provider = (
+            structured_generation_provider
+            if structured_generation_provider is not None
+            else SyntheticGroundedProvider(provider_responses())
+        )
+        self.grounded_paper_search_provider = (
+            grounded_paper_search_provider
+            if grounded_paper_search_provider is not None
+            else SyntheticGroundedPaperSearchProvider()
+        )
         self.source_content_provider = FakeSourceContentProvider()
         self.llm_provider = FakeLLMProvider()
         self._close_callback = close_callback
@@ -131,14 +152,26 @@ class ApplicationContainer:
             unit_of_work.provider_operations,
             commit_callback=unit_of_work.commit,
         )
-        def capability_provider(_):
+        def capability_provider(decision):
+            grounded = decision.workflow_version == "3.0.0"
             return SkillCapabilities(
-                paper_search=self.paper_search_provider,
+                paper_search=(
+                    self.grounded_paper_search_provider
+                    if grounded
+                    else self.paper_search_provider
+                ),
                 source_content=self.source_content_provider,
                 llm=self.llm_provider,
+                structured_generation=(
+                    self.structured_generation_provider if grounded else None
+                ),
                 artifact_storage=self.artifact_storage,
                 provider_operations=provider_operations,
-                provider_execution_policy=self.provider_execution_policy,
+                provider_execution_policy=(
+                    ProviderExecutionPolicy.synthetic_grounded_report()
+                    if grounded
+                    else self.provider_execution_policy
+                ),
             )
 
         runtime = AgentRuntime(

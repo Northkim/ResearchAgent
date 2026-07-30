@@ -99,3 +99,32 @@ class ProviderExecutionPolicy:
             },
             operation_timeout_seconds=5,
         )
+
+    @classmethod
+    def synthetic_grounded_report(cls) -> ProviderExecutionPolicy:
+        """Accepted Phase 9C-1 envelope; live execution remains disabled."""
+
+        return cls(
+            budget=ProviderBudget(
+                # Eight generation calls plus the already-authorized synthetic
+                # paper-search operation in the same workflow run.
+                max_provider_requests=9,
+                max_llm_calls=8,
+                max_input_tokens=90_000,
+                max_output_tokens=32_000,
+                max_cost_minor_units=125,
+                cost_currency="USD",
+                max_runtime_seconds=1_200,
+                live_provider_enabled=False,
+            ),
+            reservations={
+                "synthetic-grounded-generation": ProviderReservation(
+                    request_count=1,
+                    input_tokens=4_000,
+                    output_tokens=2_000,
+                    cost_minor_units=0,
+                    cost_currency="USD",
+                )
+            },
+            operation_timeout_seconds=30,
+        )

@@ -48,3 +48,16 @@ matching operation and verified artifact replay with zero provider calls.
 An unsettled operation never authorizes a duplicate call simply because the
 process restarted.
 
+## Implemented Phase 9C-1 recovery boundary
+
+For synthetic V3 operations, ReAgent persists reservation and RUNNING
+boundaries before invocation, settles normalized usage, and writes an immutable
+private output checkpoint. A settled operation is replayable only when that
+checkpoint exists and matches its operation identity. A settled operation with
+missing checkpoint or an existing RESERVED/RUNNING operation fails closed.
+
+One structural repair operation is enforced per run. It receives only the
+invalid-output checksum, safe missing-field diagnostics, and target schema. It
+is prohibited from adding evidence, claims, papers, or citations. Invalid
+evidence spans, unknown support IDs, unsupported claims, and provenance failures
+remain non-mechanical blocking failures.

@@ -125,6 +125,20 @@ class ApprovalDecisionService:
                 ExecutionRequest(
                     workflow_run_id=approval.workflow_run_id,
                     approval_outcome=outcome,
+                    approval_outputs=(
+                        {
+                            "approval_request_id": approval.id,
+                            "approval_fingerprint": approval.request_fingerprint,
+                            "approval_status": approval.status.value,
+                            "resolved_at": (
+                                approval.resolved_at.isoformat()
+                                if approval.resolved_at is not None
+                                else None
+                            ),
+                        }
+                        if outcome is ApprovalOutcome.APPROVED
+                        else None
+                    ),
                 )
             )
             return ApprovalDecisionView(
