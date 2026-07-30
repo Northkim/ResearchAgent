@@ -6,8 +6,10 @@
 已获实现授权，Semantic Scholar/Crossref 仍是 future candidates。
 Judge 状态：Optional Evaluation Module **Deferred**；ADR 0006 **Deferred**；
 real Judge、hosted preview processing、non-zero Judge spend 与 full-pool
-judgment 均未授权。Grounded report 状态：ADR 0007 **Proposed**；no real LLM
-call、real abstract processing 或 non-zero report spend 已授权。
+judgment 均未授权。Grounded report 状态：ADR 0007 **Accepted with limited
+implementation scope**；仅 Phase 9C-1 Fake/synthetic network-free substrate
+获授权；no real LLM call、key、real abstract processing、live acceptance 或
+non-zero report spend 已授权。
 
 ## 证据标准与研究问题
 
@@ -799,6 +801,13 @@ scientific relevance improved.
   disclosures, settled ProviderOperations, and completed immutable artifact
   writes are blocking publication gates. `literature_corpus.json` is a proposed
   downstream handoff, not downstream execution authority.
+- Phase 9C-0 initially produced Proposed ADR 0007. The owner subsequently
+  accepted it with limited Phase 9C-1 implementation scope: immutable V3,
+  abstract-only grounded contracts, staged Fake/synthetic calls, deterministic
+  citations, fail-closed provenance, immutable report/corpus artifacts, and a
+  network-free `claude-sonnet-5` adapter target. Phase 9C-2 remains separately
+  gated on account/key, ZDR/retention, abstract transmission, budget, exactly
+  three live papers, and live acceptance gates.
 - No production/dependency/workflow source, live data, database, runtime data,
   real abstract, report, relevance label, or provider API was changed or
   generated.

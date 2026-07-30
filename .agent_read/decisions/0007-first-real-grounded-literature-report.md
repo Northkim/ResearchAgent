@@ -1,8 +1,65 @@
 # ADR 0007: First Real Grounded Literature Report
 
-Status: **Proposed**
+Status: **Accepted with limited implementation scope**
 Date: 2026-07-30
 Owner: ReAgent owner
+
+## Owner decision — limited acceptance
+
+The owner accepted this ADR for Phase 9C-1 with the following exact boundary.
+Acceptance authorizes implementation of the Fake/synthetic substrate; it does
+not authorize a real provider call, credential, real abstract processing, or
+spend.
+
+### Approved for Phase 9C-1
+
+1. Create immutable `guided-literature-review@3.0.0`.
+2. Preserve `guided-literature-review@2.0.0` unchanged.
+3. Use staged generation:
+   - one summary/evidence call per paper;
+   - one cross-paper synthesis/claim call;
+   - one report-generation call;
+   - at most one repair call.
+4. Support exactly 3–5 approved papers.
+5. Use abstract-only `SourceContent`.
+6. Implement `GroundedReportInput`, `PerPaperSummary`, `EvidenceUnit`,
+   `GroundedClaim`, `CitationReference`, and `ResearchReport` contracts.
+7. Require deterministic `[P1]`, `[P2]` citation labels.
+8. Implement fail-closed provenance publication gates.
+9. Implement immutable report and literature-corpus artifacts.
+10. Use Anthropic `claude-sonnet-5` as the first adapter target.
+11. Run only Fake and synthetic network-free tests.
+12. Preserve the Optional Evaluation Module as **DEFERRED**.
+
+“First adapter target” authorizes an adapter boundary and synthetic contract
+tests only. It does not authorize installing an SDK, configuring a key, or
+calling Anthropic.
+
+### Deferred and not authorized
+
+- real Anthropic API calls;
+- API-key configuration;
+- transmission of real abstracts;
+- non-zero spending;
+- real OpenAlex report generation;
+- live provider acceptance;
+- automatic provider fallback;
+- provider comparison;
+- full-text or PDF processing;
+- relevance judging;
+- downstream Idea or Writing execution.
+
+### Separate Phase 9C-2 approval required
+
+Phase 9C-2 remains prohibited until a later owner decision explicitly covers:
+
+- API key and provider account;
+- data retention or ZDR;
+- abstract transmission;
+- budget;
+- exactly three-paper live sample;
+- retention duration;
+- live acceptance gates.
 
 ## Context and route change
 
@@ -43,7 +100,7 @@ prompts to copy. See `REAL_GROUNDED_REPORT_EVIDENCE.md`.
 
 ## Proposed decision
 
-After owner approval, create a new immutable
+Under the limited owner approval above, create a new immutable
 `guided-literature-review@3.0.0` and pinned grounded-generation skills. Keep
 `guided-literature-review@2.0.0` and its hash unchanged. A composition-only
 adapter swap is insufficient because current V2 skills construct fake outputs
@@ -77,9 +134,9 @@ structured outputs and an eligible ZDR path. Fallback/comparison:
 remains a development/privacy alternative, not the initial multilingual
 acceptance.
 
-This is a Proposed Class D reproducibility/operations decision, not measured
-quality evidence. Provider, model, key, ZDR, region, abstract permission, and
-spend are unapproved.
+The adapter target is accepted for Fake/synthetic Phase 9C-1 implementation,
+not as measured quality evidence. Provider account, key, ZDR, region, abstract
+permission, live use, and spend remain unapproved.
 
 ## Approved-source contract
 
@@ -216,22 +273,19 @@ rights or security incident; first Fake/live acceptance; more than five papers;
 full text; multi-user deployment; unacceptable latency/cost/citation failures;
 resumption of evaluation module.
 
-## Owner approvals required
+## Owner approvals required beyond Phase 9C-1
 
 | Decision | Recommendation | Alternatives | Consequence / blocking |
 |---|---|---|---|
-| proceed | approve bounded grounded-report path | revise/defer | blocks all implementation |
-| workflow route | new V3 + v2 skills | profile; mutate V2 (not recommended) | blocks architecture |
-| provider/model | Anthropic / `claude-sonnet-5` | Terra; local; defer | blocks real adapter acceptance |
+| live provider/model use | Anthropic / `claude-sonnet-5` | Terra; local; defer | blocks Phase 9C-2 calls, not Phase 9C-1 adapter work |
 | fallback/comparison | disabled initially | one approved Terra comparison | blocks comparison only |
 | key/ZDR/region | scoped server key + verified exact-feature ZDR/region | local; defer | blocks hosted calls |
 | real abstract permission | permit approved bounded abstracts | synthetic/local only | blocks real acceptance |
-| abstract limit | 12,000 chars/paper | 8,000; approved excerpt | blocks input contract |
-| paper count | 3–5; acceptance exactly 3 | 3 only; 5–10 later | blocks budget |
-| report language | English, preserve titles | owner/source language | blocks prompt freeze |
-| call strategy | combined summary+evidence, staged synthesis/report | more calls; one-shot | blocks workflow |
-| evidence/quote | private ≤200 chars/25 words; paraphrase in report | no span; visible excerpt | blocks rights/UI contract |
-| calls/retries | 8 logical, 11 attempts, one repair | stricter/no repair | blocks operations |
+| live abstract limit | 12,000 chars/paper | 8,000; approved excerpt | blocks Phase 9C-2 payload |
+| Phase 9C-2 sample | exactly 3 papers | defer | blocks real acceptance |
+| live report language | English, preserve titles | owner/source language | blocks live prompt manifest |
+| evidence/quote | private ≤200 chars/25 words; paraphrase in report | no span; visible excerpt | blocks live rights/UI contract |
+| live retries | 11 attempts maximum, one repair | stricter/no repair | blocks real operations |
 | tokens/cost/runtime | 90k/32k, USD 1.25, 20 min | lower/zero/defer | blocks any spend |
 | retention | policy durations above | shorter/immediate deletion | blocks real data |
 | isolated acceptance storage | retain 30 days | ephemeral | blocks acceptance setup |
@@ -241,7 +295,8 @@ resumption of evaluation module.
 
 ## Explicit exclusions
 
-No real LLM call, non-zero spend, full-text/PDF processing, automatic relevance
-Judge, full-pool screening, provider comparison, downstream Idea/Writing
-execution, authentication/workers/Redis/S3, or production deployment is
-authorized by this Proposed ADR.
+No real LLM call, API-key configuration, real abstract transmission, non-zero
+spend, full-text/PDF processing, automatic relevance Judge, full-pool
+screening, provider fallback/comparison, real OpenAlex report, downstream
+Idea/Writing execution, live provider acceptance, authentication/workers/
+Redis/S3, or production deployment is authorized by this limited acceptance.

@@ -14,7 +14,8 @@ contracts, aggregation, audit queue, tests, evidence, calibration design, and
 blank review packets remain preserved. No real Judge, label, full-pool
 screening, Judge spend, or deletion is authorized.
 
-Proposed ADR 0007 defines an abstract-only path:
+ADR 0007 is **Accepted with limited implementation scope** and defines an
+abstract-only path:
 
 real OpenAlex → exact owner-approved 3–5 papers → immutable
 `GroundedReportInput` → staged per-paper summary/evidence → cross-paper claims
@@ -27,26 +28,31 @@ proposal is a new immutable `guided-literature-review@3.0.0` and v2 grounded
 skills while preserving the V2 hash
 `af3dd76540cfb7b08a73a7fbffda76679375a8170f0099611016c57d4c9d856a`.
 
-Proposed primary provider/model: Anthropic `claude-sonnet-5`; manual fallback
-candidate: OpenAI `gpt-5.6-terra`; local development option:
-`gpt-oss-20b`. No provider/model/key/ZDR/region/abstract processing or spend is
-approved. Current LLM budget is USD 0.00.
+Anthropic `claude-sonnet-5` is accepted only as the first Phase 9C-1 adapter
+target under Fake/synthetic network-free tests. No SDK installation, provider
+account, key, real call, ZDR/region configuration, real-abstract processing, or
+spend is approved. Current LLM budget is USD 0.00. Automatic fallback and
+provider comparison remain prohibited.
 
-Open blocking decisions: approve/revise ADR 0007; workflow route; provider,
-exact model and key; ZDR/region; real-abstract permission and 12,000-character
-limit; 3–5 papers; report language; staged call plan; private evidence-span and
-quote policy; 8 calls/11 attempts; 90k/32k tokens; USD 1.25; 20 minutes;
-retention; isolated acceptance storage; downloads/corpus use; repair/comparison
-calls; and continued full-text prohibition.
+Approved Phase 9C-1 scope: immutable V3 while preserving V2; exactly 3–5
+approved abstract-only papers; summary/evidence per paper, one synthesis/claim,
+one report, at most one repair; grounded contracts; deterministic `[P1]`
+labels; fail-closed publication; immutable report/corpus artifacts; Fake and
+synthetic network-free tests; evaluation module Deferred.
+
+Phase 9C-2 blockers remain: provider account/key, ZDR/retention, permission to
+transmit abstracts, non-zero budget, exactly three-paper live sample, local
+retention duration, and live acceptance gates. Real OpenAlex reports, fallback/
+comparison, full text/PDF, relevance judging, and downstream Idea/Writing
+remain unauthorized.
 
 No real LLM/OpenAlex call, report, abstract summary, relevance label, database,
 runtime-data, production source, workflow, migration, frontend, or dependency
 change occurred in Phase 9C-0.
 
-Next permitted milestone: **approve or revise ADR 0007**. Phase 9C-1 is
-Fake/synthetic adapter-substrate implementation only after its blocking
-architecture decisions are explicit. Real calls require additional
-provider/model/key/ZDR/abstract/budget approval.
+Next permitted milestone: **implement Phase 9C-1** within the accepted
+Fake/synthetic network-free scope. Real calls require a separate Phase 9C-2
+owner decision.
 
 ## Project authority
 

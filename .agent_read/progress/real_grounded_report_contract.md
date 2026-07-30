@@ -1,7 +1,20 @@
 # Phase 9C-0 — Real Grounded Report Contract
 
 Date: 2026-07-30
-Status: **Documentation complete; ADR 0007 Proposed**
+Status: **Documentation complete; ADR 0007 accepted with limited implementation scope**
+
+## Owner decision recorded
+
+The owner authorized Phase 9C-1 to implement the immutable V3 workflow,
+abstract-only grounded contracts, staged Fake/synthetic generation, deterministic
+citations, fail-closed provenance, immutable report/corpus artifacts, and an
+Anthropic `claude-sonnet-5` adapter target tested without network.
+
+Real calls, keys, real abstracts, spend, OpenAlex report generation, live
+acceptance, fallback/comparison, full text, relevance judging, and downstream
+Idea/Writing remain deferred. Phase 9C-2 requires separate approval for the
+provider account/key, ZDR/retention, abstract transmission, budget, exactly
+three live papers, retention duration, and live gates.
 
 ## Outcome
 
@@ -95,6 +108,6 @@ model-assisted orientation, not scientific truth.
 
 ## Next permitted milestone
 
-Owner must **approve or revise ADR 0007**. Phase 9C-1 is not permitted until the
-blocking architecture decisions are explicit; any real call additionally
-requires provider/model/key/ZDR/abstract/budget approval.
+Next permitted milestone: **implement Phase 9C-1** within the accepted
+Fake/synthetic, network-free boundary. No Phase 9C-2 or real-provider action is
+permitted.
