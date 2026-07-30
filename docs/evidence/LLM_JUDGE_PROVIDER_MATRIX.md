@@ -1,7 +1,7 @@
 # LLM Judge Provider Matrix
 
 Evidence snapshot: 2026-07-29  
-Status: Proposed; no provider/model selected or called
+Status: Proposed; updated by Phase 9B-2C-3A, no provider/model selected or called
 
 Dynamic facts below use official **Class A** sources only. Performance as a
 ReAgent relevance judge is unmeasured; marketing or general benchmark claims are
@@ -58,25 +58,29 @@ Schema guarantees, latency, usage metering, request IDs, retries, security, and
 retention depend on the chosen local serving stack. Local is not automatically
 free or reproducible.
 
-## Conditional recommendation
+## Calibration-specific recommendation update
 
-**Recommendation:** after ADR approval, calibrate `gpt-5.6-terra` as the primary
-hosted candidate using the two-prompt contract and a small owner-reviewed,
-non-production fixture set; compare a bounded subset against
-`claude-sonnet-5`. Select neither model if prompt agreement, audit agreement,
-usage completeness, retention configuration, or cost reservation fails.
+**Phase 9B-2C-3A recommendation:** use one primary hosted candidate,
+`claude-sonnet-5`, for the bounded calibration, with no comparison model in the
+first execution.
 
-Why Terra rather than Luna: Terra is the provider's balanced intelligence/cost
-tier, while the judge has a high consequence for metric validity and only 40
-candidates. Luna remains the cost-sensitive alternative. This recommendation is
-**Class D ReAgent policy**, not evidence that Terra is more accurate for paper
-relevance.
+The reason is contract reproducibility: Anthropic explicitly documents the
+canonical 4.6+ dateless ID as a pinned snapshot, while the inspected Terra model
+page still exposes no distinct dated pin. Sonnet's lack of temperature/seed
+controls is retained as a risk and must be measured through A/B repetition.
+This is **Proposed Class D ReAgent policy**, not evidence that Sonnet is more
+accurate.
 
-Implementation remains blocked by owner approval of provider, exact model ID,
-API-key availability, retention, and a non-zero budget. If an immutable OpenAI
-snapshot cannot be established at implementation time, Anthropic Sonnet 5 has a
-clearer official pinning contract and should be preferred for the reproducibility
-pilot, subject to cost and retention approval.
+`gpt-5.6-terra` is the fallback if the owner prefers OpenAI and explicitly
+accepts the pinning limitation, or if an approved OpenAI ZDR project is available
+while Anthropic ZDR is not. Do not make an automatic fallback or cross-provider
+call.
+
+The detailed current matrix, official access record, data policy, and cost
+calculation are in `REAL_JUDGE_PROVIDER_MATRIX.md`,
+`REAL_JUDGE_DATA_RETENTION_POLICY.md`, and `REAL_JUDGE_COST_MODEL.md`.
+Implementation and execution remain blocked by Proposed ADR 0006 and every
+provider/model/key/ZDR/preview/budget/reviewer/gate decision.
 
 ## Unresolved dynamic facts
 

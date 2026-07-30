@@ -1,9 +1,11 @@
 # ReAgent Paper Search Evidence Register
 
-更新日期与统一访问日期：2026-07-27  
-阶段：Phase 9B-1（OpenAlex adapter；official contract reverified）
+更新日期：2026-07-29；provider/Judge sources access date: 2026-07-29
+阶段：Phase 9B-2C-3A（bounded real-Judge calibration contract）
 结论状态：ADR 0004 **Accepted with limited scope**；仅 OpenAlex discovery
 已获实现授权，Semantic Scholar/Crossref 仍是 future candidates。
+Judge 状态：Fake substrate 已验证；ADR 0006 **Proposed**；real Judge、
+hosted preview processing、non-zero spend 与 full-pool judgment 均未授权。
 
 ## 证据标准与研究问题
 
@@ -742,6 +744,31 @@ scientific relevance improved.
 - Evidence and exact regression results are recorded in
   `.agent_read/progress/fake_relevance_judge_substrate.md`.
 
+### PE-005 — Phase 9B-2C-3A bounded calibration contract
+
+- **Class A provider evidence, accessed 2026-07-29:** current OpenAI,
+  Anthropic, and OpenAI gpt-oss contracts are compared in
+  `REAL_JUDGE_PROVIDER_MATRIX.md`, including exact IDs, structured output,
+  schema limitations, pinning, usage/request identity, price, retry, ZDR,
+  region, lifecycle, SDK, and unresolved account facts.
+- **Class B primary research evidence:** IR relevance, pointwise/pairwise
+  ranking, prompt sensitivity, position bias, multilingual variance,
+  confidence, human agreement, self-preference/contamination, and explanation
+  faithfulness are reviewed in `REAL_JUDGE_CALIBRATION_EVIDENCE.md`. None
+  validates ReAgent's exact task.
+- **Class D proposed design:** 12 private real + 3 synthetic request candidates,
+  36 logical calls, 42 attempts, 90k/9,984 token caps, 15 minutes, and USD 0.75.
+  Current authorization remains USD 0.00.
+- Proposed provider: one `claude-sonnet-5` calibration, because its canonical
+  current ID has a clearer fixed-snapshot contract. It is not approved or
+  claimed more accurate.
+- Hosted processing requires explicit preview permission and confirmed ZDR for
+  the exact organization/endpoint/model/features. Current owner authorization
+  does not provide either.
+- No actual candidate is selected in committed evidence. No LLM/OpenAlex call,
+  real label, human import, or real metric occurred.
+- Proposed ADR 0006 remains Proposed and full-pool judgment remains prohibited.
+
 ## Owner decisions
 
 | Decision | Recommendation | Alternatives | Consequence / blocker |
@@ -763,9 +790,14 @@ scientific relevance improved.
 | abstract-only V1 | remain abstract-only | metadata-only / full text | **blocks workflow scope if changed** |
 | verification scope | selected + ambiguous | all / selected-only / DOI-only | blocks layered DAG finalization |
 | automated silver objective | approve with targeted audit and no-gold language | full two-human now | **blocks judge substrate** |
-| judge provider/model | calibrate `gpt-5.6-terra`; compare `claude-sonnet-5` | Anthropic primary; local | **blocks judge substrate** |
-| judge key / monetary cap | scoped key; at most USD 1.00 proposed after approval | USD 0 / defer | **blocks any real judge call** |
-| judge calls / threshold | 2 pointwise + 10 mirrored pairwise total; 0.80 proposed | lower/higher | **blocks aggregation implementation** |
+| calibration provider/model | one `claude-sonnet-5` calibration | Terra; local; defer | **blocks real calibration** |
+| exact identity / key / ZDR | canonical ID, scoped commercial key, confirmed exact-org ZDR | approved OpenAI ZDR; local | **blocks real calibration** |
+| hosted preview processing | title + at most 500 normalized characters | synthetic-only; 300 chars | **blocks real calibration** |
+| calibration sample | 12 private real + 3 synthetic canaries | 12 real only; 15 real | **blocks real calibration** |
+| calibration calls/budget | 36 logical, 42 attempts, USD 0.75 proposed | smaller; USD 0/defer | **blocks any real call** |
+| calibration reviewers | primary all 12; checker all non-English/uncertain/disputed + 25% English | dual all; defer | **blocks human-reference evidence** |
+| calibration gates/retention | approve gate document; content ≤14d, ops 30d, labels 12mo | strengthen/shorten | **blocks real calibration** |
+| full-pool judgment | remain prohibited after calibration | later separate authorization | **blocks full-pool action** |
 | human audit | all exceptions + 10% deterministic consensus, cap 20 | 5% / 20% | **blocks audit implementation** |
 | non-English / partial cases | audit all initially | allow automated consensus | **blocks aggregation implementation** |
 | machine translation | off until separate provenance/retention approval | manual or approved machine translation | blocks translated execution |

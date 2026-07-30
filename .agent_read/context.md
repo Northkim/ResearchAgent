@@ -693,3 +693,53 @@ Next permitted milestone: **design and owner-approve a bounded real-Judge
 calibration contract and subset**. Do not execute calibration or judge the full
 live pool until provider/model/budget/retention and calibration inputs are
 explicitly approved.
+
+## Phase 9B-2C-3A: Bounded real-Judge calibration contract
+
+The Fake Judge substrate remains verified. Phase 9B-2C-3A completed a
+documentation/evidence/owner-approval contract only. Proposed ADR
+`.agent_read/decisions/0006-bounded-real-judge-calibration.md` remains
+**Proposed**.
+
+Proposed design:
+
+- one primary hosted calibration candidate: Anthropic
+  `claude-sonnet-5`, selected as a Class D reproducibility proposal because its
+  current canonical ID has an explicit fixed-snapshot contract;
+- OpenAI `gpt-5.6-terra` remains the fallback with an unresolved distinct dated
+  pin; local `gpt-oss-20b` remains a separate mostly-English engineering option;
+- 12 private real candidates: four from each of two English topics and four
+  from one multilingual topic, plus three synthetic adapter canaries;
+- pointwise prompt A/B for all 15 request candidates and three preselected real
+  pairs in both orders;
+- one primary human reference for all real cases and a secondary checker for all
+  non-English/uncertain/disputed cases plus 25% of remaining English cases;
+- supporting-span containment, schema/identity/usage/cost verification,
+  ProviderOperation settlement, and zero-call replay;
+- 36 logical calls, 42 maximum attempts, 90,000 input and 9,984 output tokens,
+  15 minutes, conservative token estimate USD 0.41976, proposed hard cap USD
+  0.75;
+- hosted requests limited to topic/rubric/schema, title, at most 500 normalized
+  preview characters, minimal year/venue, and pseudonymous ID;
+- ZDR required; request/response content retained at most 14 days under a
+  private ignored root; no raw HTTP body.
+
+All sample, budget, threshold, retry, reviewer, and retention values are
+**Proposed Class D policy** and unapproved. Current authority remains USD 0.00.
+The owner has not authorized hosted abstract-preview processing or confirmed
+ZDR, so real execution is blocked.
+
+No real provider adapter/source, dependency, workflow, migration, frontend,
+database, or runtime data changed. No LLM/OpenAlex call, real candidate
+selection/label, human import, or real metric occurred. Existing live pools and
+blank reviewer A/B packets remain untouched.
+
+Open blocking owner decisions: whether to calibrate; provider/model/exact ID;
+key and ZDR organization/region; hosted preview permission/length; 12+3 sample;
+primary/secondary reviewers; A/B and pairwise counts; USD/token/runtime/retry
+limits; pass/warning gates; multilingual cases; retention; and whether a
+comparison model is allowed. Full-pool judgment remains prohibited after
+calibration unless separately authorized.
+
+Next permitted milestone: **approve or revise ADR 0006**. Do not execute the
+bounded calibration until every blocking decision is explicit.

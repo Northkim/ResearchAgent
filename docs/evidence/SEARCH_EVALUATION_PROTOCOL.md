@@ -285,6 +285,33 @@ network, does not generate a `CandidateJudgment` or `HumanAuditResult`, and does
 not calculate expert-gold metrics. Synthetic numbers demonstrate contract
 behavior only; they do not estimate provider/model relevance quality.
 
+## Phase 9B-2C-3A required real-Judge calibration
+
+Before any real Judge may evaluate a retained OpenAlex candidate pool, Proposed
+ADR 0006 requires a separately approved bounded calibration:
+
+1. freeze a private ignored manifest with 12 real candidates: four from each of
+   two English topics and four from one multilingual topic; include no titles or
+   previews in committed documentation;
+2. retain three synthetic canaries for adapter/schema/replay evidence, excluded
+   from model-quality denominators;
+3. collect blinded primary human-reference labels for all real cases and
+   targeted independent secondary checks before revealing Judge output;
+4. run frozen pointwise A/B for all 15 request candidates and three preselected
+   real pairs in both orders;
+5. validate schema, exact span containment, usage/request identity, cost,
+   ProviderOperation settlement, and zero-call replay;
+6. report human agreement, prompt stability, pairwise order consistency,
+   multilingual differences, confidence behavior, and engineering metrics
+   without statistical-significance or expert-gold claims;
+7. apply Proposed Class D gates from
+   `REAL_JUDGE_PASS_FAIL_GATES.md`.
+
+Code acceptance, calibration acceptance, and permission to judge the full pool
+are separate owner decisions. ADR 0006 authorizes none while Proposed. Current
+hosted-preview permission and Judge budget remain absent, so execution is
+blocked.
+
 ## Evidence basis
 
 - PRISMA-S (peer reviewed) supports exact source/query/date/limits/dedup reporting:

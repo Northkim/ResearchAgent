@@ -1,8 +1,8 @@
 # Automated Relevance Judge Evidence
 
 Date: 2026-07-29  
-Phase: 9B-2C-0  
-Decision status: Proposed; no judge is selected or authorized
+Phase: 9B-2C-0 contract, updated by Phase 9B-2C-3A
+Decision status: Proposed; Fake substrate verified, no real judge selected or authorized
 
 ## Evaluation objective
 
@@ -244,3 +244,33 @@ chosen endpoint, account, region, and ZDR eligibility.
 Dynamic provider details are maintained in
 `LLM_JUDGE_PROVIDER_MATRIX.md`. Every dynamic provider claim there is tied to an
 official Class A source and must be reverified before implementation.
+
+## Phase 9B-2C-3A calibration boundary
+
+The Fake Judge substrate is verified, but synthetic metrics remain architecture
+evidence only. Proposed ADR 0006 adds a required calibration gate before any
+real candidate may be judged:
+
+- 12 private real candidates across two English and one multilingual topic,
+  plus three synthetic adapter canaries;
+- pointwise A/B for all 15 request candidates;
+- three real candidate pairs in mirrored order;
+- a blinded primary human reference with targeted secondary checking;
+- literal supporting-span containment, exact model/request/usage identity,
+  ProviderOperation settlement, and zero-call replay;
+- separate code acceptance, calibration acceptance, and full-pool permission.
+
+The proposed calibration provider is now Anthropic `claude-sonnet-5` because the
+current official contract identifies its canonical ID as a fixed snapshot.
+OpenAI `gpt-5.6-terra` remains a fallback because its current page did not expose
+a distinct dated pin. This is an unapproved Class D reproducibility choice, not
+provider-quality evidence.
+
+Current authorization still permits no real Judge call, hosted abstract-preview
+processing, API key, non-zero spend, live-candidate selection/labeling, human
+label import, or full-pool judgment. See:
+
+- `REAL_JUDGE_CALIBRATION_EVIDENCE.md`;
+- `REAL_JUDGE_CALIBRATION_PROTOCOL.md`;
+- `REAL_JUDGE_PASS_FAIL_GATES.md`;
+- `.agent_read/decisions/0006-bounded-real-judge-calibration.md`.
