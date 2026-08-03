@@ -1,4 +1,12 @@
-# ReAgent reproducible demo
+# Preserved Hosted Prototype Demo
+
+> **Product-boundary notice:** This guide demonstrates the preserved hosted
+> prototype in which Next.js/FastAPI dispatch backend Hosted AgentRuntime
+> execution. It is not the teacher-aligned target V1 execution model established
+> by ADR 0009. Target V1 uses a downloadable local Workflow Package executed by
+> an existing Claude Code or Codex Agent Harness, with cloud Progress Report and
+> API-proxy services. R1 package generation and Harness compatibility are not
+> implemented yet. Hosted execution is a deferred optional mode.
 
 This guide runs the deterministic supervised research workflows through the real
 Next.js UI, FastAPI application, Agent Runtime, SQL Unit of Work, and
@@ -685,6 +693,11 @@ literature report and does not authorize Phase 9C-2.
 
 ## 13. Known limitations
 
+- This is the **Preserved Hosted Prototype Demo**, not a demonstration of the
+  teacher-aligned V1 package/download/local-Harness/Progress-Report round-trip.
+- The R1 experimental local Literature Search Workflow Package does not yet
+  exist; no current command in this guide proves folder-authoritative task state
+  or cross-Harness continuation.
 - The demo uses fixed prototype project and actor identities; there is no
   authentication, authorization, or approval-role enforcement.
 - `SyncExecutionDispatcher` runs execution inline in HTTP requests; there is no

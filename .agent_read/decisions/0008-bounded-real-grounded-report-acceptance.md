@@ -1,9 +1,39 @@
 # ADR 0008: Bounded Real Grounded Report Acceptance
 
-Status: **Proposed**
+Status: **Deferred by ADR 0009 — Optional Hosted Mode**
 Date: 2026-07-30
 Last revalidated: 2026-08-03
 Owner: ReAgent owner
+
+## Route deferment record — 2026-08-03
+
+This ADR was a Proposed owner-review package for one bounded hosted
+real-provider acceptance. It never authorized a transport, API key, title or
+abstract transmission, non-zero spending, network access, or a live report.
+Its provider, retention, budget, sample, failure, and human-review analysis is
+preserved as historical optional-mode evidence.
+
+ADR 0009 accepts a different initial V1 boundary: concrete research executes
+inside a portable local Workflow Package under an existing Claude Code or Codex
+Agent Harness. The cloud supplies packages, stores management/progress
+metadata, protects provider credentials, and exposes bounded API proxy
+operations; it does not execute the report Workflow. Phase 9C-2B hosted
+transport activation and the live acceptance described below are therefore
+deferred to a separately authorized optional Hosted Mode.
+
+Reusable parts include minimum-data and retention analysis, failure and
+settlement policy, owner-decision templates, cost-accounting methods, grounded
+schemas/prompts/citation rules, provenance validators, artifact/checksum
+contracts, synthetic replay evidence, and the inactive transport mapping. A
+later teacher-aligned task may adapt these materials to local Harness Skills,
+folder-side deterministic validation, uploaded-output validation, or a
+separately designed Cloud API Proxy. None is current execution authority.
+
+No hosted provider/model is approved for V1; no API-key use, real abstract
+transmission, real call, non-zero spend, backend report generation, provider
+comparison, or browser-triggered hosted execution is authorized. Existing
+implementation and historical proposal text below remain preserved, not
+rejected.
 
 ## Context
 

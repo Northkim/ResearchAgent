@@ -1,8 +1,37 @@
 # ADR 0007: First Real Grounded Literature Report
 
-Status: **Accepted with limited implementation scope**
+Status: **Deferred by ADR 0009 — Optional Hosted Mode**
 Date: 2026-07-30
 Owner: ReAgent owner
+
+## Route deferment record — 2026-08-03
+
+This ADR originally authorized only the Phase 9C-1 Fake/synthetic grounded-
+report substrate and explicitly withheld real provider calls, credentials,
+abstract transmission, and spending. That historical implementation decision
+and all verified evidence remain preserved.
+
+ADR 0009 now governs the initial V1 product boundary: an existing Claude Code
+or Codex Agent Harness executes concrete research from an authoritative local
+Workflow Package, while the cloud manages packages, progress, credentials, and
+API proxy operations. Continuing V3 as a default backend-executed research
+Workflow or activating hosted report generation would conflict with that
+owner-approved boundary. Hosted activation and further hosted product
+development are therefore deferred to an optional future Hosted Mode requiring
+separate owner authorization.
+
+Reusable parts remain in scope for later teacher-aligned work: immutable
+grounded summary/evidence/claim/citation/report contracts, prompts,
+abstract-only disclosures, approval/checksum concepts, artifact schemas,
+synthetic fixtures, ProviderOperation accounting, and fail-closed provenance
+validators. They may be repackaged as local Literature Search Skills/contracts,
+run as deterministic folder-side tooling, or validate explicitly uploaded
+outputs cloud-side. Cloud validation does not authorize cloud generation.
+
+No Phase 9C real call, hosted LLM activation, backend report execution,
+browser-triggered research continuation, API-key use, abstract transmission, or
+spend is authorized for teacher-aligned V1. Existing code, immutable Workflow
+hashes, tests, and historical text below are not rejected or deleted.
 
 ## Owner decision — limited acceptance
 

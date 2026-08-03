@@ -1,5 +1,105 @@
 # ReAgent Project Development Plan
 
+## Current governing route — teacher-aligned initial V1
+
+Status: **OWNER-APPROVED IMPLEMENTATION SEQUENCE**
+
+Order status: **NOT A TEACHER-MANDATED ORDER**
+
+Governing decision: `.agent_read/decisions/0009-teacher-aligned-initial-product-boundary.md`
+
+The owner accepted the committed Teacher Design Alignment Audit verdict
+`FUNDAMENTALLY_DIFFERENT_PRODUCT`. For initial V1, the teacher PDF and ADR 0009
+supersede the historical hosted-product assumptions below wherever they
+conflict.
+
+Initial V1 uses three parts:
+
+- the cloud manages projects, Skills, Workflow Packages, downloads, Progress
+  Reports, progress projections, provider credentials, and API proxy calls;
+- the downloaded local Workflow folder is authoritative for concrete research
+  execution state;
+- an existing Claude Code or Codex Agent Harness performs the research, writes
+  outputs, and produces Progress Reports.
+
+The cloud does not execute concrete research in teacher-aligned V1. PostgreSQL
+may be authoritative for Cloud Project State—project/package/Skill/progress/
+proxy metadata—but not for hidden concrete Local Task State. The exact folder
+tree, prompt decomposition, Skill package format, Progress Report schema,
+conflict behavior, and Cloud API Proxy protocol remain experimental or require
+later owner decisions.
+
+### Teacher-aligned mainline
+
+This is the owner-approved implementation sequence. The teacher source defines
+the product responsibilities and five-Workflow taxonomy; it does not mandate
+this engineering order.
+
+| Phase | Owner-approved milestone | Boundary |
+|---|---|---|
+| R0 | V1 product-boundary freeze | Documentation/authority only; no production code |
+| R1 | Experimental local Literature Search Workflow Package | Generate/download one versioned package and prove existing-Harness execution and continuation |
+| R2 | Progress Report upload and cloud progress aggregation | Validate immutable report history and project/workflow progress projection |
+| R3 | Cloud API Proxy for local Harness | Protect credentials and expose bounded normalized provider operations |
+| R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
+| R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
+| R6 | Workflow output-to-input handoff | Define and validate composable Workflow handoffs |
+| R7 | Additional teacher-defined Workflow templates | Expand Idea Finding, Writing, Review, and Reproduction/Experiment according to owner priority |
+
+Literature Search in R1 is an **OWNER IMPLEMENTATION-SEQUENCING PROPOSAL**, not
+a teacher-mandated first Workflow. The exact R1 package layout must be marked
+`EXPERIMENTAL — NOT FINALIZED BY TEACHER SOURCE`.
+
+### Preserved optional mode
+
+Status: **DEFERRED_OPTIONAL_MODE**
+
+The following historical work remains preserved but is not the default initial
+V1 product path:
+
+- Hosted AgentRuntime and backend Workflow/Skill research execution;
+- hosted LLM and hosted grounded-report generation;
+- hosted OpenAlex research execution;
+- Optional Evaluation Module and automated relevance Judge;
+- server execution, approval, event-timeline, and research-report UI;
+- hosted worker/queue/lease productionization.
+
+Further V1 product development in these areas is frozen unless the owner
+separately reauthorizes it. The freeze allows preservation, repository-safety
+bug fixes, deterministic regression tests, extraction/repackaging of reusable
+schemas and validators, and a separately approved future Hosted Mode. ADR 0007
+and ADR 0008 are deferred by ADR 0009; Phase 9C hosted activation is not
+authorized.
+
+### Immediate source-defined gaps
+
+The mainline prioritizes capabilities absent from the current repository:
+
+1. versioned local Workflow Package generation and download;
+2. Harness-readable local instructions, pinned versions, inputs, outputs,
+   context, Progress Reports, and continuation state;
+3. Codex/Claude Code compatibility evidence without backend research execution;
+4. Progress Report upload, immutable history, and cloud progress projection;
+5. a local-Harness-facing Cloud API Proxy with cloud-held credentials;
+6. AG Admin and normalized Skill import/package delivery;
+7. cross-machine/cross-Harness continuation;
+8. Workflow output-to-input handoff and additional Workflow templates.
+
+### R0 no-code boundary
+
+R0 changes governance documentation only. It does not add mode flags, package
+generation, downloads, progress schemas/APIs, proxy endpoints, local Skills,
+validators, compatibility tests, state-model separation, frontend behavior, or
+runtime disabling. Those require later scoped implementation tasks.
+
+## Historical hosted-development plan — preserved, non-governing for initial V1
+
+The sections below record the original hosted Web Agent direction and remain
+useful implementation history. They are not deleted or retroactively declared
+invalid. Where they describe a project-owned Agent Runtime, server execution,
+PostgreSQL concrete-task authority, or browser monitoring as the V1 default,
+ADR 0009 and the current governing route above take precedence.
+
 ## 1. Project Vision
 
 ReAgent is a web-based research agent platform designed for long-running autonomous research workflows.

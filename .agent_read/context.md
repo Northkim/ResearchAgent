@@ -2,7 +2,118 @@
 
 Last updated: 2026-08-03
 
-## Current route — Phase 9C-2A
+## Current governing route — Phase R0 teacher-aligned boundary freeze
+
+The owner accepted the committed Teacher Design Alignment Audit verdict:
+
+> **FUNDAMENTALLY_DIFFERENT_PRODUCT**
+
+Accepted ADR 0009 now governs the initial V1 product boundary. The teacher PDF
+`Meta-Research-Agent-架构.pdf` is the highest product authority. Initial V1 is:
+
+```text
+cloud management and supply
+  -> versioned downloadable local Workflow Package
+  -> existing Claude Code or Codex Agent Harness performs research
+  -> local outputs and Progress Report
+  -> explicit cloud upload, history, and progress projection
+```
+
+The cloud owns project, Skill, Workflow/package, package/download, Progress
+Report, progress-view, credential, API-proxy, returned-artifact, and continuity
+metadata responsibilities. The local folder is authoritative for concrete
+research-task state: instructions, pinned versions, prompts, inputs, outputs,
+context, local artifacts, Progress Reports, and continuation information. An
+existing Claude Code, Codex, or equivalent Agent Harness reads those files,
+interacts with the user, invokes tools/proxy calls, performs the research, and
+writes outputs/progress. ReAgent does not develop a replacement Harness for
+initial V1.
+
+State authority is split explicitly:
+
+- **Local Task State:** active research progress, working context, local
+  outputs/tool artifacts, continuation state, and local Progress Reports before
+  upload.
+- **Cloud Project State:** project/package/Workflow/Skill/template identity and
+  versions, checksums/download history, uploaded Progress Report history,
+  progress projection, proxy usage/accounting, and cloud-stored uploads/returned
+  artifacts.
+
+PostgreSQL may be authoritative for Cloud Project State only in the V1 product
+boundary. Current server `WorkflowRun`, `StepRun`, checkpoint, memory revision,
+and `ExecutionEvent` state remains preserved internal-test or optional Hosted
+Mode infrastructure; it is not the V1 source of concrete Local Task State.
+
+The existing Hosted AgentRuntime is preserved as an internal deterministic test
+Harness and optional future Hosted Mode. It is non-default, outside the
+teacher-aligned initial V1 path, and frozen from further product development
+without separate owner reauthorization. Existing code, migrations, immutable
+Workflow hashes, tests, evidence, and the hosted demo are not deleted.
+
+ADR status after R0:
+
+- ADR 0009: **Accepted** — teacher-aligned initial V1 boundary;
+- ADR 0007: **Deferred by ADR 0009 — Optional Hosted Mode**;
+- ADR 0008: **Deferred by ADR 0009 — Optional Hosted Mode**;
+- ADR 0006 / Optional Evaluation Module: **Deferred**;
+- ADR 0005 remains accepted only for its limited multilingual SearchPlan and
+  safe-diagnostic scope; every real relevance Judge remains deferred.
+
+Hosted LLM execution, hosted OpenAlex research execution, automatic relevance
+evaluation, full-pool evaluation, and Phase 9C hosted activation are deferred.
+Grounded prompts, summary/evidence/claim/citation/report contracts,
+abstract-only rules, provenance validators, checksums, and synthetic fixtures
+remain candidates for local Workflow/Skill packages and deterministic upload
+validation.
+
+### Hosted-work freeze
+
+Do not continue V1 product development of:
+
+- backend research execution;
+- browser-triggered research run/resume;
+- Hosted AgentRuntime productionization;
+- real hosted LLM activation;
+- new hosted research-provider adapters;
+- hosted worker/queue/lease;
+- automatic relevance Judge;
+- full-pool retrieval/evaluation benchmarks;
+- server-side research-report, approval, or execution-timeline UX expansion;
+- Phase 9C-2B activation or production Hosted Mode.
+
+The freeze permits repository-safety bug fixes, deterministic tests,
+preservation, and extraction/repackaging of reusable schemas or validators.
+
+### Next milestone
+
+Exactly one next milestone is R1: **experimental local Literature Search
+Workflow Package and Agent Harness compatibility slice**. Literature Search is
+an owner implementation-sequencing proposal, not a teacher mandate. R1 must
+generate/download one versioned package and prove existing-Harness execution and
+file-based continuation without backend Hosted AgentRuntime performing the
+research. Exact folder/prompt/Skill/progress structure remains experimental.
+
+R0 implements no R1 source code, mode flag, package generator/download,
+Progress Report schema/API, progress projection, proxy endpoint, local proxy
+Skill, folder validator, Harness test, state separation, frontend behavior, or
+hosted-endpoint disabling.
+
+### Required reading for future Codex tasks
+
+Before planning product or architecture work, read in this authority order:
+
+1. `Meta-Research-Agent-架构.pdf` directly;
+2. `.agent_read/decisions/0009-teacher-aligned-initial-product-boundary.md`;
+3. `docs/audits/TEACHER_DESIGN_REQUIREMENT_LEDGER.md` and
+   `docs/audits/TEACHER_DESIGN_ALIGNMENT_AUDIT.md`;
+4. this context and the current relevant progress report;
+5. earlier ADRs and historical plans only where they do not conflict.
+
+## Historical route — Phase 9C-2A (preserved, no longer the V1 mainline)
+
+The following Phase 9C record is preserved as implementation and governance
+history. Its provider-activation route is deferred by ADR 0009 and must not be
+read as current V1 authorization.
 
 Phase 9C-2A prepared the owner decision package for one future bounded live
 grounded-report acceptance. ADR 0008 is **Proposed** and authorizes nothing.
@@ -118,12 +229,18 @@ owner decision.
 
 ## Project authority
 
-- Product source of truth: `docs/PROJECT_DEVELOPMENT_PLAN.md`
-- Frozen architecture contract: `.agent_read/progress/architecture_contract.md`
-- Foundational decision: `.agent_read/decisions/0001-foundational-architecture.md`
+- Highest product source: teacher PDF `Meta-Research-Agent-架构.pdf`
+- Accepted V1 boundary: `.agent_read/decisions/0009-teacher-aligned-initial-product-boundary.md`
+- Current owner-approved sequence: `docs/PROJECT_DEVELOPMENT_PLAN.md`
+- Accepted audit: `docs/audits/TEACHER_DESIGN_ALIGNMENT_AUDIT.md`
+- Historical hosted architecture contract: `.agent_read/progress/architecture_contract.md`
+- Historical foundational decision: `.agent_read/decisions/0001-foundational-architecture.md`, retained where it does not conflict with ADR 0009
 - Development environment: `environment.yml`, Conda environment `reagent-dev`
 
-ReAgent remains a modular-monolith research-agent platform with framework-independent core logic, versioned static DAG workflows, one primary Agent Session per run in v1, durable checkpoint semantics, and future ports/adapters for infrastructure.
+The current repository remains a modular-monolith hosted prototype with
+framework-independent core logic and reusable infrastructure. Initial V1
+product identity is now the teacher-aligned cloud/local-folder/existing-Harness
+system; the current Hosted AgentRuntime path is optional/internal, not default.
 
 ## Environment standard
 
