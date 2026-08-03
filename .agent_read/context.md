@@ -84,7 +84,7 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R2B accepted; owner review pending
+### Current implementation milestone — R3A contract/security review complete; owner decisions pending
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -157,13 +157,49 @@ unrelated explicitly gated hosted/live integration tests remain skipped.
 Compilation succeeds; Alembic has sole current head `20260803_0003` and no
 drift. R2 state is now `UPLOAD_ACCEPTED`; R2 is complete with warnings.
 
+R3A statically audited current proxy/provider/authentication infrastructure and
+defined a proposed local-Harness Cloud API Proxy boundary without changing
+production code. Reusable candidates include canonical JSON/checksum helpers,
+provider ports and normalized failures, fake providers, the bounded OpenAlex
+adapter behind a new boundary, immutable artifact storage and provider budget/
+idempotency concepts. Current OpenAlex execution remains Hosted Mode through
+`ExecutionDispatcher -> AgentRuntime -> research Skills`; current SQL
+`ProviderOperation` is foreign-keyed to Hosted `WorkflowRun` state and cannot be
+relabelled as a Package proxy record. No authenticated principal, project
+ownership enforcement or multi-user authorization service exists.
+
+The proposed `reagent.cloud-api-proxy/v0.1` contract binds project, exact
+Package/Workflow, capability, Harness, request content, authorization scope and
+limits with non-cyclic deterministic identity. Exact replay reuses one durable
+operation; changed content under the same key conflicts before provider use;
+ambiguous timeouts require an explicit status read. The cloud may perform one
+bounded allowlisted provider operation and return untrusted data/provenance. It
+must not choose queries, rank papers, synthesize research, call a research LLM,
+write local state/Progress Reports, resume a Workflow, accept arbitrary URLs or
+chain calls.
+
+Exactly one first capability is recommended for owner review:
+`paper.search/v0.1`, bounded scholarly metadata discovery initiated by the
+local Harness, with no full text/PDF, ranking, synthesis or LLM. The recommended
+MVP access model is a short-lived project/Package capability token stored
+outside the Package. Both are proposals. Authentication/issuance, lifetime/
+revocation, authenticated project/Package authorization, multi-user isolation,
+signing/replay controls, exact limits/budgets, provider eligibility and data
+retention/deletion remain `SOURCE_UNDECIDED`. Proposed ADR 0010 remains
+**Proposed**.
+
+R3B is a future fake-adapter implementation/acceptance only; R3C is a separately
+authorized supervised live-provider acceptance after current provider terms,
+auth, rate, cost and retention review. Neither has started. Therefore
+`R3B_IMPLEMENTATION_GATE = CLOSED` pending owner decisions.
+
 The optional Next.js **Uploaded Local Progress Reports** view remains deferred,
-Claude Code remains untested, authentication/signing and multi-user
-authorization remain undecided, cloud cannot independently prove no-op context
-bytes without snapshots, and a missing-predecessor child remains permanently
-rejected without automatic re-evaluation or an explicit recovery endpoint.
-Hosted-work freeze and the state-authority split remain intact. R3 has not
-begun or been recommended; the next action is owner review.
+Claude Code remains untested, automatic Progress Report upload remains absent,
+cloud cannot independently prove no-op context bytes without snapshots, and a
+missing-predecessor child remains permanently rejected without automatic
+re-evaluation or an explicit recovery endpoint. Hosted-work freeze and the
+state-authority split remain intact. The next action is owner review of the R3A
+decision packet.
 
 ### Required reading for future Codex tasks
 

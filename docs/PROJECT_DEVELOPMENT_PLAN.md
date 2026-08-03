@@ -40,9 +40,11 @@ this engineering order.
 | R0 | V1 product-boundary freeze | Documentation/authority only; no production code |
 | R1A | Experimental local Literature Search Workflow Package generator | **IMPLEMENTED** — deterministic, credential-free offline folder and ZIP with self-contained validation |
 | R1B | External Agent Harness compatibility acceptance | **PASS_WITH_WARNINGS (CODEX)** — owner-attested fresh sessions plus checksum-verified execution, folder-only continuation, and moved-folder continuation; Claude Code untested |
-| R2A | Progress Report contract, upload, immutable history and aggregation | **IMPLEMENTED; FINAL ACCEPTANCE PENDING** — native v0.2, explicit before/after context digests, v0.1 normalization, upload/history/projection API, client and additive persistence |
-| R2B | External upload and restart acceptance | **NEXT — UPLOAD_ACCEPTANCE_PENDING** — prove exact byte retention, idempotency, conflict exclusion, projection and restart with an external package |
-| R3 | Cloud API Proxy for local Harness | Protect credentials and expose bounded normalized provider operations |
+| R2A | Progress Report contract, upload, immutable history and aggregation | **PASS_WITH_WARNINGS** — native v0.2, explicit before/after context digests, v0.1 normalization, upload/history/projection API, client and additive persistence |
+| R2B | External upload and restart acceptance | **PASS_WITH_WARNINGS — UPLOAD_ACCEPTED** — external Package, loopback HTTP, isolated PostgreSQL, byte retention, idempotency, conflict exclusion and restart recovery passed |
+| R3A | Cloud API Proxy contract, threat model and owner decision packet | **PASS_WITH_OWNER_DECISIONS_REQUIRED** — proposed provider-neutral boundary and `paper.search/v0.1`; no production implementation or provider call |
+| R3B | Fake-adapter API Proxy implementation and acceptance | **GATE CLOSED** — requires approved authentication/authorization, first capability, limits, budgets and retention; no real provider |
+| R3C | Supervised live-provider acceptance | **DEFERRED AND SEPARATELY AUTHORIZED** — current provider terms/auth/rate/cost/retention verification required immediately before a bounded live call |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
 | R6 | Workflow output-to-input handoff | Define and validate composable Workflow handoffs |
@@ -69,9 +71,14 @@ single explicit upload and never changes task state. Migration
 `20260803_0003_progress_reports` is additive and does not repurpose hosted
 events/checkpoints. The optional local-progress frontend view remains deferred.
 
-Exactly one recommended next milestone is **R2B — external Progress Report
-upload, idempotency, conflict and restart acceptance**. R2A does not claim that
-live external round-trip has passed.
+R2B has accepted the external Progress Report path and R2 state is
+`UPLOAD_ACCEPTED`. R3A now defines the next boundary without implementation.
+Exactly one first API Proxy capability is recommended for owner approval:
+**`paper.search/v0.1` — bounded scholarly metadata discovery initiated by the
+local Harness**. R3B remains closed until the owner approves authentication,
+project/Package authorization, that capability, request/response limits,
+request/cost budgets and retention. R3C is a separate supervised live-provider
+acceptance and cannot be inferred from R3B.
 
 ### Preserved optional mode
 
