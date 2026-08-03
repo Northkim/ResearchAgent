@@ -1,7 +1,8 @@
 # ADR 0008: Bounded Real Grounded Report Acceptance
 
-Status: **Proposed**  
-Date: 2026-07-30  
+Status: **Proposed**
+Date: 2026-07-30
+Last revalidated: 2026-08-03
 Owner: ReAgent owner
 
 ## Context
@@ -15,7 +16,11 @@ Synthetic validation proved exact approved-source binding, structured
 summary/evidence, grounded claims, deterministic citations, fail-closed
 publication, 13 immutable artifacts, ProviderOperation replay, and zero-call
 completed reconstruction. The Anthropic adapter remains an inactive
-transport-injected substrate.
+transport-injected substrate. Current source inspection also confirms that the
+application call boundary rejects configured live-provider names, records V3
+generation as non-live with synthetic idempotency identity, and passes a
+permissive generic object schema. A transport alone therefore cannot activate
+the live path.
 
 ADR 0007 is accepted only for Fake/synthetic implementation. Real provider
 activation, credentials, real abstract transmission, spending, and live
@@ -62,6 +67,12 @@ backend composition boundary; inject the key; disable client-owned retries;
 normalize identity, request ID, usage, stop state, errors and safe diagnostics;
 retain no raw body.
 
+The minimum Phase 9C-2B source change must also add an explicit opt-in live
+provider execution policy, mark live ProviderOperations correctly, use a live
+idempotency identity, and provide operation-specific supported JSON Schemas at
+the existing application boundary. These changes must preserve the immutable
+V3 workflow definition and remain disabled in default composition.
+
 The official `anthropic` SDK is an alternative requiring an exact reviewed
 version, dependency approval, retries set to zero, and controlled client
 injection. No dependency or transport is authorized by this Proposed ADR.
@@ -99,6 +110,11 @@ organization, workspace, endpoint, model and structured-output feature.
 Structured-output schemas contain no content and may be cached by Anthropic for
 up to 24 hours. Account/feature eligibility, region, flagged/legal exceptions,
 and contractual terms require confirmation.
+
+Anthropic's public commercial API policy, rechecked 2026-08-03, describes
+standard input/output deletion within 30 days and no training without express
+permission, subject to feature, safety, legal, and contract exceptions. That
+public policy is not proof of the future account's ZDR or region status.
 
 **Policy B: explicitly accepted standard retention** is an alternative only if
 the owner explicitly revises the current ZDR-only policy while accepting this

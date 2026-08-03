@@ -1,6 +1,7 @@
 # Real Report Data Processing and Retention Policy
 
-Date: 2026-07-30
+Original proposal: 2026-07-30
+Provider-policy revalidation: 2026-08-03
 Status: **Proposed engineering risk assessment; not legal advice**
 
 ## Hosted payload
@@ -22,12 +23,20 @@ text—never raw HTTP bodies or full content.
 ## Hosted retention gate
 
 The first live acceptance requires confirmed ZDR for the exact organization,
-project, endpoint, model, and structured-output features. “Not used for
-training by default” is not ZDR. Anthropic ZDR is agreement-specific; its
-structured-output schema may be cached up to 24 hours, so schemas contain no
-paper or user data. If ZDR cannot be confirmed, hosted abstract processing is
-blocked pending a new owner decision. Region and subprocessor configuration
-must also be recorded.
+workspace, endpoint, model, and structured-output features. “Not used for
+training by default” is not ZDR. Anthropic documents standard commercial API
+input/output deletion within 30 days, subject to feature, safety, legal, and
+contract exceptions. Anthropic documents organization-level ZDR for eligible
+APIs and features; for structured outputs under ZDR, prompts and outputs are
+not stored, but a content-free compiled schema may be cached for up to 24
+hours. Flagged or legally retained material is an exception and can have a
+longer period. Anthropic states commercial API data is not used for model
+training unless the customer expressly permits it.
+
+These are public policy statements, not confirmation that this repository's
+future account, region, endpoint, or feature configuration is eligible. If ZDR
+cannot be confirmed, hosted abstract processing is blocked pending a new owner
+decision. Region and subprocessor configuration must also be recorded.
 
 ## Proposed local retention
 
@@ -74,3 +83,18 @@ truncating. It narrows canonical hosted payload/normalized-response retention
 to 7 days and retains the isolated acceptance environment for 30 days. These
 are Proposed Class D values. Real title/abstract transmission and either
 retention policy remain unapproved.
+
+## Official provider evidence
+
+Accessed 2026-08-03:
+
+- [Anthropic API data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention)
+  describes default deletion, ZDR eligibility, feature-specific behavior, and
+  structured-output schema caching.
+- [Anthropic commercial data retention](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data)
+  describes the standard commercial API period and stated exceptions.
+
+Account contract, ZDR approval, region, abuse-monitoring treatment, and exact
+feature eligibility remain unresolved account-specific facts. Owner review is
+an engineering and data-governance decision and does not provide legal
+certainty.

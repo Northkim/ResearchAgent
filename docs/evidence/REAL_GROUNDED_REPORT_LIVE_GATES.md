@@ -1,12 +1,16 @@
 # Real Grounded Report Live Gates
 
-Date: 2026-07-30  
+Original proposal: 2026-07-30
+Source/provider revalidation: 2026-08-03
 Status: **Proposed; every numeric value is Class D ReAgent policy**
 
 ## A. Preflight blocking gates
 
 - clean owner-reviewed Git baseline and accepted ADR 0008;
 - separately approved implementation and execution authorities;
+- live-provider policy/composition, live operation identity, and
+  operation-specific structured-output schemas implemented and verified with
+  network-free transport tests;
 - approved Anthropic account/workspace, `claude-sonnet-5`, region, and scoped
   backend key;
 - key source ignored/untracked and leakage scan clean;
@@ -80,4 +84,3 @@ prices. Alternatives are lower caps/no retries/no repair or deferral.
 Tradeoffs are recovery and readability versus exposure, cost, and ambiguity.
 All need owner approval and are revisited after any incident, contract/model/
 prompt/schema change, human rejection, or proposed broader use.
-

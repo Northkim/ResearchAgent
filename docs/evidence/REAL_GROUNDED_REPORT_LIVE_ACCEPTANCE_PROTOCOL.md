@@ -1,6 +1,7 @@
 # Real Grounded Report Live Acceptance Protocol
 
-Date: 2026-07-30  
+Original proposal: 2026-07-30
+Source/provider revalidation: 2026-08-03
 Status: **Proposed Phase 9C-2A contract; execution is not authorized**
 
 ## Objective and non-claims
@@ -53,6 +54,13 @@ logical calls, eleven attempts, 90,000/32,000 tokens, 20 minutes, and USD 1.25.
 It reduces financial and content exposure while retaining one repair and two
 transient retry attempts.
 
+Source revalidation confirms the current V3 path is not live-capable merely by
+injecting a transport: its generation service rejects live-provider names,
+marks operations synthetic/non-live, uses a `fake:` idempotency prefix, and
+supplies a permissive placeholder schema. Phase 9C-2B must add the narrow live
+execution-policy/schema path described in the provider preflight while leaving
+the immutable V3 workflow unchanged. This protocol authorizes none of it.
+
 ## Report policy
 
 - Report language: English.
@@ -93,4 +101,3 @@ recorded separately:
   availability, exact private manifest, budget, reviewer, and live window.
 
 This document provides neither approval.
-

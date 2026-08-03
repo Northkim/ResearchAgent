@@ -1,102 +1,160 @@
 # Real Grounded Report Provider Preflight
 
-Date/access date: 2026-07-30  
+Original proposal: 2026-07-30
+Official-contract and source revalidation: 2026-08-03
 Status: **Current official evidence; provider use remains unapproved**
 
 ## Proposed primary
 
-The proposed primary is Anthropic first-party Claude API with exact model ID
-`claude-sonnet-5`. Anthropic documents 4.6-and-later dateless IDs as canonical
-fixed model snapshots; the surrounding serving infrastructure may still
-change. This is a pinning advantage, not a report-quality claim.
+The proposed primary remains Anthropic's first-party Claude API with exact
+model ID `claude-sonnet-5`. Anthropic documents the canonical dateless ID as a
+fixed snapshot, while acknowledging that routing, safety classifiers, and
+other serving infrastructure can change. This is a reproducibility advantage,
+not a report-quality claim.
 
-## Current comparison
+Current official facts: 1M context, 128k maximum output, constrained JSON via
+`output_config.format`, `request-id`, token usage, introductory $2/$10 pricing
+through 2026-08-31 and $3/$15 thereafter, organization-specific ZDR, and a
+qualified Structured Outputs rule under which only the content-free schema may
+be cached for up to 24 hours. Account/workspace behavior is unresolved.
 
-| Contract | Anthropic `claude-sonnet-5` | OpenAI `gpt-5.6-terra` | Local `gpt-oss-20b` |
-|---|---|---|---|
-| Exact identity | canonical fixed ID | current model ID; page does not expose a distinct dated slug | pin weights, hash, tokenizer, runtime, quantization and hardware |
-| Structure | constrained JSON via `output_config.format`; documented JSON Schema limits | strict structured outputs; documented subset | supported by model, guarantee/runtime operator-owned |
-| Context/output | 1,000,000 / 128,000 | 1,050,000 / 128,000 | 128,000 context; output/runtime dependent |
-| Sampling | non-default temperature/top-p/top-k rejected | reasoning/sampling controls; no cross-request determinism guarantee | runtime decoding/seed dependent |
-| Request/usage | `request-id`; input/output usage | response/request identity and usage | must be built and verified |
-| Current price | $2/M input, $10/M output through 2026-08-31; then $3/$15 | $2.50/M input, $15/M output; >272k request surcharge | weights are Apache 2.0; compute and operations are not free |
-| Rate/account | organization/workspace tier dependent; Sonnet 5 separate bucket | tier dependent; free unsupported for Terra | capacity/operator dependent |
-| Retention | ZDR is agreement- and feature-specific; structured-output schema cached up to 24h | API not trained by default; approved ZDR/data controls account-specific | local policy if genuinely local |
-| Region | account/deployment must be confirmed | account/deployment must be confirmed | operator-selected |
-| Commercial | current commercial terms; owner remains responsible for inputs | current services terms; owner remains responsible for inputs | Apache 2.0 plus usage policy and runtime licenses |
+The complete Anthropic/OpenAI/gpt-oss comparison and current source register
+are in `REAL_REPORT_LLM_PROVIDER_MATRIX.md`. OpenAI and gpt-oss are not
+fallbacks or comparison providers for this acceptance.
 
-OpenAI remains evidence context, not an authorized fallback. The local model
-remains a privacy/development option, not part of this acceptance.
+## Current source boundary and minimum Phase 9C-2B changes
 
-## Recommended transport boundary
+Source inspection on 2026-08-03 confirmed the adapter substrate is intentionally
+inactive:
 
-Use a new injected direct-HTTP implementation of the existing
-`AnthropicStructuredTransport` protocol backed by the repository's existing
-HTTPX dependency. No new dependency is recommended.
+- `AnthropicStructuredAdapter` accepts an injected
+  `AnthropicStructuredTransport`; it creates no client, reads no environment,
+  and retains no raw text.
+- `ApplicationContainer` defaults V3 to `SyntheticGroundedProvider` and the
+  synthetic paper catalog.
+- `_generation_call` explicitly rejects any provider listed as live, writes
+  `is_live_provider=False`, uses a `fake:` idempotency prefix, and sends only a
+  permissive `{type: object, additionalProperties: true}` schema.
+- the accepted source path therefore cannot become live through a transport
+  object alone.
 
-The transport should:
+The smallest future implementation is additive and requires no workflow,
+migration, frontend, or dependency change:
 
-- be constructed only in an explicit live backend composition branch;
-- receive the secret as a constructor value from that composition boundary;
-- POST only to the first-party Messages endpoint;
-- send `x-api-key`, the pinned Anthropic API version header, and JSON content;
-- disable library-owned retries and let ReAgent enforce its retry budget;
-- use explicit connect/read/write/pool timeouts;
-- return only normalized structured value, returned model, request ID, usage,
-  stop reason, and safe timing metadata;
-- never retain or log the raw body;
-- classify 400/401/402/403/404 as non-retryable except documented
-  contract-specific cases; classify 408/409/429/5xx/connectivity as bounded
-  retry candidates;
-- treat HTTP 200 `stop_reason: refusal` as a failed/refused result;
-- expose cancellation metadata even though remote cancellation may not
-  guarantee that billing stopped.
+1. Implement one injected HTTPX-backed `AnthropicStructuredTransport` that
+   accepts a constructor-supplied secret, exact endpoint/version/model policy,
+   explicit connect/read/write/pool timeouts, and cancellation state.
+2. Add an explicit live `ProviderExecutionPolicy` at backend composition with
+   the approved reservation, six-call/eight-attempt, token, runtime, and USD
+   caps.
+3. Add a live-authorized branch in the V3 generation service that removes the
+   Phase 9C-1 prohibition only when that policy is injected, marks operations
+   `is_live_provider=True`, uses a live-scoped idempotency key, and preserves
+   reserve/RUNNING/settlement/checkpoint ordering.
+4. Freeze an operation-specific provider JSON Schema for summary/evidence,
+   synthesis, report, and mechanical repair. Provider schema validity remains
+   followed by the existing domain-contract and provenance validators.
+5. Map the actual Messages response and headers to normalized structured value,
+   returned model, request ID, complete usage, stop/refusal state, retry count,
+   latency, and secret-safe error metadata. Do not retain the raw body.
+6. Add explicit live composition and a network-free preflight command. Both
+   default off and fail closed when any authority or account fact is missing.
 
-Alternative: the official Python package `anthropic`. If selected later, pin an
-exact reviewed release in `environment.yml`, set SDK retries to zero, inject a
-controlled HTTP client, and approve the new transitive dependency. The SDK is
-well documented but adds supply-chain and hidden-default surface; it is not
-needed for the current narrow protocol mapper.
+## Transport decision
 
-## Preflight checklist
+Recommend direct HTTP through the repository's existing HTTPX dependency. Do
+not add a dependency in Phase 9C-2A.
 
-No payload or token-count request may be sent until all checks pass:
+The future transport must:
 
-1. ADR 0008 accepted for implementation and separately for execution.
-2. Exact model ID still current and not deprecated.
-3. Current price manifest recorded from official documentation.
-4. Account/workspace access, tier, spend limit, and region confirmed.
-5. ZDR eligibility confirmed for the exact account, Messages endpoint,
-   Sonnet 5, structured outputs, and used features—or an explicit owner policy
-   exception revises the current ZDR-only rule.
-6. Key exists in the approved secret source and `.env` is ignored; do not print
-   or test-read it in documentation.
-7. Exact three-paper private manifest approved and checksums verified.
-8. Abstract transmission and the 12,000-character cap approved.
-9. USD/token/attempt/runtime budgets approved and reservable.
-10. Isolated storage and cleanup owner identified.
-11. Live flag and endpoint allow-list explicitly enabled for one acceptance.
-12. Leakage scan rules active; diagnostics contain no content or key fragments.
+- be constructed only by the explicit live backend composition branch;
+- read `ANTHROPIC_API_KEY` only at that boundary and pass it as a constructor
+  value, never expose it to Skills;
+- POST only to `https://api.anthropic.com/v1/messages` with `x-api-key`, a
+  reviewed `anthropic-version`, and JSON content;
+- use no HTTP-library retry and let ReAgent enforce the global retry budget;
+- expose explicit timeouts and local cancellation metadata; remote/billing
+  cancellation is not assumed;
+- capture `request-id` even for errors when available;
+- return only normalized structured content, model, usage, stop reason, request
+  identity, retry/latency, and bounded safe diagnostics;
+- recognize HTTP 200 with `stop_reason: refusal` as refusal, not success;
+- normalize 400/401/402/403/404/413 as non-retryable unless a reviewed contract
+  says otherwise, and treat 408/409/429/500/504/529/connectivity as retry
+  candidates subject to ambiguity and global caps;
+- never log or persist raw headers/bodies, credentials, abstracts, prompt text,
+  or response text.
 
-## Official source register
+Alternative: official Python package `anthropic`. If chosen later, the owner
+must approve an exact reviewed release and transitive dependency set; pin it
+through the repository's Conda policy, set SDK retries to zero, inject its HTTP
+client, and verify logging/raw-response behavior. The package is not needed for
+the narrow mapper, so the recommendation is **no new dependency**.
 
-| Source | Organization | Update/access | Supported claim | Limitation |
-|---|---|---|---|---|
-| [What's new in Claude Sonnet 5](https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5) | Anthropic | accessed 2026-07-30 | ID, 1M/128k, sampling restrictions, price, availability, ZDR eligibility | no ReAgent quality or account guarantee |
-| [Model IDs and versioning](https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions) | Anthropic | accessed 2026-07-30 | 4.6+ canonical IDs are fixed snapshots; infrastructure can change | does not freeze safety/router infrastructure |
-| [Structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) | Anthropic | accessed 2026-07-30 | constrained schema output, limitations, refusal/max-token exceptions, 24h schema cache | schema validity is not semantic grounding |
-| [Claude API errors](https://platform.claude.com/docs/en/api/errors) | Anthropic | accessed 2026-07-30 | status classes, request ID, retry guidance, SDK default retries | exact account behavior remains dynamic |
-| [Authentication](https://platform.claude.com/docs/en/manage-claude/authentication) | Anthropic | accessed 2026-07-30 | `x-api-key`, `ANTHROPIC_API_KEY`, expiring keys/workload identity | does not approve a key |
-| [API and data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention) | Anthropic | accessed 2026-07-30 | organization-specific ZDR, feature eligibility, schema cache, flagged/legal exceptions | contract/account configuration is authoritative |
-| [Rate limits](https://platform.claude.com/docs/en/api/rate-limits) | Anthropic | accessed 2026-07-30 | organization tier limits and `retry-after` | actual account tier unknown |
-| [Python SDK](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/python) | Anthropic | accessed 2026-07-30 | package, async support, timeouts, two default retries | exact release not selected |
-| [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) | OpenAI | accessed 2026-07-30 | ID, context/output, structured outputs, price and tier limits | no distinct dated snapshot displayed; not a fallback authorization |
-| [gpt-oss model card](https://openai.com/index/gpt-oss-model-card/) | OpenAI | 2025-08-05; accessed 2026-07-30 | Apache 2.0, structured outputs, open-weight status | serving/retention/usage contract operator-owned |
+## Blocking preflight checklist
 
-## Unresolved account facts
+No paper title, abstract, or token-count request may be sent until every item
+passes:
 
-Organization/workspace identity, key scope and expiry, effective rate/spend
-tier, ZDR agreement, structured-output eligibility, region, tax, billing
-currency, model availability, observed latency, and exact tokenization are not
-discoverable from public documentation and block live execution.
+1. ADR 0008 is accepted or revised, with separate implementation and execution
+   authority.
+2. Exact model ID remains current, pinned, available, and not deprecated.
+3. A dated official price manifest is recorded; currency/tax/regional uplift is
+   resolved.
+4. Commercial organization/workspace, access, rate tier, spend limit, and
+   selected inference region are confirmed.
+5. ZDR is confirmed for the exact organization/workspace, Messages endpoint,
+   Sonnet 5, Structured Outputs, and used features; alternatively, an explicit
+   accepted Policy B exception revises the current ZDR-only rule.
+6. A scoped key exists in the approved server-side source. Its value is not
+   printed, logged, or read by documentation checks.
+7. Exact private three-paper manifest, selected-set approval, and checksums all
+   match.
+8. Owner permission covers the three titles, three abstracts, and the Proposed
+   Class D 12,000-character-per-abstract limit.
+9. USD/token/attempt/runtime budgets are approved and reservable under current
+   prices.
+10. Isolated database/root/journal, retention expiry, cleanup owner, and human
+    reviewer are ready.
+11. One-run live configuration and egress allow-list are explicit and default
+    off.
+12. Network-free transport tests, schema fixtures, failure tests, and leakage
+    checks pass.
 
+## Secret-safe leakage preflight
+
+These commands inspect tracked/configuration state without sourcing `.env` or
+printing a secret value:
+
+```bash
+git check-ignore -v .env
+git check-ignore -v runtime_data
+git ls-files .env runtime_data
+git grep -l -I -E 'sk-ant-|sk-proj-|BEGIN PRIVATE KEY|ANTHROPIC_API_KEY=[^[:space:]]+'
+git diff --check
+```
+
+Any match that may contain a credential is reported only by file path through a
+safe wrapper; the raw matching line must not be copied into evidence. The live
+preflight must additionally verify presence/non-empty state through a boolean
+secret-source interface, never echo length, prefix, suffix, hash, or fragment.
+
+## Current official evidence and unresolved facts
+
+Official sources accessed 2026-08-03:
+
+- [Claude Sonnet 5](https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5)
+- [Model IDs and versioning](https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions)
+- [Structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
+- [Claude API errors](https://platform.claude.com/docs/en/api/errors)
+- [Authentication](https://platform.claude.com/docs/en/manage-claude/authentication)
+- [Rate limits](https://platform.claude.com/docs/en/api/rate-limits)
+- [API and data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention)
+- [Commercial API retention](https://privacy.claude.com/en/articles/7996866-how-long-do-you-store-my-organization-s-data)
+- [Python SDK](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/python)
+
+Public evidence cannot resolve organization/workspace identity, key scope and
+expiry, effective account rate/spend limits, ZDR enablement, region, tax,
+billing currency, model availability to the account, exact tokenization,
+observed latency, refusal behavior, or report quality. Every one remains a
+blocking account- or execution-specific fact.

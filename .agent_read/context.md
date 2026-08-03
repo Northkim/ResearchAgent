@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-07-30
+Last updated: 2026-08-03
 
 ## Current route — Phase 9C-2A
 
@@ -19,18 +19,28 @@ existing HTTPX dependency. No new SDK dependency is proposed. It would be
 absent from default composition and read `ANTHROPIC_API_KEY` only at an
 explicit live backend boundary after separate implementation authority.
 
+Source revalidation confirms that transport injection is necessary but not
+sufficient: the current application call boundary rejects configured live
+provider names, records generation as non-live with synthetic idempotency
+identity, and passes a permissive generic object schema. Phase 9C-2B must add a
+narrow opt-in live policy/composition path, live ProviderOperation identity,
+and operation-specific supported JSON Schemas while preserving the immutable
+V3 workflow and network-free default.
+
 Current policy requires confirmed ZDR for the exact account/workspace/model/
 endpoint/features. Standard retention is possible only through an explicit
 owner exception that revises the policy. Real title/abstract transmission,
 account/key, region, exact private sample, reviewer, budget, network, storage,
 retention, implementation, and execution remain unapproved and blocking.
-No real paper is identified in committed documentation.
+No real paper is identified in committed documentation. Public provider
+contracts were rechecked 2026-08-03; exact account ZDR, region, tier, key,
+limits, and contractual terms remain unresolved.
 
 Phase 9C-2A changed documentation only. It did not modify source, workflows,
 dependencies, migrations, runtime data, or secrets; did not call an LLM or
-OpenAlex; and did not generate a real report. Next permitted milestone:
-**owner review to approve or revise ADR 0008 and complete every blocking
-decision**. Phase 9C-2B is not permitted yet.
+OpenAlex; and did not generate a real report. Next milestone:
+**collect missing account/retention evidence before owner approval or revision
+of ADR 0008**. Phase 9C-2B is not permitted yet.
 
 ## Verified Phase 9C-1 substrate
 

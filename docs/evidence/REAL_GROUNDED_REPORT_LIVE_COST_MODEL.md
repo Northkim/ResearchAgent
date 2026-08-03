@@ -1,6 +1,7 @@
 # Real Grounded Report Live Cost Model
 
-Date/access date: 2026-07-30  
+Original proposal: 2026-07-30
+Official-price revalidation: 2026-08-03
 Status: **Proposed Class D limits; authorized spend remains USD 0.00**
 
 ## Call and token plan
@@ -15,8 +16,11 @@ Status: **Proposed Class D limits; authorized spend remains USD 0.00**
 
 The aggregate token caps include all retries. Five normal calls plus one repair
 are six logical operations; at most two bounded transient retry attempts yield
-eight total attempts. Cached-input discounts are assumed to be zero because
-they are not guaranteed or needed for the bound.
+eight total attempts. A retry does not receive a second token allowance: it
+must fit inside the stage and aggregate remainder. The repair reservation
+includes only safe invalid-output checksums/diagnostics and repaired structure,
+not a retained raw response. Cached-input and batch discounts are zero because
+neither is guaranteed, required, or authorized.
 
 ## Official price calculation
 
@@ -35,7 +39,7 @@ The preflight must re-record current official price immediately before a live
 run.
 
 Source: [Anthropic, “What's new in Claude Sonnet 5”](https://platform.claude.com/docs/en/about-claude/models/whats-new-sonnet-5),
-accessed 2026-07-30. It supports model price and tokenizer-change claims, not
+accessed 2026-08-03. It supports model price and tokenizer-change claims, not
 actual ReAgent usage.
 
 ## Proposed monetary controls
@@ -65,5 +69,7 @@ operation unsettled, blocks publication, and requires reconciliation; do not
 estimate actual usage into a successful settlement.
 
 Retries consume the same caps. Completed replay uses immutable results and
-incurs zero calls. This document does not authorize a reservation or spend.
-
+incurs zero calls. The 2026-08-03 price recheck did not change the Anthropic
+calculation. Taxes, billing-currency conversion, negotiated terms, regional
+configuration, and account credits remain unknown and are not treated as
+discounts. This document does not authorize a reservation or spend.

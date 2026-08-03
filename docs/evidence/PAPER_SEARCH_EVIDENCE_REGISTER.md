@@ -837,12 +837,13 @@ scientific relevance improved.
 
 ### PE-008 — Phase 9C-2A bounded live acceptance package
 
-- **Class A evidence, accessed 2026-07-30:** Anthropic Sonnet 5 exact ID,
+- **Class A evidence, revalidated 2026-08-03:** Anthropic Sonnet 5 exact ID,
   canonical snapshot rule, 1M/128k limits, structured-output limitations,
   request/error/retry contracts, current $2/$10 introductory and $3/$15
   standard prices, organization-specific ZDR, up-to-24-hour schema caching,
-  and account-dependent rate limits were rechecked. OpenAI Terra and gpt-oss
-  were rechecked as evidence alternatives only.
+  and account-dependent rate limits were rechecked. OpenAI Terra was rechecked
+  at current $2/M short-context input and $12/M output pricing; gpt-oss was
+  rechecked as the open-weight evidence alternative. Neither is a fallback.
 - **Proposed primary:** Anthropic first-party API / `claude-sonnet-5`, still
   unapproved. Proposed transport is injected direct HTTP using existing HTTPX;
   no SDK dependency, fallback, or comparison.
@@ -854,6 +855,13 @@ scientific relevance improved.
   would require an explicit owner exception. Title/abstract transmission,
   account/key/region, exact sample, reviewer, storage, network and execution
   remain blocking.
+- **Current-source boundary:** the injected Anthropic adapter remains inactive;
+  the application execution policy rejects configured live-provider names,
+  records V3 generation as non-live with synthetic idempotency identity, and
+  passes a permissive generic object schema. Phase 9C-2B therefore requires a
+  narrow opt-in live policy/composition path and operation-specific supported
+  schemas in addition to transport implementation. The immutable workflow does
+  not need to change.
 - No real paper identifiers or content were committed. No source/dependency/
   workflow/runtime change, secret read, LLM/OpenAlex call, report, or spend
   occurred.

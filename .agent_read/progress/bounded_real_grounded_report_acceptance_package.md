@@ -1,8 +1,10 @@
 # Phase 9C-2A: Bounded Real Grounded Report Acceptance Package
 
-Status: **PASS — owner package prepared; no execution authorization**  
-Date: 2026-07-30  
-Baseline: `ce25c8e feat: add synthetic grounded literature report workflow`
+Status: **PASS — owner package prepared; no execution authorization**
+Original package date: 2026-07-30
+Revalidated: 2026-08-03
+Phase 9C-1 implementation baseline: `ce25c8e feat: add synthetic grounded literature report workflow`
+Current owner-reviewed documentation baseline: `80c5d7a docs: add bounded real grounded report acceptance package`
 
 ## Scope
 
@@ -25,6 +27,9 @@ ADR 0007 remains **Accepted with limited implementation scope**. ADR 0008 is
 - inactive target: injected `AnthropicStructuredTransport` and
   `AnthropicStructuredAdapter` for `claude-sonnet-5`;
 - normal V3 composition: `SyntheticGroundedProvider`, no key/network;
+- current application policy rejects configured live-provider names, records
+  V3 generation as non-live with synthetic idempotency identity, and passes a
+  permissive generic object schema; a transport alone cannot activate live;
 - current broad substrate caps: 8 calls, 11 attempts, 90k/32k tokens,
   20 minutes, USD 1.25;
 - fail-closed approved-source, operation, provenance, artifact, and replay
@@ -46,12 +51,13 @@ abstract transmission is approved.
 
 ## Official evidence
 
-Anthropic sources accessed 2026-07-30 confirm the exact canonical pinned ID,
+Anthropic sources rechecked 2026-08-03 confirm the exact canonical pinned ID,
 1M/128k limits, structured JSON Schema constraints, request ID/error/retry
 contracts, current $2/$10 introductory and $3/$15 standard pricing,
 organization-specific ZDR, qualified structured-output schema caching, and
 account-dependent rate limits. OpenAI Terra and local gpt-oss facts were
-rechecked as alternatives only. Account/workspace/key/tier/ZDR/region/tax and
+rechecked as alternatives only; the Terra short-context comparison price is
+now $2/M input and $12/M output. Account/workspace/key/tier/ZDR/region/tax and
 observed behavior remain unresolved.
 
 ## Deliverables
@@ -71,7 +77,7 @@ files, no credential/real paper content, no real API call, and no spend.
 
 ## Next permitted milestone
 
-**Owner review: approve or revise ADR 0008 and complete every blocking response.**
-Phase 9C-2B implementation or execution is not permitted until those answers
-and separate authorities exist.
-
+**Collect the missing account/retention evidence, then return ADR 0008 and every
+blocking response for owner approval or revision.** Phase 9C-2B implementation
+or execution is not permitted until those answers and separate authorities
+exist.

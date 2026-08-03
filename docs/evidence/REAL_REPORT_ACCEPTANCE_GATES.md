@@ -1,6 +1,7 @@
 # Real Grounded Report Acceptance Gates
 
-Date: 2026-07-30
+Original proposal: 2026-07-30
+Source/provider revalidation: 2026-08-03
 Status: **Proposed; numeric gates are Class D ReAgent policy**
 
 Passing code does not approve a provider, spend, real abstract processing, or a
@@ -105,3 +106,11 @@ repair is a warning.
 
 No live gate has run. ADR 0008 remains Proposed; account/key/ZDR/abstract/
 sample/budget/storage/reviewer/network decisions are blocking.
+
+Current source inspection adds an implementation precondition: the V3 runtime
+currently rejects configured live-provider names, records generation as
+non-live, uses synthetic idempotency identity, and supplies a permissive generic
+object schema at the application call boundary. Phase 9C-2B must add the
+explicit live policy/composition path, live operation identity, and
+operation-specific structured-output schemas before any level-4 preflight can
+pass. This is not authorization to change source or execute a provider.

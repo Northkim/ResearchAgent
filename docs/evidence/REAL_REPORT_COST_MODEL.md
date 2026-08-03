@@ -1,6 +1,7 @@
 # Real Grounded Report Cost Model
 
-Date: 2026-07-30
+Original proposal: 2026-07-30
+Provider-price revalidation: 2026-08-03
 Status: **Proposed Class D policy; current authorized spend USD 0.00**
 
 ## Operation plan
@@ -43,7 +44,8 @@ output:
 `90,000 × $3/1M + 32,000 × $15/1M = $0.27 + $0.48 = $0.75`.
 
 At the current introductory $2/$10 rates through 2026-08-31 the same envelope
-is $0.50. GPT-5.6 Terra at $2.50/$15 is $0.705. The proposed $1.25 hard cap
+is $0.50. Current GPT-5.6 Terra short-context standard pricing is $2/$12;
+the same 90k/32k comparison envelope would be $0.564. The proposed $1.25 hard cap
 covers tokenizer-estimation error and account/region price variation; it does
 not authorize caching, batch, tools, web search, or a comparison model.
 
@@ -79,3 +81,7 @@ discount is assumed to be zero. These are **Proposed Class D** values, not a
 replacement for the broader substrate architecture and not spend authority.
 See `REAL_GROUNDED_REPORT_LIVE_COST_MODEL.md`. Authorized spend remains USD
 0.00.
+
+The Anthropic and OpenAI prices above were rechecked against their official
+pricing/model pages on 2026-08-03. OpenAI's comparison price changed from the
+2026-07-30 package; it does not affect the Anthropic-only reservation proposal.
