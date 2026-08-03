@@ -11,9 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import (
+    CURRENT_HARNESS_ACCEPTANCE_STATUS,
+    CURRENT_PROGRESS_SCHEMA_VERSION,
     EXPERIMENTAL_STATUS,
-    HARNESS_ACCEPTANCE_STATUS,
     PACKAGE_SCHEMA_VERSION,
+    PROGRESS_UPLOAD_STATUS,
     PackageFileEntry,
     PackageInputManifest,
     PackageOutputContract,
@@ -212,7 +214,9 @@ def _make_manifest(project_id: str, package_id: str, files: dict[str, FileSpec])
         continuation_policy="FILES_ONLY; validate, read context and latest immutable Progress Report, preserve prior work",
         proxy_capability_declaration="OFFLINE_DISABLED_R1A_PLACEHOLDER_ONLY; NO CREDENTIAL",
         experimental_status_declaration=EXPERIMENTAL_STATUS,
-        harness_acceptance_status=HARNESS_ACCEPTANCE_STATUS,
+        harness_acceptance_status=CURRENT_HARNESS_ACCEPTANCE_STATUS,
+        progress_report_schema_version=CURRENT_PROGRESS_SCHEMA_VERSION,
+        progress_upload_status=PROGRESS_UPLOAD_STATUS,
     )
     manifest_checksum = _manifest_hash(manifest)
     package_checksum = _package_hash(
@@ -291,7 +295,7 @@ def build_literature_search_package(*, project_id: str, output_root: str | Path)
         raise ValueError("output_root must not be a symbolic link")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
-    package_id = f"literature-search-{project_id}-v0.1"
+    package_id = f"literature-search-{project_id}-v0.2"
     files, manifest = _render(project_id, package_id)
 
     with tempfile.TemporaryDirectory(prefix=".r1a-build-", dir=output.parent) as temporary:
@@ -328,7 +332,9 @@ def build_literature_search_package(*, project_id: str, output_root: str | Path)
         "relative_package_root": f"{output.as_posix()}/package",
         "relative_archive_path": f"{output.as_posix()}/{archive_path.name}",
         "validation": "PASS",
-        "harness_acceptance_status": HARNESS_ACCEPTANCE_STATUS,
+        "harness_acceptance_status": CURRENT_HARNESS_ACCEPTANCE_STATUS,
+        "progress_report_schema_version": CURRENT_PROGRESS_SCHEMA_VERSION,
+        "progress_upload_status": PROGRESS_UPLOAD_STATUS,
         "network_called": False,
         "hosted_agent_runtime_invoked": False,
     }
@@ -339,12 +345,14 @@ def build_literature_search_package(*, project_id: str, output_root: str | Path)
         "archive_validation": archive_validation.valid,
         "declared_file_count": validation.declared_file_count,
         "package_checksum": validation.package_checksum,
-        "harness_acceptance_status": HARNESS_ACCEPTANCE_STATUS,
+        "harness_acceptance_status": CURRENT_HARNESS_ACCEPTANCE_STATUS,
+        "progress_report_schema_version": CURRENT_PROGRESS_SCHEMA_VERSION,
+        "progress_upload_status": PROGRESS_UPLOAD_STATUS,
     }
-    handoff = """# R1B Handoff\n\nStatus: `HARNESS_ACCEPTANCE_PENDING`\n\nExtract the ZIP into a clean directory, start a fresh Harness session there, and provide only:\n\n`Read the package instructions and continue the task.`\n\nR1A did not execute or simulate that acceptance.\n"""
+    handoff = """# R2B Progress Upload Handoff\n\nStatus: `UPLOAD_ACCEPTANCE_PENDING`\n\nExecute the package locally with the existing Harness, validate the append-only Progress Report, then explicitly upload it with the supplied client. Verify byte retention, normalization, idempotency, conflict handling, and restart reload. R2A does not claim that live acceptance passed.\n"""
     _write_immutable(output / "build-receipt.json", (canonical_json(receipt) + "\n").encode())
     _write_immutable(output / "validation-receipt.json", (canonical_json(validation_receipt) + "\n").encode())
-    _write_immutable(output / "R1B_HANDOFF.md", handoff.encode())
+    _write_immutable(output / "R2B_HANDOFF.md", handoff.encode())
     return BuildResult(
         package_id=package_id,
         package_schema_version=PACKAGE_SCHEMA_VERSION,
@@ -357,5 +365,5 @@ def build_literature_search_package(*, project_id: str, output_root: str | Path)
         package_size_bytes=package_size,
         validation=validation,
         archive_validation=archive_validation,
-        harness_acceptance_status=HARNESS_ACCEPTANCE_STATUS,
+        harness_acceptance_status=CURRENT_HARNESS_ACCEPTANCE_STATUS,
     )

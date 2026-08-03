@@ -14,6 +14,12 @@ from .queries import (
     WorkflowRunPageResponse,
     WorkflowRunSummaryResponse,
 )
+from .progress import (
+    ProgressReportUploadRequest,
+    ProgressUploadReceiptResponse,
+    ProjectProgressResponse,
+    UploadedProgressReportResponse,
+)
 from .runs import CreateRunRequest, WorkflowRunResponse
 from .research import ArtifactResponse, ProviderOperationResponse
 from .runs import CreateCatalogRunRequest
@@ -27,6 +33,9 @@ __all__ = [
     "CreateCatalogRunRequest",
     "ArtifactResponse",
     "ProviderOperationResponse",
+    "ProgressReportUploadRequest",
+    "ProgressUploadReceiptResponse",
+    "ProjectProgressResponse",
     "ErrorResponse",
     "ExecutionEventResponse",
     "HealthResponse",
@@ -35,4 +44,5 @@ __all__ = [
     "WorkflowRunPageResponse",
     "WorkflowRunResponse",
     "WorkflowRunSummaryResponse",
+    "UploadedProgressReportResponse",
 ]

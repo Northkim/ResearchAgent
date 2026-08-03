@@ -3,9 +3,12 @@
 from .compiler import BuildResult, build_literature_search_package
 from .contracts import (
     CONTEXT_SCHEMA_VERSION,
+    CURRENT_HARNESS_ACCEPTANCE_STATUS,
+    CURRENT_PROGRESS_SCHEMA_VERSION,
     EXPERIMENTAL_STATUS,
     HARNESS_ACCEPTANCE_STATUS,
     PACKAGE_SCHEMA_VERSION,
+    PROGRESS_UPLOAD_STATUS,
     PROGRESS_SCHEMA_VERSION,
     LocalContext,
     OutputFileReference,
@@ -23,12 +26,15 @@ from .state import append_progress_report, parse_context, render_context, write_
 __all__ = [
     "BuildResult",
     "CONTEXT_SCHEMA_VERSION",
+    "CURRENT_HARNESS_ACCEPTANCE_STATUS",
+    "CURRENT_PROGRESS_SCHEMA_VERSION",
     "EXPERIMENTAL_STATUS",
     "HARNESS_ACCEPTANCE_STATUS",
     "LocalContext",
     "OutputFileReference",
     "PACKAGE_SCHEMA_VERSION",
     "PROGRESS_SCHEMA_VERSION",
+    "PROGRESS_UPLOAD_STATUS",
     "PackageFileEntry",
     "PackageInputManifest",
     "PackageOutputContract",

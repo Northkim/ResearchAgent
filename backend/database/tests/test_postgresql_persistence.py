@@ -38,7 +38,7 @@ from backend.workflow_engine.services import WorkflowExecutionCoordinator
 def test_postgresql_schema_is_at_head(postgres_engine: Engine) -> None:
     with postgres_engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "20260721_0002"
+            "20260803_0003"
         )
     assert set(inspect(postgres_engine).get_table_names()) >= {
         "workflow_definitions",
@@ -52,6 +52,8 @@ def test_postgresql_schema_is_at_head(postgres_engine: Engine) -> None:
         "approval_requests",
         "execution_events",
         "provider_operations",
+        "uploaded_progress_reports",
+        "project_progress_projections",
     }
 
 

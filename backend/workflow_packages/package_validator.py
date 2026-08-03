@@ -10,13 +10,33 @@ import os
 import re
 import stat
 import sys
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 PACKAGE_SCHEMA = "workflow-package/v0.1"
 EXPERIMENTAL_STATUS = "EXPERIMENTAL_V0_1"
 PENDING_STATUS = "HARNESS_ACCEPTANCE_PENDING"
+PROVEN_STATUS = "CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED"
+UPLOAD_PENDING_STATUS = "UPLOAD_ACCEPTANCE_PENDING"
+PROGRESS_V1 = "progress-report/v0.1"
+PROGRESS_V2 = "progress-report/v0.2"
+V2_EXPERIMENTAL = "EXPERIMENTAL_PROGRESS_REPORT_V0_2"
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
+REPORT_ID_V2 = re.compile(r"^prv2-[0-9a-f]{64}$")
+PORTABLE_IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,255}$")
+V2_FIELDS = {
+    "schema_version", "report_id", "report_content_checksum", "report_checksum",
+    "package_id", "package_schema_version", "package_checksum", "project_id",
+    "workflow_id", "workflow_version", "workflow_checksum", "execution_round",
+    "harness_type", "harness_version", "harness_session_id", "previous_report_id",
+    "previous_report_checksum", "started_at", "completed_at", "status",
+    "completed_work", "current_state", "next_recommended_action",
+    "continuation_reason", "output_artifacts", "context_before_checksum",
+    "context_after_checksum", "warnings", "errors", "unresolved_questions",
+    "continuation_instructions", "skill_pins", "template_pins", "generated_at",
+    "experimental_declaration",
+}
 SECRET_PATTERNS = (
     re.compile(b"sk-" + rb"ant-[A-Za-z0-9_-]{8,}"),
     re.compile(b"sk-" + rb"proj-[A-Za-z0-9_-]{8,}"),
@@ -115,8 +135,16 @@ def validate(root: str | Path, *, pristine: bool = False) -> dict[str, Any]:
         raise PackageValidationError("unsupported package schema")
     if manifest.get("experimental_status_declaration") != EXPERIMENTAL_STATUS:
         raise PackageValidationError("experimental status declaration missing")
-    if manifest.get("harness_acceptance_status") != PENDING_STATUS:
-        raise PackageValidationError("R1A Harness acceptance status must remain pending")
+    if manifest.get("harness_acceptance_status") not in {PENDING_STATUS, PROVEN_STATUS}:
+        raise PackageValidationError("unknown Harness acceptance status")
+    progress_schema = manifest.get("progress_report_schema_version", PROGRESS_V1)
+    if progress_schema not in {PROGRESS_V1, PROGRESS_V2}:
+        raise PackageValidationError("unsupported Progress Report schema declaration")
+    if progress_schema == PROGRESS_V2:
+        if manifest.get("harness_acceptance_status") != PROVEN_STATUS:
+            raise PackageValidationError("v0.2 package must retain the R1B Harness status")
+        if manifest.get("progress_upload_status") != UPLOAD_PENDING_STATUS:
+            raise PackageValidationError("R2B upload acceptance status must remain pending")
 
     entries = manifest.get("files")
     if not isinstance(entries, list) or not entries:
@@ -162,6 +190,7 @@ def validate(root: str | Path, *, pristine: bool = False) -> dict[str, Any]:
     if missing:
         raise PackageValidationError("required files missing: " + ", ".join(missing))
     _validate_semantics(manifest, package_root)
+    _validate_progress_reports(manifest, package_root)
     return {
         "valid": True,
         "package_id": manifest["package_id"],
@@ -216,6 +245,186 @@ def _validate_semantics(manifest: dict[str, Any], package_root: Path) -> None:
     for output in manifest.get("output_contracts", []):
         if not safe_relative_path(output["required_output_path"]).startswith("outputs/"):
             raise PackageValidationError("output contract escapes outputs/")
+
+
+def _progress_v2_identity(report: dict[str, Any]) -> dict[str, str]:
+    content = {
+        key: value
+        for key, value in report.items()
+        if key not in {"report_id", "report_content_checksum", "report_checksum"}
+    }
+    content_checksum = canonical_hash(content)
+    report_id = "prv2-" + canonical_hash(
+        {
+            "package_id": report["package_id"],
+            "workflow_id": report["workflow_id"],
+            "workflow_version": report["workflow_version"],
+            "execution_round": report["execution_round"],
+            "previous_report_id": report["previous_report_id"],
+            "report_content_checksum": content_checksum,
+        }
+    ).split(":", 1)[1]
+    complete = {**report, "report_checksum": None}
+    return {
+        "report_content_checksum": content_checksum,
+        "report_id": report_id,
+        "report_checksum": canonical_hash(complete),
+    }
+
+
+def _validate_v1_report(
+    report: dict[str, Any],
+    manifest: dict[str, Any],
+) -> None:
+    checksum = report.get("report_checksum")
+    if not SHA256.fullmatch(str(checksum or "")):
+        raise PackageValidationError("legacy Progress Report checksum is invalid")
+    if checksum != canonical_hash({**report, "report_checksum": None}):
+        raise PackageValidationError("legacy Progress Report checksum mismatch")
+    if (
+        report.get("package_id") != manifest["package_id"]
+        or report.get("package_checksum") != manifest["package_checksum"]
+    ):
+        raise PackageValidationError("legacy Progress Report package identity mismatch")
+
+
+def _validate_v2_report(
+    report: dict[str, Any],
+    manifest: dict[str, Any],
+    package_root: Path,
+) -> None:
+    if set(report) != V2_FIELDS:
+        raise PackageValidationError("v0.2 Progress Report fields mismatch")
+    if not isinstance(report.get("execution_round"), int) or report["execution_round"] < 1:
+        raise PackageValidationError("v0.2 execution round must be positive")
+    if report.get("status") not in {"IN_PROGRESS", "COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}:
+        raise PackageValidationError("v0.2 Progress Report status is invalid")
+    if report.get("experimental_declaration") != V2_EXPERIMENTAL:
+        raise PackageValidationError("v0.2 experimental declaration is missing")
+    for field in ("harness_type", "harness_session_id"):
+        if not PORTABLE_IDENTIFIER.fullmatch(str(report.get(field, ""))):
+            raise PackageValidationError(f"v0.2 {field} is invalid")
+    for field in (
+        "completed_work", "warnings", "errors", "unresolved_questions",
+        "continuation_instructions",
+    ):
+        value = report.get(field)
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise PackageValidationError(f"v0.2 {field} must be an array of strings")
+    for field in ("current_state", "next_recommended_action"):
+        if not isinstance(report.get(field), str) or not report[field].strip():
+            raise PackageValidationError(f"v0.2 {field} must be non-empty")
+    if not REPORT_ID_V2.fullmatch(str(report.get("report_id", ""))):
+        raise PackageValidationError("v0.2 report ID is invalid")
+    for field in (
+        "report_content_checksum", "report_checksum", "package_checksum",
+        "workflow_checksum", "context_before_checksum", "context_after_checksum",
+    ):
+        if not SHA256.fullmatch(str(report.get(field, ""))):
+            raise PackageValidationError(f"v0.2 {field} is invalid")
+    if (report["previous_report_id"] is None) != (report["previous_report_checksum"] is None):
+        raise PackageValidationError("v0.2 predecessor ID/checksum must be paired")
+    if report["previous_report_id"] is not None and (
+        not REPORT_ID_V2.fullmatch(report["previous_report_id"])
+        or not SHA256.fullmatch(report["previous_report_checksum"])
+    ):
+        raise PackageValidationError("v0.2 predecessor identity is invalid")
+    try:
+        started = datetime.fromisoformat(report["started_at"].replace("Z", "+00:00"))
+        completed = datetime.fromisoformat(report["completed_at"].replace("Z", "+00:00"))
+        generated = datetime.fromisoformat(report["generated_at"].replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as error:
+        raise PackageValidationError("v0.2 timestamps must be ISO-8601") from error
+    if any(value.tzinfo is None for value in (started, completed, generated)) or completed < started:
+        raise PackageValidationError("v0.2 timestamps require timezones and monotonic order")
+    expected = _progress_v2_identity(report)
+    if any(report[field] != value for field, value in expected.items()):
+        raise PackageValidationError("v0.2 Progress Report identity mismatch")
+    if (
+        report["package_id"] != manifest["package_id"]
+        or report["package_schema_version"] != manifest["package_schema_version"]
+        or report["package_checksum"] != manifest["package_checksum"]
+        or report["project_id"] != manifest["experimental_project_identity"]
+        or report["workflow_id"] != manifest["workflow_id"]
+        or report["workflow_version"] != manifest["workflow_version"]
+        or report["workflow_checksum"] != manifest["workflow_checksum"]
+    ):
+        raise PackageValidationError("v0.2 Progress Report package/workflow identity mismatch")
+    if not isinstance(report["output_artifacts"], list):
+        raise PackageValidationError("v0.2 output artifacts must be an array")
+    for output in report["output_artifacts"]:
+        if not isinstance(output, dict) or set(output) != {
+            "relative_path", "artifact_kind", "media_type", "checksum", "size"
+        }:
+            raise PackageValidationError("v0.2 output artifact must be an object")
+        relative = safe_relative_path(output.get("relative_path"))
+        if not relative.startswith("outputs/"):
+            raise PackageValidationError("v0.2 output escapes outputs/")
+        path = package_root.joinpath(*relative.split("/"))
+        if path.is_symlink() or not path.is_file():
+            raise PackageValidationError(f"v0.2 output is missing: {relative}")
+        content = path.read_bytes()
+        if output.get("checksum") != sha256_bytes(content) or output.get("size") != len(content):
+            raise PackageValidationError(f"v0.2 output integrity mismatch: {relative}")
+    for field in ("skill_pins", "template_pins"):
+        pins = report.get(field)
+        if not isinstance(pins, list) or not pins:
+            raise PackageValidationError(f"v0.2 {field} must be non-empty")
+        if any(
+            not isinstance(pin, dict)
+            or set(pin) != {"pin_type", "identity", "version", "checksum"}
+            or pin.get("pin_type") not in {"SKILL", "TEMPLATE"}
+            or not SHA256.fullmatch(str(pin.get("checksum", "")))
+            for pin in pins
+        ):
+            raise PackageValidationError(f"v0.2 {field} checksum is invalid")
+
+
+def _validate_progress_reports(manifest: dict[str, Any], package_root: Path) -> None:
+    declared_schema = manifest.get("progress_report_schema_version", PROGRESS_V1)
+    reports: list[dict[str, Any]] = []
+    reports_root = package_root / "memory/progress/reports"
+    for path in sorted(reports_root.glob("*.json")):
+        if path.is_symlink():
+            raise PackageValidationError("Progress Report symbolic link rejected")
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise PackageValidationError("Progress Report must be UTF-8 JSON") from error
+        if not isinstance(report, dict):
+            raise PackageValidationError("Progress Report must be a JSON object")
+        schema = report.get("schema_version")
+        if schema == PROGRESS_V1 and declared_schema == PROGRESS_V1:
+            _validate_v1_report(report, manifest)
+        elif schema == PROGRESS_V2 and declared_schema == PROGRESS_V2:
+            _validate_v2_report(report, manifest, package_root)
+        else:
+            raise PackageValidationError("Progress Report schema does not match package declaration")
+        if path.name != f"{report.get('report_id')}.json":
+            raise PackageValidationError("Progress Report filename does not match report ID")
+        reports.append(report)
+    if declared_schema != PROGRESS_V2 or not reports:
+        return
+    reports.sort(key=lambda item: (item["execution_round"], item["report_id"]))
+    if len({item["execution_round"] for item in reports}) != len(reports):
+        raise PackageValidationError("Progress Report history contains a branched round")
+    if reports[0]["execution_round"] != 1 or reports[0]["previous_report_id"] is not None:
+        raise PackageValidationError("Progress Report chain must begin at round 1")
+    for previous, current in zip(reports, reports[1:]):
+        if current["execution_round"] != previous["execution_round"] + 1:
+            raise PackageValidationError("Progress Report chain has a missing round")
+        if (
+            current["previous_report_id"] != previous["report_id"]
+            or current["previous_report_checksum"] != previous["report_checksum"]
+        ):
+            raise PackageValidationError("Progress Report predecessor does not resolve")
+        if current["context_before_checksum"] != previous["context_after_checksum"]:
+            raise PackageValidationError("Progress Report context continuity mismatch")
+        if previous["status"] == "COMPLETED" and not (current["continuation_reason"] or "").strip():
+            raise PackageValidationError("completed round continuation requires a reason")
+    context_checksum = sha256_bytes((package_root / "memory/context.md").read_bytes())
+    if reports[-1]["context_after_checksum"] != context_checksum:
+        raise PackageValidationError("latest report context-after does not match local context")
 
 
 def main(argv: list[str] | None = None) -> int:

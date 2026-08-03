@@ -17,7 +17,9 @@ from backend.database.orm import (
     ExecutionEventORM,
     MemoryRevisionORM,
     ProviderOperationORM,
+    ProjectProgressProjectionORM,
     StepRunORM,
+    UploadedProgressReportORM,
     WorkflowDefinitionORM,
     WorkflowRunORM,
 )
@@ -33,6 +35,7 @@ from backend.persistence.ports import (
     UnitOfWork,
     WorkflowRepository,
 )
+from backend.progress_reports.ports import ProgressReportRepository
 
 from .repositories import (
     SQLAlchemyApprovalRepository,
@@ -41,6 +44,7 @@ from .repositories import (
     SQLAlchemyExecutionEventStore,
     SQLAlchemyMemoryRepository,
     SQLAlchemyProviderOperationRepository,
+    SQLAlchemyProgressReportRepository,
     SQLAlchemyWorkflowRepository,
 )
 
@@ -70,6 +74,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._approvals = SQLAlchemyApprovalRepository(self.session)
         self._events = SQLAlchemyExecutionEventStore(self.session)
         self._provider_operations = SQLAlchemyProviderOperationRepository(self.session)
+        self._progress_reports = SQLAlchemyProgressReportRepository(self.session)
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -98,6 +103,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     @property
     def provider_operations(self) -> ProviderOperationRepository:
         return self._provider_operations
+
+    @property
+    def progress_reports(self) -> ProgressReportRepository:
+        return self._progress_reports
 
     def commit(self) -> None:
         try:
@@ -146,6 +155,8 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(AgentSessionORM)
         self._flush_type(StepRunORM)
         self._flush_type(ProviderOperationORM)
+        self._flush_type(UploadedProgressReportORM)
+        self._flush_type(ProjectProgressProjectionORM)
 
         checkpoints = sorted(
             self._pending_or_dirty(CheckpointORM),

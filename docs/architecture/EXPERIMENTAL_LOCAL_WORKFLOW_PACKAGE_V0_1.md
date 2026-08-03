@@ -1,6 +1,6 @@
 # Experimental Local Workflow Package v0.1
 
-Status: **R1A implemented; R1B Harness acceptance pending**  
+Status: **R1A implemented; R1B passed with warnings for Codex; future template advanced to v0.2**
 Schema marker: `EXPERIMENTAL_V0_1`  
 Tree status: **EXPERIMENTAL — NOT FINALIZED BY THE TEACHER SOURCE**
 
@@ -13,10 +13,15 @@ The PDF explicitly leaves exact folder layout and prompt decomposition open
 (TMR-013-TMR-014). This document therefore records an experiment, not a final
 product schema.
 
-R1A compiles one credential-free, offline Literature Search package. ReAgent
-generates and validates files; it does not execute the research task. R1B must
-use a fresh Codex session, then a second fresh session, to test real
-Harness-only execution and continuation.
+R1A compiled one credential-free, offline Literature Search package. ReAgent
+generated and validated files; it did not execute the research task. R1B later
+passed the bounded Codex folder-only and moved-folder continuation gates with
+owner-attested fresh-session facts. Claude Code remains untested.
+
+The executed R1 package remains historical `progress-report/v0.1` evidence.
+R2A does not rewrite it. Future builds use package-template `0.2.0`, still on
+compatible `workflow-package/v0.1`, and declare `progress-report/v0.2` plus
+`UPLOAD_ACCEPTANCE_PENDING`.
 
 ## Package contracts
 
@@ -49,6 +54,7 @@ package/
 ├── HARNESS_ACCEPTANCE.md
 ├── package-manifest.json
 ├── validate_package.py
+├── progress_report.py
 ├── workflow/
 │   ├── AGENT.md
 │   ├── workflow.json
@@ -59,7 +65,7 @@ package/
 ├── outputs/README.md
 ├── memory/
 │   ├── context.md
-│   └── progress/reports/README.md
+│   └── progress/{report-draft.json,reports/README.md}
 └── cloud/proxy.example.json
 ```
 
@@ -76,8 +82,12 @@ untrusted-source handling, declared output paths, context update, an immutable
 Progress Report, no credentials, fail-closed integrity, preservation of prior
 work and file-only continuation.
 
-The package includes a self-contained standard-library `validate_package.py`.
-It imports nothing from ReAgent and can run after extraction or copying.
+The future template includes self-contained standard-library
+`validate_package.py` and `progress_report.py`. The latter snapshots exact
+context bytes, derives v0.2 identity, validates predecessor continuity and
+appends without overwrite. The validator now covers every dynamic native v0.2
+report, output checksum/size, identity, latest context-after, and chain. It
+retains v0.1 validation for historical packages.
 
 ## Literature Search fixture
 
@@ -107,12 +117,18 @@ action, latest report, prior-session pointer, timestamp and checksum. A later
 Harness validates immutable content, reads context and the latest report, and
 continues without PostgreSQL, AgentRuntime, server checkpoints or hidden chat.
 
-Progress Reports are JSON objects under `memory/progress/reports/`. Each binds
+Historical Progress Reports are JSON objects under `memory/progress/reports/`. Each binds
 package/Workflow/Skill/template versions, round, Harness, timestamps, status,
 work/current/next state, output checksums, context checksum, warnings/errors,
 questions, continuation instructions, prior report and its own checksum.
 They are distinct from final outputs, `ExecutionEvent`, server `Checkpoint`,
 and developer `.agent_read/progress`.
+
+Future v0.2 reports replace the ambiguous single context checksum with SHA-256
+of exact `memory/context.md` bytes before and after the round, use a deterministic
+content-derived `prv2-...` ID, bind full Skill/template pins and typed output
+metadata, and pair predecessor ID/checksum. The cloud accepts reports only by an
+explicit later client command and never continues the task.
 
 ## Compiler and deterministic ZIP policy
 
@@ -164,16 +180,26 @@ non-secret R3 compatibility placeholder only.
 Exact generated checksums live in the ignored receipt and R1A progress report.
 They may change only when tracked package source changes intentionally.
 
+## R2A future-template identity
+
+- package suffix: `-v0.2`;
+- package schema: `workflow-package/v0.1` (compatible);
+- package template: `literature-search-package-experimental@0.2.0`;
+- Workflow/Skill/prompt pins remain `0.1.0` because concrete research behavior
+  did not change;
+- Progress Report: `progress-report/v0.2`;
+- Harness status: `CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED`;
+- upload status: `UPLOAD_ACCEPTANCE_PENDING`.
+
 ## Unresolved experimental questions
 
 - whether root and Workflow-level instruction files should remain separate;
 - whether Claude Code needs more than the current shim;
 - whether output JSON needs an embedded self-checksum;
 - whether context should stay Markdown-wrapped JSON or use paired files;
-- how a Harness should obtain an immutable report ID and timestamp policy;
 - how mutable-file integrity should distinguish legitimate edits from damage;
 - how package refresh/merge and report conflict resolution work;
 - whether Skills remain embedded or become signed package references;
-- the final R2 upload schema and R3 proxy protocol.
+- authentication/signing and the R3 proxy protocol.
 
 No answer is frozen by R1A.

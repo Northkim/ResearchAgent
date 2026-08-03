@@ -30,6 +30,8 @@ from backend.persistence.ports import (
     UnitOfWork,
     WorkflowRepository,
 )
+from backend.progress_reports import ProjectProgressProjection, UploadedProgressReport
+from backend.progress_reports.ports import ProgressReportRepository
 from backend.research.contracts import ProviderOperation, SettlementState
 
 
@@ -50,6 +52,120 @@ class InMemoryDatabase:
         tuple[str, str], tuple[ExecutionEvent, ...]
     ] = field(default_factory=dict)
     provider_operations: dict[str, ProviderOperationRecord] = field(default_factory=dict)
+    progress_reports: dict[str, UploadedProgressReport] = field(default_factory=dict)
+    progress_projections: dict[
+        tuple[str, str, str, str], ProjectProgressProjection
+    ] = field(default_factory=dict)
+
+
+class InMemoryProgressReportRepository(ProgressReportRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def append(self, report: UploadedProgressReport) -> None:
+        existing = self._uow._progress_reports.get(report.receipt_id)
+        if existing is not None:
+            if existing != report:
+                raise DuplicateEntityError(
+                    f"Progress receipt {report.receipt_id} has conflicting content"
+                )
+            return
+        self._uow._progress_reports[report.receipt_id] = report
+        self._uow._dirty_progress_reports.add(report.receipt_id)
+
+    def get_receipt(self, receipt_id: str) -> UploadedProgressReport | None:
+        return self._uow._progress_reports.get(receipt_id)
+
+    def find_exact(
+        self,
+        *,
+        project_id: str,
+        package_id: str,
+        package_checksum: str,
+        report_id: str,
+        report_checksum: str,
+        original_report_checksum: str,
+    ) -> UploadedProgressReport | None:
+        return next(
+            (
+                item
+                for item in self._uow._progress_reports.values()
+                if item.project_id == project_id
+                and item.package_id == package_id
+                and item.package_checksum == package_checksum
+                and item.report_id == report_id
+                and item.report_checksum == report_checksum
+                and item.original_report_checksum == original_report_checksum
+            ),
+            None,
+        )
+
+    def list_for_project(
+        self,
+        project_id: str,
+        *,
+        package_id: str | None = None,
+    ) -> tuple[UploadedProgressReport, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._uow._progress_reports.values()
+                    if item.project_id == project_id
+                    and (package_id is None or item.package_id == package_id)
+                ),
+                key=lambda item: (item.received_at, item.receipt_id),
+            )
+        )
+
+    def list_by_report_id(self, report_id: str) -> tuple[UploadedProgressReport, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._uow._progress_reports.values()
+                    if item.report_id == report_id
+                ),
+                key=lambda item: (item.received_at, item.receipt_id),
+            )
+        )
+
+    def list_by_original_checksum(
+        self,
+        original_report_checksum: str,
+    ) -> tuple[UploadedProgressReport, ...]:
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._uow._progress_reports.values()
+                    if item.original_report_checksum == original_report_checksum
+                ),
+                key=lambda item: (item.received_at, item.receipt_id),
+            )
+        )
+
+    def save_projection(self, projection: ProjectProgressProjection) -> None:
+        key = (
+            projection.project_id,
+            projection.package_id,
+            projection.workflow_id,
+            projection.workflow_version,
+        )
+        self._uow._progress_projections[key] = projection
+        self._uow._dirty_progress_projections.add(key)
+
+    def get_projection(
+        self,
+        *,
+        project_id: str,
+        package_id: str,
+        workflow_id: str,
+        workflow_version: str,
+    ) -> ProjectProgressProjection | None:
+        return self._uow._progress_projections.get(
+            (project_id, package_id, workflow_id, workflow_version)
+        )
 
 
 class InMemoryWorkflowRepository(WorkflowRepository):
@@ -635,6 +751,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._approval_repository = InMemoryApprovalRepository(self)
         self._event_store = InMemoryExecutionEventStore(self)
         self._provider_operation_repository = InMemoryProviderOperationRepository(self)
+        self._progress_report_repository = InMemoryProgressReportRepository(self)
         self._refresh()
 
     @property
@@ -665,6 +782,10 @@ class InMemoryUnitOfWork(UnitOfWork):
     def provider_operations(self) -> ProviderOperationRepository:
         return self._provider_operation_repository
 
+    @property
+    def progress_reports(self) -> ProgressReportRepository:
+        return self._progress_report_repository
+
     def commit(self) -> None:
         self._validate_concurrency()
         for run_id in self._dirty_workflows:
@@ -683,6 +804,10 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.provider_operations[operation_id] = self._provider_operations[
                 operation_id
             ]
+        for receipt_id in self._dirty_progress_reports:
+            self.database.progress_reports[receipt_id] = self._progress_reports[receipt_id]
+        for key in self._dirty_progress_projections:
+            self.database.progress_projections[key] = self._progress_projections[key]
         self._refresh()
 
     def rollback(self) -> None:
@@ -794,6 +919,14 @@ class InMemoryUnitOfWork(UnitOfWork):
                 )
             committed_idempotency[key] = operation_id
 
+        for receipt_id in self._dirty_progress_reports:
+            current = self.database.progress_reports.get(receipt_id)
+            candidate = self._progress_reports[receipt_id]
+            if current is not None and current != candidate:
+                raise DuplicateEntityError(
+                    f"Progress receipt {receipt_id} was concurrently reused"
+                )
+
     def _refresh(self) -> None:
         self._executions = dict(self.database.executions)
         self._checkpoint_records = dict(self.database.checkpoint_records)
@@ -802,6 +935,8 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._approvals = dict(self.database.approvals)
         self._execution_events = dict(self.database.execution_events)
         self._provider_operations = dict(self.database.provider_operations)
+        self._progress_reports = dict(self.database.progress_reports)
+        self._progress_projections = dict(self.database.progress_projections)
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -824,3 +959,5 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_approvals: set[str] = set()
         self._dirty_event_streams: set[tuple[str, str]] = set()
         self._dirty_provider_operations: set[str] = set()
+        self._dirty_progress_reports: set[str] = set()
+        self._dirty_progress_projections: set[tuple[str, str, str, str]] = set()

@@ -8,9 +8,12 @@
 > API-proxy services. R1A package generation is experimental and network-free.
 > R1B is `PASS_WITH_WARNINGS` for Codex: fresh-session facts are owner-attested,
 > file/checksum and moved-folder gates passed, and Claude Code remains untested.
+> R2A adds explicit local Progress Report upload, immutable cloud history, and
+> deterministic progress projection; live external acceptance remains
+> `UPLOAD_ACCEPTANCE_PENDING` until R2B.
 > Hosted execution is a deferred optional mode.
 
-## Experimental local package — R1
+## Experimental local package and Progress upload — R1/R2A
 
 This section is separate from the Preserved Hosted Prototype Demo. It compiles
 a wholly fictional, credential-free local folder and deterministic ZIP; it does
@@ -20,32 +23,57 @@ not ask backend AgentRuntime to perform research.
 conda run --no-capture-output -n reagent-dev \
   python -m backend.workflow_packages build-literature-search \
   --project-id experimental-literature-search \
-  --output-root runtime_data/workflow_packages/r1a-literature-search
+  --output-root runtime_data/workflow_packages/r2a-literature-search
 ```
 
 Generated evidence is ignored under
-`runtime_data/workflow_packages/r1a-literature-search/`. Validate the unpacked
+`runtime_data/workflow_packages/r2a-literature-search/`. Validate the unpacked
 folder or archive with:
 
 ```bash
 conda run --no-capture-output -n reagent-dev \
   python -m backend.workflow_packages validate \
-  runtime_data/workflow_packages/r1a-literature-search/package --pristine
+  runtime_data/workflow_packages/r2a-literature-search/package --pristine
 
 conda run --no-capture-output -n reagent-dev \
   python -m backend.workflow_packages validate \
-  runtime_data/workflow_packages/r1a-literature-search/literature-search-experimental-literature-search-v0.1.zip \
+  runtime_data/workflow_packages/r2a-literature-search/literature-search-experimental-literature-search-v0.2.zip \
   --archive --pristine
 ```
 
 The exact tree is **EXPERIMENTAL — NOT FINALIZED**. R1B accepted the bounded
 offline Codex execution, folder-only continuation, and moved-folder result as
-`PASS_WITH_WARNINGS`. The package's immutable manifest still carries its R1A
-handoff marker `HARNESS_ACCEPTANCE_PENDING`; the external acceptance authority
+`PASS_WITH_WARNINGS`. Historical R1 evidence retains its original pending
+manifest. Future packages carry the R1B Codex result and
+`UPLOAD_ACCEPTANCE_PENDING`; the external Harness acceptance authority
 is `docs/acceptance/R1B_CODEX_HARNESS_ACCEPTANCE_REPORT.md`. Freshness and
 runtime non-use are owner-attested, the file/checksum gates are independently
-verified, and Claude Code remains untested. Exactly one recommended next
-milestone is **R2 — Progress Report upload and cloud progress aggregation**.
+verified, and Claude Code remains untested.
+
+After a local Harness creates a v0.2 report, validate without network:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.progress_reports.client validate \
+  --package-root runtime_data/workflow_packages/r2a-literature-search/package \
+  --report memory/progress/reports/<report-id>.json
+```
+
+Then explicitly upload to a running R2A backend:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.progress_reports.client upload \
+  --base-url http://127.0.0.1:8000 \
+  --package-root runtime_data/workflow_packages/r2a-literature-search/package \
+  --report memory/progress/reports/<report-id>.json
+```
+
+This makes one bounded request, embeds no credential, does not retry an
+ambiguous transmission, and does not modify the package. R2B must still prove
+external byte retention, idempotency, conflict behavior and restart reload.
+Exactly one recommended next milestone is **R2B — external Progress Report
+upload, idempotency, conflict and restart acceptance**.
 
 This guide runs the deterministic supervised research workflows through the real
 Next.js UI, FastAPI application, Agent Runtime, SQL Unit of Work, and
@@ -734,9 +762,9 @@ literature report and does not authorize Phase 9C-2.
 
 - This is the **Preserved Hosted Prototype Demo**, not a demonstration of the
   teacher-aligned V1 package/download/local-Harness/Progress-Report round-trip.
-- The R1 experimental local Literature Search Workflow Package does not yet
-  exist; no current command in this guide proves folder-authoritative task state
-  or cross-Harness continuation.
+- The R1 local package exists and Codex folder-only continuation passed, but
+  Claude Code, R2B live upload/restart, cross-machine synchronization and
+  cross-Harness continuation remain unproved.
 - The demo uses fixed prototype project and actor identities; there is no
   authentication, authorization, or approval-role enforcement.
 - `SyncExecutionDispatcher` runs execution inline in HTTP requests; there is no

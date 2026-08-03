@@ -10,7 +10,9 @@ from .models import (
     ExecutionEventORM,
     MemoryRevisionORM,
     ProviderOperationORM,
+    ProjectProgressProjectionORM,
     StepRunORM,
+    UploadedProgressReportORM,
     WorkflowDefinitionORM,
     WorkflowRunORM,
 )
@@ -25,7 +27,9 @@ __all__ = [
     "ExecutionEventORM",
     "MemoryRevisionORM",
     "ProviderOperationORM",
+    "ProjectProgressProjectionORM",
     "StepRunORM",
+    "UploadedProgressReportORM",
     "WorkflowDefinitionORM",
     "WorkflowRunORM",
 ]

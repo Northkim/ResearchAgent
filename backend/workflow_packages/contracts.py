@@ -11,8 +11,13 @@ from .serialization import SerializableContract, canonical_hash
 EXPERIMENTAL_STATUS = "EXPERIMENTAL_V0_1"
 PACKAGE_SCHEMA_VERSION = "workflow-package/v0.1"
 PROGRESS_SCHEMA_VERSION = "progress-report/v0.1"
+CURRENT_PROGRESS_SCHEMA_VERSION = "progress-report/v0.2"
 CONTEXT_SCHEMA_VERSION = "local-context/v0.1"
 HARNESS_ACCEPTANCE_STATUS = "HARNESS_ACCEPTANCE_PENDING"
+CURRENT_HARNESS_ACCEPTANCE_STATUS = (
+    "CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED"
+)
+PROGRESS_UPLOAD_STATUS = "UPLOAD_ACCEPTANCE_PENDING"
 
 _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
@@ -167,6 +172,8 @@ class WorkflowPackageManifest(SerializableContract):
     proxy_capability_declaration: str
     experimental_status_declaration: str
     harness_acceptance_status: str
+    progress_report_schema_version: str
+    progress_upload_status: str
 
     def __post_init__(self) -> None:
         _identifier(self.package_id, "WorkflowPackageManifest.package_id")
@@ -194,8 +201,15 @@ class WorkflowPackageManifest(SerializableContract):
             require_sha256(value, name)
         if self.experimental_status_declaration != EXPERIMENTAL_STATUS:
             raise ValueError("experimental status declaration is required")
-        if self.harness_acceptance_status != HARNESS_ACCEPTANCE_STATUS:
-            raise ValueError("R1A packages must remain HARNESS_ACCEPTANCE_PENDING")
+        if self.harness_acceptance_status not in {
+            HARNESS_ACCEPTANCE_STATUS,
+            CURRENT_HARNESS_ACCEPTANCE_STATUS,
+        }:
+            raise ValueError("unknown Harness acceptance status")
+        if self.progress_report_schema_version != CURRENT_PROGRESS_SCHEMA_VERSION:
+            raise ValueError("future packages must use Progress Report v0.2")
+        if self.progress_upload_status != PROGRESS_UPLOAD_STATUS:
+            raise ValueError("R2 upload acceptance must remain pending")
 
 
 @dataclass(frozen=True, slots=True)

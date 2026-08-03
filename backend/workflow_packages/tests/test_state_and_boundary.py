@@ -5,6 +5,7 @@ import builtins
 import json
 import shutil
 import socket
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -16,6 +17,9 @@ from backend.workflow_packages.compiler import BuildResult, build_literature_sea
 from backend.workflow_packages.security import reject_sensitive_content
 from backend.workflow_packages.serialization import sha256_bytes
 from backend.workflow_packages.state import append_progress_report, parse_context, write_context
+from backend.workflow_packages.package_progress import finalize, snapshot
+from backend.workflow_packages.validator import validate_package
+from backend.progress_reports.normalization import ProgressReportNormalizer
 
 
 def _updated_context(result: BuildResult) -> tuple[LocalContext, str]:
@@ -167,3 +171,111 @@ def test_local_state_survives_copy(built_package: BuildResult, tmp_path: Path) -
     copied = tmp_path / "moved-package"
     shutil.copytree(built_package.package_root, copied)
     assert parse_context((copied / "memory/context.md").read_text()) == updated
+
+
+def test_future_package_finalizes_and_self_validates_native_v2_report(
+    built_package: BuildResult,
+) -> None:
+    root = built_package.package_root
+    before = snapshot(root)["context_before_checksum"]
+    _updated_context(built_package)
+    for path in (
+        "outputs/search_plan.md",
+        "outputs/candidate_papers.json",
+        "outputs/selected_papers.json",
+        "outputs/literature_search_report.md",
+    ):
+        (root / path).write_text("Fictional offline output.\n", encoding="utf-8")
+    draft_path = root / "memory/progress/report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    draft.update(
+        {
+            "harness_type": "codex",
+            "harness_session_id": "fictional-package-session-1",
+            "started_at": "2026-08-03T01:00:00Z",
+            "completed_at": "2026-08-03T01:10:00Z",
+            "status": "COMPLETED",
+            "completed_work": ["Wrote four wholly fictional offline outputs."],
+            "current_state": "Fictional offline task complete.",
+            "next_recommended_action": "Explicitly upload this immutable report in R2B.",
+            "continuation_instructions": ["Validate package state before continuing."],
+        }
+    )
+    draft_path.write_text(json.dumps(draft), encoding="utf-8")
+
+    result = finalize(
+        package_root=root,
+        draft_path="memory/progress/report-draft.json",
+        context_before_checksum=str(before),
+    )
+    report_path = root / result["created"]
+    normalized = ProgressReportNormalizer().normalize(report_path.read_bytes())
+
+    assert normalized.source_schema_version == "progress-report/v0.2"
+    assert normalized.context_before_checksum == before
+    assert normalized.context_after_checksum == sha256_bytes(
+        (root / "memory/context.md").read_bytes()
+    )
+    assert validate_package(root).valid
+    isolated_validator = subprocess.run(
+        [sys.executable, "-I", "validate_package.py", "--root", "."],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    isolated_report_helper = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "progress_report.py",
+            "validate",
+            "--root",
+            ".",
+            "--report",
+            result["created"],
+        ],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert isolated_validator.returncode == 0, isolated_validator.stdout
+    assert isolated_report_helper.returncode == 0, isolated_report_helper.stdout
+
+
+def test_self_validator_rejects_dynamic_v2_report_tampering(
+    built_package: BuildResult,
+) -> None:
+    root = built_package.package_root
+    before = snapshot(root)["context_before_checksum"]
+    _updated_context(built_package)
+    for contract in json.loads((root / "package-manifest.json").read_text())[
+        "output_contracts"
+    ]:
+        (root / contract["required_output_path"]).write_text("Fictional.\n")
+    draft_path = root / "memory/progress/report-draft.json"
+    draft = json.loads(draft_path.read_text())
+    draft.update(
+        {
+            "harness_type": "codex",
+            "harness_session_id": "fictional-package-session-1",
+            "started_at": "2026-08-03T01:00:00Z",
+            "completed_at": "2026-08-03T01:10:00Z",
+            "current_state": "Fictional task state.",
+            "next_recommended_action": "Stop.",
+        }
+    )
+    draft_path.write_text(json.dumps(draft))
+    result = finalize(
+        package_root=root,
+        draft_path="memory/progress/report-draft.json",
+        context_before_checksum=str(before),
+    )
+    report_path = root / result["created"]
+    report = json.loads(report_path.read_text())
+    report["current_state"] = "Tampered fictional state."
+    report_path.write_text(json.dumps(report))
+
+    with pytest.raises(ValueError, match="identity"):
+        validate_package(root)

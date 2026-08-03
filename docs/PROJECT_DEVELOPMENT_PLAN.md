@@ -40,7 +40,8 @@ this engineering order.
 | R0 | V1 product-boundary freeze | Documentation/authority only; no production code |
 | R1A | Experimental local Literature Search Workflow Package generator | **IMPLEMENTED** — deterministic, credential-free offline folder and ZIP with self-contained validation |
 | R1B | External Agent Harness compatibility acceptance | **PASS_WITH_WARNINGS (CODEX)** — owner-attested fresh sessions plus checksum-verified execution, folder-only continuation, and moved-folder continuation; Claude Code untested |
-| R2 | Progress Report upload and cloud progress aggregation | **NEXT** — normalize report-ID/context-checksum semantics, then validate immutable upload history and project/workflow progress projection |
+| R2A | Progress Report contract, upload, immutable history and aggregation | **IMPLEMENTED; FINAL ACCEPTANCE PENDING** — native v0.2, explicit before/after context digests, v0.1 normalization, upload/history/projection API, client and additive persistence |
+| R2B | External upload and restart acceptance | **NEXT — UPLOAD_ACCEPTANCE_PENDING** — prove exact byte retention, idempotency, conflict exclusion, projection and restart with an external package |
 | R3 | Cloud API Proxy for local Harness | Protect credentials and expose bounded normalized provider operations |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -51,18 +52,26 @@ Literature Search in R1 is an **OWNER IMPLEMENTATION-SEQUENCING PROPOSAL**, not
 a teacher-mandated first Workflow. The exact R1 package layout must be marked
 `EXPERIMENTAL — NOT FINALIZED BY TEACHER SOURCE`.
 
-R1A and R1B are deliberately separate. R1B now proves the teacher-defined
+R1A and R1B are deliberately separate. R1B proves the teacher-defined
 local-folder and external-Harness boundary for the bounded offline Codex
 experiment, with fresh-session facts owner-attested and file/checksum outcomes
 independently verified. Claude Code remains untested, the tree remains
-experimental, and no cloud upload/projection or API-proxy capability is proved.
+experimental, and no API-proxy capability is proved.
 The acceptance record is
 `docs/acceptance/R1B_CODEX_HARNESS_ACCEPTANCE_REPORT.md`.
 
-Exactly one recommended next milestone is **R2 — Progress Report upload and
-cloud progress aggregation**. Before accepting uploads, R2 must reconcile the
-bundled v0.1 report-ID/context-checksum semantics with the stricter repository
-helpers and add deterministic dynamic report/output validation.
+R2A now reconciles the v0.1 mismatch without rewriting history. Native v0.2
+uses deterministic non-cyclic report identity and exact context-before/context-
+after file digests. The cloud explicitly receives and validates reports,
+retains original bytes and immutable metadata, detects chain/conflict states,
+and reconstructs a deterministic progress projection. The local client makes a
+single explicit upload and never changes task state. Migration
+`20260803_0003_progress_reports` is additive and does not repurpose hosted
+events/checkpoints. The optional local-progress frontend view remains deferred.
+
+Exactly one recommended next milestone is **R2B — external Progress Report
+upload, idempotency, conflict and restart acceptance**. R2A does not claim that
+live external round-trip has passed.
 
 ### Preserved optional mode
 
@@ -93,7 +102,7 @@ The mainline prioritizes capabilities absent from the current repository:
 2. Harness-readable local instructions, pinned versions, inputs, outputs,
    context, Progress Reports, and continuation state;
 3. Codex/Claude Code compatibility evidence without backend research execution;
-4. Progress Report upload, immutable history, and cloud progress projection;
+4. externally accepted Progress Report upload, immutable history, and cloud progress projection;
 5. a local-Harness-facing Cloud API Proxy with cloud-held credentials;
 6. AG Admin and normalized Skill import/package delivery;
 7. cross-machine/cross-Harness continuation;

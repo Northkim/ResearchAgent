@@ -11,7 +11,11 @@ from backend.agent_runtime import AgentRuntime
 from backend.application.execution import ExecutionDispatcher
 from backend.persistence.ports import UnitOfWork
 
-from .composition import ApplicationContainer, ApplicationServices
+from .composition import (
+    ApplicationContainer,
+    ApplicationServices,
+    ProgressApplicationServices,
+)
 
 
 def get_container(request: Request) -> ApplicationContainer:
@@ -40,6 +44,13 @@ def get_application_services(
     return container.build_services(unit_of_work)
 
 
+def get_progress_services(
+    container: Annotated[ApplicationContainer, Depends(get_container)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> ProgressApplicationServices:
+    return container.build_progress_services(unit_of_work)
+
+
 def get_runtime(
     services: Annotated[ApplicationServices, Depends(get_application_services)],
 ) -> AgentRuntime:
@@ -59,3 +70,7 @@ ServicesDependency = Annotated[
 RuntimeDependency = Annotated[AgentRuntime, Depends(get_runtime)]
 DispatcherDependency = Annotated[ExecutionDispatcher, Depends(get_dispatcher)]
 UnitOfWorkDependency = Annotated[UnitOfWork, Depends(get_unit_of_work)]
+ProgressServicesDependency = Annotated[
+    ProgressApplicationServices,
+    Depends(get_progress_services),
+]

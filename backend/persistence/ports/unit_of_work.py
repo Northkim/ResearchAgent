@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from backend.execution_events.ports import ExecutionEventStore
+from backend.progress_reports.ports import ProgressReportRepository
 
 from .approval_repository import ApprovalRepository
 from .artifact_repository import ArtifactRepository
@@ -42,6 +43,10 @@ class UnitOfWork(ABC):
     @property
     @abstractmethod
     def provider_operations(self) -> ProviderOperationRepository: ...
+
+    @property
+    @abstractmethod
+    def progress_reports(self) -> ProgressReportRepository: ...
 
     @abstractmethod
     def commit(self) -> None:

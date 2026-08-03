@@ -535,3 +535,69 @@ class ProviderOperationORM(Base):
         "version_id_col": persistence_version,
         "version_id_generator": False,
     }
+
+
+class UploadedProgressReportORM(Base):
+    __tablename__ = "uploaded_progress_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "package_id",
+            "package_checksum",
+            "report_id",
+            "report_checksum",
+            "original_report_checksum",
+            name="uq_progress_reports_exact_identity",
+        ),
+        CheckConstraint("original_report_size > 0", name="progress_report_size_positive"),
+        Index(
+            "ix_progress_reports_project_package_received",
+            "project_id",
+            "package_id",
+            "received_at",
+        ),
+        Index("ix_progress_reports_report_id", "report_id"),
+        Index("ix_progress_reports_original_checksum", "original_report_checksum"),
+    )
+
+    receipt_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
+    report_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    report_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
+    report_schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    original_report_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_report_size: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    original_report_media_type: Mapped[str] = mapped_column(String(255), nullable=False)
+    original_storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    envelope_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    uploader_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    client_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_path_hint: Mapped[str] = mapped_column(Text, nullable=False)
+    validation_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    validation_errors_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    validation_warnings_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    chain_state: Mapped[str] = mapped_column(String(50), nullable=False)
+    accepted_for_projection: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    normalized_record_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class ProjectProgressProjectionORM(Base):
+    __tablename__ = "project_progress_projections"
+
+    project_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    package_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    workflow_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    workflow_version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    package_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
+    latest_report_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    latest_report_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
+    latest_execution_round: Mapped[int] = mapped_column(Integer, nullable=False)
+    latest_status: Mapped[str] = mapped_column(String(50), nullable=False)
+    chain_state: Mapped[str] = mapped_column(String(50), nullable=False)
+    projection_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
+    projection_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

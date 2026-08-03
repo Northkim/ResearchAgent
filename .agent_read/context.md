@@ -84,42 +84,72 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R1 accepted for Codex with warnings
+### Current implementation milestone — R2A implemented; upload acceptance pending
 
-R1A implements the standard-library-only experimental local Literature Search
-Workflow Package compiler under `backend/workflow_packages/`. It produces a
-deterministic credential-free folder and ZIP with canonical `AGENT.md`, Codex
-and Claude Code shims, pinned Workflow/Skill/prompt identities, wholly fictional
-offline inputs, declared outputs, human-readable local context, experimental
-`progress-report/v0.1`, disabled non-secret proxy placeholder, and a
-self-contained repository-independent validator.
+R1 remains accepted with warnings for the bounded Codex experiment. Freshness
+and runtime non-use are owner-attested, file/checksum gates passed, the moved
+folder carries concrete task state, and Claude Code remains untested. Executed
+R1 bytes remain historical `progress-report/v0.1` evidence and are not changed.
 
-R1B result is **PASS_WITH_WARNINGS** for Codex. The owner attests that three
-fresh Codex sessions received only the frozen one-line instruction; Session 2
-did not use `codex resume`; Session 3 started in the moved package; and no
-provider, network search, AgentRuntime, or PostgreSQL execution occurred. Files
-do not independently prove session freshness or runtime history. Both original
-and moved folders validate, all four output checksums match the round-001
-Progress Report, post-Session-2/pre-move/moved snapshots match, and the complete
-original and moved folders are byte-identical. Session 2 preserved the
-completed boundary without duplicate reports or changed output digests.
+R2A implements the teacher-aligned cloud Progress Report boundary under
+`backend/progress_reports/`. Native `progress-report/v0.2` has immutable
+contracts, deterministic non-cyclic content/report identity, exact raw
+context-before/context-after checksums, full pins and output metadata. A
+deterministic v0.1 normalizer retains original bytes and records assumptions,
+unavailable fields and evidence limitations without fabricating a context
+transition.
 
-R1 therefore proves the teacher-defined local-folder and external-Harness
-boundary for this bounded offline Codex experiment. Claude Code remains
-**UNTESTED**; no cross-Harness compatibility claim is made. The exact tree,
-prompt split, Skill format, context representation, and Progress Report schema
-remain **EXPERIMENTAL — NOT FINALIZED BY THE TEACHER SOURCE**.
+Explicit upload validates an immutable envelope and untrusted bytes, stores the
+exact original with `ArtifactContentStorage`, appends normalized/validation/
+chain metadata, detects incomplete, continuity, identity and branch conflicts,
+and reconstructs a deterministic HTML-escaped project progress projection.
+Exact replay is idempotent; conflicting/invalid evidence cannot replace
+accepted progress. FastAPI exposes upload, history, report, original-byte and
+projection reads. The credential-free standard-library client validates
+offline and makes one bounded explicit request without changing the package.
 
-Warnings include the absent standalone Session 1 checksum snapshot, missing
-independent session transcripts/version/identifiers, dynamic report/output
-checks omitted by the package self-validator, and stricter repository-side
-report-ID/context-file-checksum semantics than the bundled v0.1 schema. See
-`docs/acceptance/R1B_CODEX_HARNESS_ACCEPTANCE_REPORT.md` and
-`.agent_read/progress/r1b_codex_harness_acceptance.md`.
+Migration `20260803_0003_progress_reports` adds distinct uploaded-report and
+projection tables. It does not repurpose hosted `ExecutionEvent`, checkpoint,
+memory or run tables. The upload service and route have no AgentRuntime,
+ExecutionDispatcher, OpenAlex, LLM or structured-generation call and no
+run/resume/local-context-mutation behavior. Concrete task authority stays in
+the local folder.
 
-Exactly one next milestone is **R2 — Progress Report upload and cloud progress
-aggregation**, beginning with normalization of report-ID and context-checksum
-semantics. Hosted-work freeze and state-authority split remain intact.
+Future generated packages use package-template `0.2.0` and native Progress
+Report v0.2 while preserving package-schema compatibility. They include a
+self-contained snapshot/finalize helper and dynamic report/output/chain
+validation. Their upload status is `UPLOAD_ACCEPTANCE_PENDING`.
+
+R2A-C audited the complete R2A change set against the implemented contracts,
+normalizer, local package helper, upload service, chain validator, projection,
+API composition and persistence mappings. The reviewed changes remain confined
+to Progress Report contracts/normalization, ingestion/security/chain/projection,
+API and repository integration, one additive migration, the explicit offline
+client, future package v0.2 support, fictional tests and project documentation.
+No frontend file or executed local Package evidence is included. Native
+identity remains non-cyclic (`report_content_checksum` -> `report_id` ->
+`report_checksum`), raw context bytes are hashed before and after a local round,
+and v0.1 normalization leaves unavailable transition and pin fields unset.
+
+Closure verification remains network-free: focused Progress Report tests pass
+38 tests, Workflow Package tests pass 43 tests, and the full backend passes 282
+tests with 19 environment-gated skips; compilation succeeds and Alembic has the
+single head `20260803_0003`. PostgreSQL persistence/restart acceptance was not
+run because `REAGENT_TEST_DATABASE_URL` was absent and is a mandatory R2B gate.
+The optional frontend remains deferred, Claude Code remains untested, and R2B
+has not started. R2 state remains `UPLOAD_ACCEPTANCE_PENDING`; R2B must perform
+a real external upload and isolated real-PostgreSQL idempotency, conflict,
+projection and restart acceptance.
+
+The optional Next.js **Uploaded Local Progress Reports** view is not yet
+implemented because the current UI centers preserved Hosted Mode pages.
+Authentication/signing and automatic conflict policy remain undecided; no
+automatic merge exists. R2B must still prove an external upload, exact byte
+retention, idempotency, conflict exclusion, projection and restart reload.
+
+Exactly one next milestone is **R2B — external Progress Report upload,
+idempotency, conflict and restart acceptance**. Hosted-work freeze and
+state-authority split remain intact.
 
 ### Required reading for future Codex tasks
 

@@ -129,9 +129,9 @@ successful upload, the immutable received record and derived cloud projection
 are Cloud Project State. An upload must not silently rewrite newer unuploaded
 local work.
 
-### Required semantic capacity
+### R2A contract realization
 
-A future Progress Report must be able to communicate:
+`progress-report/v0.2` now communicates:
 
 - project and Workflow Package identity;
 - Workflow type, identity, and version;
@@ -148,7 +148,9 @@ A future Progress Report must be able to communicate:
 - creation and completion timestamps;
 - report schema/version identity and checksum.
 
-This is a capability list, not a frozen field list.
+The exact v0.2 fields and non-cyclic hashing algorithm are frozen for this
+experimental version in `PROGRESS_REPORT_V0_2_CONTRACT.md`. This remains an
+engineering contract, not a claim that the teacher PDF specified field names.
 
 ### Cloud processing responsibilities
 
@@ -181,21 +183,20 @@ continue the research Workflow.
 Existing hosted events/checkpoints must not be renamed or projected as if they
 already satisfy TMR-007/TMR-016/TMR-018.
 
-### Progress matters deliberately undecided
+### Progress matters remaining deliberately undecided
 
-- final JSON, Markdown, or hybrid representation;
-- final file name and folder location;
-- schema fields and required/optional cardinality;
-- upload automation versus explicit user command;
 - signing, caller identity, and trust model;
-- output embedding versus paths/checksums/references;
-- conflict detection, merge, supersession, and rejected-upload behavior;
 - context compression and package refresh algorithm;
 - retention, deletion, and export policy;
 - cross-machine concurrency behavior.
 
-The R1 experiment may create a provisional local report format. R2 owns the
-upload/projection experiment. Neither may claim the PDF finalized these details.
+R2A selected explicit JSON upload, path/checksum artifact references,
+append-only rejected-conflict retention, and no automatic merge for v0.2.
+Authentication remains `SOURCE_UNDECIDED`; a supervised placeholder is not a
+multi-user security decision.
+
+R1 v0.1 remains historical. R2A owns the experimental v0.2 upload/projection
+contract. Neither may claim the PDF finalized these details.
 
 ## Security invariants
 
@@ -209,9 +210,10 @@ upload/projection experiment. Neither may claim the PDF finalized these details.
 - A partial or rejected Progress Report is never presented as accepted cloud
   progress.
 
-## R0 no-code statement
+## R2A implementation statement
 
-No API route, proxy adapter wiring, database model, Progress Report schema,
-upload handler, progress projection, frontend page, secret source, or provider
-configuration changes in R0. This document is the semantic input to later R2
-and R3 designs.
+R2A implements only the Progress Report side: explicit upload/read routes,
+immutable originals, normalized records, chain/conflict validation, projection,
+client and additive cloud metadata. It adds no proxy route, credential source,
+provider configuration, research execution, context download, package merge,
+or frontend run/resume behavior. R3 remains separately gated.

@@ -18,15 +18,19 @@ def test_required_package_files_and_pins(built_package: BuildResult, manifest: d
     root = built_package.package_root
     for relative in (
         "AGENT.md", "AGENTS.md", "CLAUDE.md", "README.md", "package-manifest.json",
-        "validate_package.py", "workflow/AGENT.md", "workflow/workflow.json",
+        "validate_package.py", "progress_report.py", "workflow/AGENT.md", "workflow/workflow.json",
         "workflow/skills/literature-search/SKILL.md", "workflow/prompts/search-planning.md",
         "inputs/research_request.json", "inputs/fictional_source_catalog.json",
-        "outputs/README.md", "memory/context.md", "memory/progress/reports/README.md",
+        "outputs/README.md", "memory/context.md", "memory/progress/report-draft.json",
+        "memory/progress/reports/README.md",
         "cloud/proxy.example.json",
     ):
         assert (root / relative).is_file(), relative
     assert manifest["experimental_status_declaration"] == "EXPERIMENTAL_V0_1"
-    assert manifest["harness_acceptance_status"] == "HARNESS_ACCEPTANCE_PENDING"
+    assert manifest["harness_acceptance_status"] == "CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED"
+    assert manifest["progress_report_schema_version"] == "progress-report/v0.2"
+    assert manifest["progress_upload_status"] == "UPLOAD_ACCEPTANCE_PENDING"
+    assert manifest["package_template_version"] == "0.2.0"
     assert manifest["skill_pins"][0]["semantic_version"] == "0.1.0"  # type: ignore[index]
     assert manifest["prompt_pins"][0]["version"] == "0.1.0"  # type: ignore[index]
 

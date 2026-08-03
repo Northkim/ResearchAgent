@@ -35,6 +35,7 @@ from backend.database.serialization import workflow_document_hash, workflow_to_d
 from backend.domain.services import ExecutionCoordinator
 from backend.domain.models._utils import utc_now
 from backend.persistence.ports import UnitOfWork
+from backend.progress_reports import ProgressReportService
 from backend.skill_system.registry import SkillRegistry
 from backend.skill_system.models import SkillCapabilities
 from backend.skill_system.runtime import SkillExecutor, register_fake_skills
@@ -87,6 +88,13 @@ class ApplicationServices:
     get_artifact: GetArtifactService
     read_artifact_content: ReadArtifactContentService
     list_provider_usage: ListProviderUsageService
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressApplicationServices:
+    """Cloud progress services with no research-execution dependency."""
+
+    progress_reports: ProgressReportService
 
 
 class ApplicationContainer:
@@ -236,6 +244,19 @@ class ApplicationContainer:
             list_provider_usage=ListProviderUsageService(
                 unit_of_work=unit_of_work
             ),
+        )
+
+    def build_progress_services(
+        self,
+        unit_of_work: UnitOfWork,
+    ) -> ProgressApplicationServices:
+        return ProgressApplicationServices(
+            progress_reports=ProgressReportService(
+                repository=unit_of_work.progress_reports,
+                content_storage=self.artifact_storage,
+                commit_callback=unit_of_work.commit,
+                clock=self.clock,
+            )
         )
 
     def close(self) -> None:
