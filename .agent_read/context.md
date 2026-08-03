@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-03
+Last updated: 2026-08-04
 
 ## Current governing route — Phase R0 teacher-aligned boundary freeze
 
@@ -84,7 +84,7 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R3A contract/security review complete; owner decisions pending
+### Current implementation milestone — R3A owner decisions ratified for R3B
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -158,48 +158,60 @@ Compilation succeeds; Alembic has sole current head `20260803_0003` and no
 drift. R2 state is now `UPLOAD_ACCEPTED`; R2 is complete with warnings.
 
 R3A statically audited current proxy/provider/authentication infrastructure and
-defined a proposed local-Harness Cloud API Proxy boundary without changing
-production code. Reusable candidates include canonical JSON/checksum helpers,
-provider ports and normalized failures, fake providers, the bounded OpenAlex
-adapter behind a new boundary, immutable artifact storage and provider budget/
-idempotency concepts. Current OpenAlex execution remains Hosted Mode through
+defined a local-Harness Cloud API Proxy boundary without changing production
+code. Current OpenAlex/provider execution remains Hosted Mode through
 `ExecutionDispatcher -> AgentRuntime -> research Skills`; current SQL
 `ProviderOperation` is foreign-keyed to Hosted `WorkflowRun` state and cannot be
-relabelled as a Package proxy record. No authenticated principal, project
-ownership enforcement or multi-user authorization service exists.
+relabelled as a Package Proxy record. The teacher-aligned route requires a
+separate Proxy operation domain and persistence boundary with no fabricated
+Hosted run, step, event, checkpoint or memory rows.
 
-The proposed `reagent.cloud-api-proxy/v0.1` contract binds project, exact
-Package/Workflow, capability, Harness, request content, authorization scope and
-limits with non-cyclic deterministic identity. Exact replay reuses one durable
-operation; changed content under the same key conflicts before provider use;
-ambiguous timeouts require an explicit status read. The cloud may perform one
-bounded allowlisted provider operation and return untrusted data/provenance. It
-must not choose queries, rank papers, synthesize research, call a research LLM,
-write local state/Progress Reports, resume a Workflow, accept arbitrary URLs or
-chain calls.
+Owner-ratified ADR 0011 now resolves the R3A `SOURCE_UNDECIDED` controls for R3B
+only. R3B is `EXPERIMENTAL_FAKE_PROVIDER_VERTICAL_SLICE`, disabled by default,
+loopback-only and unsuitable for public/production deployment. Its only
+capability is `paper.search/v0.1` with exact `query` and `max_results`
+parameters and one deterministic fake adapter. Request/result/timeout limits
+are 16 KiB, 512 KiB and 10 seconds; token concurrency/count limits are 2 and
+50; monetary budget, real-provider calls and external-network calls are zero.
 
-Exactly one first capability is recommended for owner review:
-`paper.search/v0.1`, bounded scholarly metadata discovery initiated by the
-local Harness, with no full text/PDF, ranking, synthesis or LLM. The recommended
-MVP access model is a short-lived project/Package capability token stored
-outside the Package. Both are proposals. Authentication/issuance, lifetime/
-revocation, authenticated project/Package authorization, multi-user isolation,
-signing/replay controls, exact limits/budgets, provider eligibility and data
-retention/deletion remain `SOURCE_UNDECIDED`. Proposed ADR 0010 remains
-**Proposed**.
+R3B authentication is a short-lived opaque bearer with at least 256 random
+bits, digest-only server storage and constant-time comparison. An operator-only
+CLI writes plaintext once to a non-existing `0600` file outside Git and the
+Package; the client reads it only from the `REAGENT_PROXY_TOKEN` process
+environment. The token binds tenant/subject/project, exact Package and Workflow
+identity/checksums, capability, fake adapter, count, time and revocation state.
+It defaults to 60 minutes, is capped at 120 minutes, has no refresh and requires
+explicit revocation. R3B uses no detached signature, nonce or proof of
+possession; acceptance is limited to HTTP on `127.0.0.1` with plus or minus
+five minutes of timestamp skew.
 
-R3B is a future fake-adapter implementation/acceptance only; R3C is a separately
-authorized supervised live-provider acceptance after current provider terms,
-auth, rate, cost and retention review. Neither has started. Therefore
-`R3B_IMPLEMENTATION_GATE = CLOSED` pending owner decisions.
+Client idempotency keys are UUIDv4. Same scope/key/canonical content replays one
+durable operation; changed content under the key returns
+`IDEMPOTENCY_CONFLICT` before adapter use. Minimum states are `RECEIVED`,
+`RUNNING`, `SUCCEEDED`, `FAILED` and `RECONCILIATION_REQUIRED`; ambiguous
+timeouts use status reads, not automatic retries. The token plaintext is not an
+identity field or canonical request content.
+
+R3B retention lasts only for its isolated acceptance environment and excludes
+raw provider bodies, credentials, token plaintext, Authorization headers,
+unsafe payloads and executable content. After acceptance, its isolated server,
+PostgreSQL cluster, artifact directory and plaintext token file are removed;
+only sanitized tracked evidence remains. R3B does not change, create, upload or
+amend `progress-report/v0.2` or mutate local context/outputs.
+
+R3B has not started, but `R3B_IMPLEMENTATION_GATE = OPEN` after the clean R3A-D
+documentation commit. Production authentication/multi-user authorization and
+all live-provider credentials, terms, rate/cost/retry, retention/deletion,
+logging and public-network controls remain `SOURCE_UNDECIDED` for R3C.
+`R3C_LIVE_PROVIDER_GATE = CLOSED`.
 
 The optional Next.js **Uploaded Local Progress Reports** view remains deferred,
 Claude Code remains untested, automatic Progress Report upload remains absent,
 cloud cannot independently prove no-op context bytes without snapshots, and a
 missing-predecessor child remains permanently rejected without automatic
 re-evaluation or an explicit recovery endpoint. Hosted-work freeze and the
-state-authority split remain intact. The next action is owner review of the R3A
-decision packet.
+state-authority split remain intact. The next action, after owner review of this
+ratification, is R3B implementation under ADR 0011 only; R3C is unauthorized.
 
 ### Required reading for future Codex tasks
 

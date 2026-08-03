@@ -42,9 +42,9 @@ this engineering order.
 | R1B | External Agent Harness compatibility acceptance | **PASS_WITH_WARNINGS (CODEX)** — owner-attested fresh sessions plus checksum-verified execution, folder-only continuation, and moved-folder continuation; Claude Code untested |
 | R2A | Progress Report contract, upload, immutable history and aggregation | **PASS_WITH_WARNINGS** — native v0.2, explicit before/after context digests, v0.1 normalization, upload/history/projection API, client and additive persistence |
 | R2B | External upload and restart acceptance | **PASS_WITH_WARNINGS — UPLOAD_ACCEPTED** — external Package, loopback HTTP, isolated PostgreSQL, byte retention, idempotency, conflict exclusion and restart recovery passed |
-| R3A | Cloud API Proxy contract, threat model and owner decision packet | **PASS_WITH_OWNER_DECISIONS_REQUIRED** — proposed provider-neutral boundary and `paper.search/v0.1`; no production implementation or provider call |
-| R3B | Fake-adapter API Proxy implementation and acceptance | **GATE CLOSED** — requires approved authentication/authorization, first capability, limits, budgets and retention; no real provider |
-| R3C | Supervised live-provider acceptance | **DEFERRED AND SEPARATELY AUTHORIZED** — current provider terms/auth/rate/cost/retention verification required immediately before a bounded live call |
+| R3A | Cloud API Proxy contract, threat model and owner decision packet | **PASS; R3B OWNER DECISIONS RATIFIED** — ADR 0011 approves only the experimental fake-provider profile; no implementation or provider call |
+| R3B | Fake-adapter API Proxy implementation and acceptance | **IMPLEMENTATION GATE OPEN — NOT STARTED** — disabled-by-default `paper.search/v0.1`, short-lived scoped bearer, fixed zero-cost/network limits and separate Proxy ledger |
+| R3C | Supervised live-provider acceptance | **LIVE-PROVIDER GATE CLOSED** — production auth/HTTPS, current provider terms/credentials/rate/cost/retry/retention and public-network security require separate owner approval |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
 | R6 | Workflow output-to-input handoff | Define and validate composable Workflow handoffs |
@@ -72,13 +72,15 @@ single explicit upload and never changes task state. Migration
 events/checkpoints. The optional local-progress frontend view remains deferred.
 
 R2B has accepted the external Progress Report path and R2 state is
-`UPLOAD_ACCEPTED`. R3A now defines the next boundary without implementation.
-Exactly one first API Proxy capability is recommended for owner approval:
-**`paper.search/v0.1` — bounded scholarly metadata discovery initiated by the
-local Harness**. R3B remains closed until the owner approves authentication,
-project/Package authorization, that capability, request/response limits,
-request/cost budgets and retention. R3C is a separate supervised live-provider
-acceptance and cannot be inferred from R3B.
+`UPLOAD_ACCEPTED`. R3A defined the next boundary without implementation. ADR
+0011 now ratifies for R3B only a disabled-by-default
+`EXPERIMENTAL_FAKE_PROVIDER_VERTICAL_SLICE`: `paper.search/v0.1`, a short-lived
+opaque bearer capability with exact project/Package/Workflow/fake-adapter
+scope, deterministic idempotency/reconciliation, a separate Proxy operation
+ledger, fixed request/result/time/count/concurrency limits, and zero money,
+real-provider and external-network use. The R3B implementation gate is open;
+R3B has not started. R3C remains a separately authorized live-provider phase
+and its gate is closed.
 
 ### Preserved optional mode
 

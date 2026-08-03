@@ -1,8 +1,8 @@
 # Cloud API Proxy Threat Model
 
-Status: **COMPLETE FOR OWNER REVIEW — CONTROLS PROPOSED, NOT IMPLEMENTED**
+Status: **R3B CONTROLS RATIFIED — NOT IMPLEMENTED OR PRODUCTION-APPROVED**
 
-Date: 2026-08-03
+Date: 2026-08-04
 
 Scope: teacher-aligned local-Harness API Proxy v0.1
 
@@ -34,7 +34,7 @@ not become a research Agent or a general HTTP proxy.
 untrusted Package/provider data
   | local client validation
   v
-local Harness process -- authenticated loopback/Internet transport --> cloud edge
+local Harness process -- R3B loopback HTTP / future approved HTTPS --> cloud edge
                                                             | authn/authz
                                                             v
                                                  proxy application boundary
@@ -57,17 +57,20 @@ implemented them.
    provider adapter. They never enter a Package, request/response envelope,
    Progress Report, artifact metadata, URL returned to the client, exception or
    log.
-2. Authentication and authorization fail closed. Authorization binds the
-   authenticated subject to project, Package ID/checksum, Workflow identity,
-   capability, policy version and budget.
+2. Authentication and authorization fail closed. In R3B, the server derives
+   token, tenant, subject, project, exact Package ID/checksum, exact Workflow
+   identity/checksum, capability, fake-adapter, operation-count, expiry and
+   revocation scope from the server token record, never from client roles.
 3. No arbitrary URL, host, scheme, method, header or redirect is accepted from
    the local caller. Provider and operation allowlists select fixed server-owned
    endpoints.
 4. Strict versioned capability schemas reject unknown fields, type confusion,
    injection strings, invalid Unicode/control characters and out-of-range
    values before provider invocation.
-5. Request body, response body, record count, timeout, attempt count, concurrent
-   operations and cost are bounded before or during processing.
+5. R3B bounds the request body at 16 KiB, normalized result at 512 KiB,
+   `max_results` at 20, timeout at 10 seconds, concurrency per token at 2,
+   operations per token at 50, and money/real-provider/external-network use at
+   zero.
 6. Idempotency is authorization-scoped and request-content-bound. Key reuse
    with changed content fails before the provider call.
 7. Logs are structured, length-bounded and escaped. They contain IDs, hashes,
@@ -90,19 +93,20 @@ implemented them.
 
 | Threat | Abuse/failure | Required mitigation | Residual risk / decision |
 |---|---|---|---|
-| Provider-key leakage into a Package | Key is placed in `cloud/`, prompt, output or context and moves with the folder. | Package schema forbids secret values; proxy config contains lookup method only; provider key never reaches client; scan generated packages. | Credential source/rotation product is `SOURCE_UNDECIDED`. |
+| Provider-key leakage into a Package | Key is placed in `cloud/`, prompt, output or context and moves with the folder. | R3B has no provider key. Package schema forbids secrets; proxy config contains lookup method only; scan generated packages. | Live credential source/rotation remains `SOURCE_UNDECIDED` for R3C. |
 | Key leakage into logs/errors/Progress Reports | Credential-bearing URL or exception is collected. | Inject at adapter boundary; never log request URL/headers; sanitize exception chains; secret-field denylist; Progress Report validator rejects credentials/raw provider response. | Third-party observability configuration needs implementation review. |
+| Bearer-token plaintext leakage | Operator/client prints it, passes it as an argument, stores it in `.env`, Package, database/artifact or permissive file. | Operator CLI writes once to a new outside-Git/Package file at mode `0600`, refuses overwrite and emits no plaintext; client reads process environment only; server stores SHA-256 digest; logs/Progress Reports/artifacts reject it; delete the file after acceptance. | A same-user local process may still read process environment; R3B is isolated and short-lived. |
 | Arbitrary URL / SSRF | Caller asks proxy to fetch attacker, loopback, link-local, private, metadata or internal service. | No URL parameter; fixed adapter host/scheme/path; redirects disabled. If future DNS resolution is used, revalidate all resolved addresses and deny loopback, private, link-local, multicast, reserved and metadata ranges. | Any new adapter endpoint requires separate allowlist review. |
-| Cross-project access | Caller submits another project/package ID or reads its operation. | Authenticated subject plus server-side ownership lookup; route ID never grants access; bind operation to authorization checksum; uniform not-found/forbidden behavior. | Project ownership model is `SOURCE_UNDECIDED`. |
-| Package identity spoofing | Copied/altered Package claims an allowed identity. | Validate exact cloud-known Package ID/checksum and pinned Workflow identity; token scope binds Package checksum; no client-supplied ownership claims. | Package issuance/revocation policy requires owner decision. |
-| Stolen long-lived Package credential | Copied folder or shell history grants durable access. | Recommended short-lived package-scoped capability; store outside Package; narrow capability/budget; explicit revocation; never print token. | Token lifetime, storage and refresh are `SOURCE_UNDECIDED`. |
-| Replay attack | Captured request is resubmitted to consume quota or obtain data. | TLS; short-lived authorization; scoped idempotency; optional nonce/signing decision; replays return existing operation without second provider call; status reads audited. | Bearer-token replay resistance and signing are owner decisions. |
+| Cross-project access | Caller submits another project/package ID or reads its operation. | Server derives tenant/subject/project/Package/Workflow scope from the token record; route/body identity cannot expand it; every read uses the same scope. | Production ownership and multi-user roles remain `SOURCE_UNDECIDED` for R3C. |
+| Package identity spoofing | Copied/altered Package claims an allowed identity. | Validate exact token-bound Package ID/checksum and Workflow ID/version/checksum; reject all mismatch before adapter use; no client ownership claims. | Production Package issuance remains an R3C decision. |
+| Stolen bearer capability | Token theft grants its R3B scope. | At least 256 random bits; SHA-256 digest-only server storage; constant-time comparison; 60-minute default/120-minute maximum; narrow exact scope/count; explicit revocation; plaintext outside Package/Git and removed after acceptance. | No proof of possession in R3B; loopback-only use limits but does not remove local-process theft risk. |
+| Replay attack | Captured request is resubmitted to consume quota or obtain data. | Loopback-only R3B transport; short-lived authorization; UUIDv4 idempotency; exact replays return the same operation without a second adapter call; changed-content replay conflicts; status reads are scoped. | Detached signing/nonces/proof of possession are deferred to production security review. |
 | Idempotency-key substitution | Attacker reuses another key with changed request. | Operation identity binds authorized scope, key and request checksum; conflict before call; key lookup never crosses tenant/project/package scope. | Concurrent-race behavior must be accepted in R3B. |
 | Parameter/query injection | Provider-specific syntax, control characters or huge arrays alter operation. | Capability-specific schema, max lengths/counts, allowlisted enum/range fields, canonical encoding; no raw filter/header/URL; adapter uses structured parameters. | Provider query-language edge cases require adapter tests. |
-| Oversized request | Memory/CPU exhaustion or log amplification. | Edge/content-length cap plus streaming bounded read; reject before JSON expansion; nested-depth/string/list limits. | Exact size limit needs owner approval. |
-| Oversized provider response | Memory/storage exhaustion or malicious decompression. | Streaming byte cap, compressed/decompressed caps, record cap, timeout, abort, no partial unsafe artifact. | Exact response limit needs owner approval. |
-| Provider-cost abuse | Many operations or high-cost parameters consume budget. | Reserve before call; per operation/project/package/subject/time-window count and cost caps; zero-cost first capability; fail closed on unknown price. | Budget values and funding policy are `SOURCE_UNDECIDED`. |
-| Quota exhaustion / noisy neighbor | One caller consumes provider/global limits. | Tenant/project quotas, concurrency limits, rate evidence, fair rejection and operator alerting; never silently switch providers. | Multi-user/global allocation is `SOURCE_UNDECIDED`. |
+| Oversized request | Memory/CPU exhaustion or log amplification. | Enforce 16 KiB before JSON expansion plus depth, UTF-8, query-length and unknown-field checks. | Production limits require separate review. |
+| Oversized provider response | Memory/storage exhaustion or malicious content. | Enforce 512 KiB normalized result, 20 records and 10-second operation timeout; reject without unsafe artifact. | Live raw-body/compression limits remain R3C decisions. |
+| Provider-cost abuse | Many operations consume budget. | R3B permits 50 operations/token, two concurrent operations/token, zero money and zero real-provider/external-network calls. | Live funding and rate policy remain `SOURCE_UNDECIDED` for R3C. |
+| Quota exhaustion / noisy neighbor | One caller exhausts the experimental service. | Token-bound count/concurrency limits and fail-closed accounting; no provider switching. | Production tenant/global allocation remains `SOURCE_UNDECIDED`. |
 | Malicious provider content | Titles/abstracts include HTML, script, terminal escapes, URLs, secrets or instructions. | Validate Unicode/size; tag as untrusted; escape on presentation; no script execution; no automatic fetching; no cloud LLM; local client prints metadata only, not raw content by default. | Local Harness can still be influenced; Package instructions must reinforce data/instruction separation. |
 | Prompt injection in provider data | Provider text tells Harness/cloud to disclose secrets or change task. | Cloud never promotes provider text to instructions or LLM prompts; normalized fields labelled untrusted; local Skill instructs Harness to ignore embedded instructions. | Existing general-purpose Harness behavior remains a user-environment risk. |
 | Executable/script-bearing response | Browser/client executes active content. | JSON-only normalized response for first slice; `nosniff`, attachment where applicable, strict CSP/escaping in future UI; no HTML media type; never eval/import. | Frontend is out of R3A/R3B scope. |
@@ -110,95 +114,77 @@ implemented them.
 | Path injection/local disclosure | Request or response supplies absolute/traversal path; client reads arbitrary local file. | Proxy request has no local path; local client accepts only package-relative declared configuration; storage keys are relative and traversal/symlink-safe. | Future upload features require their own path review. |
 | Log injection | Newlines/control characters forge audit events. | Structured JSON logs, encoded values, control-character rejection, length caps, stable request IDs. | Operator log sink must preserve structure. |
 | Tenant data leakage | Caches, replay/status reads or error details reveal another tenant’s query/results/budget. | Scope every lookup/cache key by authenticated tenant/project/package; response DTO allowlist; no existence oracle; row-level repository predicates and tests. | Multi-user tenancy is `SOURCE_UNDECIDED`. |
-| Retention beyond approval | Provider data remains indefinitely in artifacts/backups. | Data-class policy, TTL/deletion jobs after approval, deletion audit, backup policy, minimum metadata default, raw body off. | All durations/deletion/user controls are `SOURCE_UNDECIDED`. |
+| Retention beyond approval | Fake data or token material remains after acceptance. | Acceptance-lifetime retention only; no raw body/token/Auth header; remove isolated database cluster, artifact directory and plaintext token file after acceptance; retain sanitized tracked evidence only. | Live-provider retention/deletion remains `SOURCE_UNDECIDED`. |
 | Legacy Hosted endpoint misuse | Caller uses `/runs/.../resume` to execute research instead of the proxy. | Proxy credentials cannot authorize Hosted routes; teacher-aligned deployment can separately disable/hide Hosted paths; proxy service imports no Hosted graph. | Route-level mode separation needs later explicit implementation scope. |
 | Accidental AgentRuntime/LLM invocation | Composition injects `ApplicationServices` or research Skills into proxy. | Dedicated proxy composition/service dependency; static forbidden-import tests and runtime provider canaries; database checks for no Hosted run/event/checkpoint/memory rows. | Required R3B acceptance gate. |
 | Cloud crash/partial persistence | Provider may have completed but operation appears absent/incomplete. | Durable reservation before call; immutable result then settlement; conservative `RECONCILIATION_REQUIRED`; status read; no ambiguous auto retry. | Exactly-once is impossible without provider reconciliation/idempotency. |
 | Operation-status probing | Attacker guesses operation IDs. | Authorization-scoped reads, deterministic IDs include auth binding but are not treated as secrets, uniform errors and rate limits. | Token compromise still exposes its authorized scope. |
 
-## 6. Authentication and authorization option packet
+## 6. Ratified R3B authentication and authorization
 
-No repository authentication implementation was found. The following options
-are alternatives for owner decision, not implemented facts.
+R3B uses one short-lived opaque bearer capability token with at least 256 bits
+of cryptographically secure randomness. An operator-only CLI, not a public
+endpoint, issues it. The server stores a SHA-256 digest and metadata only and
+uses constant-time comparison. The CLI writes plaintext once to a new caller-
+specified `0600` file outside Git and the Workflow Package, refuses overwrite,
+and never prints it to ordinary stdout/logs. The client reads it only from the
+`REAGENT_PROXY_TOKEN` process environment; it is never a command-line argument
+or `.env` file value. The file is deleted after acceptance.
 
-| Access model | Lifetime / revocation | Local storage and copied-folder risk | Binding / replay | Harness usability | Audit / complexity / multi-user |
-|---|---|---|---|---|---|
-| Long-lived project API token | Weeks/months; server denylist/rotation | If placed in Package, copying grants access; must live outside it. Shell/config leakage risk is high. | Project scope possible, Package checksum weaker unless many tokens; bearer replay window long. | Simple for Codex and Claude Code; works until revoked and can be used offline only for local validation. | Simple audit; low implementation cost; poor least privilege and multi-user attribution. |
-| User bearer token from login | Session/refresh-token lifetime; user/session revocation | Stored in user credential store; Package copy need not copy it. | User/project ownership can be enforced; broad bearer token may authorize more than one Package; replay until expiry. | Familiar but requires login/browser or existing CLI session; usable by both Harnesses through client. | Strong user attribution; medium/high implementation complexity; requires full user and tenant model. |
-| Short-lived project/Package capability token | Minutes/hours; expiry plus explicit server revocation | Stored outside Package in OS credential store or ephemeral process environment; copied folder has no authority. | Directly binds project, Package checksum, capability, limits and policy; short replay window; signing/nonce remains optional decision. | One supervised mint/refresh action; client can be called by Codex or Claude Code without exposing provider key. No provider operation while offline. | Strong least privilege/audit; medium complexity; compatible with later multi-user ownership. |
-| Device authorization flow | Short-lived device code, then user/session tokens; central revocation | No secret typed into Package; final token stays in credential store. | Strong user/device binding depending implementation; bearer replay still applies after issuance. | Good headless UX but needs browser/login and polling; both Harnesses can use it. | Strong audit/multi-user potential; high implementation complexity for MVP. |
-| Manually copied one-time proxy token | One use or very short TTL; naturally expires/revocable | Clipboard/shell-history risk; never Package. Copied folder alone has no authority. | Can bind one Package/capability/request budget; captured token may race legitimate use. | Explicit and supervised but burdens every session/operation; both Harnesses can pass it to client. | Clear audit, medium complexity, poor repeated-use UX. |
+Default lifetime is 60 minutes; maximum and R3B acceptance lifetime is 120
+minutes. There is no refresh. Explicit server-side revocation is required.
+R3B uses loopback HTTP bound to `127.0.0.1`, permits client timestamp skew of
+plus or minus five minutes, and has no detached signature, nonce or proof of
+possession. Non-loopback use requires HTTPS and separate approval.
 
-### Recommended MVP option
+The token record binds token, tenant and subject IDs; project ID; exact Package
+ID/checksum; exact Workflow ID/version/checksum; capability
+`paper.search/v0.1`; the deterministic fake adapter; maximum operation count;
+issue/expiry times; and revocation state. The server never trusts client-
+supplied actor, role, tenant, owner or permission claims. All mismatches fail
+before adapter use.
 
-Recommend **one short-lived project/Package capability token**, minted only
-after a supervised authenticated owner action. The token should be scoped to an
-authenticated subject, tenant/project, exact Package ID/checksum, Workflow
-identity, allowed capability versions, maximum operations/cost and short expiry.
-The local client retrieves it outside the Package, never prints it, and sends it
-only over TLS. Copying the Package therefore copies task state but not cloud
-authority.
+This is an experimental acceptance mechanism, not production authentication or
+multi-user authorization.
 
-This is the best balance of least privilege, revocation, Package portability,
-Codex/Claude Code suitability and a future multi-user model. It is a
-recommendation only. Owner approval is required before implementation. Whether
-the MVP token is a signed bearer, opaque server-side session, proof-of-possession
-credential, or minted through a one-time bootstrap remains `SOURCE_UNDECIDED`.
+## 7. Required R3B implementation controls
 
-Long-lived project tokens are not recommended because a Package-oriented tool
-would make leakage/copy risk durable. Device flow is a good later UX but is too
-broad for the first fake-provider contract slice. A manually copied one-time
-token is safe for an acceptance bootstrap but too burdensome as the product
-model. A full user login bearer token should eventually authenticate the person,
-then mint the narrower Package capability rather than serve as the proxy
-credential itself.
+The authorized fake-provider-only R3B design must include:
 
-## 7. Recommended implementation controls for R3B
-
-Subject to owner approval, the fake-provider-only R3B design should include:
-
-- a dedicated proxy route/service/composition graph with forbidden Hosted
+- a dedicated Proxy route/service/composition graph with forbidden Hosted
   imports;
-- deterministic operation identity and an additive Package-scoped operation
-  ledger, without fabricating `WorkflowRun` rows;
-- an authentication seam with a fictional acceptance credential mechanism
-  matching the approved MVP shape, never a production secret;
-- strict `paper.search/v0.1` request/response schemas;
-- immutable response bytes only if the approved R3B retention design calls for
-  them;
-- request, response, concurrency, count, timeout and zero-cost budgets;
-- explicit operation status reconciliation;
-- structured redacted logs and security rejection matrix;
+- deterministic operation identity and a separate Package-scoped Proxy ledger,
+  without fabricating Hosted provider/run/step rows;
+- the exact digest-only token lifecycle and server-derived scope above;
+- strict `paper.search/v0.1` `query`/`max_results` schemas;
+- 16 KiB request, 512 KiB normalized result, 10-second timeout, two concurrent
+  operations/token, 50 operations/token and zero-cost/network/real-provider
+  limits;
+- explicit `RECEIVED`, `RUNNING`, `SUCCEEDED`, `FAILED` and
+  `RECONCILIATION_REQUIRED` handling;
+- UUIDv4 scoped idempotency, HTTP 409 `IDEMPOTENCY_CONFLICT`, explicit timeout
+  status reads and no ambiguous automatic retry;
+- acceptance-lifetime safe retention and complete isolated-environment cleanup;
+- structured redacted logs and a security rejection matrix;
 - provider/AgentRuntime/LLM canaries proving zero forbidden execution.
 
-These recommendations do not authorize implementation while the gate is
-closed.
+## 8. R3C owner decisions still required
 
-## 8. Owner decisions required
+ADR 0011 resolves the R3A questions only for R3B. Each item below remains
+`SOURCE_UNDECIDED` for R3C or production use:
 
-Every row remains `SOURCE_UNDECIDED` unless an owner later records approval.
+- production user authentication and multi-user project ownership;
+- production token issuance UX, storage, revocation and proof of possession;
+- HTTPS/non-loopback deployment and public-network security acceptance;
+- live provider eligibility/current terms and credentials;
+- live provider rate limits, monetary budget and retry policy;
+- live raw/normalized data retention, deletion/export and backup policy;
+- production logs, audit retention and tenant visibility;
+- formal Progress Report proxy-operation fields;
+- authorization separation from optional Hosted routes in a production
+  deployment.
 
-| Decision | Required resolution |
-|---|---|
-| Authentication mechanism | Approve or replace the short-lived project/Package capability recommendation and its issuance flow. |
-| Token lifetime and refresh | Exact TTL, refresh/mint interaction and maximum session duration. |
-| Revocation | Token/session/package/project revocation model and propagation latency. |
-| Local credential storage | OS credential store, ephemeral environment, agent integration and safe failure behavior. |
-| Package binding | Exact Package ID/checksum/Workflow fields and behavior after package refresh. |
-| Project ownership/authorization | Authenticated principal and tenant/project/package ownership enforcement. |
-| Signing/replay controls | Bearer only versus request signing, nonce, proof of possession and clock-skew policy. |
-| Multi-user isolation | Tenant boundary, collaborator roles, shared budgets and audit visibility. |
-| First capability | Approve `paper.search/v0.1` as the only R3B/R3C first slice. |
-| Provider eligibility | Fake adapter for R3B; whether OpenAlex remains the first R3C adapter after current terms review. |
-| Request/result limits | Exact request bytes, query lengths, result count, timeout, attempt and response-byte caps. |
-| Budget/cost | Per operation/project/package/user/time-window requests and approved monetary cost. |
-| Response normalization | Exact metadata/abstract fields and whether provider-native ordering is returned. |
-| Raw response retention | Default recommendation is never; approve any exception and its encryption/access limits. |
-| Normalized response retention | Whether, where and for how long metadata/abstracts may persist. |
-| Rejected/unsafe data | What safe hashes/categories may remain; default is no unsafe body retention. |
-| Deletion/export | Schedule, user-triggered deletion, audit retention and backup behavior. |
-| Progress Report link | Whether a future v0.2-compatible additive field may reference operation IDs/checksums. |
-| Hosted route isolation | How teacher-aligned proxy credentials are prevented from authorizing optional Hosted routes. |
+`R3C_LIVE_PROVIDER_GATE = CLOSED`.
 
 ## 9. Residual risks
 
@@ -215,5 +201,7 @@ Every row remains `SOURCE_UNDECIDED` unless an owner later records approval.
   binding, narrow budget and optional proof of possession reduce impact.
 - Server-side redaction can miss novel secrets. The first slice should retain
   the minimum normalized data and no raw body by default.
-- Authentication, multi-user isolation, retention and limits are not approved;
-  therefore `R3B_IMPLEMENTATION_GATE` remains closed.
+- The R3B bearer has no proof of possession; its narrow scope, short lifetime,
+  revocation and loopback-only use limit but do not eliminate theft/replay risk.
+- Production authentication, multi-user isolation and live-provider retention
+  remain unapproved; therefore `R3C_LIVE_PROVIDER_GATE` remains closed.

@@ -6,6 +6,50 @@ Status: **PASS_WITH_OWNER_DECISIONS_REQUIRED**
 
 Baseline: `592410e274b07ac6480f12419b45cd9b742ff838`
 
+## Owner ratification addendum — 2026-08-04
+
+The original R3A review below is preserved as the record of the decision packet
+before owner approval. Accepted ADR 0011 now resolves its `SOURCE_UNDECIDED`
+items for R3B only:
+
+- R3B classification is `EXPERIMENTAL_FAKE_PROVIDER_VERTICAL_SLICE`, disabled
+  by default, loopback-only, deterministic-fake-adapter-only and not suitable
+  for public/production use.
+- Authentication is an operator-issued opaque bearer with at least 256 random
+  bits, digest-only server storage, constant-time comparison, 60-minute default
+  and 120-minute maximum lifetime, no refresh and explicit revocation. The
+  plaintext is written once to a new `0600` file outside Git/Package, never
+  logged/printed/passed as an argument or stored in `.env`, and is supplied to
+  the client only through process environment `REAGENT_PROXY_TOKEN`.
+- The server token record binds token/tenant/subject/project, exact Package and
+  Workflow identity/checksums, `paper.search/v0.1`, the deterministic fake
+  adapter, maximum operation count, issue/expiry and revocation state. Client
+  actor/role/tenant/ownership/permission claims are not authorization.
+- R3B uses loopback HTTP on `127.0.0.1`, plus or minus five minutes of timestamp
+  skew, and no signature/nonce/proof of possession.
+- `paper.search/v0.1` accepts only a trimmed 1–500-character UTF-8 `query` and
+  integer `max_results` with default 10/range 1–20.
+- Limits are 16 KiB request, 512 KiB normalized result, 10-second timeout, two
+  concurrent and 50 total operations per token, and zero monetary,
+  real-provider and external-network use.
+- UUIDv4 idempotency, deterministic exact replay, HTTP 409
+  `IDEMPOTENCY_CONFLICT`, explicit status reconciliation and the states
+  `RECEIVED`, `RUNNING`, `SUCCEEDED`, `FAILED` and
+  `RECONCILIATION_REQUIRED` are approved. Ambiguous automatic retry is not.
+- R3B uses a separate Proxy operation/persistence boundary, not Hosted
+  `ProviderOperation`, run/step/event/checkpoint/memory identity.
+- Retention is acceptance-environment-lifetime only with safe normalized fake
+  data; cleanup removes the isolated database cluster, artifact directory and
+  plaintext token file. Raw bodies, credentials, tokens, Authorization headers,
+  unsafe payloads and executable content are not persisted.
+- R3B does not change or automatically create/upload/amend a Progress Report or
+  mutate local state.
+
+These decisions do not approve R3C, any live provider/credential, production
+authentication or multi-user/public deployment. `R3B_IMPLEMENTATION_GATE` is
+open after the clean R3A-D documentation closure; `R3C_LIVE_PROVIDER_GATE`
+remains closed. R3B and R3C have not started.
+
 ## Outcome
 
 R3A defines, but does not implement, the teacher-aligned local-Harness Cloud API
@@ -79,16 +123,20 @@ limits, cost/quota abuse, malicious provider/prompt/script/secret content, path
 and log injection, tenant leakage, retention, legacy Hosted endpoint misuse,
 forbidden Runtime/LLM invocation and crash reconciliation.
 
-The recommended MVP access model is one short-lived project/Package capability
+The recommended MVP access model was one short-lived project/Package capability
 token, minted after a supervised authenticated owner action, scoped to subject,
 project, exact Package checksum, Workflow/capability versions and budget, and
-stored outside the Package. This is a recommendation, not approval.
+stored outside the Package. At original R3A closure this was a recommendation,
+not approval; ADR 0011 later approved the exact experimental R3B form above.
 
-Authentication mechanism/issuance, token lifetime/refresh/revocation, local
+At original R3A closure, authentication mechanism/issuance, token lifetime/
+refresh/revocation, local
 credential storage, Package binding, authenticated ownership, request signing,
 multi-user isolation, first capability, exact request/response limits,
 request/cost budget, provider eligibility, response fields, retention/deletion,
-unsafe evidence and Hosted-route isolation remain `SOURCE_UNDECIDED`.
+unsafe evidence and Hosted-route isolation remained `SOURCE_UNDECIDED`. ADR
+0011 resolves those items only for R3B; production and live-provider forms
+remain `SOURCE_UNDECIDED` for R3C.
 
 Proposed ADR 0010 records the boundary and decisions for owner review. Its
 status remains **Proposed**.
@@ -108,7 +156,8 @@ is data/provenance, not a ReAgent relevance judgment.
 - R3C: separately authorized supervised live-provider acceptance after current
   official terms, authentication, rate, cost and retention verification.
 
-R3B and R3C have not started. No real provider or credential was used.
+R3B and R3C have not started. No real provider or credential was used. The R3B
+gate status in the original closure was later superseded by ADR 0011.
 
 ## R2 warning backlog
 
@@ -171,7 +220,10 @@ R3A_PRODUCT_BOUNDARY = PASS
 R3A_SECURITY_MODEL = COMPLETE_FOR_OWNER_REVIEW
 R3A_PROXY_CONTRACT = COMPLETE_FOR_OWNER_REVIEW
 R2_STATE = UPLOAD_ACCEPTED
-R3B_IMPLEMENTATION_GATE = CLOSED
+R3A_OWNER_DECISIONS = RATIFIED_FOR_R3B
+R3B_IMPLEMENTATION_GATE = OPEN
+R3C_LIVE_PROVIDER_GATE = CLOSED
 ```
 
-Wait for owner review. Do not begin R3B or R3C.
+R3B remains unstarted pending owner review of the ratification closure. Do not
+begin R3C.

@@ -1,37 +1,36 @@
 # R3B API Proxy Implementation Acceptance Plan
 
-Status: **FUTURE PLAN — NOT STARTED, GATE CLOSED**
+Status: **FUTURE PLAN — NOT STARTED, IMPLEMENTATION GATE OPEN AFTER R3A-D**
 
-Date: 2026-08-03
+Date: 2026-08-04
 
 R3B purpose: implement and accept the provider-neutral proxy boundary using a
 deterministic fake adapter only. This document is not evidence that R3B passed
-and is not authorization to start while owner decisions remain open.
+and does not authorize R3C, a live provider or production deployment. ADR 0011
+authorizes implementation only of the disabled-by-default experimental profile
+specified here.
 
 ## Entry gate
 
-R3B may start only after the owner records authoritative decisions for:
-
-- authentication and credential issuance;
-- authenticated project/Package authorization and multi-user isolation;
-- the first capability (`paper.search/v0.1` or an owner-approved replacement);
-- request/result/response size, timeout, attempt and concurrency limits;
-- request-count/cost budgets;
-- raw and normalized response retention/deletion;
-- Package binding, token lifetime/revocation and any signing/nonce policy.
-
-At R3A closure:
+ADR 0011 resolves the R3B-only authentication, exact authorization scope,
+capability, limits/budget, idempotency/reconciliation, persistence separation,
+retention/cleanup and Progress Report relationship. After the clean R3A-D
+documentation commit:
 
 ```text
-R3B_IMPLEMENTATION_GATE = CLOSED
+R3B_IMPLEMENTATION_GATE = OPEN
+R3C_LIVE_PROVIDER_GATE = CLOSED
 ```
+
+R3B remains `EXPERIMENTAL_FAKE_PROVIDER_VERTICAL_SLICE`, disabled by default,
+loopback-only and unsuitable for public/production deployment.
 
 ## Boundary under acceptance
 
 ```text
 external fictional Workflow Package
   -> explicit local proxy client
-  -> authenticated real loopback HTTP
+  -> short-lived bearer-authenticated real loopback HTTP
   -> dedicated proxy application service
   -> isolated PostgreSQL operation metadata
   -> deterministic fake paper-search adapter
@@ -43,6 +42,35 @@ The path must not import or invoke `AgentRuntime`, `ExecutionDispatcher`,
 Workflow run/resume, research Skills, OpenAlex, LLM/structured generation,
 Hosted Judge/approval execution, local Package mutation or Progress Report
 generation.
+
+## Ratified R3B profile
+
+- Authentication: opaque bearer capability with at least 256 random bits;
+  SHA-256 digest-only server storage and constant-time comparison.
+- Issuance: operator CLI only; plaintext once to a new caller-selected `0600`
+  file outside Git/Package, never stdout/logs/arguments; client reads only
+  process environment `REAGENT_PROXY_TOKEN`; remove the file after acceptance.
+- Lifetime: 60-minute default, 120-minute maximum/acceptance allowance, no
+  refresh, explicit server-side revocation.
+- Transport: server bound to `127.0.0.1`, loopback HTTP only, client timestamp
+  skew at most plus or minus five minutes; no signature, nonce or proof of
+  possession.
+- Scope: server-bound token/tenant/subject/project, exact Package ID/checksum,
+  exact Workflow ID/version/checksum, `paper.search/v0.1`, the deterministic
+  fake adapter, maximum operation count, issue/expiry and revocation state.
+- Parameters: `query` trimmed to 1–500 UTF-8 characters; `max_results` integer,
+  default 10, range 1–20; unknown fields rejected.
+- Limits: 16 KiB request, 512 KiB normalized result, 10-second operation
+  timeout, two concurrent operations/token, 50 operations/token, zero money,
+  zero real-provider calls and zero external-network calls.
+- Idempotency: client UUIDv4; same scope/key/content replays; changed content
+  under the key returns HTTP 409 `IDEMPOTENCY_CONFLICT` before adapter use.
+- States: `RECEIVED`, `RUNNING`, `SUCCEEDED`, `FAILED`, and
+  `RECONCILIATION_REQUIRED`; no ambiguous automatic client retry and no fake-
+  adapter real-provider retry.
+- Retention: safe normalized acceptance data for the isolated environment
+  lifetime only; no raw body, credential, token plaintext, Authorization header,
+  unsafe original payload or executable content.
 
 ## Required environment
 
@@ -58,10 +86,10 @@ generation.
 5. Use persistent immutable artifact storage outside Git if the approved R3B
    policy stores normalized fake responses. If policy is metadata-only, prove
    no response artifact was silently created.
-6. Use only a deterministic fake `PaperSearchProvider`. Do not configure or
-   read a real provider credential and prevent external provider network access.
-7. Use fictional auth material matching the approved authentication seam; no
-   production credential or real account.
+6. Use only the deterministic fake paper-search adapter. Prove it cannot make
+   an external network call; do not configure or read a real credential.
+7. Issue only a fictional acceptance token through the operator CLI and prove
+   the full file-mode/non-overwrite/digest-only/redaction/revocation lifecycle.
 
 ## Contract and identity acceptance
 
@@ -79,9 +107,11 @@ Prove the construction is non-cyclic and stable across processes/restarts.
 Changed semantic content must change request checksum/operation identity; cloud
 database surrogate IDs must not replace contract identity.
 
-Verify exact Package, Workflow, capability, Harness and approved-limit binding.
-Client-supplied principals/roles must be rejected or ignored in favor of
-server-authenticated context.
+Verify exact tenant/subject/project, Package ID/checksum, Workflow ID/version/
+checksum, capability, adapter, Harness and operation-count binding. Client-
+supplied `actor_user_id`, role, tenant, owner or permission claims must never
+be authorization. Prove token plaintext/digest is not canonical request
+content and the UUIDv4 idempotency key is distinct from the request checksum.
 
 ## External Package and client acceptance
 
@@ -108,16 +138,16 @@ and print only safe operation metadata.
 ## Core success path
 
 1. Submit one valid `paper.search/v0.1` request through real loopback HTTP.
-2. Verify authorization, schema, identity and budget were durable before the
-   fake adapter was invoked.
+2. Verify authorization, schema, identity and operation-count reservation were
+   durable before the fake adapter was invoked.
 3. Verify exactly one fake adapter operation and no other capability ran.
 4. Retrieve the operation by ID and by scoped idempotency identity.
 5. Verify the normalized response matches the strict schema and labels all
    fake records as untrusted/synthetic.
-6. Verify adapter identity, request/response checksums, latency, usage, budget,
-   retry class, warnings, provenance and timestamps.
-7. If response artifacts are approved, download and verify exact immutable
-   bytes/checksum; otherwise prove metadata-only retention.
+6. Verify adapter identity, request/response checksums, latency, zero-cost
+   usage/budget, retry class, warnings, provenance and timestamps.
+7. Verify any normalized fake-result artifact is immutable and checksum-bound;
+   prove no raw-provider-body or unsafe-payload artifact exists.
 8. Verify no local Package file changed and no Progress Report was generated or
    amended.
 
@@ -125,17 +155,20 @@ and print only safe operation metadata.
 
 Test sequential and concurrent exact replay using independent real HTTP
 clients. Require one effective operation, one fake adapter invocation, one
-budget reservation/settlement, stable response-content identity and no
-duplicate artifact. Delivery receipts may report replay separately.
+operation-count reservation/zero-cost settlement, stable response-content
+identity and no duplicate artifact. Delivery receipts may report replay
+separately.
 
-Use the same idempotency key with changed parameters, Package identity,
-capability or declared limits. Require an identity conflict before fake-provider
-invocation and no projection/local-state effect.
+Require client-generated UUIDv4 keys. Under the same authorization scope, use
+the same key with changed canonical parameters and require HTTP 409
+`IDEMPOTENCY_CONFLICT` before fake-adapter invocation. Test identity/scope
+mismatches separately as authorization failures; do not conflate a scope
+failure with changed request content.
 
 Simulate a client timeout after the server may have completed. The client must
 report unknown outcome, perform no automatic retry and recover the durable
 result through a status read using the same identity. Test process interruption
-at `RESERVED`, `RUNNING`, response-persisted and settlement boundaries. Unknown
+at `RECEIVED`, `RUNNING`, response-persisted and settlement boundaries. Unknown
 provider outcome must remain `RECONCILIATION_REQUIRED`, not trigger a second
 fake call.
 
@@ -146,7 +179,7 @@ unsafe artifact retention where applicable.
 
 - missing, expired, revoked, wrong-scope and malformed authentication;
 - wrong project, Package ID/checksum or Workflow identity;
-- unauthorized capability/provider preference;
+- unauthorized capability/adapter and any client-selected provider/endpoint;
 - client-supplied principal/role/authorization claims;
 - unknown contract/capability version or unknown field;
 - arbitrary URL, scheme, host, method, header, redirect or provider filter;
@@ -158,7 +191,8 @@ unsafe artifact retention where applicable.
 - HTML/script/terminal-escape/provider prompt-injection text;
 - secret-like provider response field;
 - path traversal/absolute path/symlink local client input;
-- request-count, rate, concurrency and zero-cost budget exhaustion;
+- 16 KiB request, 512 KiB result, 10-second timeout, 500-character query,
+  20-result, two-concurrent, 50-operation and zero-cost/network limit breaches;
 - malformed, timeout, 400/401/403/404/408/429/5xx and oversized fake responses.
 
 Verify errors expose only safe codes, IDs/hashes/counts and retry
@@ -168,9 +202,11 @@ tenant identity may leak.
 ## Persistence and restart recovery
 
 Inspect PostgreSQL schema/rows to prove the application is not using an
-in-memory repository and does not fabricate Hosted `WorkflowRun`/`StepRun`
-records. Record accepted/rejected operation IDs, row counts, response checksums,
-artifact manifests and budget settlement.
+in-memory repository and uses a separate Proxy operation domain. It must not
+reuse or fabricate Hosted `ProviderOperation`, `WorkflowRun`, `StepRun`,
+`ExecutionEvent`, `Checkpoint` or `MemoryRevision` records. Record accepted/
+rejected operation IDs, row counts, response checksums, artifact manifests and
+operation-count/zero-cost settlement.
 
 Then:
 
@@ -227,6 +263,9 @@ frontend code.
   execution evidence.
 - Confirm `.env` and `runtime_data/` remain ignored.
 - Stop FastAPI and only the dedicated temporary PostgreSQL cluster.
+- Remove the dedicated cluster, isolated artifact directory and plaintext
+  token file only after restart/recovery evidence is complete; retain sanitized
+  tracked evidence only.
 - Do not use `git clean`, destructive resets or an existing database.
 - Commit implementation and/or acceptance only under the scope explicitly
   authorized for R3B; end with a clean working tree.
@@ -242,3 +281,7 @@ all pass.
 R3B must not call a real provider. R3C remains a separate supervised milestone
 requiring current provider terms, authentication, rate, cost and retention
 verification plus explicit owner authorization.
+
+R3B acceptance does not change `progress-report/v0.2`, create/upload/amend a
+Progress Report, or mutate local context/outputs. A local output may record an
+operation ID as ordinary provenance only.
