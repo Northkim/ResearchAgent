@@ -64,6 +64,13 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Keep source, tests, documentation, and persistent agent context tracked.
-!/.agent_read/
-!/.agent_read/**
+# Canonical agent governance in .agent_read/ remains trackable. Do not add a
+# blanket ignore or unignore: local working-state subtrees are excluded below.
+/.agent_read/tmp/
+/.agent_read/cache/
+/.agent_read/scratch/
+/.agent_read/logs/
+/.agent_read/local/
+/.agent_read/runtime/
+/.agent_read/**/*.tmp
+/.agent_read/**/*.bak
