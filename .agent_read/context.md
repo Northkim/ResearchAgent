@@ -84,7 +84,7 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R2A implemented; upload acceptance pending
+### Current implementation milestone — R2B accepted; owner review pending
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -131,25 +131,39 @@ identity remains non-cyclic (`report_content_checksum` -> `report_id` ->
 `report_checksum`), raw context bytes are hashed before and after a local round,
 and v0.1 normalization leaves unavailable transition and pin fields unset.
 
-Closure verification remains network-free: focused Progress Report tests pass
-38 tests, Workflow Package tests pass 43 tests, and the full backend passes 282
-tests with 19 environment-gated skips; compilation succeeds and Alembic has the
-single head `20260803_0003`. PostgreSQL persistence/restart acceptance was not
-run because `REAGENT_TEST_DATABASE_URL` was absent and is a mandatory R2B gate.
-The optional frontend remains deferred, Claude Code remains untested, and R2B
-has not started. R2 state remains `UPLOAD_ACCEPTANCE_PENDING`; R2B must perform
-a real external upload and isolated real-PostgreSQL idempotency, conflict,
-projection and restart acceptance.
+R2B then exercised the committed path with a fresh fictional external package,
+the explicit CLI, real loopback HTTP/FastAPI, a new dedicated PostgreSQL 18.1
+cluster, separate live/test databases, persistent artifact storage, and actual
+backend plus PostgreSQL restart. ProjectDB was neither present nor accessed.
+Both native v0.2 reports were accepted as a valid chain and retained byte for
+byte; v0.1 compatibility retained exact bytes without fabricating context,
+Workflow, Harness-session or pin fields. Sequential, concurrent and
+post-restart replays were idempotent. Safe identity, branch, predecessor and
+context conflicts remained immutable rejected evidence and never changed the
+accepted projection; unsafe content was rejected before retention.
 
-The optional Next.js **Uploaded Local Progress Reports** view is not yet
-implemented because the current UI centers preserved Hosted Mode pages.
-Authentication/signing and automatic conflict policy remain undecided; no
-automatic merge exists. R2B must still prove an external upload, exact byte
-retention, idempotency, conflict exclusion, projection and restart reload.
+The external package's 29-path manifest was identical before/after every cloud
+operation. A complete canonical HTTP history/projection snapshot was exactly
+identical across FastAPI and PostgreSQL stop/start, all nine original objects
+verified by receipt afterward, and the artifact manifest was unchanged. SQL
+counts for ExecutionEvent, checkpoint, memory revision, Workflow run/step run
+and provider operations remained zero. Concrete task authority therefore stayed
+inside the local folder.
 
-Exactly one next milestone is **R2B — external Progress Report upload,
-idempotency, conflict and restart acceptance**. Hosted-work freeze and
-state-authority split remain intact.
+R2B verification passes 1 Progress Report PostgreSQL test and 13 PostgreSQL
+persistence tests without skips, 38 focused Progress Report tests, 3 focused
+boundary tests, 43 Workflow Package tests, and 297 full-backend tests. Four
+unrelated explicitly gated hosted/live integration tests remain skipped.
+Compilation succeeds; Alembic has sole current head `20260803_0003` and no
+drift. R2 state is now `UPLOAD_ACCEPTED`; R2 is complete with warnings.
+
+The optional Next.js **Uploaded Local Progress Reports** view remains deferred,
+Claude Code remains untested, authentication/signing and multi-user
+authorization remain undecided, cloud cannot independently prove no-op context
+bytes without snapshots, and a missing-predecessor child remains permanently
+rejected without automatic re-evaluation or an explicit recovery endpoint.
+Hosted-work freeze and the state-authority split remain intact. R3 has not
+begun or been recommended; the next action is owner review.
 
 ### Required reading for future Codex tasks
 
