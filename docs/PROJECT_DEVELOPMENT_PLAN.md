@@ -43,7 +43,8 @@ this engineering order.
 | R2A | Progress Report contract, upload, immutable history and aggregation | **PASS_WITH_WARNINGS** — native v0.2, explicit before/after context digests, v0.1 normalization, upload/history/projection API, client and additive persistence |
 | R2B | External upload and restart acceptance | **PASS_WITH_WARNINGS — UPLOAD_ACCEPTED** — external Package, loopback HTTP, isolated PostgreSQL, byte retention, idempotency, conflict exclusion and restart recovery passed |
 | R3A | Cloud API Proxy contract, threat model and owner decision packet | **PASS; R3B OWNER DECISIONS RATIFIED** — ADR 0011 approves only the experimental fake-provider profile; no implementation or provider call |
-| R3B | Fake-adapter API Proxy implementation and acceptance | **IMPLEMENTATION GATE OPEN — NOT STARTED** — disabled-by-default `paper.search/v0.1`, short-lived scoped bearer, fixed zero-cost/network limits and separate Proxy ledger |
+| R3B-I | Fake-adapter API Proxy implementation and SQL qualification | **PASS_WITH_WARNINGS — EXTERNAL ACCEPTANCE PENDING** — disabled-by-default `paper.search/v0.1`, digest-only scoped bearer, explicit client/CLI, separate Proxy ledger and migration `20260804_0004` |
+| R3B-A | External fake-adapter API Proxy acceptance | **ENTRY GATE OPEN — NOT STARTED** — must prove external Package, real loopback ASGI/HTTP, token lifecycle, restart recovery and Package non-mutation |
 | R3C | Supervised live-provider acceptance | **LIVE-PROVIDER GATE CLOSED** — production auth/HTTPS, current provider terms/credentials/rate/cost/retry/retention and public-network security require separate owner approval |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -78,9 +79,12 @@ R2B has accepted the external Progress Report path and R2 state is
 opaque bearer capability with exact project/Package/Workflow/fake-adapter
 scope, deterministic idempotency/reconciliation, a separate Proxy operation
 ledger, fixed request/result/time/count/concurrency limits, and zero money,
-real-provider and external-network use. The R3B implementation gate is open;
-R3B has not started. R3C remains a separately authorized live-provider phase
-and its gate is closed.
+real-provider and external-network use. R3B-I implements and SQL-qualifies that
+profile in the separate `backend/cloud_api_proxy/` domain with feature flag
+`REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED` off by default and migration
+`20260804_0004`. R3B-A external runtime acceptance has not started; its entry
+gate is open only from the committed clean R3B-I baseline. R3C remains a
+separately authorized live-provider phase and its gate is closed.
 
 ### Preserved optional mode
 

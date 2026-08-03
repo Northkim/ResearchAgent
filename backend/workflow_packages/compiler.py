@@ -212,7 +212,7 @@ def _make_manifest(project_id: str, package_id: str, files: dict[str, FileSpec])
         manifest_checksum=_ZERO_HASH,
         package_checksum=_ZERO_HASH,
         continuation_policy="FILES_ONLY; validate, read context and latest immutable Progress Report, preserve prior work",
-        proxy_capability_declaration="OFFLINE_DISABLED_R1A_PLACEHOLDER_ONLY; NO CREDENTIAL",
+        proxy_capability_declaration="DISABLED_BY_DEFAULT_R3B_FAKE_PAPER_SEARCH_ONLY; NO CREDENTIAL; NO REAL PROVIDER",
         experimental_status_declaration=EXPERIMENTAL_STATUS,
         harness_acceptance_status=CURRENT_HARNESS_ACCEPTANCE_STATUS,
         progress_report_schema_version=CURRENT_PROGRESS_SCHEMA_VERSION,

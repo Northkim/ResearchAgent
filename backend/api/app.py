@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
@@ -28,12 +29,28 @@ from .routers import (
 )
 
 
-def create_app(container: ApplicationContainer | None = None) -> FastAPI:
+def create_app(
+    container: ApplicationContainer | None = None,
+    *,
+    proxy_container: Any | None = None,
+    enable_experimental_proxy: bool | None = None,
+) -> FastAPI:
     composition = container or ApplicationContainer.from_environment()
+    if enable_experimental_proxy is None:
+        from backend.cloud_api_proxy.composition import feature_enabled
+
+        enable_experimental_proxy = feature_enabled()
+    proxy_composition = None
+    if enable_experimental_proxy:
+        from backend.cloud_api_proxy.composition import ProxyApplicationContainer
+
+        proxy_composition = proxy_container or ProxyApplicationContainer.from_environment()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         yield
+        if proxy_composition is not None:
+            proxy_composition.close()
         composition.close()
 
     application = FastAPI(
@@ -42,12 +59,17 @@ def create_app(container: ApplicationContainer | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     application.state.container = composition
+    application.state.proxy_container = proxy_composition
     application.include_router(health_router)
     application.include_router(runs_router)
     application.include_router(approvals_router)
     application.include_router(workflows_router)
     application.include_router(artifacts_router)
     application.include_router(progress_reports_router)
+    if proxy_composition is not None:
+        from backend.cloud_api_proxy.api import router as proxy_router
+
+        application.include_router(proxy_router)
 
     @application.exception_handler(ApplicationError)
     async def handle_application_error(

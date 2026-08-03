@@ -31,6 +31,9 @@ def test_required_package_files_and_pins(built_package: BuildResult, manifest: d
     assert manifest["progress_report_schema_version"] == "progress-report/v0.2"
     assert manifest["progress_upload_status"] == "UPLOAD_ACCEPTANCE_PENDING"
     assert manifest["package_template_version"] == "0.2.0"
+    assert manifest["proxy_capability_declaration"] == (
+        "DISABLED_BY_DEFAULT_R3B_FAKE_PAPER_SEARCH_ONLY; NO CREDENTIAL; NO REAL PROVIDER"
+    )
     assert manifest["skill_pins"][0]["semantic_version"] == "0.1.0"  # type: ignore[index]
     assert manifest["prompt_pins"][0]["version"] == "0.1.0"  # type: ignore[index]
 
@@ -81,6 +84,11 @@ def test_instruction_boundaries(built_package: BuildResult) -> None:
     workflow = json.loads((built_package.package_root / "workflow/workflow.json").read_text())
     assert workflow["hosted_agent_runtime_required"] is False
     assert workflow["network_mode"] == "OFFLINE_SYNTHETIC_ONLY"
+    proxy = json.loads((built_package.package_root / "cloud/proxy.example.json").read_text())
+    assert proxy["enabled"] is False
+    assert proxy["allowed_capabilities"] == ["paper.search/v0.1"]
+    assert proxy["credential_present"] is False
+    assert not {"token", "token_value", "api_key", "authorization"} & set(proxy)
 
 
 def test_inputs_immutable_outputs_mutable_policy(manifest: dict[str, object]) -> None:

@@ -601,3 +601,89 @@ class ProjectProgressProjectionORM(Base):
     projection_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
     projection_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProxyCapabilityTokenORM(Base):
+    """Digest-only capability credential for the experimental local-Harness Proxy."""
+
+    __tablename__ = "proxy_capability_tokens"
+    __table_args__ = (
+        UniqueConstraint("token_digest_sha256", name="uq_proxy_capability_tokens_digest"),
+        CheckConstraint("maximum_operations BETWEEN 1 AND 50", name="proxy_token_maximum_operations_valid"),
+        CheckConstraint("admitted_operations BETWEEN 0 AND maximum_operations", name="proxy_token_admitted_operations_valid"),
+        CheckConstraint("expires_at > issued_at", name="proxy_token_expiry_after_issue"),
+        Index("ix_proxy_tokens_project_package", "project_id", "package_id"),
+        Index("ix_proxy_tokens_expiry_revocation", "expires_at", "revoked"),
+    )
+
+    token_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    token_digest_sha256: Mapped[str] = mapped_column(String(71), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    workflow_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    allowed_capability: Mapped[str] = mapped_column(String(100), nullable=False)
+    allowed_adapter: Mapped[str] = mapped_column(String(255), nullable=False)
+    maximum_operations: Mapped[int] = mapped_column(Integer, nullable=False)
+    admitted_operations: Mapped[int] = mapped_column(Integer, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ProxyOperationORM(Base):
+    """Independent Proxy operation; deliberately has no Hosted Workflow foreign key."""
+
+    __tablename__ = "proxy_operations"
+    __table_args__ = (
+        UniqueConstraint("token_id", "idempotency_key", name="uq_proxy_operations_scoped_idempotency"),
+        CheckConstraint(
+            "status IN ('RECEIVED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'RECONCILIATION_REQUIRED')",
+            name="proxy_operation_status_valid",
+        ),
+        CheckConstraint(
+            "provider_data_size IS NULL OR provider_data_size BETWEEN 0 AND 524288",
+            name="proxy_operation_result_size_valid",
+        ),
+        CheckConstraint("estimated_cost_minor_units = 0", name="proxy_operation_zero_cost"),
+        CheckConstraint("retry_count = 0", name="proxy_operation_zero_retry"),
+        Index("ix_proxy_operations_project_package_created", "project_id", "package_id", "created_at"),
+        Index("ix_proxy_operations_token_status", "token_id", "status"),
+    )
+
+    operation_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    token_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("proxy_capability_tokens.token_id", ondelete="RESTRICT"), nullable=False
+    )
+    proxy_contract_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    authorization_scope_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    workflow_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    workflow_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    capability: Mapped[str] = mapped_column(String(100), nullable=False)
+    adapter_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(36), nullable=False)
+    request_content_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    request_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider_data_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    provider_data_checksum: Mapped[str | None] = mapped_column(String(71))
+    provider_data_size: Mapped[int | None] = mapped_column(BigInteger)
+    response_content_checksum: Mapped[str | None] = mapped_column(String(71))
+    estimated_cost_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    reconciliation_evidence: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

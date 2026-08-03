@@ -1,6 +1,6 @@
 # Cloud API Proxy v0.1 Contract
 
-Status: **R3B EXPERIMENTAL PROFILE RATIFIED — NOT IMPLEMENTED**
+Status: **R3B-I EXPERIMENTAL PROFILE IMPLEMENTED — EXTERNAL ACCEPTANCE PENDING**
 
 Date: 2026-08-04
 
@@ -365,11 +365,53 @@ external-network calls at zero. Only the deterministic fake adapter is allowed.
 - frontend controls;
 - R3C live-provider acceptance or any production/public deployment.
 
-## 12. Gate state
+## 12. R3B-I implementation mapping
+
+The ratified experimental profile is implemented under
+`backend/cloud_api_proxy/`. It is not enabled by default and is not a live-
+provider or production-authentication implementation.
+
+- `contracts.py` implements strict immutable request, scope, token, operation,
+  usage and response identities with canonical JSON and SHA-256.
+- `service.py` authenticates the digest-only token, derives authorization from
+  its server record, transactionally admits one operation, invokes the fixed
+  fake adapter once, applies result/time/count/concurrency limits and exposes
+  reconciliation reads.
+- `fake_adapter.py` returns only deterministic fictional `PaperRecord` data and
+  contains no network or credential path.
+- `api.py` implements `POST /projects/{project_id}/proxy-operations`, GET by
+  operation ID and GET by Package-scoped idempotency key. It requires literal
+  loopback peer and Host identity and never trusts `X-Forwarded-For`.
+- `composition.py` mounts this route only when
+  `REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED=1`; enabling without PostgreSQL
+  persistence fails closed.
+- `operator_cli.py` issues/revokes the R3B capability; `client.py` validates a
+  Package, reads only `REAGENT_PROXY_TOKEN`, makes one request and provides
+  explicit status reads.
+- additive migration `20260804_0004` creates only
+  `proxy_capability_tokens` and `proxy_operations`. Normalized fictional result
+  JSON is stored directly in PostgreSQL with its canonical checksum and size;
+  no raw provider body or response artifact is stored.
+
+Admission consumes one count when `RECEIVED` is committed. Exact replay,
+idempotency conflict, pre-admission rejection and status reads consume none.
+`RECEIVED` and `RUNNING` are active for the two-operation limit; terminal rows
+remain counted against the token total. The token row is locked during SQL
+admission, and `(token_id, idempotency_key)` is unique.
+
+At separately composed Proxy startup, durable `RUNNING` rows become
+`RECONCILIATION_REQUIRED`; they are never automatically re-invoked. R3B-I
+qualified this behavior in-process and with real PostgreSQL. R3B-A must still
+prove the external Package, live ASGI/loopback HTTP, token-file lifecycle,
+process/database restart and Package non-mutation path. R3C remains closed.
+
+## 13. Gate state
 
 ADR 0011 resolves the formerly `SOURCE_UNDECIDED` controls only for the
-experimental fake-provider slice. `R3B_IMPLEMENTATION_GATE = OPEN` after the
-documentation-only ratification commit closes cleanly.
+experimental fake-provider slice. R3B-I implementation and SQL qualification
+are complete with external-acceptance warnings. `R3B_A_ENTRY_GATE = OPEN` only
+after the clean R3B-I implementation commit; `R3B_RUNTIME_ACCEPTANCE =
+NOT_STARTED` until R3B-A.
 
 `R3C_LIVE_PROVIDER_GATE = CLOSED`. Production authentication, token issuance
 UX, HTTPS deployment, provider eligibility/current terms, live credentials,

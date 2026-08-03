@@ -183,6 +183,7 @@ offline Literature Search exercise from these files.
 13. Record missing facts and unresolved questions; do not invent data.
 14. Preserve prior outputs and Progress Reports. Create a new version if correction is needed.
 15. In a later session, validate the folder, read context and the latest Progress Report, and continue without repeating completed work.
+16. The experimental cloud Proxy remains disabled unless the owner explicitly enables R3B. If enabled, invoke the repository client explicitly; it reads `REAGENT_PROXY_TOKEN` from the process environment and must never write that token or the returned untrusted data automatically into this folder.
 
 The catalog is wholly fictional and offline. Never claim that a real external
 literature search occurred.
@@ -354,16 +355,20 @@ The Harness may create only `search_plan.md`, `candidate_papers.json`,
 local authoritative task outputs and must disclose the offline fictional scope.
 """
     proxy = {
-        "schema_version": "cloud-proxy-capability/v0.1-placeholder",
+        "schema_version": "reagent.cloud-api-proxy-package-config/v0.1",
         "enabled": False,
-        "offline_mode": True,
+        "experimental_profile": "EXPERIMENTAL_FAKE_PROVIDER_VERTICAL_SLICE",
+        "external_network_allowed": False,
+        "real_provider_allowed": False,
         "cloud_base_url": None,
         "project_identity": project_id,
         "package_identity": package_id,
-        "allowed_capabilities": [],
-        "provider_capability_names": [],
-        "request_schema_version": None,
-        "authentication_mechanism": "UNDECIDED_R3_NO_CREDENTIAL_PRESENT",
+        "identity_source": "package-manifest.json",
+        "allowed_capabilities": ["paper.search/v0.1"],
+        "allowed_adapter": "reagent.deterministic-fake-paper-search/v0.1",
+        "authentication_mechanism": "REAGENT_PROXY_TOKEN_PROCESS_ENVIRONMENT_ONLY",
+        "credential_present": False,
+        "client_writes_package": False,
     }
     validator_source = Path(__file__).with_name("package_validator.py").read_bytes()
     progress_helper_source = Path(__file__).with_name("package_progress.py").read_bytes()

@@ -1,6 +1,6 @@
 # R3B API Proxy Implementation Acceptance Plan
 
-Status: **FUTURE PLAN — NOT STARTED, IMPLEMENTATION GATE OPEN AFTER R3A-D**
+Status: **R3B-I IMPLEMENTED — R3B-A EXTERNAL ACCEPTANCE NOT STARTED**
 
 Date: 2026-08-04
 
@@ -10,15 +10,23 @@ and does not authorize R3C, a live provider or production deployment. ADR 0011
 authorizes implementation only of the disabled-by-default experimental profile
 specified here.
 
+R3B-I created the disabled-by-default fake-only implementation, migration,
+client/CLI and network-free/real-SQL qualification baseline at revision
+`20260804_0004`. The external gates below are now the R3B-A plan: they require a
+fresh external Package, real loopback ASGI server, isolated PostgreSQL and
+actual restart. TestClient and implementation qualification do not satisfy
+them. No R3B-A step has run yet.
+
 ## Entry gate
 
 ADR 0011 resolves the R3B-only authentication, exact authorization scope,
 capability, limits/budget, idempotency/reconciliation, persistence separation,
-retention/cleanup and Progress Report relationship. After the clean R3A-D
-documentation commit:
+retention/cleanup and Progress Report relationship. R3B-I implements those
+decisions. After its clean implementation commit:
 
 ```text
-R3B_IMPLEMENTATION_GATE = OPEN
+R3B_A_ENTRY_GATE = OPEN
+R3B_RUNTIME_ACCEPTANCE = NOT_STARTED
 R3C_LIVE_PROVIDER_GATE = CLOSED
 ```
 

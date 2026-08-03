@@ -84,7 +84,7 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R3A owner decisions ratified for R3B
+### Current implementation milestone — R3B-I fake Proxy implemented and SQL-qualified
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -199,10 +199,28 @@ PostgreSQL cluster, artifact directory and plaintext token file are removed;
 only sanitized tracked evidence remains. R3B does not change, create, upload or
 amend `progress-report/v0.2` or mutate local context/outputs.
 
-R3B has not started, but `R3B_IMPLEMENTATION_GATE = OPEN` after the clean R3A-D
-documentation commit. Production authentication/multi-user authorization and
-all live-provider credentials, terms, rate/cost/retry, retention/deletion,
-logging and public-network controls remain `SOURCE_UNDECIDED` for R3C.
+R3B-I now implements the ratified slice under the independent
+`backend/cloud_api_proxy/` domain. The feature flag
+`REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED` is off by default; enabling without
+explicit PostgreSQL persistence fails closed. Immutable contracts implement
+the non-cyclic request/operation/result/delivery identity chain. The operator
+CLI issues/revokes digest-only tokens, the local client reads only
+`REAGENT_PROXY_TOKEN`, and the loopback API supports submit, operation read and
+Package-scoped idempotency reconciliation.
+
+Additive migration `20260804_0004` creates only `proxy_capability_tokens` and
+`proxy_operations`; it does not reuse Hosted ProviderOperation or fabricate
+WorkflowRun/step/event/checkpoint/memory state. A fresh PostgreSQL 18.1 cluster
+qualified empty upgrade, one-revision downgrade/re-upgrade, one current head,
+no drift, repository reload and SQL concurrency. Focused Proxy tests pass 53,
+new PostgreSQL tests pass 7 without skip, Package tests pass 43, Progress Report
+tests pass 38, and full backend passes 357 with four unrelated gated skips.
+
+R3B external runtime acceptance has not started. `R3B_STATE =
+EXTERNAL_ACCEPTANCE_PENDING`; `R3B_A_ENTRY_GATE = OPEN` only after the clean
+R3B-I commit. Production authentication/multi-user authorization and all live-
+provider credentials, terms, rate/cost/retry, retention/deletion, logging and
+public-network controls remain `SOURCE_UNDECIDED` for R3C.
 `R3C_LIVE_PROVIDER_GATE = CLOSED`.
 
 The optional Next.js **Uploaded Local Progress Reports** view remains deferred,
@@ -210,8 +228,9 @@ Claude Code remains untested, automatic Progress Report upload remains absent,
 cloud cannot independently prove no-op context bytes without snapshots, and a
 missing-predecessor child remains permanently rejected without automatic
 re-evaluation or an explicit recovery endpoint. Hosted-work freeze and the
-state-authority split remain intact. The next action, after owner review of this
-ratification, is R3B implementation under ADR 0011 only; R3C is unauthorized.
+state-authority split remain intact. The next action, after owner review of the
+clean R3B-I implementation baseline, is R3B-A external fake-Proxy acceptance
+only; R3C is unauthorized.
 
 ### Required reading for future Codex tasks
 

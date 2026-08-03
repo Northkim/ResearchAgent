@@ -165,8 +165,13 @@ file outside declared dynamic output/report paths.
 
 R1A does not read `.env`, open a socket, call OpenAlex/LLM providers, import
 PostgreSQL, import `AgentRuntime`, import `ExecutionDispatcher`, execute a
-Workflow, or create cloud state. The disabled `cloud/proxy.example.json` is a
-non-secret R3 compatibility placeholder only.
+Workflow, or create cloud state. Future deterministic builds retain a disabled
+non-secret `cloud/proxy.example.json`. It now declares only the R3B fake
+`paper.search/v0.1` capability, fixed fake-adapter identity, literal process-
+environment credential lookup name and zero network/real-provider policy. It
+contains no token, credential value or provider endpoint. The explicit
+repository client derives exact Package/Workflow identity from the manifest
+and does not mutate the folder.
 
 ## R1A acceptance identity
 
@@ -200,6 +205,6 @@ They may change only when tracked package source changes intentionally.
 - how mutable-file integrity should distinguish legitimate edits from damage;
 - how package refresh/merge and report conflict resolution work;
 - whether Skills remain embedded or become signed package references;
-- authentication/signing and the R3 proxy protocol.
+- production authentication/signing and every R3C live-provider policy.
 
 No answer is frozen by R1A.

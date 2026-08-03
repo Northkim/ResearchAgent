@@ -1,6 +1,6 @@
 # Cloud API Proxy Threat Model
 
-Status: **R3B CONTROLS RATIFIED — NOT IMPLEMENTED OR PRODUCTION-APPROVED**
+Status: **R3B-I CONTROLS IMPLEMENTED AND SQL-QUALIFIED — NOT EXTERNALLY ACCEPTED OR PRODUCTION-APPROVED**
 
 Date: 2026-08-04
 
@@ -147,9 +147,9 @@ before adapter use.
 This is an experimental acceptance mechanism, not production authentication or
 multi-user authorization.
 
-## 7. Required R3B implementation controls
+## 7. Implemented R3B-I controls
 
-The authorized fake-provider-only R3B design must include:
+The authorized fake-provider-only R3B-I implementation includes:
 
 - a dedicated Proxy route/service/composition graph with forbidden Hosted
   imports;
@@ -167,6 +167,31 @@ The authorized fake-provider-only R3B design must include:
 - acceptance-lifetime safe retention and complete isolated-environment cleanup;
 - structured redacted logs and a security rejection matrix;
 - provider/AgentRuntime/LLM canaries proving zero forbidden execution.
+
+The bearer is generated with `secrets.token_urlsafe(32)`, stored only as a
+SHA-256 digest and compared with `hmac.compare_digest`, including a dummy miss
+comparison. The operator CLI accepts no plaintext-token argument, writes only
+to a new outside-repository/outside-Package `0600` file and redacts failures.
+The client accepts the token only from `REAGENT_PROXY_TOKEN`; API bodies,
+responses, paths and query parameters cannot contain it.
+
+The Proxy request parser reads and bounds actual bytes before JSON decoding,
+rejects duplicate keys, unsupported fields, invalid UTF-8/control characters,
+non-UUIDv4 idempotency, stale/future timestamps and every Package/Workflow/
+capability mismatch. Result size is calculated after canonical serialization
+and before persistence/delivery. Oversize and timeout outcomes retain only safe
+terminal metadata.
+
+The runtime route selects only
+`reagent.deterministic-fake-paper-search/v0.1`; its focused socket canary and
+source/import audit show no live transport. The Proxy module imports no Hosted
+Runtime/dispatcher/operation graph. PostgreSQL tests verify that Proxy calls
+create only separate token/operation rows and that the operation table has no
+Hosted Workflow foreign key.
+
+R3B-A must still test the full external token-file, live server, loopback HTTP,
+restart and cleanup lifecycle. These implementation checks are not production
+authentication or public-network acceptance.
 
 ## 8. R3C owner decisions still required
 
