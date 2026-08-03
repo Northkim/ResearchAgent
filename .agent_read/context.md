@@ -84,7 +84,7 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R3B-I fake Proxy implemented and SQL-qualified
+### Current implementation milestone — R3B-A fake Proxy externally accepted
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -216,21 +216,44 @@ no drift, repository reload and SQL concurrency. Focused Proxy tests pass 53,
 new PostgreSQL tests pass 7 without skip, Package tests pass 43, Progress Report
 tests pass 38, and full backend passes 357 with four unrelated gated skips.
 
-R3B external runtime acceptance has not started. `R3B_STATE =
-EXTERNAL_ACCEPTANCE_PENDING`; `R3B_A_ENTRY_GATE = OPEN` only after the clean
-R3B-I commit. Production authentication/multi-user authorization and all live-
-provider credentials, terms, rate/cost/retry, retention/deletion, logging and
-public-network controls remain `SOURCE_UNDECIDED` for R3C.
-`R3C_LIVE_PROVIDER_GATE = CLOSED`.
+R3B-A then accepted the committed fake-only path with a fresh fictional Package
+outside Git, four operator-issued `0600` capability-token files, real Uvicorn,
+literal-loopback HTTP and a fresh PostgreSQL 18.1 cluster. The default-disabled
+route was absent, enabled-with-invalid-SQL composition failed closed and the
+accepted launch used explicit SQL plus disabled Uvicorn proxy-header parsing so
+peer authorization used the actual socket peer.
+
+Native fake paper search, legitimate multilingual/scholarly queries, strict
+authentication/authorization/schema/size/timestamp rejections, sequential and
+concurrent idempotency, operation-count exhaustion, ambiguous-disconnect status
+recovery and token-instance-scoped idempotency all matched the committed
+contract. A persisted `RUNNING` operation reconstructed as
+`RECONCILIATION_REQUIRED` without adapter use. A canonical SQL snapshot was
+byte-identical across Uvicorn and PostgreSQL stop/start; results, revocation,
+counts and replay behavior survived. Hosted and Progress Report comparison
+tables remained empty.
+
+The external Package's 34-entry manifest was byte-identical before/after. A
+private plaintext-token audit found zero matches across 1,955 non-token runtime
+files, tracked files and SQL. Required validation passed: 53 focused Proxy
+tests, seven Proxy PostgreSQL tests without skip, 43 Package tests, 38 Progress
+Report tests and 357 full-backend tests with four unrelated gated skips.
+
+`R3B_A_ACCEPTANCE = PASS_WITH_WARNINGS`; `R3B_STATE = FAKE_PROXY_ACCEPTED`;
+`R3B_COMPLETE = PASS_WITH_WARNINGS`. Live active-slot saturation was not
+separately induced and wall-clock expiry was not repeated; real SQL concurrency
+and focused expiry tests passed. Production authentication/multi-user
+authorization and all live-provider credentials, terms, rate/cost/retry,
+retention/deletion, logging and public-network controls remain
+`SOURCE_UNDECIDED` for R3C. `R3C_LIVE_PROVIDER_GATE = CLOSED`.
 
 The optional Next.js **Uploaded Local Progress Reports** view remains deferred,
 Claude Code remains untested, automatic Progress Report upload remains absent,
 cloud cannot independently prove no-op context bytes without snapshots, and a
 missing-predecessor child remains permanently rejected without automatic
 re-evaluation or an explicit recovery endpoint. Hosted-work freeze and the
-state-authority split remain intact. The next action, after owner review of the
-clean R3B-I implementation baseline, is R3B-A external fake-Proxy acceptance
-only; R3C is unauthorized.
+state-authority split remain intact. R3B-A is complete with warnings and awaits
+owner review. R3C remains unauthorized.
 
 ### Required reading for future Codex tasks
 

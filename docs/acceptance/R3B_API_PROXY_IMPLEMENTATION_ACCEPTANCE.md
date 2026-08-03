@@ -1,32 +1,32 @@
 # R3B API Proxy Implementation Acceptance Plan
 
-Status: **R3B-I IMPLEMENTED — R3B-A EXTERNAL ACCEPTANCE NOT STARTED**
+Status: **R3B-A EXTERNAL ACCEPTANCE PASSED WITH WARNINGS**
 
 Date: 2026-08-04
 
 R3B purpose: implement and accept the provider-neutral proxy boundary using a
-deterministic fake adapter only. This document is not evidence that R3B passed
-and does not authorize R3C, a live provider or production deployment. ADR 0011
-authorizes implementation only of the disabled-by-default experimental profile
-specified here.
+deterministic fake adapter only. This document defines the gates; the completed
+evidence is in `R3B_FAKE_PROXY_EXTERNAL_ACCEPTANCE_REPORT.md`. Neither document
+authorizes R3C, a live provider or production deployment. ADR 0011 authorizes
+only the disabled-by-default experimental profile specified here.
 
 R3B-I created the disabled-by-default fake-only implementation, migration,
 client/CLI and network-free/real-SQL qualification baseline at revision
-`20260804_0004`. The external gates below are now the R3B-A plan: they require a
-fresh external Package, real loopback ASGI server, isolated PostgreSQL and
-actual restart. TestClient and implementation qualification do not satisfy
-them. No R3B-A step has run yet.
+`20260804_0004`. R3B-A subsequently ran the gates below with a fresh external
+Package, real loopback Uvicorn server, isolated PostgreSQL and actual restart.
+The detailed evidence and retained warnings are in
+`R3B_FAKE_PROXY_EXTERNAL_ACCEPTANCE_REPORT.md`.
 
 ## Entry gate
 
 ADR 0011 resolves the R3B-only authentication, exact authorization scope,
 capability, limits/budget, idempotency/reconciliation, persistence separation,
 retention/cleanup and Progress Report relationship. R3B-I implements those
-decisions. After its clean implementation commit:
+decisions. After the clean R3B-A evidence commit:
 
 ```text
-R3B_A_ENTRY_GATE = OPEN
-R3B_RUNTIME_ACCEPTANCE = NOT_STARTED
+R3B_A_ACCEPTANCE = PASS_WITH_WARNINGS
+R3B_STATE = FAKE_PROXY_ACCEPTED
 R3C_LIVE_PROVIDER_GATE = CLOSED
 ```
 
@@ -87,7 +87,9 @@ generation.
 2. Create a wholly fictional Workflow Package outside Git. It must contain no
    credential, private research data, real R1 evidence or machine-specific path.
 3. Use the repository’s real ASGI entrypoint and real HTTP over `127.0.0.1` on a
-   unique port. TestClient/mocked HTTP cannot satisfy the core boundary.
+   unique port. Disable Uvicorn proxy-header parsing for this direct loopback
+   profile so peer authorization uses the actual socket peer, not a forwarded
+   header. TestClient/mocked HTTP cannot satisfy the core boundary.
 4. Create a dedicated temporary PostgreSQL cluster or demonstrably isolated
    server/database, never `ProjectDB` or an existing user database. Use separate
    acceptance and automated-test databases.
