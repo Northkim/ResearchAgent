@@ -93,3 +93,15 @@ restart with zero duplicate generation calls.
 This satisfies the code-gate architecture only. Real-provider and product gates
 remain unexecuted and unapproved. In particular, a passing synthetic suite does
 not authorize a key, abstract transmission, spend, or Phase 9C-2 live run.
+
+## Phase 9C-2A exactly-three-paper gate profile
+
+The proposed live child profile is defined in
+`REAL_GROUNDED_REPORT_LIVE_GATES.md`. It adds explicit preflight/provider/
+grounding/product groups, human statement-by-statement review, fresh-process
+reload, and zero-call replay. Proposed Class D live caps are 6 logical calls,
+8 attempts, 60k/20k tokens, 15 minutes, one repair, and USD 1.00. Any retry or
+repair is a warning.
+
+No live gate has run. ADR 0008 remains Proposed; account/key/ZDR/abstract/
+sample/budget/storage/reviewer/network decisions are blocking.

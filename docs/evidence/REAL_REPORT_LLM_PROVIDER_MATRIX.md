@@ -63,6 +63,25 @@ experiments, not the initial multilingual V1 acceptance.
 Any changed model ID, price, retention rule, schema feature, or deprecation
 notice triggers re-review before execution.
 
+## Phase 9C-2A live-acceptance disposition
+
+Official contracts were rechecked on 2026-07-30. The proposed primary remains
+Anthropic first-party Claude API / `claude-sonnet-5`; this is not approved.
+The canonical model ID, constrained output, request/usage identity and
+organization-specific ZDR path fit the existing inactive adapter boundary.
+
+The proposed future transport is direct injected HTTP using the repository's
+existing HTTPX dependency, with library retries disabled and ReAgent owning the
+budget. The official `anthropic` SDK remains an alternative that would require
+an exact reviewed version and dependency approval. OpenAI and local gpt-oss are
+not fallback/comparison options for this acceptance.
+
+The first-party Anthropic retention documentation now explicitly describes
+Messages and structured-output ZDR eligibility as account/feature-specific,
+with the JSON schema cached for up to 24 hours and flagged/legal-hold
+exceptions. Current ReAgent policy therefore remains confirmed-ZDR-only unless
+the owner explicitly revises it.
+
 ## Class A source register
 
 | Source | Organization | Publication/update | Supported claim | Limitation |
@@ -72,6 +91,9 @@ notice triggers re-review before execution.
 | [Claude structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) | Anthropic | accessed 2026-07-30 | constrained JSON, schema limitations, schema cache | schema compliance is not semantic truth |
 | [Claude API errors](https://platform.claude.com/docs/en/api/errors) | Anthropic | accessed 2026-07-30 | request IDs, typed errors, default SDK retries | ReAgent must still bound retries |
 | [Anthropic ZDR scope](https://privacy.claude.com/en/articles/8956058-i-have-a-zero-data-retention-agreement-with-anthropic-what-products-does-it-apply-to) | Anthropic | 2026-06-09 | ZDR is agreement- and product-specific | exceptions may apply |
+| [Claude API and data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention) | Anthropic | accessed 2026-07-30 | Messages/structured-output ZDR eligibility, 24h schema cache, exceptions | exact agreement/account is authoritative |
+| [Claude authentication](https://platform.claude.com/docs/en/manage-claude/authentication) | Anthropic | accessed 2026-07-30 | direct HTTP `x-api-key`, `ANTHROPIC_API_KEY`, key expiry | no key is approved |
+| [Claude Python SDK](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/python) | Anthropic | accessed 2026-07-30 | package, async client, timeout and default retry behavior | no SDK version/dependency is approved |
 | [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra) | OpenAI | accessed 2026-07-30 | ID, context/output, structure, pricing, tier-dependent limits | no ReAgent quality evidence |
 | [OpenAI Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs) | OpenAI | accessed 2026-07-30 | strict schema and supported subset | refusals and semantic errors remain possible |
 | [OpenAI data controls](https://developers.openai.com/api/docs/guides/your-data) | OpenAI | accessed 2026-07-30 | no-training table, 30-day default monitoring, approved ZDR behavior | account eligibility unknown |

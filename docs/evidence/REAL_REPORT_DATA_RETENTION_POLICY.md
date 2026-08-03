@@ -60,3 +60,17 @@ User-visible report/corpus downloads are allowed only if separately approved
 and after provenance publication. Access control and multi-user use are
 deferred production requirements.
 
+## Phase 9C-2A acceptance refinement
+
+Current policy continues to require **Policy A: confirmed ZDR** for the exact
+organization/workspace, Messages endpoint, `claude-sonnet-5`, structured
+outputs, and region. **Policy B: explicitly accepted standard retention** is a
+possible owner choice only through an explicit policy exception and accepted
+ADR 0008; it cannot be inferred from “not used for training.”
+
+The proposed exactly-three-paper acceptance uses a 12,000 normalized
+Unicode-character abstract cap per paper and fails rather than silently
+truncating. It narrows canonical hosted payload/normalized-response retention
+to 7 days and retains the isolated acceptance environment for 30 days. These
+are Proposed Class D values. Real title/abstract transmission and either
+retention policy remain unapproved.

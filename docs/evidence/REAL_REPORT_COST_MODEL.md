@@ -62,3 +62,20 @@ stage and publication.
 
 No API key, non-zero budget, or call is approved by this document.
 
+## Phase 9C-2A stricter live envelope
+
+The one exactly-three-paper acceptance proposes a narrower child policy:
+
+- 3 summary/evidence + 1 synthesis + 1 report + at most 1 repair;
+- 6 logical operations, 8 attempts and at most 2 transient retries globally;
+- 60,000 input / 20,000 output tokens across all attempts;
+- 15 minutes;
+- USD 0.75 reservation, USD 0.30 per-operation reservation cap, and USD 1.00
+  hard cap.
+
+At current introductory Sonnet 5 price this envelope is USD 0.32; at documented
+standard price it is USD 0.48 before tax/account variation. Cached-input
+discount is assumed to be zero. These are **Proposed Class D** values, not a
+replacement for the broader substrate architecture and not spend authority.
+See `REAL_GROUNDED_REPORT_LIVE_COST_MODEL.md`. Authorized spend remains USD
+0.00.

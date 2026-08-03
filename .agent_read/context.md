@@ -2,7 +2,37 @@
 
 Last updated: 2026-07-30
 
-## Current route — Phase 9C-1
+## Current route — Phase 9C-2A
+
+Phase 9C-2A prepared the owner decision package for one future bounded live
+grounded-report acceptance. ADR 0008 is **Proposed** and authorizes nothing.
+The proposed experiment uses exactly three privately approved real papers,
+Anthropic `claude-sonnet-5`, three summary/evidence calls, one claim synthesis,
+one report call, and at most one mechanical repair. Proposed Class D live caps
+are six logical calls, eight attempts, 60k input/20k output tokens, 15 minutes,
+USD 0.75 reservation, and USD 1.00 hard cap. Current authorized spend remains
+USD 0.00.
+
+The proposed Phase 9C-2B transport is an injected direct-HTTP implementation of
+the existing inactive Anthropic transport protocol using the repository's
+existing HTTPX dependency. No new SDK dependency is proposed. It would be
+absent from default composition and read `ANTHROPIC_API_KEY` only at an
+explicit live backend boundary after separate implementation authority.
+
+Current policy requires confirmed ZDR for the exact account/workspace/model/
+endpoint/features. Standard retention is possible only through an explicit
+owner exception that revises the policy. Real title/abstract transmission,
+account/key, region, exact private sample, reviewer, budget, network, storage,
+retention, implementation, and execution remain unapproved and blocking.
+No real paper is identified in committed documentation.
+
+Phase 9C-2A changed documentation only. It did not modify source, workflows,
+dependencies, migrations, runtime data, or secrets; did not call an LLM or
+OpenAlex; and did not generate a real report. Next permitted milestone:
+**owner review to approve or revise ADR 0008 and complete every blocking
+decision**. Phase 9C-2B is not permitted yet.
+
+## Verified Phase 9C-1 substrate
 
 Phase 9C-1 implements the accepted Fake/synthetic grounded-report substrate.
 Immutable `guided-literature-review@3.0.0` has hash

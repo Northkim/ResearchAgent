@@ -1,7 +1,7 @@
 # ReAgent Paper Search Evidence Register
 
 更新日期：2026-07-30；provider/model sources access date: 2026-07-30
-阶段：Phase 9C-0（first real grounded literature report contract）
+阶段：Phase 9C-2A（bounded live grounded-report approval package）
 结论状态：ADR 0004 **Accepted with limited scope**；仅 OpenAlex discovery
 已获实现授权，Semantic Scholar/Crossref 仍是 future candidates。
 Judge 状态：Optional Evaluation Module **Deferred**；ADR 0006 **Deferred**；
@@ -10,6 +10,10 @@ judgment 均未授权。Grounded report 状态：ADR 0007 **Accepted with limite
 implementation scope**；仅 Phase 9C-1 Fake/synthetic network-free substrate
 获授权；no real LLM call、key、real abstract processing、live acceptance 或
 non-zero report spend 已授权。
+
+Phase 9C-2A status: ADR 0008 **Proposed**; exactly-three-paper live acceptance,
+real transport, account/key, title/abstract transmission, ZDR/retention choice,
+USD budget, network enablement and execution all remain unapproved.
 
 ## 证据标准与研究问题
 
@@ -829,6 +833,29 @@ scientific relevance improved.
   0 replay calls. This is architecture evidence only.
 - No real OpenAlex/LLM/Judge call, credential, real abstract, live candidate
   mutation, dependency, migration, frontend, or deferred-evaluation change
+  occurred.
+
+### PE-008 — Phase 9C-2A bounded live acceptance package
+
+- **Class A evidence, accessed 2026-07-30:** Anthropic Sonnet 5 exact ID,
+  canonical snapshot rule, 1M/128k limits, structured-output limitations,
+  request/error/retry contracts, current $2/$10 introductory and $3/$15
+  standard prices, organization-specific ZDR, up-to-24-hour schema caching,
+  and account-dependent rate limits were rechecked. OpenAI Terra and gpt-oss
+  were rechecked as evidence alternatives only.
+- **Proposed primary:** Anthropic first-party API / `claude-sonnet-5`, still
+  unapproved. Proposed transport is injected direct HTTP using existing HTTPX;
+  no SDK dependency, fallback, or comparison.
+- **Proposed Class D live envelope:** exactly 3 private approved papers; 3
+  summary/evidence + 1 synthesis + 1 report + ≤1 repair; 6 logical calls, 8
+  attempts, 60k/20k tokens, 15 minutes, USD 0.75 reservation and USD 1.00 hard
+  cap. Current authorization remains USD 0.00.
+- Current retention policy requires confirmed ZDR. Accepting standard retention
+  would require an explicit owner exception. Title/abstract transmission,
+  account/key/region, exact sample, reviewer, storage, network and execution
+  remain blocking.
+- No real paper identifiers or content were committed. No source/dependency/
+  workflow/runtime change, secret read, LLM/OpenAlex call, report, or spend
   occurred.
 
 ## Owner decisions
