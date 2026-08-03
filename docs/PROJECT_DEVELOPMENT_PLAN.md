@@ -38,9 +38,9 @@ this engineering order.
 | Phase | Owner-approved milestone | Boundary |
 |---|---|---|
 | R0 | V1 product-boundary freeze | Documentation/authority only; no production code |
-| R1A | Experimental local Literature Search Workflow Package generator | Compile and validate one deterministic, credential-free offline package; status remains `HARNESS_ACCEPTANCE_PENDING` |
-| R1B | External Agent Harness compatibility acceptance | Prove fresh-session execution, folder-only continuation, and moved-folder continuation with Codex; test or explicitly defer Claude Code evidence |
-| R2 | Progress Report upload and cloud progress aggregation | Validate immutable report history and project/workflow progress projection |
+| R1A | Experimental local Literature Search Workflow Package generator | **IMPLEMENTED** — deterministic, credential-free offline folder and ZIP with self-contained validation |
+| R1B | External Agent Harness compatibility acceptance | **PASS_WITH_WARNINGS (CODEX)** — owner-attested fresh sessions plus checksum-verified execution, folder-only continuation, and moved-folder continuation; Claude Code untested |
+| R2 | Progress Report upload and cloud progress aggregation | **NEXT** — normalize report-ID/context-checksum semantics, then validate immutable upload history and project/workflow progress projection |
 | R3 | Cloud API Proxy for local Harness | Protect credentials and expose bounded normalized provider operations |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -51,9 +51,18 @@ Literature Search in R1 is an **OWNER IMPLEMENTATION-SEQUENCING PROPOSAL**, not
 a teacher-mandated first Workflow. The exact R1 package layout must be marked
 `EXPERIMENTAL — NOT FINALIZED BY TEACHER SOURCE`.
 
-R1A and R1B are deliberately separate. Compiler/unit-test success does not
-prove that an external Harness understands or resumes the package. R2 must not
-start before the owner reviews the R1B evidence.
+R1A and R1B are deliberately separate. R1B now proves the teacher-defined
+local-folder and external-Harness boundary for the bounded offline Codex
+experiment, with fresh-session facts owner-attested and file/checksum outcomes
+independently verified. Claude Code remains untested, the tree remains
+experimental, and no cloud upload/projection or API-proxy capability is proved.
+The acceptance record is
+`docs/acceptance/R1B_CODEX_HARNESS_ACCEPTANCE_REPORT.md`.
+
+Exactly one recommended next milestone is **R2 — Progress Report upload and
+cloud progress aggregation**. Before accepting uploads, R2 must reconcile the
+bundled v0.1 report-ID/context-checksum semantics with the stricter repository
+helpers and add deterministic dynamic report/output validation.
 
 ### Preserved optional mode
 

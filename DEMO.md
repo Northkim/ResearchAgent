@@ -5,11 +5,12 @@
 > execution. It is not the teacher-aligned target V1 execution model established
 > by ADR 0009. Target V1 uses a downloadable local Workflow Package executed by
 > an existing Claude Code or Codex Agent Harness, with cloud Progress Report and
-> API-proxy services. R1A package generation is now experimental and
-> network-free; fresh-session Harness compatibility remains pending R1B.
+> API-proxy services. R1A package generation is experimental and network-free.
+> R1B is `PASS_WITH_WARNINGS` for Codex: fresh-session facts are owner-attested,
+> file/checksum and moved-folder gates passed, and Claude Code remains untested.
 > Hosted execution is a deferred optional mode.
 
-## Experimental local package — R1A
+## Experimental local package — R1
 
 This section is separate from the Preserved Hosted Prototype Demo. It compiles
 a wholly fictional, credential-free local folder and deterministic ZIP; it does
@@ -37,10 +38,14 @@ conda run --no-capture-output -n reagent-dev \
   --archive --pristine
 ```
 
-The exact tree is **EXPERIMENTAL — NOT FINALIZED**. R1A status is
-`HARNESS_ACCEPTANCE_PENDING`; follow
-`docs/acceptance/R1B_AGENT_HARNESS_ACCEPTANCE.md` in a genuinely fresh Codex
-session before making any Harness-compatibility claim.
+The exact tree is **EXPERIMENTAL — NOT FINALIZED**. R1B accepted the bounded
+offline Codex execution, folder-only continuation, and moved-folder result as
+`PASS_WITH_WARNINGS`. The package's immutable manifest still carries its R1A
+handoff marker `HARNESS_ACCEPTANCE_PENDING`; the external acceptance authority
+is `docs/acceptance/R1B_CODEX_HARNESS_ACCEPTANCE_REPORT.md`. Freshness and
+runtime non-use are owner-attested, the file/checksum gates are independently
+verified, and Claude Code remains untested. Exactly one recommended next
+milestone is **R2 — Progress Report upload and cloud progress aggregation**.
 
 This guide runs the deterministic supervised research workflows through the real
 Next.js UI, FastAPI application, Agent Runtime, SQL Unit of Work, and

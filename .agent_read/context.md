@@ -84,10 +84,9 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R1A
+### Current implementation milestone — R1 accepted for Codex with warnings
 
-R1 is split into an implementation phase and an external acceptance phase.
-R1A now implements a standard-library-only experimental local Literature Search
+R1A implements the standard-library-only experimental local Literature Search
 Workflow Package compiler under `backend/workflow_packages/`. It produces a
 deterministic credential-free folder and ZIP with canonical `AGENT.md`, Codex
 and Claude Code shims, pinned Workflow/Skill/prompt identities, wholly fictional
@@ -95,21 +94,32 @@ offline inputs, declared outputs, human-readable local context, experimental
 `progress-report/v0.1`, disabled non-secret proxy placeholder, and a
 self-contained repository-independent validator.
 
-The generated acceptance root is ignored at
-`runtime_data/workflow_packages/r1a-literature-search/`. Package status is
-**HARNESS_ACCEPTANCE_PENDING**. R1A compiler and tests do not prove that a fresh
-Codex or Claude Code session understands or resumes the folder. Exactly one next
-milestone is **R1B — external Agent Harness execution and continuation
-acceptance**, following
-`docs/acceptance/R1B_AGENT_HARNESS_ACCEPTANCE.md`. Do not begin R2 before R1B.
+R1B result is **PASS_WITH_WARNINGS** for Codex. The owner attests that three
+fresh Codex sessions received only the frozen one-line instruction; Session 2
+did not use `codex resume`; Session 3 started in the moved package; and no
+provider, network search, AgentRuntime, or PostgreSQL execution occurred. Files
+do not independently prove session freshness or runtime history. Both original
+and moved folders validate, all four output checksums match the round-001
+Progress Report, post-Session-2/pre-move/moved snapshots match, and the complete
+original and moved folders are byte-identical. Session 2 preserved the
+completed boundary without duplicate reports or changed output digests.
 
-R1A does not compose into FastAPI, AgentRuntime or ExecutionDispatcher; access
-a provider or network; read `.env`; require PostgreSQL; add a dependency; or
-implement upload, cloud progress, proxy, AG Admin, package merge, frontend, or
-all five Workflows. Hosted-work freeze and state-authority split remain intact.
-The package tree, prompt split, Skill format, context representation and
-Progress Report schema remain **EXPERIMENTAL — NOT FINALIZED BY THE TEACHER
-SOURCE**.
+R1 therefore proves the teacher-defined local-folder and external-Harness
+boundary for this bounded offline Codex experiment. Claude Code remains
+**UNTESTED**; no cross-Harness compatibility claim is made. The exact tree,
+prompt split, Skill format, context representation, and Progress Report schema
+remain **EXPERIMENTAL — NOT FINALIZED BY THE TEACHER SOURCE**.
+
+Warnings include the absent standalone Session 1 checksum snapshot, missing
+independent session transcripts/version/identifiers, dynamic report/output
+checks omitted by the package self-validator, and stricter repository-side
+report-ID/context-file-checksum semantics than the bundled v0.1 schema. See
+`docs/acceptance/R1B_CODEX_HARNESS_ACCEPTANCE_REPORT.md` and
+`.agent_read/progress/r1b_codex_harness_acceptance.md`.
+
+Exactly one next milestone is **R2 — Progress Report upload and cloud progress
+aggregation**, beginning with normalization of report-ID and context-checksum
+semantics. Hosted-work freeze and state-authority split remain intact.
 
 ### Required reading for future Codex tasks
 
