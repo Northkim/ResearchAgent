@@ -84,19 +84,32 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Next milestone
+### Current implementation milestone — R1A
 
-Exactly one next milestone is R1: **experimental local Literature Search
-Workflow Package and Agent Harness compatibility slice**. Literature Search is
-an owner implementation-sequencing proposal, not a teacher mandate. R1 must
-generate/download one versioned package and prove existing-Harness execution and
-file-based continuation without backend Hosted AgentRuntime performing the
-research. Exact folder/prompt/Skill/progress structure remains experimental.
+R1 is split into an implementation phase and an external acceptance phase.
+R1A now implements a standard-library-only experimental local Literature Search
+Workflow Package compiler under `backend/workflow_packages/`. It produces a
+deterministic credential-free folder and ZIP with canonical `AGENT.md`, Codex
+and Claude Code shims, pinned Workflow/Skill/prompt identities, wholly fictional
+offline inputs, declared outputs, human-readable local context, experimental
+`progress-report/v0.1`, disabled non-secret proxy placeholder, and a
+self-contained repository-independent validator.
 
-R0 implements no R1 source code, mode flag, package generator/download,
-Progress Report schema/API, progress projection, proxy endpoint, local proxy
-Skill, folder validator, Harness test, state separation, frontend behavior, or
-hosted-endpoint disabling.
+The generated acceptance root is ignored at
+`runtime_data/workflow_packages/r1a-literature-search/`. Package status is
+**HARNESS_ACCEPTANCE_PENDING**. R1A compiler and tests do not prove that a fresh
+Codex or Claude Code session understands or resumes the folder. Exactly one next
+milestone is **R1B — external Agent Harness execution and continuation
+acceptance**, following
+`docs/acceptance/R1B_AGENT_HARNESS_ACCEPTANCE.md`. Do not begin R2 before R1B.
+
+R1A does not compose into FastAPI, AgentRuntime or ExecutionDispatcher; access
+a provider or network; read `.env`; require PostgreSQL; add a dependency; or
+implement upload, cloud progress, proxy, AG Admin, package merge, frontend, or
+all five Workflows. Hosted-work freeze and state-authority split remain intact.
+The package tree, prompt split, Skill format, context representation and
+Progress Report schema remain **EXPERIMENTAL — NOT FINALIZED BY THE TEACHER
+SOURCE**.
 
 ### Required reading for future Codex tasks
 

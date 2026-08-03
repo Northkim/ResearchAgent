@@ -38,7 +38,8 @@ this engineering order.
 | Phase | Owner-approved milestone | Boundary |
 |---|---|---|
 | R0 | V1 product-boundary freeze | Documentation/authority only; no production code |
-| R1 | Experimental local Literature Search Workflow Package | Generate/download one versioned package and prove existing-Harness execution and continuation |
+| R1A | Experimental local Literature Search Workflow Package generator | Compile and validate one deterministic, credential-free offline package; status remains `HARNESS_ACCEPTANCE_PENDING` |
+| R1B | External Agent Harness compatibility acceptance | Prove fresh-session execution, folder-only continuation, and moved-folder continuation with Codex; test or explicitly defer Claude Code evidence |
 | R2 | Progress Report upload and cloud progress aggregation | Validate immutable report history and project/workflow progress projection |
 | R3 | Cloud API Proxy for local Harness | Protect credentials and expose bounded normalized provider operations |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
@@ -49,6 +50,10 @@ this engineering order.
 Literature Search in R1 is an **OWNER IMPLEMENTATION-SEQUENCING PROPOSAL**, not
 a teacher-mandated first Workflow. The exact R1 package layout must be marked
 `EXPERIMENTAL — NOT FINALIZED BY TEACHER SOURCE`.
+
+R1A and R1B are deliberately separate. Compiler/unit-test success does not
+prove that an external Harness understands or resumes the package. R2 must not
+start before the owner reviews the R1B evidence.
 
 ### Preserved optional mode
 

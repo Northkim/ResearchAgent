@@ -5,8 +5,42 @@
 > execution. It is not the teacher-aligned target V1 execution model established
 > by ADR 0009. Target V1 uses a downloadable local Workflow Package executed by
 > an existing Claude Code or Codex Agent Harness, with cloud Progress Report and
-> API-proxy services. R1 package generation and Harness compatibility are not
-> implemented yet. Hosted execution is a deferred optional mode.
+> API-proxy services. R1A package generation is now experimental and
+> network-free; fresh-session Harness compatibility remains pending R1B.
+> Hosted execution is a deferred optional mode.
+
+## Experimental local package — R1A
+
+This section is separate from the Preserved Hosted Prototype Demo. It compiles
+a wholly fictional, credential-free local folder and deterministic ZIP; it does
+not ask backend AgentRuntime to perform research.
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.workflow_packages build-literature-search \
+  --project-id experimental-literature-search \
+  --output-root runtime_data/workflow_packages/r1a-literature-search
+```
+
+Generated evidence is ignored under
+`runtime_data/workflow_packages/r1a-literature-search/`. Validate the unpacked
+folder or archive with:
+
+```bash
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.workflow_packages validate \
+  runtime_data/workflow_packages/r1a-literature-search/package --pristine
+
+conda run --no-capture-output -n reagent-dev \
+  python -m backend.workflow_packages validate \
+  runtime_data/workflow_packages/r1a-literature-search/literature-search-experimental-literature-search-v0.1.zip \
+  --archive --pristine
+```
+
+The exact tree is **EXPERIMENTAL — NOT FINALIZED**. R1A status is
+`HARNESS_ACCEPTANCE_PENDING`; follow
+`docs/acceptance/R1B_AGENT_HARNESS_ACCEPTANCE.md` in a genuinely fresh Codex
+session before making any Harness-compatibility claim.
 
 This guide runs the deterministic supervised research workflows through the real
 Next.js UI, FastAPI application, Agent Runtime, SQL Unit of Work, and
