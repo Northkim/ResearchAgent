@@ -84,7 +84,52 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-N2-I privacy-safe structural diagnostics
+### Current milestone — R3C-N2-A live structural diagnostic acceptance
+
+R3C-N2-A began from exact clean `main` commit
+`45ef6b500c61a484bd6d4b569b3d4233ab6146a2`. A fresh strict owner
+attestation authorized one fictional public OpenAlex search, one Provider call,
+1,000 microusd, at most five results, no paid/prepaid overage, no Provider/raw-
+body retention, and deletion of the dedicated local owner copies.
+
+The pre-key official-only source recheck passed. Twelve objects matched prior
+exact hashes; the pricing blog changed bytes without a material key, pricing,
+free-allowance or `search=` change. Current `/works`, selected fields,
+`meta.cost_usd`, rate evidence, Terms and Privacy remained compatible. A fresh
+loopback PostgreSQL 18.1 cluster used separate acceptance/test databases at the
+sole head `20260805_0005` with no drift. A fresh external fictional Package
+validated and its protected 34-entry pre/post manifests were byte-identical.
+
+Default-off, diagnostic-flag-only, missing-SQL and missing-credential
+composition gates passed. One OpenAlex-bound token allowed one operation/call.
+Real loopback Uvicorn and the provider-neutral client made exactly one fixed
+OpenAlex Works request. It returned HTTP 200, exact 1,000-microusd cost and safe
+rate evidence, then succeeded with zero normalized papers. No structural
+diagnostic was triggered. Status by operation and idempotency identity plus
+exact stored-byte replay returned the same durable operation with no second
+admission/call/cost/event.
+
+Query/marker/token/URL/header/raw-body privacy scans passed, Provider paper
+values were absent, normal responses exposed no diagnostic, Hosted/runtime/
+progress counts remained zero, and the Package remained unchanged. Tests
+passed 133 focused OpenAlex, 195 Proxy, 13 Proxy/OpenAlex SQL with zero skip, 43
+Package, 38 Progress Report, and 505 backend with four unrelated gated skips;
+compileall and Alembic drift checks passed.
+
+The token was revoked and all dedicated database, Package, source, log,
+request/response, wrapper, owner-attestation and owner-key-copy material was
+deleted after both ports were released. The OpenAlex account/key and unrelated
+services were untouched.
+
+`R3C_N2_A_ACCEPTANCE = PASS_WITH_WARNINGS`,
+`R3C_LIVE_OPERATION_OUTCOME = SUCCEEDED_WITH_NO_DIAGNOSTIC`, and
+`R3C_DIAGNOSTIC_EVIDENCE = INSUFFICIENT`. Retry 1's failure was not reproduced;
+no root cause may be inferred. The diagnostic live-call gate is closed after
+the one attempt. `R3C_I2_IMPLEMENTATION_GATE`, the complete R3C-A gate, and R3D
+remain closed pending owner review. Detailed evidence is in
+`.agent_read/progress/r3c_openalex_structural_diagnostic_live_acceptance.md`.
+
+#### Preserved R3C-N2-I implementation state
 
 R3C-N2-I began from exact clean `main` commit
 `f5bc017689e97fddbcfffad0581c7c391fb1f021`. It made zero live Provider and
@@ -121,9 +166,10 @@ separately gated integration skips. PostgreSQL 18.1 was fresh, loopback-only,
 separate from ProjectDB, current at sole migration head `20260805_0005`, and
 removed after use. Compileall passed.
 
-No live diagnostic has occurred. The separately documented at-most-one-call
-diagnostic is ready only for fresh owner authorization, attestation, credential,
-source recheck, isolated environment, temporary mode-`0600` log, and cleanup.
+No live diagnostic occurred during R3C-N2-I. Its separately documented
+at-most-one-call diagnostic required fresh owner authorization, attestation,
+credential, source recheck, isolated environment, temporary mode-`0600` log,
+and cleanup.
 `R3C_I2_IMPLEMENTATION_GATE` and R3D remain closed. Detailed evidence is in
 `.agent_read/progress/r3c_openalex_structural_diagnostics_implementation.md`.
 
