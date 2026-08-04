@@ -84,7 +84,23 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R3C-I mocked OpenAlex adapter qualified
+### Current milestone — R3C-A blocked at owner-attestation gate
+
+R3C-A was started from exact clean `main` commit
+`6ba48416b4936060298b9e5fd9ce197b782b2bb1`, but its mandatory first external
+authorization gate could not pass: the owner did not supply the required
+credential-free attestation file or a location from which it could be read,
+and Codex may not author that attestation on the owner's behalf. The phase
+therefore stopped before official-source retrieval, OpenAlex key access,
+PostgreSQL/Uvicorn/Package setup or any Provider call. No application defect
+was observed because the runtime path was not started.
+
+The blocked result retains `R3C_STATE = LIVE_ACCEPTANCE_PENDING` and
+`R3C_COMPLETE = NOT_COMPLETE`; live Provider-call count and reported cost are
+both zero. Only the sanitized blocked acceptance report, progress record and
+this context update are permitted. A future retry requires the owner to supply
+the path to a non-secret `0600` attestation outside Git and the Package and to
+authorize the resulting exact baseline. R3D remains closed.
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -319,8 +335,8 @@ cloud cannot independently prove no-op context bytes without snapshots, and a
 missing-predecessor child remains permanently rejected without automatic
 re-evaluation or an explicit recovery endpoint. Hosted-work freeze and the
 state-authority split remain intact. R3B-A is complete with warnings. R3C-I is
-implemented and awaits owner review; live R3C-A and production R3D remain
-unauthorized.
+implemented; R3C-A is blocked pending the required owner attestation, and
+production R3D remains unauthorized.
 
 ### Required reading for future Codex tasks
 
