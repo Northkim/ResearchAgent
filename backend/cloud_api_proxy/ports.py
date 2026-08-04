@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from .contracts import PaperSearchV01Request, ProxyCapabilityToken, ProxyOperation
+from .openalex_diagnostics import OpenAlexStructuralFailure
 
 
 class ProxyRepository(Protocol):
@@ -50,6 +51,7 @@ class ProxyAdapterResult:
     rate_limit_limit: int | None = None
     rate_limit_remaining: int | None = None
     rate_limit_reset: str | None = None
+    provider_structural_shape_checksum: str | None = None
 
 
 class ProxyAdapterError(RuntimeError):
@@ -63,6 +65,7 @@ class ProxyAdapterError(RuntimeError):
         provider_http_status: int | None = None,
         provider_response_checksum: str | None = None,
         reported_cost_microusd: int = 0,
+        structural_failure: OpenAlexStructuralFailure | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -71,6 +74,15 @@ class ProxyAdapterError(RuntimeError):
         self.provider_http_status = provider_http_status
         self.provider_response_checksum = provider_response_checksum
         self.reported_cost_microusd = reported_cost_microusd
+        self.structural_failure = structural_failure
+
+
+class ProxyAdapterInternalError(RuntimeError):
+    """Safe typed internal adapter failure that preserves the public category."""
+
+    def __init__(self, structural_failure: OpenAlexStructuralFailure) -> None:
+        super().__init__("Provider normalization failed internally")
+        self.structural_failure = structural_failure
 
 
 @dataclass(frozen=True, slots=True)

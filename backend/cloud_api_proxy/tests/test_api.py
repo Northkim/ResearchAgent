@@ -6,7 +6,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import ApplicationContainer, create_app
-from backend.cloud_api_proxy.composition import ProxyApplicationContainer
+from backend.cloud_api_proxy.composition import (
+    ProxyApplicationContainer,
+    feature_enabled,
+    openalex_structural_diagnostics_enabled,
+)
+from backend.cloud_api_proxy.openalex_diagnostics import STRUCTURAL_DIAGNOSTIC_FEATURE_FLAG
 from backend.cloud_api_proxy.contracts import MAX_REQUEST_BYTES, canonical_json, canonical_hash
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 
@@ -47,6 +52,34 @@ def test_default_startup_does_not_construct_openalex_credential_source(
     hosted = ApplicationContainer(unit_of_work_factory=lambda: InMemoryUnitOfWork(InMemoryDatabase()))
     with TestClient(create_app(hosted), base_url="http://127.0.0.1") as client:
         assert client.get("/health").status_code == 200
+
+
+def test_diagnostic_flag_alone_does_not_mount_proxy_or_read_openalex_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.cloud_api_proxy import openalex_adapter
+
+    def forbidden_source():
+        raise AssertionError("diagnostic flag attempted to construct a credential source")
+
+    monkeypatch.delenv("REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED", raising=False)
+    monkeypatch.delenv("REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED", raising=False)
+    monkeypatch.setenv(STRUCTURAL_DIAGNOSTIC_FEATURE_FLAG, "1")
+    monkeypatch.setattr(openalex_adapter, "EnvironmentOpenAlexCredentialSource", forbidden_source)
+    assert openalex_structural_diagnostics_enabled() is True
+    assert feature_enabled() is False
+    hosted = ApplicationContainer(unit_of_work_factory=lambda: InMemoryUnitOfWork(InMemoryDatabase()))
+    with TestClient(create_app(hosted), base_url="http://127.0.0.1") as client:
+        assert client.get("/health").status_code == 200
+        assert client.post("/projects/fictional-project/proxy-operations", json={}).status_code == 404
+
+
+@pytest.mark.parametrize(
+    ("value", "enabled"),
+    [("1", True), ("0", False), ("true", False), ("TRUE", False), ("", False)],
+)
+def test_structural_diagnostic_flag_requires_exact_one(value: str, enabled: bool) -> None:
+    assert openalex_structural_diagnostics_enabled(value) is enabled
 
 
 def test_openalex_enabled_composition_without_credential_fails_closed_before_route(
@@ -130,6 +163,13 @@ def test_missing_token_nonloopback_and_unknown_fields_reject(proxy_setup) -> Non
             json=payload,
             headers={"Authorization": f"Bearer {plaintext}"},
         )
+        diagnostic_payload = make_request().to_dict()
+        diagnostic_payload["structural_diagnostics"] = True
+        diagnostic_request = client.post(
+            "/projects/fictional-project/proxy-operations",
+            json=diagnostic_payload,
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
     with TestClient(app, base_url="http://127.0.0.1", client=("192.0.2.10", 50123)) as remote:
         nonloopback = remote.post(
             "/projects/fictional-project/proxy-operations",
@@ -138,6 +178,7 @@ def test_missing_token_nonloopback_and_unknown_fields_reject(proxy_setup) -> Non
         )
     assert missing.status_code == 401
     assert unexpected.status_code == 422
+    assert diagnostic_request.status_code == 422
     assert nonloopback.status_code == 403
     assert adapter.invocation_count == 0
 

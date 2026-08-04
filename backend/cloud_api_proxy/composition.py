@@ -10,6 +10,10 @@ from sqlalchemy import Engine
 from backend.database.engine import create_postgres_engine, create_session_factory
 
 from .fake_adapter import DeterministicFakePaperSearchAdapter
+from .openalex_diagnostics import (
+    STRUCTURAL_DIAGNOSTIC_FEATURE_FLAG,
+    OpenAlexStructuralDiagnosticEmitter,
+)
 from .service import CloudAPIProxyService
 from .sql import SQLProxyUnitOfWork
 
@@ -30,6 +34,15 @@ def fake_feature_enabled(value: str | None = None) -> bool:
 
 def openalex_feature_enabled(value: str | None = None) -> bool:
     candidate = os.environ.get(OPENALEX_FEATURE_FLAG) if value is None else value
+    return candidate == "1"
+
+
+def openalex_structural_diagnostics_enabled(value: str | None = None) -> bool:
+    candidate = (
+        os.environ.get(STRUCTURAL_DIAGNOSTIC_FEATURE_FLAG)
+        if value is None
+        else value
+    )
     return candidate == "1"
 
 
@@ -71,6 +84,9 @@ class ProxyApplicationContainer:
             service = CloudAPIProxyService(
                 unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
                 adapters=adapters,
+                openalex_structural_diagnostics=OpenAlexStructuralDiagnosticEmitter(
+                    enabled=openalex_structural_diagnostics_enabled()
+                ),
             )
             service.reconcile_interrupted()
             return cls(service=service, engine=engine)

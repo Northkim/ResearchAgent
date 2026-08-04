@@ -43,7 +43,22 @@ from .contracts import (
     token_id_from_digest,
 )
 from .errors import ProxyError, conflict, forbidden, invalid, limited, not_found, unauthorized, unavailable
-from .ports import PaperSearchAdapter, ProxyAdapterError, ProxyAdapterResult, ProxyUnitOfWorkFactory
+from .openalex_diagnostics import (
+    FailureStage,
+    ObservedKind,
+    OpenAlexStructuralDiagnostic,
+    OpenAlexStructuralDiagnosticEmitter,
+    OpenAlexStructuralFailure,
+    ValidatorCode,
+    structural_failure as build_structural_failure,
+)
+from .ports import (
+    PaperSearchAdapter,
+    ProxyAdapterError,
+    ProxyAdapterInternalError,
+    ProxyAdapterResult,
+    ProxyUnitOfWorkFactory,
+)
 
 _OPAQUE_TOKEN = re.compile(r"[A-Za-z0-9_-]{43,128}\Z")
 _DUMMY_DIGEST = "sha256:" + hashlib.sha256(b"r3b-dummy-token-comparison").hexdigest()
@@ -64,6 +79,7 @@ class CloudAPIProxyService:
         adapters: dict[str, PaperSearchAdapter] | None = None,
         clock: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] | None = None,
+        openalex_structural_diagnostics: OpenAlexStructuralDiagnosticEmitter | None = None,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
         registry = dict(adapters or {})
@@ -77,6 +93,10 @@ class CloudAPIProxyService:
         self.adapter = adapter or next(iter(registry.values()))
         self.clock = clock or (lambda: datetime.now(UTC))
         self.monotonic = monotonic or time.monotonic
+        self.openalex_structural_diagnostics = (
+            openalex_structural_diagnostics
+            or OpenAlexStructuralDiagnosticEmitter(enabled=False)
+        )
 
     def issue_token(
         self,
@@ -291,14 +311,53 @@ class CloudAPIProxyService:
                     adapter_result=adapter_result,
                 )
             provider_data = adapter_result.provider_data
-            encoded = canonical_json(provider_data).encode("utf-8")
+            normalized_records = _normalized_record_count(provider_data)
+            try:
+                encoded = canonical_json(provider_data).encode("utf-8")
+            except Exception:
+                if operation.adapter_id == OPENALEX_ADAPTER_ID:
+                    return self._finish_failure(
+                        operation,
+                        "PROVIDER_UNAVAILABLE",
+                        elapsed,
+                        structural_failure=build_structural_failure(
+                            failure_stage=FailureStage.NORMALIZED_SERIALIZATION,
+                            approved_json_path="/normalized_results",
+                            observed_kind=ObservedKind.UNKNOWN,
+                            validator_code=ValidatorCode.NORMALIZED_CANONICAL_SERIALIZATION,
+                            normalized_records_before_failure=normalized_records,
+                            provider_shape_checksum=(
+                                adapter_result.provider_structural_shape_checksum
+                            ),
+                        ),
+                    )
+                raise
             if len(encoded) > MAX_RESULT_BYTES:
                 code = (
                     "PROVIDER_RESPONSE_TOO_LARGE"
                     if operation.adapter_id == OPENALEX_ADAPTER_ID
                     else "RESPONSE_LIMIT_EXCEEDED"
                 )
-                return self._finish_failure(operation, code, elapsed, adapter_result=adapter_result)
+                return self._finish_failure(
+                    operation,
+                    code,
+                    elapsed,
+                    adapter_result=adapter_result,
+                    structural_failure=(
+                        build_structural_failure(
+                            failure_stage=FailureStage.RESULT_SIZE,
+                            approved_json_path="/normalized_results",
+                            observed_kind=ObservedKind.LIMIT_EXCEEDED,
+                            validator_code=ValidatorCode.NORMALIZED_RESULT_SIZE,
+                            normalized_records_before_failure=normalized_records,
+                            provider_shape_checksum=(
+                                adapter_result.provider_structural_shape_checksum
+                            ),
+                        )
+                        if operation.adapter_id == OPENALEX_ADAPTER_ID
+                        else None
+                    ),
+                )
             try:
                 reject_sensitive_content(encoded, path="normalized fake-provider result")
             except ValueError:
@@ -307,7 +366,26 @@ class CloudAPIProxyService:
                     if operation.adapter_id == OPENALEX_ADAPTER_ID
                     else "UNSAFE_PROVIDER_DATA"
                 )
-                return self._finish_failure(operation, code, elapsed, adapter_result=adapter_result)
+                return self._finish_failure(
+                    operation,
+                    code,
+                    elapsed,
+                    adapter_result=adapter_result,
+                    structural_failure=(
+                        build_structural_failure(
+                            failure_stage=FailureStage.SERVICE_SAFETY,
+                            approved_json_path="/service_safety",
+                            observed_kind=ObservedKind.SENSITIVE_CONTENT,
+                            validator_code=ValidatorCode.SERVICE_SENSITIVE_CONTENT,
+                            normalized_records_before_failure=normalized_records,
+                            provider_shape_checksum=(
+                                adapter_result.provider_structural_shape_checksum
+                            ),
+                        )
+                        if operation.adapter_id == OPENALEX_ADAPTER_ID
+                        else None
+                    ),
+                )
             completed = self._now()
             succeeded = replace(
                 operation,
@@ -347,6 +425,14 @@ class CloudAPIProxyService:
                 self.monotonic() - started,
                 adapter_error=error,
                 reconciliation=error.uncertain,
+                structural_failure=error.structural_failure,
+            )
+        except ProxyAdapterInternalError as error:
+            return self._finish_failure(
+                operation,
+                "PROVIDER_UNAVAILABLE",
+                self.monotonic() - started,
+                structural_failure=error.structural_failure,
             )
         except ProxyError:
             raise
@@ -356,7 +442,21 @@ class CloudAPIProxyService:
                 if operation.adapter_id == OPENALEX_ADAPTER_ID
                 else "FAKE_ADAPTER_FAILURE"
             )
-            return self._finish_failure(operation, code, self.monotonic() - started)
+            return self._finish_failure(
+                operation,
+                code,
+                self.monotonic() - started,
+                structural_failure=(
+                    build_structural_failure(
+                        failure_stage=FailureStage.UNCLASSIFIED_INTERNAL,
+                        approved_json_path="/",
+                        observed_kind=ObservedKind.UNKNOWN,
+                        validator_code=ValidatorCode.UNCLASSIFIED_INTERNAL,
+                    )
+                    if operation.adapter_id == OPENALEX_ADAPTER_ID
+                    else None
+                ),
+            )
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
@@ -479,6 +579,7 @@ class CloudAPIProxyService:
         adapter_result: ProxyAdapterResult | None = None,
         adapter_error: ProxyAdapterError | None = None,
         reconciliation: bool = False,
+        structural_failure: OpenAlexStructuralFailure | None = None,
     ) -> dict:
         completed = self._now()
         reported_cost = (
@@ -534,6 +635,14 @@ class CloudAPIProxyService:
             response_content_checksum=None,
         ).with_response_checksum()
         self._save_operation(failed, reported_cost_delta=reported_cost)
+        if operation.adapter_id == OPENALEX_ADAPTER_ID and structural_failure is not None:
+            diagnostic = OpenAlexStructuralDiagnostic.from_failure(
+                structural_failure,
+                adapter_version=operation.provider_adapter_version,
+                operation_id=operation.operation_id,
+                request_content_checksum=operation.request.request_content_checksum,
+            )
+            self.openalex_structural_diagnostics.emit(diagnostic)
         return failed.delivery(replayed=False, server_timestamp=self._now())
 
     def _now(self) -> datetime:
@@ -541,3 +650,10 @@ class CloudAPIProxyService:
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("Proxy clock must return a timezone-aware timestamp")
         return now.astimezone(UTC)
+
+
+def _normalized_record_count(provider_data: object) -> int:
+    if not isinstance(provider_data, dict):
+        return 0
+    papers = provider_data.get("papers")
+    return len(papers) if isinstance(papers, list) else 0

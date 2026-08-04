@@ -84,41 +84,55 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-N1 normalization forensics inconclusive
+### Current milestone — R3C-N2-I privacy-safe structural diagnostics
 
-R3C-N1 began from exact clean `main` commit
-`f78f145b2506400931247d8a669de0ff33367aec`. It performed documentation and
-offline forensics only: zero live Provider calls, no OpenAlex key or `.env`
-read, no database, and no Runtime, Workflow, Hosted, LLM, Judge or Progress
-Report activity. Production source, tests, migrations, fixtures, frontend,
-Package templates, contracts, ADRs and both acceptance reports remain
-unchanged.
+R3C-N2-I began from exact clean `main` commit
+`f5bc017689e97fddbcfffad0581c7c391fb1f021`. It made zero live Provider and
+documentation calls, read no OpenAlex key or `.env`, and did not invoke
+Runtime, Workflow, Hosted, LLM, Judge, or Progress Report activity.
 
-The exact retry-1 live field/path/type/validator was not preserved. Durable
-evidence and source ordering narrow the failure to either per-Work
-normalization or the service sensitive-content canary after successful HTTP
-200, rate evidence and exact 1,000-microusd parsing. The top-level result-array
-predicates and normalized-size limit are inconsistent with the preserved
-cost/error tuple, but the remaining branches cannot be distinguished.
+Accepted ADR 0013 ratifies `STRICT_COMPLETE_RESPONSE_FAILURE`: one rejected
+Work fails the complete response, with no partial subset, quarantine, warning,
+or rejected-record API. No accepted/rejected Provider shape changed. R3C-N1's
+inconclusive finding remains immutable: the retry-1 live path is still unknown
+and no compatibility remediation is authorized.
 
-A network-disabled synthetic matrix exercised every named sparse/null case and
-adjacent malformed cases through the committed scripted transport. Every
-unambiguously approved nullable/sparse shape was accepted; no approved
-Provider shape reproduced the failure. The result is
-`ROOT_CAUSE_CLASSIFICATION = INSUFFICIENT_EVIDENCE` with high confidence in the
-insufficiency finding, not in an underlying mechanism.
+The OpenAlex Proxy now has a default-disabled internal contract
+`reagent.openalex-structural-diagnostic/v0.1`, enabled only by the server-side
+flag `REAGENT_EXPERIMENTAL_OPENALEX_STRUCTURAL_DIAGNOSTICS_ENABLED=1`. Closed
+stage, path, observed-kind, and validator registries distinguish every current
+response/per-Work predicate from `SERVICE_SAFETY`. The diagnostic contains only
+safe correlation identities, indices/counts, and a canonical value-independent
+structural checksum. It cannot contain Provider values, unknown keys, query,
+key, token, raw body, URL, header, exception, or stack trace.
 
-Mixed valid/malformed record behavior is not unambiguously specified by ADR
-0012 or the adapter contract. A decision packet recommends Option A, preserving
-strict complete-response failure, but owner approval is required. R3C-I2 is
-closed. Because both the exact live path and an approved offline reproducer are
-absent, a privacy-safe one-call structural diagnostic requires separate owner
-authorization. R3D remains closed.
+Enabled terminal failure produces exactly one canonical structured log event;
+disabled mode produces none. The flag alone does not mount the Proxy or load a
+credential. Public submit/status responses, operation/checksum identities,
+SQL/ORM schema, query/raw-body retention, Package and Progress Report contracts
+remain unchanged. Exact failed replay emits no second adapter call, cost, or
+event. Strict mixed-record behavior and service-safety distinction are covered
+synthetically.
 
-Validation remained source-free: 54 focused OpenAlex tests and 110 complete
-Proxy tests passed, backend compileall passed, and no PostgreSQL was used.
-Detailed evidence is in
-`docs/audits/R3C_OPENALEX_LIVE_NORMALIZATION_FAILURE_FORENSICS.md`.
+Qualification passed 133 focused OpenAlex tests, 195 complete Proxy tests, 13
+existing Proxy/OpenAlex SQL tests with zero skip, 43 Package tests, 38 Progress
+Report tests, and 505 complete backend tests with only four pre-existing
+separately gated integration skips. PostgreSQL 18.1 was fresh, loopback-only,
+separate from ProjectDB, current at sole migration head `20260805_0005`, and
+removed after use. Compileall passed.
+
+No live diagnostic has occurred. The separately documented at-most-one-call
+diagnostic is ready only for fresh owner authorization, attestation, credential,
+source recheck, isolated environment, temporary mode-`0600` log, and cleanup.
+`R3C_I2_IMPLEMENTATION_GATE` and R3D remain closed. Detailed evidence is in
+`.agent_read/progress/r3c_openalex_structural_diagnostics_implementation.md`.
+
+#### Preserved R3C-N1 forensic state
+
+R3C-N1 remains `INCONCLUSIVE`: `EXACT_LIVE_FAILURE_PATH = NOT_PRESERVED`,
+`OFFLINE_FAILURE_REPRODUCTION = NOT_REPRODUCED`, and
+`ROOT_CAUSE_CLASSIFICATION = INSUFFICIENT_EVIDENCE`. Its report, decision
+packet, tests-at-that-time, and no-live-call evidence remain unchanged.
 
 #### Preserved R3C-A retry 1 state
 

@@ -1,8 +1,8 @@
 # R3C OpenAlex Credential, Privacy, and Cost Policy
 
-Status: **R3C-I CONTROLS IMPLEMENTED WITH MOCKED TRANSPORT; LIVE GATE CLOSED**
+Status: **R3C-N2-I DIAGNOSTICS QUALIFIED; LIVE DIAGNOSTIC OWNER-GATED**
 Date: 2026-08-04
-Governing ADR: 0012
+Governing ADRs: 0012 and 0013
 
 This is an engineering security policy, not legal advice and not production
 authorization.
@@ -206,7 +206,40 @@ Every failure stays within the Proxy ledger. It creates no WorkflowRun,
 ProviderOperation, ExecutionEvent, checkpoint, memory revision, LLM call,
 Progress Report or local file mutation.
 
-## 9. Deferred production decisions
+## 9. Privacy-safe structural diagnostics
+
+The internal structural diagnostic is disabled by default and uses only the
+server-side process flag
+`REAGENT_EXPERIMENTAL_OPENALEX_STRUCTURAL_DIAGNOSTICS_ENABLED`. The flag alone
+does not enable the Proxy, read a credential/query, or cause a Provider call.
+
+When enabled, one terminal OpenAlex normalization or service-safety failure may
+emit exactly one canonical structured event. Its closed allowlist is limited to
+contract/adapter identity, public operation ID, request checksum, processing
+stage, approved-field path, record/nested indices, observed structural kind,
+fixed validator code, normalized-record count before failure, and a canonical
+value-independent structural-shape checksum.
+
+It is prohibited from containing a Provider value, unknown Provider key,
+title, author data, DOI value, abstract token/position value, venue, language
+value, query, marker, key, token, full URL, raw JSON, exception, stack trace,
+request/response object, or headers. The structural checksum encodes only
+approved-field presence/type/null state, bounded counts, indices and fixed
+classifications. Synthetic tests prove equal shapes with different values have
+equal checksums.
+
+The diagnostic never enters the public response/status DTO, `ProxyOperation`
+request/result data, SQL, Package, Progress Report, or ordinary client output.
+The only approved future live sink is an owner-controlled temporary mode-`0600`
+log outside Git, deleted after append-only sanitized evidence is recorded. No
+migration, ORM field, raw-error column, or raw response artifact is authorized.
+
+Strict complete-response failure remains mandatory. The sensitive-content
+scanner is unchanged and emits only its fixed `SERVICE_SAFETY` classification,
+never the matched substring or surrounding text. Exact replay emits no second
+event, adapter call, reservation, or settlement.
+
+## 10. Deferred production decisions
 
 Public exposure, production user authentication, multi-user authorization,
 proof of possession, HTTPS termination, production secret manager, paid/prepaid

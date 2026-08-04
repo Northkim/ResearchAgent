@@ -1,6 +1,6 @@
 # Cloud API Proxy Threat Model
 
-Status: **R3B ACCEPTED; R3C-I OPENALEX CONTROLS MOCK/SQL QUALIFIED — LIVE/PRODUCTION CLOSED**
+Status: **R3B ACCEPTED; R3C-N2-I OPENALEX DIAGNOSTICS QUALIFIED — LIVE/PRODUCTION CLOSED**
 
 Date: 2026-08-04
 
@@ -113,6 +113,7 @@ implemented them.
 | Secret-bearing provider response | Provider echoes credentials or returns accidental secrets. | Field allowlist, secret-like scan, redact/reject unsafe data before retention/delivery; record checksum/category only. | False positive/negative policy needs tests; raw unsafe body should not persist. |
 | Path injection/local disclosure | Request or response supplies absolute/traversal path; client reads arbitrary local file. | Proxy request has no local path; local client accepts only package-relative declared configuration; storage keys are relative and traversal/symlink-safe. | Future upload features require their own path review. |
 | Log injection | Newlines/control characters forge audit events. | Structured JSON logs, encoded values, control-character rejection, length caps, stable request IDs. | Operator log sink must preserve structure. |
+| Structural diagnostic becomes a value side channel | Field values, unknown key names, exceptions or request/response objects leak through a diagnostic or its checksum. | Default-off server flag; closed stage/path/kind/validator enums; value-independent approved-field shape descriptor; no exception interpolation/`exc_info`; one temporary mode-`0600` log; leakage/checksum tests. | A future live diagnostic remains separately owner-gated and requires post-run leakage audit/cleanup. |
 | Tenant data leakage | Caches, replay/status reads or error details reveal another tenant’s query/results/budget. | Scope every lookup/cache key by authenticated tenant/project/package; response DTO allowlist; no existence oracle; row-level repository predicates and tests. | Multi-user tenancy is `SOURCE_UNDECIDED`. |
 | Retention beyond approval | Provider data or token material remains after acceptance. | R3B/R3C acceptance-lifetime retention only; no raw body/query/key/token/Auth URL/header; remove isolated database/runtime/secret material and retain sanitized evidence only. | Production retention/deletion/export remains unapproved. |
 | Legacy Hosted endpoint misuse | Caller uses `/runs/.../resume` to execute research instead of the proxy. | Proxy credentials cannot authorize Hosted routes; teacher-aligned deployment can separately disable/hide Hosted paths; proxy service imports no Hosted graph. | Route-level mode separation needs later explicit implementation scope. |
@@ -216,6 +217,15 @@ started, may use only:
 The additional OpenAlex-specific threats and mitigations are frozen in
 `R3C_OPENALEX_CREDENTIAL_PRIVACY_AND_COST_POLICY.md`. Official pricing, Terms,
 Privacy and schema must be rechecked immediately before R3C-A.
+
+ADR 0013 additionally ratifies strict complete-response failure and an internal
+value-free structural diagnostic. Its separate server flag is disabled by
+default and cannot enable the Proxy or credential loading. Per-Work failures
+and service sensitive-content rejection have distinct fixed classifications;
+neither changes the public error. Diagnostics are log-only, contain no Provider
+value/query/key/raw body/URL/exception, and add no SQL/API/Package/Progress
+Report field. A future at-most-one-call diagnostic requires fresh owner
+authorization and does not open R3C-I2 or R3D.
 
 The following remain `SOURCE_UNDECIDED` for production:
 

@@ -48,6 +48,8 @@ this engineering order.
 | R3C-D | OpenAlex source qualification and owner decision | **PASS_WITH_CURRENT_SOURCE_WARNINGS** — ADR 0012 approves one supervised experimental OpenAlex Works metadata adapter; no key/API call/implementation |
 | R3C-I | OpenAlex Proxy adapter implementation and mocked qualification | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — fixed adapter, privacy-safe SQL, exact microusd, scripted transport and PostgreSQL qualification; zero key/Internet |
 | R3C-A | Supervised live OpenAlex acceptance | **RETRY 1 BLOCKED — LIVE_ACCEPTANCE_PENDING** — owner/source/SQL/Package/composition gates passed; the first and only call cost 1,000 microusd but settled `PROVIDER_INVALID_RESPONSE`; no second call or repair |
+| R3C-N1 | Live normalization failure forensics | **INCONCLUSIVE** — exact live predicate not preserved; no approved failing shape reproduced offline; no source repair or Provider call |
+| R3C-N2-I | Strict response policy and structural diagnostics | **PASS_WITH_WARNINGS** — strict whole-response failure ratified; default-disabled value-free internal diagnostics synthetic/SQL qualified; no live/key/docs call |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -110,6 +112,22 @@ cost/rate evidence, but the adapter settled `PROVIDER_INVALID_RESPONSE` without
 an accepted normalized result. Retry 1 stopped fail-closed with no second call,
 restart, regression run or production repair. `R3C_STATE` therefore remains
 `LIVE_ACCEPTANCE_PENDING`; R3D production/public deployment remains closed.
+
+R3C-N1 then preserved the retry result and traced the response pipeline without
+source changes or another call. It found no surviving field/path/type/validator
+and no contract-approved synthetic shape that the adapter rejects, so root
+cause remains `INSUFFICIENT_EVIDENCE`. R3C-N2-I records the owner's strict
+complete-response decision in ADR 0013 and adds a default-disabled, log-only,
+value-free structural diagnostic. Closed stage/path/kind/validator registries,
+safe indices/counts and a canonical value-independent shape checksum now
+distinguish per-Work normalization from service sensitive-content rejection.
+The public API, SQL schema, operation/checksum identity, validation outcomes,
+query/raw-body policy, Packages and Progress Reports remain unchanged.
+
+No live diagnostic has occurred. A separate plan allows at most one future
+owner-authorized diagnostic call after a fresh attestation, key, official-source
+recheck and isolated acceptance environment. That gate is only ready for owner
+authorization; R3C-I2 compatibility remediation and R3D remain closed.
 
 ### Preserved optional mode
 

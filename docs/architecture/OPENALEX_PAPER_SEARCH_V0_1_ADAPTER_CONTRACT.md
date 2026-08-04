@@ -1,8 +1,8 @@
 # OpenAlex `paper.search/v0.1` Adapter Contract
 
-Status: **R3C-I IMPLEMENTED AND MOCK/SQL QUALIFIED; LIVE ACCEPTANCE PENDING**
+Status: **R3C-N2-I STRICT FAILURE/DIAGNOSTICS QUALIFIED; LIVE ACCEPTANCE PENDING**
 Date: 2026-08-04
-Governing ADR: 0012
+Governing ADRs: 0012 and 0013
 
 ## 1. Responsibility boundary
 
@@ -41,6 +41,12 @@ R3C-I must use a separate explicit feature flag named
 without SQL Proxy persistence, an exact OpenAlex adapter registration and the
 required credential configuration fails closed. The existing fake-adapter flag
 and adapter remain independent.
+
+Structural diagnostics use the separate server-side flag
+`REAGENT_EXPERIMENTAL_OPENALEX_STRUCTURAL_DIAGNOSTICS_ENABLED`, also false by
+default. It does not enable the Proxy, load the credential, or change request
+mapping/validation. Exact `1` enables one internal value-free structured event
+for terminal OpenAlex normalization/safety failure only.
 
 ## 3. Provider-neutral request
 
@@ -154,6 +160,36 @@ Provider result order may be preserved, but neither the adapter nor Proxy adds
 a relevance label, score, ranking explanation, summary or research conclusion.
 OpenAlex data can contain malicious or instruction-like text; it remains data.
 
+If any Work fails an approved predicate, strict complete-response failure is
+mandatory. No previously normalized subset, rejected record, warning-bearing
+success, or rejected-record count is returned or persisted. Provider order is
+used only to normalize sequentially and, when diagnostics are enabled, identify
+the safe first-failure record index and normalized-record count.
+
+R3C-N2-I does not change accepted/rejected response shapes. Required/nullable
+fields, identity, abstract, year, location/source, language, model,
+control/safety, ordering, count and size predicates remain unchanged.
+
+### 6.1 Internal structural diagnostic
+
+Internal contract `reagent.openalex-structural-diagnostic/v0.1` carries only a
+closed processing stage, approved-field path, structural kind, fixed validator
+code, optional indices, safe count, canonical value-independent shape checksum,
+and public operation/request-checksum correlation. It contains no Provider
+value, unknown key, query, key, token, raw JSON, full URL, header, exception or
+stack trace.
+
+Service sensitive-content rejection is distinct from per-Work normalization:
+it reports `SERVICE_SAFETY`, `/service_safety`, `SENSITIVE_CONTENT`, and
+`SERVICE_SENSITIVE_CONTENT` without the matched text. Unexpected internal
+exceptions use `UNCLASSIFIED_INTERNAL` without their message.
+
+The public submit/status response remains unchanged and exposes only the
+existing generic category. The preferred future acceptance sink is one
+temporary owner-controlled mode-`0600` log outside Git. No diagnostic enters
+normal `ProxyOperation` request/result data, SQL, Packages, Progress Reports,
+or client output. See `OPENALEX_STRUCTURAL_DIAGNOSTIC_V0_1.md`.
+
 ## 7. Usage, cost and budget evidence
 
 The adapter parses and bounds these safe current fields when supplied:
@@ -235,3 +271,9 @@ R3C_STATE = LIVE_ACCEPTANCE_PENDING
 R3C-A alone may use the owner key and fixed live origin after a fresh official-
 source/pricing/privacy recheck. Public deployment and production security stay
 closed.
+
+R3C-N2-I additionally qualifies strict complete-response failure and internal
+structural diagnostics with synthetic responses and the unchanged SQL schema.
+It made no Provider/documentation call and read no key. The future at-most-one-
+call diagnostic remains separately owner-gated; it is not R3C-A retry 2 and
+does not open compatibility remediation.
