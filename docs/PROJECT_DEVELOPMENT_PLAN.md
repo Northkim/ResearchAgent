@@ -47,7 +47,7 @@ this engineering order.
 | R3B-A | External fake-adapter API Proxy acceptance | **PASS_WITH_WARNINGS — FAKE_PROXY_ACCEPTED** — external Package, real loopback Uvicorn/HTTP, token lifecycle, isolated PostgreSQL restart and Package non-mutation passed |
 | R3C-D | OpenAlex source qualification and owner decision | **PASS_WITH_CURRENT_SOURCE_WARNINGS** — ADR 0012 approves one supervised experimental OpenAlex Works metadata adapter; no key/API call/implementation |
 | R3C-I | OpenAlex Proxy adapter implementation and mocked qualification | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — fixed adapter, privacy-safe SQL, exact microusd, scripted transport and PostgreSQL qualification; zero key/Internet |
-| R3C-A | Supervised live OpenAlex acceptance | **LIVE ACCEPTANCE GATE CLOSED** — requires exact R3C-I baseline, separate owner start/key, current-source recheck and capped live acceptance |
+| R3C-A | Supervised live OpenAlex acceptance | **RETRY 1 BLOCKED — LIVE_ACCEPTANCE_PENDING** — owner/source/SQL/Package/composition gates passed; the first and only call cost 1,000 microusd but settled `PROVIDER_INVALID_RESPONSE`; no second call or repair |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -102,8 +102,14 @@ Migration `20260805_0005` adds query-checksum/length evidence and integer
 Provider call/microusd accounting without query text, key, raw body or Hosted
 foreign keys. Scripted transport and a fresh isolated PostgreSQL 18.1 cluster
 qualified request mapping, normalized metadata, safe errors, idempotency,
-reconciliation and budget races with zero live Provider calls. R3C-A remains
-separately owner-gated and R3D production/public deployment remains closed.
+reconciliation and budget races with zero live Provider calls. R3C-A attempt 0
+then stopped correctly at its owner-attestation prerequisite. Owner-authorized
+retry 1 passed the owner/source/isolated-SQL/external-Package/composition gates
+and made one live call. OpenAlex returned HTTP 200 and exact 1,000-microusd
+cost/rate evidence, but the adapter settled `PROVIDER_INVALID_RESPONSE` without
+an accepted normalized result. Retry 1 stopped fail-closed with no second call,
+restart, regression run or production repair. `R3C_STATE` therefore remains
+`LIVE_ACCEPTANCE_PENDING`; R3D production/public deployment remains closed.
 
 ### Preserved optional mode
 

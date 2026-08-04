@@ -84,23 +84,39 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-A blocked at owner-attestation gate
+### Current milestone — R3C-A retry 1 blocked after one fail-closed live call
 
-R3C-A was started from exact clean `main` commit
-`6ba48416b4936060298b9e5fd9ce197b782b2bb1`, but its mandatory first external
-authorization gate could not pass: the owner did not supply the required
-credential-free attestation file or a location from which it could be read,
-and Codex may not author that attestation on the owner's behalf. The phase
-therefore stopped before official-source retrieval, OpenAlex key access,
-PostgreSQL/Uvicorn/Package setup or any Provider call. No application defect
-was observed because the runtime path was not started.
+Attempt 0 remains immutable audit evidence for the correct stop at the owner-
+attestation gate. Owner-authorized retry 1 began from exact clean `main` commit
+`e381e74dac017f2466ac80b77a582ccc10cf6e78`. The two protected owner paths and
+exact credential-free attestation passed. A fresh recheck of all 13 approved
+OpenAlex documentation/Terms/Privacy objects passed before the key was read;
+12 byte hashes matched the committed ledger and one Authentication & Pricing
+reference changed bytes without changing the qualified contract.
 
-The blocked result retains `R3C_STATE = LIVE_ACCEPTANCE_PENDING` and
-`R3C_COMPLETE = NOT_COMPLETE`; live Provider-call count and reported cost are
-both zero. Only the sanitized blocked acceptance report, progress record and
-this context update are permitted. A future retry requires the owner to supply
-the path to a non-secret `0600` attestation outside Git and the Package and to
-authorize the resulting exact baseline. R3D remains closed.
+Fresh loopback PostgreSQL 18.1, migration `20260805_0005`, a fresh fictional
+external Package, default-disabled/missing-SQL/missing-key composition, a two-
+call OpenAlex-bound capability and supervised key injection all passed. The
+first and only committed-client Provider call received HTTP 200 and exact
+USD 0.001 cost/rate evidence, but the adapter durably settled it as
+`FAILED / PROVIDER_INVALID_RESPONSE` with no accepted normalized result. This
+unexpected live Provider/normalization contract stopped the retry immediately.
+No second Provider call, replay/conflict, restart, regression suite or source
+repair occurred.
+
+The exact query, runtime marker and capability plaintext had zero durable
+matches; Hosted/Runtime/Progress rows remained zero; the Package manifest was
+byte-identical. The token was revoked and all dedicated Package/database/log/
+source/runtime material was deleted. The execution safety reviewer rejected
+deleting the two exact external owner files pending fresh explicit approval,
+so both remained protected `0600` files outside Git.
+
+Retry state is `R3C_A_RETRY_1_ACCEPTANCE = BLOCKED`,
+`R3C_LIVE_PROVIDER_CALL_COUNT = 1`,
+`R3C_REPORTED_COST_MICROUSD = 1000`,
+`R3C_STATE = LIVE_ACCEPTANCE_PENDING` and `R3C_COMPLETE = NOT_COMPLETE`.
+Production source was not changed. R3D remains closed. Detailed evidence is in
+`docs/acceptance/R3C_OPENALEX_LIVE_ACCEPTANCE_RETRY_1_REPORT.md`.
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
