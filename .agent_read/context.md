@@ -84,7 +84,43 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-A retry 1 blocked after one fail-closed live call
+### Current milestone — R3C-N1 normalization forensics inconclusive
+
+R3C-N1 began from exact clean `main` commit
+`f78f145b2506400931247d8a669de0ff33367aec`. It performed documentation and
+offline forensics only: zero live Provider calls, no OpenAlex key or `.env`
+read, no database, and no Runtime, Workflow, Hosted, LLM, Judge or Progress
+Report activity. Production source, tests, migrations, fixtures, frontend,
+Package templates, contracts, ADRs and both acceptance reports remain
+unchanged.
+
+The exact retry-1 live field/path/type/validator was not preserved. Durable
+evidence and source ordering narrow the failure to either per-Work
+normalization or the service sensitive-content canary after successful HTTP
+200, rate evidence and exact 1,000-microusd parsing. The top-level result-array
+predicates and normalized-size limit are inconsistent with the preserved
+cost/error tuple, but the remaining branches cannot be distinguished.
+
+A network-disabled synthetic matrix exercised every named sparse/null case and
+adjacent malformed cases through the committed scripted transport. Every
+unambiguously approved nullable/sparse shape was accepted; no approved
+Provider shape reproduced the failure. The result is
+`ROOT_CAUSE_CLASSIFICATION = INSUFFICIENT_EVIDENCE` with high confidence in the
+insufficiency finding, not in an underlying mechanism.
+
+Mixed valid/malformed record behavior is not unambiguously specified by ADR
+0012 or the adapter contract. A decision packet recommends Option A, preserving
+strict complete-response failure, but owner approval is required. R3C-I2 is
+closed. Because both the exact live path and an approved offline reproducer are
+absent, a privacy-safe one-call structural diagnostic requires separate owner
+authorization. R3D remains closed.
+
+Validation remained source-free: 54 focused OpenAlex tests and 110 complete
+Proxy tests passed, backend compileall passed, and no PostgreSQL was used.
+Detailed evidence is in
+`docs/audits/R3C_OPENALEX_LIVE_NORMALIZATION_FAILURE_FORENSICS.md`.
+
+#### Preserved R3C-A retry 1 state
 
 Attempt 0 remains immutable audit evidence for the correct stop at the owner-
 attestation gate. Owner-authorized retry 1 began from exact clean `main` commit
