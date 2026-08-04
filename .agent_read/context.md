@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-04
+Last updated: 2026-08-05
 
 ## Current governing route — Phase R0 teacher-aligned boundary freeze
 
@@ -84,7 +84,40 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-N2-A live structural diagnostic acceptance
+### Current milestone — R3C-A-R2 blocked positive-result live retry
+
+R3C-A-R2 began from exact clean `main` commit
+`5c10cd909935f143fce63942b81da9514cfd84de`. The Git gate and owner-input
+metadata gate passed. The attestation was strict, credential-free, bound to the
+exact phase and baseline, and otherwise contained the required one-call,
+1,000-microusd, five-result, generic-public-query, no-overage, and local-copy-
+deletion declarations. Its attested remaining free daily allowance did not
+meet the required USD 0.05 minimum, so owner authorization failed as a whole.
+
+The phase stopped before official-source retrieval, key access, PostgreSQL,
+Package generation, feature probes, diagnostic logging, token issuance,
+Uvicorn, HTTP, or Provider use. There were zero operations, zero OpenAlex calls,
+zero retries, and zero reported cost. No normalization predicate, production
+source, test, migration, fixture, frontend, Package template, contract, ADR, or
+Progress Report code changed. No Runtime, Hosted, Workflow, LLM, Judge,
+evaluation, or Progress Report activity occurred.
+
+The owner-authorized local attestation and key copies were deleted, and the key
+content was never read. Temporary teacher-PDF renders were deleted. ProjectDB,
+unrelated services, the OpenAlex account key, and all prior audit evidence were
+untouched.
+
+`R3C_A_RETRY_2_ACCEPTANCE = BLOCKED`,
+`R3C_OWNER_AUTHORIZATION = FAIL`,
+`R3C_LIVE_OPERATION_OUTCOME = NOT_RUN`,
+`R3C_LIVE_PROVIDER_CALL_COUNT_THIS_PHASE = 0`, and
+`R3C_REPORTED_COST_MICROUSD = 0`. `R3C_STATE` remains
+`LIVE_ACCEPTANCE_PENDING`; `R3C_COMPLETE = NOT_COMPLETE`;
+`R3C_I2_IMPLEMENTATION_GATE` and `R3D_PRODUCTION_PROVIDER_GATE` remain closed.
+Detailed evidence is in
+`.agent_read/progress/r3c_openalex_positive_result_live_acceptance_retry_2.md`.
+
+#### Preserved R3C-N2-A live structural diagnostic acceptance
 
 R3C-N2-A began from exact clean `main` commit
 `45ef6b500c61a484bd6d4b569b3d4233ab6146a2`. A fresh strict owner
