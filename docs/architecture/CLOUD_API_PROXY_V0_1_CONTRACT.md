@@ -72,8 +72,9 @@ R3B is `EXPERIMENTAL_FAKE_PROVIDER_VERTICAL_SLICE`. It is disabled by default,
 limited to `paper.search/v0.1` through one deterministic fake paper-search
 adapter, and permits zero real-provider, provider-credential or external-
 network calls. It is not suitable for public or production deployment. The
-contract below freezes that experimental profile; broader production and live-
-provider choices remain unapproved for R3C.
+contract below freezes that experimental profile. ADR 0012 later approves only
+one separate supervised OpenAlex adapter for experimental R3C; every broader
+Provider and production choice remains unapproved.
 
 ## 3. Proposed request envelope
 
@@ -306,8 +307,10 @@ plaintext, Authorization headers, unsafe original payloads and executable
 content. Unsafe data is rejected before artifact persistence; only safe
 metadata/checksums may be retained for a rejection. The isolated database,
 artifact directory and plaintext token file are removed after acceptance, with
-only sanitized tracked evidence retained. Live-provider retention remains
-`SOURCE_UNDECIDED` for R3C.
+only sanitized tracked evidence retained. ADR 0012 separately limits R3C-A to
+acceptance-lifetime normalized OpenAlex paper metadata plus safe identities,
+checksums and exact usage/cost evidence. It forbids raw Provider bodies, query
+text at rest, keys, credential URLs, PDF/full text and production retention.
 
 R3B does not modify `progress-report/v0.2`. A local output may record a Proxy
 operation ID as ordinary local provenance, but the proxy neither creates nor
@@ -401,20 +404,64 @@ admission, and `(token_id, idempotency_key)` is unique.
 
 At separately composed Proxy startup, durable `RUNNING` rows become
 `RECONCILIATION_REQUIRED`; they are never automatically re-invoked. R3B-I
-qualified this behavior in-process and with real PostgreSQL. R3B-A must still
-prove the external Package, live ASGI/loopback HTTP, token-file lifecycle,
-process/database restart and Package non-mutation path. R3C remains closed.
+qualified this behavior in-process and with real PostgreSQL. R3B-A subsequently
+accepted the external Package, live ASGI/loopback HTTP, token-file lifecycle,
+process/database restart and Package non-mutation path with the deterministic
+fake adapter.
 
 ## 13. Gate state
 
-ADR 0011 resolves the formerly `SOURCE_UNDECIDED` controls only for the
-experimental fake-provider slice. R3B-I implementation and SQL qualification
-are complete with external-acceptance warnings. `R3B_A_ENTRY_GATE = OPEN` only
-after the clean R3B-I implementation commit; `R3B_RUNTIME_ACCEPTANCE =
-NOT_STARTED` until R3B-A.
+R3B is `FAKE_PROXY_ACCEPTED` with documented warnings. ADR 0012 and the current
+official-source audit now authorize implementation of one separate R3C-I
+OpenAlex adapter profile with mocked/scripted transport only. They do not
+authorize a key, Internet or live Provider call.
 
-`R3C_LIVE_PROVIDER_GATE = CLOSED`. Production authentication, token issuance
-UX, HTTPS deployment, provider eligibility/current terms, live credentials,
-rate limits, monetary budget, retry policy, live data retention/deletion,
-production logging/audit retention and public-network security remain subject
-to separate owner approval.
+`R3C_I_IMPLEMENTATION_GATE = OPEN`. `R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED`
+until a clean R3C-I baseline and separate owner start. Public/production use is
+not authorized and `R3D_PRODUCTION_PROVIDER_GATE = CLOSED`.
+
+## 14. Ratified R3C OpenAlex profile
+
+ADR 0012 preserves this provider-neutral envelope and its non-cyclic identities
+while allowing exactly one additional server-derived adapter identity:
+`reagent.openalex-paper-search/v0.1`. A live-adapter token keeps the accepted
+short-lived, digest-only loopback profile, binds the exact OpenAlex adapter and
+is capped at 20 admitted operations. No Provider name, URL, endpoint, key or
+header is accepted from the request.
+
+The live adapter maps the exact trimmed `query` to ordinary OpenAlex `search`
+and `max_results` to one `per_page` value from 1 through 20. Its fixed top-level
+field list is:
+
+```text
+id,doi,display_name,authorships,abstract_inverted_index,publication_year,primary_location,language
+```
+
+It adds no filter, sort, page/cursor, pagination, semantic/exact search,
+content/PDF/full-text operation or query rewrite. The server makes one HTTPS
+request to the fixed official Works origin, verifies TLS, disables redirects
+and ambient proxies, permits at most 10 seconds and 512 KiB, and performs zero
+automatic Provider retries.
+
+The existing scoped idempotency rule remains exact: replay returns the durable
+operation without another Provider call; changed content conflicts before
+Provider use; uncertainty becomes `RECONCILIATION_REQUIRED` and is never
+automatically reissued.
+
+R3C-A ceilings are 20 Provider calls/operations and USD 0.05 reported spend,
+with no prepaid authorization. The current qualified price is `$0.001` per
+Works search, but R3C-A must recheck it. Cost is retained at exact sub-cent
+precision from safe `meta.cost_usd`/rate evidence; it is not rounded into the
+Hosted whole-cent usage field. Missing, changed or contradictory cost evidence
+fails closed.
+
+Only acceptance-lifetime normalized paper metadata and safe identity,
+operation, timestamp, latency, usage and checksum evidence may persist. Raw
+Provider body, query text, API key, credential-bearing URL, PDF/full text and
+unsafe content do not persist. Provider data stays untrusted; the cloud does no
+relevance judgment, ranking, synthesis, LLM work, Workflow continuation,
+Progress Report mutation or Package write.
+
+The complete adapter mapping and security requirements are frozen in
+`OPENALEX_PAPER_SEARCH_V0_1_ADAPTER_CONTRACT.md` and
+`../security/R3C_OPENALEX_CREDENTIAL_PRIVACY_AND_COST_POLICY.md`.

@@ -84,7 +84,7 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R3B-A fake Proxy externally accepted
+### Current implementation milestone — R3C-D OpenAlex boundary ratified
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -242,10 +242,52 @@ Report tests and 357 full-backend tests with four unrelated gated skips.
 `R3B_A_ACCEPTANCE = PASS_WITH_WARNINGS`; `R3B_STATE = FAKE_PROXY_ACCEPTED`;
 `R3B_COMPLETE = PASS_WITH_WARNINGS`. Live active-slot saturation was not
 separately induced and wall-clock expiry was not repeated; real SQL concurrency
-and focused expiry tests passed. Production authentication/multi-user
-authorization and all live-provider credentials, terms, rate/cost/retry,
-retention/deletion, logging and public-network controls remain
-`SOURCE_UNDECIDED` for R3C. `R3C_LIVE_PROVIDER_GATE = CLOSED`.
+and focused expiry tests passed.
+
+R3C-D then qualified current official OpenAlex sources without contacting the
+Provider API or reading a key. Exact bytes from approved official documentation
+domains were fingerprinted; the 15-page Terms and 17-page Privacy PDFs were
+fully extracted, rendered and visually inspected. Current keyed Works-search
+terms support the experimental slice: current pricing reports `$0.001` per
+search and `$1/day` free use with a free key; ordinary Works search uses
+`search=`, one page can return up to 100, current cost evidence is exposed in
+`meta.cost_usd` and rate headers, and the dataset is described as CC0 while
+third-party publication/content rights remain separate. Current Privacy text
+confirms key-linked request/technical metadata collection and possible
+Provider-side retention. Official pages use inconsistent language about tiny
+anonymous/demo access, but R3C requires a key and never relies on anonymous use.
+
+The existing Hosted OpenAlex adapter uses current `search=` and current Work
+fields, a fixed HTTPS origin, redirects disabled and sanitized exceptions. It
+cannot be reused unchanged: it rewrites queries, adds filters/cursor, calls
+`/rate-limit`, retries, permits 15 seconds/2 MiB, inherits ambient proxy
+configuration, loses exact sub-cent cost in the whole-cent usage field and is
+composed through Hosted research Skills/ProviderOperation/WorkflowRun. R3C-I
+must create a new branch behind the separate `cloud_api_proxy` domain with
+scripted transport only.
+
+Accepted ADR 0012 ratifies only supervised experimental R3C. The sole Provider
+is OpenAlex; the sole capability remains `paper.search/v0.1`; one unchanged
+trimmed query maps to one Works request/page with at most 20 results and fixed
+fields `id,doi,display_name,authorships,abstract_inverted_index,publication_year,primary_location,language`.
+The sole key source is `REAGENT_OPENALEX_API_KEY`, server-side only. The future
+transport is fixed to official HTTPS, verifies TLS, disables redirects and
+ambient proxies, permits 10 seconds/512 KiB, makes one call per new operation
+and never retries automatically. R3C-A ceilings are 20 calls/operations and USD
+0.05 with no prepaid authorization. Only acceptance-lifetime normalized
+metadata and safe checksums/usage may persist; raw body, key, credential URL,
+query-at-rest, PDF and full text are prohibited. R3C-A uses fictional public
+non-sensitive queries and requires a fresh source/pricing/privacy recheck.
+
+`R3C_DECISION_RATIFICATION = PASS_WITH_CURRENT_SOURCE_WARNINGS`;
+`R3C_OFFICIAL_SOURCE_QUALIFICATION = PASS`;
+`R3C_OPENALEX_ADAPTER_AUDIT = COMPLETE`;
+`R3C_I_IMPLEMENTATION_GATE = OPEN`. R3C-I has not started and may use only a
+scripted/mock transport, no key and no Internet. `R3C_A_LIVE_ACCEPTANCE_GATE =
+CLOSED` pending a clean R3C-I baseline and separate owner start.
+`R3D_PRODUCTION_PROVIDER_GATE = CLOSED`; production authentication/multi-user
+authorization, HTTPS/public deployment, proof of possession, secret management,
+paid/prepaid use and production retention remain unapproved.
 
 The optional Next.js **Uploaded Local Progress Reports** view remains deferred,
 Claude Code remains untested, automatic Progress Report upload remains absent,
@@ -253,7 +295,8 @@ cloud cannot independently prove no-op context bytes without snapshots, and a
 missing-predecessor child remains permanently rejected without automatic
 re-evaluation or an explicit recovery endpoint. Hosted-work freeze and the
 state-authority split remain intact. R3B-A is complete with warnings and awaits
-owner review. R3C remains unauthorized.
+owner review. R3C-I implementation alone is now authorized; live R3C-A and
+production R3D remain unauthorized.
 
 ### Required reading for future Codex tasks
 
@@ -261,10 +304,12 @@ Before planning product or architecture work, read in this authority order:
 
 1. `Meta-Research-Agent-架构.pdf` directly;
 2. `.agent_read/decisions/0009-teacher-aligned-initial-product-boundary.md`;
-3. `docs/audits/TEACHER_DESIGN_REQUIREMENT_LEDGER.md` and
+3. for Proxy/OpenAlex work, ADRs 0010–0012 and
+   `.agent_read/progress/r3c_openalex_source_and_owner_decisions.md`;
+4. `docs/audits/TEACHER_DESIGN_REQUIREMENT_LEDGER.md` and
    `docs/audits/TEACHER_DESIGN_ALIGNMENT_AUDIT.md`;
-4. this context and the current relevant progress report;
-5. earlier ADRs and historical plans only where they do not conflict.
+5. this context and the current relevant progress report;
+6. earlier ADRs and historical plans only where they do not conflict.
 
 ## Historical route — Phase 9C-2A (preserved, no longer the V1 mainline)
 

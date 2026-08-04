@@ -93,19 +93,19 @@ implemented them.
 
 | Threat | Abuse/failure | Required mitigation | Residual risk / decision |
 |---|---|---|---|
-| Provider-key leakage into a Package | Key is placed in `cloud/`, prompt, output or context and moves with the folder. | R3B has no provider key. Package schema forbids secrets; proxy config contains lookup method only; scan generated packages. | Live credential source/rotation remains `SOURCE_UNDECIDED` for R3C. |
+| Provider-key leakage into a Package | Key is placed in `cloud/`, prompt, output or context and moves with the folder. | R3B has no provider key. R3C accepts only server-side `REAGENT_OPENALEX_API_KEY`; Package schema forbids secrets and generated Packages are scanned. | Production secret management/rotation remains unapproved. |
 | Key leakage into logs/errors/Progress Reports | Credential-bearing URL or exception is collected. | Inject at adapter boundary; never log request URL/headers; sanitize exception chains; secret-field denylist; Progress Report validator rejects credentials/raw provider response. | Third-party observability configuration needs implementation review. |
 | Bearer-token plaintext leakage | Operator/client prints it, passes it as an argument, stores it in `.env`, Package, database/artifact or permissive file. | Operator CLI writes once to a new outside-Git/Package file at mode `0600`, refuses overwrite and emits no plaintext; client reads process environment only; server stores SHA-256 digest; logs/Progress Reports/artifacts reject it; delete the file after acceptance. | A same-user local process may still read process environment; R3B is isolated and short-lived. |
 | Arbitrary URL / SSRF | Caller asks proxy to fetch attacker, loopback, link-local, private, metadata or internal service. | No URL parameter; fixed adapter host/scheme/path; redirects disabled. If future DNS resolution is used, revalidate all resolved addresses and deny loopback, private, link-local, multicast, reserved and metadata ranges. | Any new adapter endpoint requires separate allowlist review. |
-| Cross-project access | Caller submits another project/package ID or reads its operation. | Server derives tenant/subject/project/Package/Workflow scope from the token record; route/body identity cannot expand it; every read uses the same scope. | Production ownership and multi-user roles remain `SOURCE_UNDECIDED` for R3C. |
-| Package identity spoofing | Copied/altered Package claims an allowed identity. | Validate exact token-bound Package ID/checksum and Workflow ID/version/checksum; reject all mismatch before adapter use; no client ownership claims. | Production Package issuance remains an R3C decision. |
+| Cross-project access | Caller submits another project/package ID or reads its operation. | Server derives tenant/subject/project/Package/Workflow scope from the token record; route/body identity cannot expand it; every read uses the same scope. | Production ownership and multi-user roles remain `SOURCE_UNDECIDED`. |
+| Package identity spoofing | Copied/altered Package claims an allowed identity. | Validate exact token-bound Package ID/checksum and Workflow ID/version/checksum; reject all mismatch before adapter use; no client ownership claims. | Production Package/token issuance remains unapproved. |
 | Stolen bearer capability | Token theft grants its R3B scope. | At least 256 random bits; SHA-256 digest-only server storage; constant-time comparison; 60-minute default/120-minute maximum; narrow exact scope/count; explicit revocation; plaintext outside Package/Git and removed after acceptance. | No proof of possession in R3B; loopback-only use limits but does not remove local-process theft risk. |
 | Replay attack | Captured request is resubmitted to consume quota or obtain data. | Loopback-only R3B transport; short-lived authorization; UUIDv4 idempotency; exact replays return the same operation without a second adapter call; changed-content replay conflicts; status reads are scoped. | Detached signing/nonces/proof of possession are deferred to production security review. |
 | Idempotency-key substitution | Attacker reuses another key with changed request. | Operation identity binds authorized scope, key and request checksum; conflict before call; key lookup never crosses tenant/project/package scope. | Concurrent-race behavior must be accepted in R3B. |
 | Parameter/query injection | Provider-specific syntax, control characters or huge arrays alter operation. | Capability-specific schema, max lengths/counts, allowlisted enum/range fields, canonical encoding; no raw filter/header/URL; adapter uses structured parameters. | Provider query-language edge cases require adapter tests. |
 | Oversized request | Memory/CPU exhaustion or log amplification. | Enforce 16 KiB before JSON expansion plus depth, UTF-8, query-length and unknown-field checks. | Production limits require separate review. |
-| Oversized provider response | Memory/storage exhaustion or malicious content. | Enforce 512 KiB normalized result, 20 records and 10-second operation timeout; reject without unsafe artifact. | Live raw-body/compression limits remain R3C decisions. |
-| Provider-cost abuse | Many operations consume budget. | R3B permits 50 operations/token, two concurrent operations/token, zero money and zero real-provider/external-network calls. | Live funding and rate policy remain `SOURCE_UNDECIDED` for R3C. |
+| Oversized provider response | Memory/storage exhaustion or malicious content. | R3C enforces 512 KiB actual Provider response bytes before persistence, 20 records and 10 seconds; reject without unsafe artifact. | Streaming/decompression implementation requires R3C-I tests. |
+| Provider-cost abuse | Many operations consume budget. | R3B remains zero-cost. R3C-A caps 20 operations/calls and USD 0.05, requires exact sub-cent settlement, zero retry and no prepaid authorization. | Production funding/rate policy remains unapproved. |
 | Quota exhaustion / noisy neighbor | One caller exhausts the experimental service. | Token-bound count/concurrency limits and fail-closed accounting; no provider switching. | Production tenant/global allocation remains `SOURCE_UNDECIDED`. |
 | Malicious provider content | Titles/abstracts include HTML, script, terminal escapes, URLs, secrets or instructions. | Validate Unicode/size; tag as untrusted; escape on presentation; no script execution; no automatic fetching; no cloud LLM; local client prints metadata only, not raw content by default. | Local Harness can still be influenced; Package instructions must reinforce data/instruction separation. |
 | Prompt injection in provider data | Provider text tells Harness/cloud to disclose secrets or change task. | Cloud never promotes provider text to instructions or LLM prompts; normalized fields labelled untrusted; local Skill instructs Harness to ignore embedded instructions. | Existing general-purpose Harness behavior remains a user-environment risk. |
@@ -114,7 +114,7 @@ implemented them.
 | Path injection/local disclosure | Request or response supplies absolute/traversal path; client reads arbitrary local file. | Proxy request has no local path; local client accepts only package-relative declared configuration; storage keys are relative and traversal/symlink-safe. | Future upload features require their own path review. |
 | Log injection | Newlines/control characters forge audit events. | Structured JSON logs, encoded values, control-character rejection, length caps, stable request IDs. | Operator log sink must preserve structure. |
 | Tenant data leakage | Caches, replay/status reads or error details reveal another tenant’s query/results/budget. | Scope every lookup/cache key by authenticated tenant/project/package; response DTO allowlist; no existence oracle; row-level repository predicates and tests. | Multi-user tenancy is `SOURCE_UNDECIDED`. |
-| Retention beyond approval | Fake data or token material remains after acceptance. | Acceptance-lifetime retention only; no raw body/token/Auth header; remove isolated database cluster, artifact directory and plaintext token file after acceptance; retain sanitized tracked evidence only. | Live-provider retention/deletion remains `SOURCE_UNDECIDED`. |
+| Retention beyond approval | Provider data or token material remains after acceptance. | R3B/R3C acceptance-lifetime retention only; no raw body/query/key/token/Auth URL/header; remove isolated database/runtime/secret material and retain sanitized evidence only. | Production retention/deletion/export remains unapproved. |
 | Legacy Hosted endpoint misuse | Caller uses `/runs/.../resume` to execute research instead of the proxy. | Proxy credentials cannot authorize Hosted routes; teacher-aligned deployment can separately disable/hide Hosted paths; proxy service imports no Hosted graph. | Route-level mode separation needs later explicit implementation scope. |
 | Accidental AgentRuntime/LLM invocation | Composition injects `ApplicationServices` or research Skills into proxy. | Dedicated proxy composition/service dependency; static forbidden-import tests and runtime provider canaries; database checks for no Hosted run/event/checkpoint/memory rows. | Required R3B acceptance gate. |
 | Cloud crash/partial persistence | Provider may have completed but operation appears absent/incomplete. | Durable reservation before call; immutable result then settlement; conservative `RECONCILIATION_REQUIRED`; status read; no ambiguous auto retry. | Exactly-once is impossible without provider reconciliation/idempotency. |
@@ -189,27 +189,49 @@ Runtime/dispatcher/operation graph. PostgreSQL tests verify that Proxy calls
 create only separate token/operation rows and that the operation table has no
 Hosted Workflow foreign key.
 
-R3B-A must still test the full external token-file, live server, loopback HTTP,
-restart and cleanup lifecycle. These implementation checks are not production
-authentication or public-network acceptance.
+R3B-A accepted the full external token-file, live server, loopback HTTP,
+restart and cleanup lifecycle with the deterministic fake adapter. That
+evidence is not production authentication or public-network acceptance.
 
-## 8. R3C owner decisions still required
+## 8. Ratified R3C experimental controls
 
-ADR 0011 resolves the R3A questions only for R3B. Each item below remains
-`SOURCE_UNDECIDED` for R3C or production use:
+ADR 0012 resolves the live-provider decisions only for one supervised OpenAlex
+metadata-search experiment. R3C-I is network/key-free implementation with a
+scripted transport. R3C-A remains separately gated and, when explicitly
+started, may use only:
+
+- the sole server-side credential source `REAGENT_OPENALEX_API_KEY`;
+- one fixed HTTPS origin/path with TLS verification, redirects and ambient
+  proxies disabled;
+- ordinary `paper.search/v0.1`, one unchanged query, one Works page and the
+  fixed field allowlist;
+- no more than 20 calls/operations, USD 0.05, 20 results, 512 KiB and 10
+  seconds, with zero automatic retry or prepaid authorization;
+- fictional public non-sensitive queries;
+- acceptance-lifetime normalized metadata/checksums/usage only, without raw
+  body, query-at-rest, key, credential URL, PDF or full text;
+- existing durable idempotency and conservative reconciliation with no second
+  call after uncertainty.
+
+The additional OpenAlex-specific threats and mitigations are frozen in
+`R3C_OPENALEX_CREDENTIAL_PRIVACY_AND_COST_POLICY.md`. Official pricing, Terms,
+Privacy and schema must be rechecked immediately before R3C-A.
+
+The following remain `SOURCE_UNDECIDED` for production:
 
 - production user authentication and multi-user project ownership;
 - production token issuance UX, storage, revocation and proof of possession;
 - HTTPS/non-loopback deployment and public-network security acceptance;
-- live provider eligibility/current terms and credentials;
-- live provider rate limits, monetary budget and retry policy;
-- live raw/normalized data retention, deletion/export and backup policy;
+- production Provider eligibility, paid/prepaid terms, rate/cost/retry policy;
+- production raw/normalized data retention, deletion/export and backup policy;
 - production logs, audit retention and tenant visibility;
 - formal Progress Report proxy-operation fields;
 - authorization separation from optional Hosted routes in a production
   deployment.
 
-`R3C_LIVE_PROVIDER_GATE = CLOSED`.
+`R3C_I_IMPLEMENTATION_GATE = OPEN`, while
+`R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED` and
+`R3D_PRODUCTION_PROVIDER_GATE = CLOSED`.
 
 ## 9. Residual risks
 
@@ -229,4 +251,4 @@ ADR 0011 resolves the R3A questions only for R3B. Each item below remains
 - The R3B bearer has no proof of possession; its narrow scope, short lifetime,
   revocation and loopback-only use limit but do not eliminate theft/replay risk.
 - Production authentication, multi-user isolation and live-provider retention
-  remain unapproved; therefore `R3C_LIVE_PROVIDER_GATE` remains closed.
+  remain unapproved; therefore `R3D_PRODUCTION_PROVIDER_GATE` remains closed.
