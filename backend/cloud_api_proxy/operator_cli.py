@@ -11,6 +11,7 @@ from pathlib import Path
 from backend.database.engine import create_postgres_engine, create_session_factory
 
 from .fake_adapter import DeterministicFakePaperSearchAdapter
+from .contracts import ADAPTER_ID, OPENALEX_ADAPTER_ID
 from .package_identity import read_validated_package_identity
 from .service import CloudAPIProxyService
 from .sql import SQLProxyUnitOfWork
@@ -68,7 +69,7 @@ def _write_once(path: Path, plaintext: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Issue or revoke an experimental fake-Proxy capability token.")
+    parser = argparse.ArgumentParser(description="Issue or revoke an experimental Proxy capability token.")
     subcommands = parser.add_subparsers(dest="command", required=True)
     issue = subcommands.add_parser("issue")
     issue.add_argument("--project-id", required=True)
@@ -77,7 +78,12 @@ def main(argv: list[str] | None = None) -> int:
     issue.add_argument("--subject-id", required=True)
     issue.add_argument("--output-file", required=True)
     issue.add_argument("--lifetime-minutes", type=int, default=60)
-    issue.add_argument("--maximum-operations", type=int, default=50)
+    issue.add_argument("--maximum-operations", type=int)
+    issue.add_argument(
+        "--adapter-id",
+        choices=(ADAPTER_ID, OPENALEX_ADAPTER_ID),
+        default=ADAPTER_ID,
+    )
     revoke = subcommands.add_parser("revoke")
     revoke.add_argument("--token-id", required=True)
     args = parser.parse_args(argv)
@@ -103,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
                 workflow_checksum=identity.workflow_checksum,
                 lifetime_minutes=args.lifetime_minutes,
                 maximum_operations=args.maximum_operations,
+                adapter_id=args.adapter_id,
             )
             try:
                 _write_once(output, plaintext)
@@ -116,6 +123,9 @@ def main(argv: list[str] | None = None) -> int:
                 "package_id": token.scope.package_id,
                 "workflow_id": token.scope.workflow_id,
                 "maximum_operations": token.scope.maximum_operations,
+                "adapter_id": token.scope.adapter_id,
+                "maximum_provider_calls": token.scope.maximum_provider_calls,
+                "maximum_provider_cost_microusd": token.scope.maximum_provider_cost_microusd,
                 "output_file_created": True,
             }
         print(json.dumps(result, sort_keys=True, ensure_ascii=False))

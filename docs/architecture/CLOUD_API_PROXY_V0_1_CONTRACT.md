@@ -1,6 +1,6 @@
 # Cloud API Proxy v0.1 Contract
 
-Status: **R3B-I EXPERIMENTAL PROFILE IMPLEMENTED — EXTERNAL ACCEPTANCE PENDING**
+Status: **R3B FAKE PROFILE ACCEPTED; R3C-I OPENALEX PROFILE MOCK/SQL QUALIFIED**
 
 Date: 2026-08-04
 
@@ -416,9 +416,16 @@ official-source audit now authorize implementation of one separate R3C-I
 OpenAlex adapter profile with mocked/scripted transport only. They do not
 authorize a key, Internet or live Provider call.
 
-`R3C_I_IMPLEMENTATION_GATE = OPEN`. `R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED`
-until a clean R3C-I baseline and separate owner start. Public/production use is
-not authorized and `R3D_PRODUCTION_PROVIDER_GATE = CLOSED`.
+R3C-I now implements that profile behind the same provider-neutral envelope.
+OpenAlex request text uses `CHECKSUM_ONLY` retention: query SHA-256 and lengths
+are durable, while query text and the credential-bearing URL are not. Provider
+calls and cost are reserved transactionally; exact integer microusd and safe
+rate-limit evidence are settled without changing fake-adapter zero-cost rows.
+
+`R3C_STATE = LIVE_ACCEPTANCE_PENDING`. `R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED`
+until owner review of the clean R3C-I baseline and a separate live-phase start.
+Public/production use is not authorized and
+`R3D_PRODUCTION_PROVIDER_GATE = CLOSED`.
 
 ## 14. Ratified R3C OpenAlex profile
 

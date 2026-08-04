@@ -84,7 +84,7 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current implementation milestone — R3C-D OpenAlex boundary ratified
+### Current implementation milestone — R3C-I mocked OpenAlex adapter qualified
 
 R1 remains accepted with warnings for the bounded Codex experiment. Freshness
 and runtime non-use are owner-attested, file/checksum gates passed, the moved
@@ -279,12 +279,36 @@ metadata and safe checksums/usage may persist; raw body, key, credential URL,
 query-at-rest, PDF and full text are prohibited. R3C-A uses fictional public
 non-sensitive queries and requires a fresh source/pricing/privacy recheck.
 
-`R3C_DECISION_RATIFICATION = PASS_WITH_CURRENT_SOURCE_WARNINGS`;
-`R3C_OFFICIAL_SOURCE_QUALIFICATION = PASS`;
-`R3C_OPENALEX_ADAPTER_AUDIT = COMPLETE`;
-`R3C_I_IMPLEMENTATION_GATE = OPEN`. R3C-I has not started and may use only a
-scripted/mock transport, no key and no Internet. `R3C_A_LIVE_ACCEPTANCE_GATE =
-CLOSED` pending a clean R3C-I baseline and separate owner start.
+R3C-I now implements `reagent.openalex-paper-search/v0.1` inside the separate
+`backend/cloud_api_proxy/` boundary. The feature flag
+`REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED` is disabled by default. Token
+scope, not the client, selects the adapter. One fixed `GET /works` mapping uses
+the unchanged trimmed query, `per_page`, fixed select list and a transient
+credential-source interface. TLS verification is on; redirects and ambient
+proxies are off; the adapter has one bounded call and zero retries.
+
+Migration `20260805_0005` adds exact Provider call/microusd accounting and
+OpenAlex request evidence without query text. Durable query evidence is SHA-256
+plus byte/character lengths and `max_results`; raw response bodies, complete
+URLs and credentials remain absent. USD decimal cost is parsed without binary
+float (`$0.001 = 1,000 microusd`; `$0.05 = 50,000 microusd`). Reservations are
+transactionally applied before the scripted transport and exact replay uses no
+second call or cost.
+
+R3C-I qualification used fictional scripted responses and a fresh isolated
+PostgreSQL 18.1 cluster with separate migration/test databases. Empty upgrade,
+downgrade to `20260804_0004`, re-upgrade, one head and no drift passed. The
+mocked adapter tests pass 54, full Proxy tests 110, Proxy SQL tests 13 without
+skip, Package tests 43, Progress Report tests 38 and full backend 420 with four
+pre-existing separately gated integration skips. Compilation passes. No real
+key/environment credential, OpenAlex/API/documentation request, external
+network, Hosted Runtime/Workflow/LLM action or Progress Report change occurred.
+
+`R3C_I_IMPLEMENTATION = PASS_WITH_WARNINGS`;
+`R3C_STATE = LIVE_ACCEPTANCE_PENDING`;
+`R3C_A_ENTRY_READINESS = READY_FOR_OWNER_REVIEW`.
+`R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED` pending owner review, a fresh source
+recheck and a separately started live phase.
 `R3D_PRODUCTION_PROVIDER_GATE = CLOSED`; production authentication/multi-user
 authorization, HTTPS/public deployment, proof of possession, secret management,
 paid/prepaid use and production retention remain unapproved.
@@ -294,9 +318,9 @@ Claude Code remains untested, automatic Progress Report upload remains absent,
 cloud cannot independently prove no-op context bytes without snapshots, and a
 missing-predecessor child remains permanently rejected without automatic
 re-evaluation or an explicit recovery endpoint. Hosted-work freeze and the
-state-authority split remain intact. R3B-A is complete with warnings and awaits
-owner review. R3C-I implementation alone is now authorized; live R3C-A and
-production R3D remain unauthorized.
+state-authority split remain intact. R3B-A is complete with warnings. R3C-I is
+implemented and awaits owner review; live R3C-A and production R3D remain
+unauthorized.
 
 ### Required reading for future Codex tasks
 
@@ -305,7 +329,7 @@ Before planning product or architecture work, read in this authority order:
 1. `Meta-Research-Agent-架构.pdf` directly;
 2. `.agent_read/decisions/0009-teacher-aligned-initial-product-boundary.md`;
 3. for Proxy/OpenAlex work, ADRs 0010–0012 and
-   `.agent_read/progress/r3c_openalex_source_and_owner_decisions.md`;
+   `.agent_read/progress/r3c_openalex_mock_implementation.md`;
 4. `docs/audits/TEACHER_DESIGN_REQUIREMENT_LEDGER.md` and
    `docs/audits/TEACHER_DESIGN_ALIGNMENT_AUDIT.md`;
 5. this context and the current relevant progress report;

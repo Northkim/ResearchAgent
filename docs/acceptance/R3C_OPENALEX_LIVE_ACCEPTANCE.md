@@ -22,6 +22,8 @@ Initial gate:
 - confirmation that Works search remains `$0.001`, the keyed allowance and
   relevant headers/`meta.cost_usd` remain compatible, and current Terms/Privacy
   do not contradict the slice;
+- confirmation that the R3C-I integer-microusd mapping, fixed select list and
+  current Provider header names still match official sources;
 - owner confirmation that prepaid spending is unavailable/disabled.
 
 If source, price, terms, privacy or implementation has materially changed, stop

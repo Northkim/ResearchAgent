@@ -30,9 +30,9 @@ def r3b_engine():
     engine = create_postgres_engine(database_url)
     with engine.connect() as connection:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-    if revision != "20260804_0004":
+    if revision != "20260805_0005":
         engine.dispose()
-        pytest.fail("R3B PostgreSQL database must be at 20260804_0004")
+        pytest.fail("Proxy PostgreSQL database must be at 20260805_0005")
     yield engine
     engine.dispose()
 

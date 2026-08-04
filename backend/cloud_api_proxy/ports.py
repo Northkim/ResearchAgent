@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 from .contracts import PaperSearchV01Request, ProxyCapabilityToken, ProxyOperation
@@ -35,4 +36,60 @@ ProxyUnitOfWorkFactory = Callable[[], ProxyUnitOfWork]
 class PaperSearchAdapter(Protocol):
     adapter_id: str
     invocation_count: int
-    def search(self, request: PaperSearchV01Request) -> dict: ...
+    def search(self, request: PaperSearchV01Request) -> dict | ProxyAdapterResult: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ProxyAdapterResult:
+    provider_data: dict
+    provider_http_calls: int = 0
+    reported_cost_microusd: int = 0
+    provider_response_checksum: str | None = None
+    provider_http_status: int | None = None
+    provider_credits_used: str | None = None
+    rate_limit_limit: int | None = None
+    rate_limit_remaining: int | None = None
+    rate_limit_reset: str | None = None
+
+
+class ProxyAdapterError(RuntimeError):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        provider_http_calls: int,
+        uncertain: bool = False,
+        provider_http_status: int | None = None,
+        provider_response_checksum: str | None = None,
+        reported_cost_microusd: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.provider_http_calls = provider_http_calls
+        self.uncertain = uncertain
+        self.provider_http_status = provider_http_status
+        self.provider_response_checksum = provider_response_checksum
+        self.reported_cost_microusd = reported_cost_microusd
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderHTTPResponse:
+    status_code: int
+    headers: Mapping[str, str]
+    body: bytes
+
+
+class OpenAlexTransport(Protocol):
+    def get(
+        self,
+        *,
+        url: str,
+        params: Sequence[tuple[str, str]],
+        timeout_seconds: float,
+        maximum_response_bytes: int,
+    ) -> ProviderHTTPResponse: ...
+
+
+class OpenAlexCredentialSource(Protocol):
+    def get(self) -> str: ...

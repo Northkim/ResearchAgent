@@ -1,4 +1,4 @@
-"""Immutable contracts and non-cyclic identities for the R3B fake Proxy."""
+"""Immutable contracts and non-cyclic identities for the Cloud API Proxy."""
 
 from __future__ import annotations
 
@@ -15,7 +15,11 @@ from uuid import UUID
 PROXY_CONTRACT_VERSION = "reagent.cloud-api-proxy/v0.1"
 CAPABILITY = "paper.search/v0.1"
 ADAPTER_ID = "reagent.deterministic-fake-paper-search/v0.1"
+FAKE_ADAPTER_ID = ADAPTER_ID
+OPENALEX_ADAPTER_ID = "reagent.openalex-paper-search/v0.1"
+ALLOWED_ADAPTER_IDS = frozenset({FAKE_ADAPTER_ID, OPENALEX_ADAPTER_ID})
 POLICY_VERSION = "r3b-experimental-policy/v0.1"
+OPENALEX_POLICY_VERSION = "r3c-experimental-policy/v0.1"
 MAX_REQUEST_BYTES = 16 * 1024
 MAX_RESULT_BYTES = 512 * 1024
 MAX_TIMEOUT_SECONDS = 10
@@ -24,6 +28,11 @@ MAX_TOKEN_OPERATIONS = 50
 MAX_TIMESTAMP_SKEW_SECONDS = 5 * 60
 TOKEN_DEFAULT_MINUTES = 60
 TOKEN_MAX_MINUTES = 120
+OPENALEX_MAX_PROVIDER_CALLS = 20
+OPENALEX_MAX_PROVIDER_COST_MICROUSD = 50_000
+OPENALEX_RESERVED_SEARCH_COST_MICROUSD = 1_000
+MICROUSD_PER_USD = 1_000_000
+REQUEST_EVIDENCE_SCHEMA_VERSION = "proxy-request-evidence/v0.1"
 
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _TOKEN_ID = re.compile(r"proxytok-v1-[0-9a-f]{64}\Z")
@@ -120,6 +129,11 @@ class ProxyOperationStatus(str, Enum):
     SUCCEEDED = "SUCCEEDED"
     FAILED = "FAILED"
     RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
+
+
+class RequestRetentionMode(str, Enum):
+    FULL_PARAMETERS = "FULL_PARAMETERS"
+    CHECKSUM_ONLY = "CHECKSUM_ONLY"
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,6 +270,126 @@ class CloudProxyRequestEnvelope:
             "request_content_checksum": self.request_content_checksum,
         }
 
+    def privacy_evidence(self, retention_mode: RequestRetentionMode) -> ProxyRequestEvidence:
+        query_bytes = self.parameters.query.encode("utf-8")
+        return ProxyRequestEvidence(
+            proxy_contract_version=self.proxy_contract_version,
+            idempotency_key=self.idempotency_key,
+            project_id=self.project_id,
+            package_id=self.package_id,
+            package_checksum=self.package_checksum,
+            workflow_id=self.workflow_id,
+            workflow_version=self.workflow_version,
+            workflow_checksum=self.workflow_checksum,
+            capability=self.capability,
+            request_content_checksum=self.request_content_checksum,
+            max_results=self.parameters.max_results,
+            query_checksum=sha256_bytes(query_bytes),
+            query_utf8_bytes=len(query_bytes),
+            query_characters=len(self.parameters.query),
+            harness_type=self.harness_type,
+            harness_version=self.harness_version,
+            harness_session_id=self.harness_session_id,
+            client_timestamp=self.client_timestamp,
+            retention_mode=retention_mode,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ProxyRequestEvidence:
+    proxy_contract_version: str
+    idempotency_key: str
+    project_id: str
+    package_id: str
+    package_checksum: str
+    workflow_id: str
+    workflow_version: str
+    workflow_checksum: str
+    capability: str
+    request_content_checksum: str
+    max_results: int
+    query_checksum: str
+    query_utf8_bytes: int
+    query_characters: int
+    harness_type: str
+    harness_version: str | None
+    harness_session_id: str
+    client_timestamp: str
+    retention_mode: RequestRetentionMode
+    schema_version: str = REQUEST_EVIDENCE_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        if self.schema_version != REQUEST_EVIDENCE_SCHEMA_VERSION:
+            raise ValueError("unsupported request evidence schema")
+        if self.proxy_contract_version != PROXY_CONTRACT_VERSION or self.capability != CAPABILITY:
+            raise ValueError("request evidence contract is not supported")
+        object.__setattr__(self, "idempotency_key", parse_uuid4(self.idempotency_key))
+        for field in ("project_id", "package_id", "workflow_id", "workflow_version"):
+            object.__setattr__(self, field, _text(getattr(self, field), field))
+        for field in ("package_checksum", "workflow_checksum", "request_content_checksum", "query_checksum"):
+            object.__setattr__(self, field, _checksum(getattr(self, field), field))
+        if not 1 <= self.max_results <= 20:
+            raise ValueError("request evidence max_results must be between 1 and 20")
+        if self.query_utf8_bytes <= 0 or self.query_characters <= 0:
+            raise ValueError("request evidence query lengths must be positive")
+        if self.harness_type not in {"CODEX", "CLAUDE_CODE"}:
+            raise ValueError("request evidence harness_type is not allowlisted")
+        if self.harness_version is not None:
+            object.__setattr__(self, "harness_version", _text(self.harness_version, "harness_version"))
+        object.__setattr__(self, "harness_session_id", _text(self.harness_session_id, "harness_session_id"))
+        object.__setattr__(self, "client_timestamp", format_timestamp(parse_timestamp(self.client_timestamp, "client_timestamp")))
+
+    @classmethod
+    def from_dict(cls, value: Any) -> ProxyRequestEvidence:
+        if not isinstance(value, dict):
+            raise ValueError("request evidence must be an object")
+        return cls(
+            proxy_contract_version=value["proxy_contract_version"],
+            idempotency_key=value["idempotency_key"],
+            project_id=value["project_id"],
+            package_id=value["package_id"],
+            package_checksum=value["package_checksum"],
+            workflow_id=value["workflow_id"],
+            workflow_version=value["workflow_version"],
+            workflow_checksum=value["workflow_checksum"],
+            capability=value["capability"],
+            request_content_checksum=value["request_content_checksum"],
+            max_results=value["max_results"],
+            query_checksum=value["query_checksum"],
+            query_utf8_bytes=value["query_utf8_bytes"],
+            query_characters=value["query_characters"],
+            harness_type=value["harness_type"],
+            harness_version=value.get("harness_version"),
+            harness_session_id=value["harness_session_id"],
+            client_timestamp=value["client_timestamp"],
+            retention_mode=RequestRetentionMode(value["retention_mode"]),
+            schema_version=value.get("schema_version", REQUEST_EVIDENCE_SCHEMA_VERSION),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "proxy_contract_version": self.proxy_contract_version,
+            "idempotency_key": self.idempotency_key,
+            "project_id": self.project_id,
+            "package_id": self.package_id,
+            "package_checksum": self.package_checksum,
+            "workflow_id": self.workflow_id,
+            "workflow_version": self.workflow_version,
+            "workflow_checksum": self.workflow_checksum,
+            "capability": self.capability,
+            "request_content_checksum": self.request_content_checksum,
+            "max_results": self.max_results,
+            "query_checksum": self.query_checksum,
+            "query_utf8_bytes": self.query_utf8_bytes,
+            "query_characters": self.query_characters,
+            "harness_type": self.harness_type,
+            "harness_version": self.harness_version,
+            "harness_session_id": self.harness_session_id,
+            "client_timestamp": self.client_timestamp,
+            "retention_mode": self.retention_mode.value,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class ProxyAuthorizationScope:
@@ -271,6 +405,8 @@ class ProxyAuthorizationScope:
     capability: str
     adapter_id: str
     maximum_operations: int
+    maximum_provider_calls: int = 0
+    maximum_provider_cost_microusd: int = 0
 
     def __post_init__(self) -> None:
         if not _TOKEN_ID.fullmatch(self.token_id):
@@ -279,10 +415,19 @@ class ProxyAuthorizationScope:
             object.__setattr__(self, field, _text(getattr(self, field), field))
         _checksum(self.package_checksum, "package_checksum")
         _checksum(self.workflow_checksum, "workflow_checksum")
-        if self.capability != CAPABILITY or self.adapter_id != ADAPTER_ID:
-            raise ValueError("R3B scope must bind the ratified capability and adapter")
+        if self.capability != CAPABILITY or self.adapter_id not in ALLOWED_ADAPTER_IDS:
+            raise ValueError("scope must bind a ratified capability and adapter")
         if not 1 <= self.maximum_operations <= MAX_TOKEN_OPERATIONS:
             raise ValueError("maximum_operations must be between 1 and 50")
+        if self.adapter_id == OPENALEX_ADAPTER_ID:
+            if not 1 <= self.maximum_operations <= OPENALEX_MAX_PROVIDER_CALLS:
+                raise ValueError("OpenAlex maximum_operations must be between 1 and 20")
+            if self.maximum_provider_calls != self.maximum_operations:
+                raise ValueError("OpenAlex provider-call limit must equal maximum_operations")
+            if self.maximum_provider_cost_microusd != OPENALEX_MAX_PROVIDER_COST_MICROUSD:
+                raise ValueError("OpenAlex cost limit must be 50000 microusd")
+        elif self.maximum_provider_calls != 0 or self.maximum_provider_cost_microusd != 0:
+            raise ValueError("fake adapter scope must retain zero Provider call and cost limits")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -292,6 +437,8 @@ class ProxyAuthorizationScope:
             "workflow_id": self.workflow_id, "workflow_version": self.workflow_version,
             "workflow_checksum": self.workflow_checksum, "capability": self.capability,
             "adapter_id": self.adapter_id, "maximum_operations": self.maximum_operations,
+            "maximum_provider_calls": self.maximum_provider_calls,
+            "maximum_provider_cost_microusd": self.maximum_provider_cost_microusd,
         }
 
     @property
@@ -306,6 +453,9 @@ class ProxyCapabilityToken:
     issued_at: str
     expires_at: str
     admitted_operations: int = 0
+    used_provider_calls: int = 0
+    reserved_provider_cost_microusd: int = 0
+    reported_provider_cost_microusd: int = 0
     revoked: bool = False
     revoked_at: str | None = None
 
@@ -317,6 +467,12 @@ class ProxyCapabilityToken:
             raise ValueError("expires_at must be after issued_at")
         if not 0 <= self.admitted_operations <= self.scope.maximum_operations:
             raise ValueError("admitted_operations is outside the token budget")
+        if not 0 <= self.used_provider_calls <= self.scope.maximum_provider_calls:
+            raise ValueError("used_provider_calls is outside the token Provider-call budget")
+        if not 0 <= self.reserved_provider_cost_microusd <= self.scope.maximum_provider_cost_microusd:
+            raise ValueError("reserved Provider cost is outside the token budget")
+        if self.reported_provider_cost_microusd < 0:
+            raise ValueError("reported Provider cost cannot be negative")
         if self.revoked_at is not None:
             parse_timestamp(self.revoked_at, "revoked_at")
 
@@ -328,6 +484,34 @@ class ProxyUsage:
     estimated_cost_minor_units: int = 0
     cost_currency: str = "USD"
     latency_ms: int = 0
+    provider_http_calls: int = 0
+    reserved_cost_microusd: int = 0
+    reported_cost_microusd: int = 0
+    provider_credits_used: str | None = None
+    rate_limit_limit: int | None = None
+    rate_limit_remaining: int | None = None
+    rate_limit_reset: str | None = None
+
+    def __post_init__(self) -> None:
+        numeric = (
+            self.request_count,
+            self.retry_count,
+            self.estimated_cost_minor_units,
+            self.latency_ms,
+            self.provider_http_calls,
+            self.reserved_cost_microusd,
+            self.reported_cost_microusd,
+        )
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in numeric):
+            raise ValueError("Proxy usage counters and costs must be non-negative integers")
+        if self.provider_http_calls > 1:
+            raise ValueError("one Proxy operation may use at most one Provider HTTP call")
+        if self.cost_currency != "USD":
+            raise ValueError("Proxy cost currency must be USD")
+        if self.rate_limit_limit is not None and self.rate_limit_limit < 0:
+            raise ValueError("rate_limit_limit cannot be negative")
+        if self.rate_limit_remaining is not None and self.rate_limit_remaining < 0:
+            raise ValueError("rate_limit_remaining cannot be negative")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -336,6 +520,13 @@ class ProxyUsage:
             "estimated_cost_minor_units": self.estimated_cost_minor_units,
             "cost_currency": self.cost_currency,
             "latency_ms": self.latency_ms,
+            "provider_http_calls": self.provider_http_calls,
+            "reserved_cost_microusd": self.reserved_cost_microusd,
+            "reported_cost_microusd": self.reported_cost_microusd,
+            "provider_credits_used": self.provider_credits_used,
+            "rate_limit_limit": self.rate_limit_limit,
+            "rate_limit_remaining": self.rate_limit_remaining,
+            "rate_limit_reset": self.rate_limit_reset,
         }
 
 
@@ -358,7 +549,7 @@ class ProxyOperation:
     operation_id: str
     token_id: str
     authorization_scope_checksum: str
-    request: CloudProxyRequestEnvelope
+    request: ProxyRequestEvidence
     adapter_id: str
     status: ProxyOperationStatus
     admitted_at: str
@@ -372,6 +563,10 @@ class ProxyOperation:
     usage: ProxyUsage | None = None
     error_code: str | None = None
     reconciliation_evidence: str | None = None
+    retained_request_json: dict[str, Any] | None = None
+    provider_response_checksum: str | None = None
+    provider_http_status: int | None = None
+    provider_adapter_version: str = "v0.1"
 
     def __post_init__(self) -> None:
         if not _OPERATION_ID.fullmatch(self.operation_id):
@@ -389,6 +584,10 @@ class ProxyOperation:
             _checksum(self.provider_data_checksum, "provider_data_checksum")
         if self.response_content_checksum is not None:
             _checksum(self.response_content_checksum, "response_content_checksum")
+        if self.provider_response_checksum is not None:
+            _checksum(self.provider_response_checksum, "provider_response_checksum")
+        if self.request.retention_mode is RequestRetentionMode.CHECKSUM_ONLY and self.retained_request_json is not None:
+            raise ValueError("checksum-only request retention cannot retain request JSON")
 
     def semantic_response_content(self) -> dict[str, Any]:
         return {
@@ -404,17 +603,29 @@ class ProxyOperation:
             "provider_data": self.provider_data,
             "provider_data_checksum": self.provider_data_checksum,
             "usage": self.usage.to_dict() if self.usage else None,
-            "budget": {"monetary_limit_minor_units": 0, "settled_minor_units": 0},
+            "budget": {
+                "monetary_limit_minor_units": 0,
+                "settled_minor_units": 0,
+                "cost_unit": "microusd",
+                "reserved_cost_microusd": self.usage.reserved_cost_microusd if self.usage else 0,
+                "reported_cost_microusd": self.usage.reported_cost_microusd if self.usage else 0,
+            },
             "retry_classification": (
                 "RECONCILE_FIRST" if self.status is ProxyOperationStatus.RECONCILIATION_REQUIRED
                 else "NEVER_RETRY"
             ),
             "warnings": [],
             "provenance": {
-                "policy_version": POLICY_VERSION,
+                "policy_version": (
+                    OPENALEX_POLICY_VERSION if self.adapter_id == OPENALEX_ADAPTER_ID else POLICY_VERSION
+                ),
                 "adapter_id": self.adapter_id,
+                "adapter_version": self.provider_adapter_version,
                 "request_schema_version": CAPABILITY,
                 "untrusted_provider_data": True,
+                "request_retention_mode": self.request.retention_mode.value,
+                "provider_response_checksum": self.provider_response_checksum,
+                "provider_http_status": self.provider_http_status,
             },
             "error_code": self.error_code,
         }
@@ -441,7 +652,7 @@ def operation_from_dict(value: dict[str, Any]) -> ProxyOperation:
     return ProxyOperation(
         operation_id=value["operation_id"], token_id=value["token_id"],
         authorization_scope_checksum=value["authorization_scope_checksum"],
-        request=CloudProxyRequestEnvelope.from_dict(value["request"]),
+        request=ProxyRequestEvidence.from_dict(value["request"]),
         adapter_id=value["adapter_id"], status=ProxyOperationStatus(value["status"]),
         admitted_at=value["admitted_at"], updated_at=value["updated_at"],
         started_at=value.get("started_at"), completed_at=value.get("completed_at"),
@@ -452,6 +663,10 @@ def operation_from_dict(value: dict[str, Any]) -> ProxyOperation:
         usage=ProxyUsage(**value["usage"]) if value.get("usage") else None,
         error_code=value.get("error_code"),
         reconciliation_evidence=value.get("reconciliation_evidence"),
+        retained_request_json=value.get("retained_request_json"),
+        provider_response_checksum=value.get("provider_response_checksum"),
+        provider_http_status=value.get("provider_http_status"),
+        provider_adapter_version=value.get("provider_adapter_version", "v0.1"),
     )
 
 
@@ -469,4 +684,8 @@ def operation_to_dict(value: ProxyOperation) -> dict[str, Any]:
         "usage": value.usage.to_dict() if value.usage else None,
         "error_code": value.error_code,
         "reconciliation_evidence": value.reconciliation_evidence,
+        "retained_request_json": value.retained_request_json,
+        "provider_response_checksum": value.provider_response_checksum,
+        "provider_http_status": value.provider_http_status,
+        "provider_adapter_version": value.provider_adapter_version,
     }

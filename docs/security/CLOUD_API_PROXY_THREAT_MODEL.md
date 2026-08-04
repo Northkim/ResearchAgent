@@ -1,6 +1,6 @@
 # Cloud API Proxy Threat Model
 
-Status: **R3B-I CONTROLS IMPLEMENTED AND SQL-QUALIFIED — NOT EXTERNALLY ACCEPTED OR PRODUCTION-APPROVED**
+Status: **R3B ACCEPTED; R3C-I OPENALEX CONTROLS MOCK/SQL QUALIFIED — LIVE/PRODUCTION CLOSED**
 
 Date: 2026-08-04
 
@@ -104,7 +104,7 @@ implemented them.
 | Idempotency-key substitution | Attacker reuses another key with changed request. | Operation identity binds authorized scope, key and request checksum; conflict before call; key lookup never crosses tenant/project/package scope. | Concurrent-race behavior must be accepted in R3B. |
 | Parameter/query injection | Provider-specific syntax, control characters or huge arrays alter operation. | Capability-specific schema, max lengths/counts, allowlisted enum/range fields, canonical encoding; no raw filter/header/URL; adapter uses structured parameters. | Provider query-language edge cases require adapter tests. |
 | Oversized request | Memory/CPU exhaustion or log amplification. | Enforce 16 KiB before JSON expansion plus depth, UTF-8, query-length and unknown-field checks. | Production limits require separate review. |
-| Oversized provider response | Memory/storage exhaustion or malicious content. | R3C enforces 512 KiB actual Provider response bytes before persistence, 20 records and 10 seconds; reject without unsafe artifact. | Streaming/decompression implementation requires R3C-I tests. |
+| Oversized provider response | Memory/storage exhaustion or malicious content. | R3C enforces 512 KiB actual decoded Provider response bytes before persistence, 20 records and 10 seconds; reject without unsafe artifact. | Live server/provider behavior remains for R3C-A. |
 | Provider-cost abuse | Many operations consume budget. | R3B remains zero-cost. R3C-A caps 20 operations/calls and USD 0.05, requires exact sub-cent settlement, zero retry and no prepaid authorization. | Production funding/rate policy remains unapproved. |
 | Quota exhaustion / noisy neighbor | One caller exhausts the experimental service. | Token-bound count/concurrency limits and fail-closed accounting; no provider switching. | Production tenant/global allocation remains `SOURCE_UNDECIDED`. |
 | Malicious provider content | Titles/abstracts include HTML, script, terminal escapes, URLs, secrets or instructions. | Validate Unicode/size; tag as untrusted; escape on presentation; no script execution; no automatic fetching; no cloud LLM; local client prints metadata only, not raw content by default. | Local Harness can still be influenced; Package instructions must reinforce data/instruction separation. |
@@ -229,7 +229,7 @@ The following remain `SOURCE_UNDECIDED` for production:
 - authorization separation from optional Hosted routes in a production
   deployment.
 
-`R3C_I_IMPLEMENTATION_GATE = OPEN`, while
+`R3C_STATE = LIVE_ACCEPTANCE_PENDING`, while
 `R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED` and
 `R3D_PRODUCTION_PROVIDER_GATE = CLOSED`.
 

@@ -1,6 +1,6 @@
 # R3C-I OpenAlex Proxy Implementation Acceptance Plan
 
-Status: **FUTURE IMPLEMENTATION/QUALIFICATION PLAN — NOT STARTED**
+Status: **IMPLEMENTATION/QUALIFICATION PASSED WITH WARNINGS — LIVE ACCEPTANCE NOT STARTED**
 Live Provider/API key/Internet: **PROHIBITED**
 Required terminal state: `R3C_STATE = LIVE_ACCEPTANCE_PENDING`
 
@@ -185,3 +185,23 @@ R3C_STATE = LIVE_ACCEPTANCE_PENDING
 R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED
 R3D_PRODUCTION_PROVIDER_GATE = CLOSED
 ```
+
+## 12. R3C-I qualification result
+
+The implementation resides in `backend/cloud_api_proxy/`, with the adapter and
+fixed transport in `openalex_adapter.py`, existing service/SQL composition
+extended behind server-owned token scope, and additive migration
+`20260805_0005`. Query retention is checksum/length only; exact Provider call
+and cost reservations use integer microusd.
+
+Scripted adapter qualification passed 54 tests; the full Proxy suite passed
+110. Real PostgreSQL Proxy suites passed 13 tests without skip against a fresh
+PostgreSQL 18.1 cluster. Workflow Package and Progress Report suites passed 43
+and 38. Full backend regression passed 420 with four pre-existing separately
+gated integration skips. Compilation, empty migration upgrade, one-revision
+downgrade/re-upgrade and Alembic drift checks passed.
+
+No Provider API/documentation request, real credential read, external network
+call, live Uvicorn Package acceptance or Progress Report mutation occurred.
+The implementation result is `PASS_WITH_WARNINGS`; the separate R3C-A gate
+remains closed pending owner review and a fresh official-source recheck.

@@ -611,6 +611,26 @@ class ProxyCapabilityTokenORM(Base):
         UniqueConstraint("token_digest_sha256", name="uq_proxy_capability_tokens_digest"),
         CheckConstraint("maximum_operations BETWEEN 1 AND 50", name="proxy_token_maximum_operations_valid"),
         CheckConstraint("admitted_operations BETWEEN 0 AND maximum_operations", name="proxy_token_admitted_operations_valid"),
+        CheckConstraint(
+            "maximum_provider_calls BETWEEN 0 AND 20",
+            name="proxy_token_maximum_provider_calls_valid",
+        ),
+        CheckConstraint(
+            "used_provider_calls BETWEEN 0 AND maximum_provider_calls",
+            name="proxy_token_used_provider_calls_valid",
+        ),
+        CheckConstraint(
+            "maximum_provider_cost_microusd BETWEEN 0 AND 50000",
+            name="proxy_token_maximum_provider_cost_valid",
+        ),
+        CheckConstraint(
+            "reserved_provider_cost_microusd BETWEEN 0 AND maximum_provider_cost_microusd",
+            name="proxy_token_reserved_provider_cost_valid",
+        ),
+        CheckConstraint(
+            "reported_provider_cost_microusd >= 0",
+            name="proxy_token_reported_provider_cost_nonnegative",
+        ),
         CheckConstraint("expires_at > issued_at", name="proxy_token_expiry_after_issue"),
         Index("ix_proxy_tokens_project_package", "project_id", "package_id"),
         Index("ix_proxy_tokens_expiry_revocation", "expires_at", "revoked"),
@@ -630,6 +650,11 @@ class ProxyCapabilityTokenORM(Base):
     allowed_adapter: Mapped[str] = mapped_column(String(255), nullable=False)
     maximum_operations: Mapped[int] = mapped_column(Integer, nullable=False)
     admitted_operations: Mapped[int] = mapped_column(Integer, nullable=False)
+    maximum_provider_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    used_provider_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    maximum_provider_cost_microusd: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reserved_provider_cost_microusd: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reported_provider_cost_microusd: Mapped[int] = mapped_column(BigInteger, nullable=False)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -652,8 +677,33 @@ class ProxyOperationORM(Base):
         ),
         CheckConstraint("estimated_cost_minor_units = 0", name="proxy_operation_zero_cost"),
         CheckConstraint("retry_count = 0", name="proxy_operation_zero_retry"),
+        CheckConstraint(
+            "request_retention_mode IN ('FULL_PARAMETERS', 'CHECKSUM_ONLY')",
+            name="proxy_operation_request_retention_mode_valid",
+        ),
+        CheckConstraint(
+            "provider_http_calls BETWEEN 0 AND 1",
+            name="proxy_operation_provider_http_calls_valid",
+        ),
+        CheckConstraint(
+            "reserved_cost_microusd BETWEEN 0 AND 50000",
+            name="proxy_operation_reserved_cost_valid",
+        ),
+        CheckConstraint(
+            "reported_cost_microusd >= 0",
+            name="proxy_operation_reported_cost_nonnegative",
+        ),
+        CheckConstraint(
+            "query_utf8_bytes IS NULL OR query_utf8_bytes > 0",
+            name="proxy_operation_query_utf8_bytes_positive",
+        ),
+        CheckConstraint(
+            "query_characters IS NULL OR query_characters > 0",
+            name="proxy_operation_query_characters_positive",
+        ),
         Index("ix_proxy_operations_project_package_created", "project_id", "package_id", "created_at"),
         Index("ix_proxy_operations_token_status", "token_id", "status"),
+        Index("ix_proxy_operations_adapter_status", "adapter_id", "status"),
     )
 
     operation_id: Mapped[str] = mapped_column(String(255), primary_key=True)
@@ -673,6 +723,10 @@ class ProxyOperationORM(Base):
     idempotency_key: Mapped[str] = mapped_column(String(36), nullable=False)
     request_content_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
     request_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    request_retention_mode: Mapped[str] = mapped_column(String(50), nullable=False)
+    query_checksum: Mapped[str | None] = mapped_column(String(71))
+    query_utf8_bytes: Mapped[int | None] = mapped_column(Integer)
+    query_characters: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(50), nullable=False)
     provider_data_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     provider_data_checksum: Mapped[str | None] = mapped_column(String(71))
@@ -680,6 +734,13 @@ class ProxyOperationORM(Base):
     response_content_checksum: Mapped[str | None] = mapped_column(String(71))
     estimated_cost_minor_units: Mapped[int] = mapped_column(BigInteger, nullable=False)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_http_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    reserved_cost_microusd: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reported_cost_microusd: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    provider_response_checksum: Mapped[str | None] = mapped_column(String(71))
+    provider_http_status: Mapped[int | None] = mapped_column(Integer)
+    provider_adapter_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider_rate_limit_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     usage_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error_code: Mapped[str | None] = mapped_column(String(100))
     reconciliation_evidence: Mapped[str | None] = mapped_column(String(255))

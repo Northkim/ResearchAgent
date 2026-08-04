@@ -1,6 +1,6 @@
 # R3C OpenAlex Credential, Privacy, and Cost Policy
 
-Status: **APPROVED FOR SUPERVISED EXPERIMENTAL R3C**
+Status: **R3C-I CONTROLS IMPLEMENTED WITH MOCKED TRANSPORT; LIVE GATE CLOSED**
 Date: 2026-08-04
 Governing ADR: 0012
 
@@ -52,6 +52,12 @@ the system must never log a complete outbound URL. A private R3C-A leakage scan
 uses a locally computed key fingerprint only as a comparison canary and does
 not retain that fingerprint in tracked evidence.
 
+R3C-I implements a lazy credential-source interface. Default startup does not
+call it; OpenAlex-enabled composition fails closed when it cannot supply a
+credential. Tests inject runtime-generated synthetic values directly into the
+interface and suppress HTTPX request-line logging on the Provider-call thread.
+No real environment key is read during R3C-I.
+
 ## 3. Outbound-network controls
 
 - Allow only `https://api.openalex.org/works`.
@@ -89,8 +95,9 @@ current privacy policy. Consent/notice UX, deletion requests and production
 privacy governance are outside R3C and remain unapproved.
 
 The Proxy does not persist query text for the R3C acceptance profile. It keeps
-the canonical request checksum necessary for idempotency and audit. Logs use
-operation IDs/checksums and never query text.
+the canonical request checksum, query SHA-256, byte/character lengths and
+`max_results` necessary for identity/privacy audit. Logs use operation IDs and
+checksums and never query text.
 
 ## 5. Data minimization and retention
 
@@ -140,6 +147,10 @@ R3C-A owner limits are:
 | complete operation timeout | 10 seconds |
 | automatic Provider retries | 0 |
 | prepaid spending authorization | none |
+
+R3C-I represents cost as integer microusd (`USD 1 = 1,000,000`), never binary
+float: the qualified search reservation is 1,000 microusd and the owner cap is
+50,000 microusd. Provider credits remain separately typed evidence.
 
 Before the first live call, recheck the current official price and obtain owner
 confirmation that prepaid spending is unavailable/disabled. Reserve `$0.001`

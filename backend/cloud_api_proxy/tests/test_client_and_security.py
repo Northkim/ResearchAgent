@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from backend.cloud_api_proxy import CloudAPIProxyService, DeterministicFakePaperSearchAdapter, InMemoryProxyDatabase, InMemoryProxyUnitOfWork
+from backend.cloud_api_proxy.contracts import OPENALEX_ADAPTER_ID
 from backend.cloud_api_proxy.client import build_request, main, validate_base_url
 from backend.cloud_api_proxy import operator_cli
 from backend.cloud_api_proxy.operator_cli import _write_once
@@ -101,6 +102,45 @@ def test_operator_issue_cli_never_prints_plaintext_token(
     assert json.loads(captured.out)["output_file_created"] is True
 
 
+def test_operator_openalex_issue_binds_exact_budget_without_provider_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    built = build_literature_search_package(
+        project_id="proxy-openalex-operator-fixture",
+        output_root=Path("package-build"),
+    )
+    database = InMemoryProxyDatabase()
+    service = CloudAPIProxyService(
+        unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(database),
+        adapter=DeterministicFakePaperSearchAdapter(),
+    )
+
+    class Engine:
+        def dispose(self) -> None:
+            return None
+
+    monkeypatch.setattr(operator_cli, "_service_from_environment", lambda: (service, Engine()))
+    output = tmp_path / "openalex-operator-token"
+    code = operator_cli.main([
+        "issue", "--project-id", "proxy-openalex-operator-fixture",
+        "--package-root", str(built.package_root), "--tenant-id", "tenant",
+        "--subject-id", "subject", "--output-file", str(output),
+        "--adapter-id", OPENALEX_ADAPTER_ID,
+    ])
+    captured = capsys.readouterr()
+    response = json.loads(captured.out)
+    assert code == 0
+    assert response["adapter_id"] == OPENALEX_ADAPTER_ID
+    assert response["maximum_operations"] == 20
+    assert response["maximum_provider_calls"] == 20
+    assert response["maximum_provider_cost_microusd"] == 50_000
+    assert "key" not in captured.out.lower()
+    assert "key" not in captured.err.lower()
+
+
 def test_fake_adapter_has_no_network_path(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[object] = []
 
@@ -119,7 +159,7 @@ def test_fake_adapter_has_no_network_path(monkeypatch: pytest.MonkeyPatch) -> No
     assert first["untrusted_provider_data"] is True
 
 
-def test_proxy_source_has_no_hosted_or_live_provider_imports() -> None:
+def test_proxy_source_has_no_hosted_runtime_or_hosted_openalex_imports() -> None:
     root = Path(__file__).resolve().parents[1]
     source = "\n".join(
         path.read_text(encoding="utf-8")
@@ -128,6 +168,7 @@ def test_proxy_source_has_no_hosted_or_live_provider_imports() -> None:
     )
     for forbidden in (
         "backend.agent_runtime", "ExecutionDispatcher", "WorkflowRun",
-        "ProviderOperationORM", "OpenAlex", "LLMProvider", "StructuredGeneration",
+        "ProviderOperationORM", "backend.research.adapters.openalex",
+        "backend.research.skills", "LLMProvider", "StructuredGeneration",
     ):
         assert forbidden not in source

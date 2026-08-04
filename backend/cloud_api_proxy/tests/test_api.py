@@ -33,6 +33,53 @@ def test_proxy_is_not_mounted_by_default() -> None:
     assert response.status_code == 404
 
 
+def test_default_startup_does_not_construct_openalex_credential_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.cloud_api_proxy import openalex_adapter
+
+    def forbidden_source():
+        raise AssertionError("default startup attempted to construct the OpenAlex credential source")
+
+    monkeypatch.delenv("REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED", raising=False)
+    monkeypatch.delenv("REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED", raising=False)
+    monkeypatch.setattr(openalex_adapter, "EnvironmentOpenAlexCredentialSource", forbidden_source)
+    hosted = ApplicationContainer(unit_of_work_factory=lambda: InMemoryUnitOfWork(InMemoryDatabase()))
+    with TestClient(create_app(hosted), base_url="http://127.0.0.1") as client:
+        assert client.get("/health").status_code == 200
+
+
+def test_openalex_enabled_composition_without_credential_fails_closed_before_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from backend.cloud_api_proxy import composition, openalex_adapter
+
+    class Engine:
+        disposed = False
+
+        def dispose(self) -> None:
+            self.disposed = True
+
+    class MissingCredential:
+        def get(self) -> str:
+            raise RuntimeError("Experimental OpenAlex Proxy requires its server credential")
+
+    engine = Engine()
+    monkeypatch.setenv("REAGENT_DATABASE_URL", "postgresql://127.0.0.1:1/isolated-invalid")
+    monkeypatch.setenv("REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED", "1")
+    monkeypatch.delenv("REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED", raising=False)
+    monkeypatch.setattr(composition, "create_postgres_engine", lambda _: engine)
+    monkeypatch.setattr(composition, "create_session_factory", lambda _: object())
+    monkeypatch.setattr(
+        openalex_adapter,
+        "EnvironmentOpenAlexCredentialSource",
+        MissingCredential,
+    )
+    with pytest.raises(RuntimeError, match="credential"):
+        ProxyApplicationContainer.from_environment()
+    assert engine.disposed is True
+
+
 def test_enabled_without_persistence_configuration_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("REAGENT_DATABASE_URL", raising=False)
     hosted = ApplicationContainer(unit_of_work_factory=lambda: InMemoryUnitOfWork(InMemoryDatabase()))

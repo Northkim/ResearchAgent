@@ -46,7 +46,7 @@ this engineering order.
 | R3B-I | Fake-adapter API Proxy implementation and SQL qualification | **PASS_WITH_WARNINGS** — disabled-by-default `paper.search/v0.1`, digest-only scoped bearer, explicit client/CLI, separate Proxy ledger and migration `20260804_0004` |
 | R3B-A | External fake-adapter API Proxy acceptance | **PASS_WITH_WARNINGS — FAKE_PROXY_ACCEPTED** — external Package, real loopback Uvicorn/HTTP, token lifecycle, isolated PostgreSQL restart and Package non-mutation passed |
 | R3C-D | OpenAlex source qualification and owner decision | **PASS_WITH_CURRENT_SOURCE_WARNINGS** — ADR 0012 approves one supervised experimental OpenAlex Works metadata adapter; no key/API call/implementation |
-| R3C-I | OpenAlex Proxy adapter implementation and mocked qualification | **IMPLEMENTATION GATE OPEN — NOT STARTED** — scripted transport and isolated PostgreSQL only; no key or Internet |
+| R3C-I | OpenAlex Proxy adapter implementation and mocked qualification | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — fixed adapter, privacy-safe SQL, exact microusd, scripted transport and PostgreSQL qualification; zero key/Internet |
 | R3C-A | Supervised live OpenAlex acceptance | **LIVE ACCEPTANCE GATE CLOSED** — requires exact R3C-I baseline, separate owner start/key, current-source recheck and capped live acceptance |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
@@ -95,10 +95,15 @@ existing Hosted adapter, and accepted ADR 0012. The only approved future live
 operation is one keyed, single-page OpenAlex Works metadata search behind
 `paper.search/v0.1`: unchanged query, at most 20 results, fixed fields, one
 fixed HTTPS origin, zero automatic retry, maximum 20 calls and USD 0.05,
-acceptance-lifetime normalized metadata only. R3C-I may now implement that
-adapter using scripted transport and isolated PostgreSQL with no key/Internet.
-R3C-A remains separately owner-gated and R3D production/public deployment
-remains closed.
+acceptance-lifetime normalized metadata only. R3C-I implemented that exact
+adapter behind `backend/cloud_api_proxy/` with no key or Internet and with
+feature flag `REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED` off by default.
+Migration `20260805_0005` adds query-checksum/length evidence and integer
+Provider call/microusd accounting without query text, key, raw body or Hosted
+foreign keys. Scripted transport and a fresh isolated PostgreSQL 18.1 cluster
+qualified request mapping, normalized metadata, safe errors, idempotency,
+reconciliation and budget races with zero live Provider calls. R3C-A remains
+separately owner-gated and R3D production/public deployment remains closed.
 
 ### Preserved optional mode
 

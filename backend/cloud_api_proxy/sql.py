@@ -13,11 +13,13 @@ from sqlalchemy.orm import Session
 from backend.database.orm import ProxyCapabilityTokenORM, ProxyOperationORM
 
 from .contracts import (
+    CloudProxyRequestEnvelope,
     ProxyAuthorizationScope,
     ProxyCapabilityToken,
     ProxyOperation,
     ProxyOperationStatus,
     ProxyUsage,
+    RequestRetentionMode,
     format_timestamp,
     operation_from_dict,
     parse_timestamp,
@@ -53,6 +55,9 @@ class SQLProxyRepository:
         if row is None:
             raise ValueError("Proxy token not found")
         row.admitted_operations = token.admitted_operations
+        row.used_provider_calls = token.used_provider_calls
+        row.reserved_provider_cost_microusd = token.reserved_provider_cost_microusd
+        row.reported_provider_cost_microusd = token.reported_provider_cost_microusd
         row.revoked = token.revoked
         row.revoked_at = _parse_optional(token.revoked_at)
 
@@ -71,6 +76,8 @@ class SQLProxyRepository:
 
     def add_operation(self, operation: ProxyOperation) -> None:
         request = operation.request
+        request_json = operation.retained_request_json or request.to_dict()
+        usage = operation.usage
         self.session.add(
             ProxyOperationORM(
                 operation_id=operation.operation_id,
@@ -87,7 +94,11 @@ class SQLProxyRepository:
                 adapter_id=operation.adapter_id,
                 idempotency_key=request.idempotency_key,
                 request_content_checksum=request.request_content_checksum,
-                request_json=request.to_dict(),
+                request_json=request_json,
+                request_retention_mode=request.retention_mode.value,
+                query_checksum=request.query_checksum,
+                query_utf8_bytes=request.query_utf8_bytes,
+                query_characters=request.query_characters,
                 status=operation.status.value,
                 provider_data_json=operation.provider_data,
                 provider_data_checksum=operation.provider_data_checksum,
@@ -95,7 +106,14 @@ class SQLProxyRepository:
                 response_content_checksum=operation.response_content_checksum,
                 estimated_cost_minor_units=0,
                 retry_count=0,
-                usage_json=operation.usage.to_dict() if operation.usage else None,
+                provider_http_calls=usage.provider_http_calls if usage else 0,
+                reserved_cost_microusd=usage.reserved_cost_microusd if usage else 0,
+                reported_cost_microusd=usage.reported_cost_microusd if usage else 0,
+                provider_response_checksum=operation.provider_response_checksum,
+                provider_http_status=operation.provider_http_status,
+                provider_adapter_version=operation.provider_adapter_version,
+                provider_rate_limit_json=_rate_limit_json(usage),
+                usage_json=usage.to_dict() if usage else None,
                 error_code=operation.error_code,
                 reconciliation_evidence=operation.reconciliation_evidence,
                 created_at=parse_timestamp(operation.admitted_at, "admitted_at"),
@@ -114,6 +132,13 @@ class SQLProxyRepository:
         row.provider_data_checksum = operation.provider_data_checksum
         row.provider_data_size = operation.provider_data_size
         row.response_content_checksum = operation.response_content_checksum
+        row.provider_response_checksum = operation.provider_response_checksum
+        row.provider_http_status = operation.provider_http_status
+        row.provider_adapter_version = operation.provider_adapter_version
+        row.provider_http_calls = operation.usage.provider_http_calls if operation.usage else 0
+        row.reserved_cost_microusd = operation.usage.reserved_cost_microusd if operation.usage else 0
+        row.reported_cost_microusd = operation.usage.reported_cost_microusd if operation.usage else 0
+        row.provider_rate_limit_json = _rate_limit_json(operation.usage)
         row.usage_json = operation.usage.to_dict() if operation.usage else None
         row.error_code = operation.error_code
         row.reconciliation_evidence = operation.reconciliation_evidence
@@ -171,6 +196,11 @@ class SQLProxyRepository:
             allowed_adapter=scope.adapter_id,
             maximum_operations=scope.maximum_operations,
             admitted_operations=token.admitted_operations,
+            maximum_provider_calls=scope.maximum_provider_calls,
+            used_provider_calls=token.used_provider_calls,
+            maximum_provider_cost_microusd=scope.maximum_provider_cost_microusd,
+            reserved_provider_cost_microusd=token.reserved_provider_cost_microusd,
+            reported_provider_cost_microusd=token.reported_provider_cost_microusd,
             issued_at=parse_timestamp(token.issued_at, "issued_at"),
             expires_at=parse_timestamp(token.expires_at, "expires_at"),
             revoked=token.revoked,
@@ -193,22 +223,35 @@ class SQLProxyRepository:
                 capability=row.allowed_capability,
                 adapter_id=row.allowed_adapter,
                 maximum_operations=row.maximum_operations,
+                maximum_provider_calls=row.maximum_provider_calls,
+                maximum_provider_cost_microusd=row.maximum_provider_cost_microusd,
             ),
             token_digest_sha256=row.token_digest_sha256,
             issued_at=format_timestamp(row.issued_at),
             expires_at=format_timestamp(row.expires_at),
             admitted_operations=row.admitted_operations,
+            used_provider_calls=row.used_provider_calls,
+            reserved_provider_cost_microusd=row.reserved_provider_cost_microusd,
+            reported_provider_cost_microusd=row.reported_provider_cost_microusd,
             revoked=row.revoked,
             revoked_at=format_timestamp(row.revoked_at) if row.revoked_at else None,
         )
 
     @staticmethod
     def _operation(row: ProxyOperationORM) -> ProxyOperation:
+        retention = RequestRetentionMode(row.request_retention_mode)
+        retained_request_json = None
+        if retention is RequestRetentionMode.CHECKSUM_ONLY:
+            request_evidence = row.request_json
+        else:
+            envelope = CloudProxyRequestEnvelope.from_dict(row.request_json)
+            request_evidence = envelope.privacy_evidence(retention).to_dict()
+            retained_request_json = row.request_json
         value = {
             "operation_id": row.operation_id,
             "token_id": row.token_id,
             "authorization_scope_checksum": row.authorization_scope_checksum,
-            "request": row.request_json,
+            "request": request_evidence,
             "adapter_id": row.adapter_id,
             "status": row.status,
             "admitted_at": format_timestamp(row.created_at),
@@ -222,6 +265,10 @@ class SQLProxyRepository:
             "usage": row.usage_json,
             "error_code": row.error_code,
             "reconciliation_evidence": row.reconciliation_evidence,
+            "retained_request_json": retained_request_json,
+            "provider_response_checksum": row.provider_response_checksum,
+            "provider_http_status": row.provider_http_status,
+            "provider_adapter_version": row.provider_adapter_version,
         }
         return operation_from_dict(value)
 
@@ -255,3 +302,22 @@ class SQLProxyUnitOfWork:
 
 def _parse_optional(value: str | None) -> datetime | None:
     return parse_timestamp(value, "timestamp") if value is not None else None
+
+
+def _rate_limit_json(usage: ProxyUsage | None) -> dict | None:
+    if usage is None or all(
+        value is None
+        for value in (
+            usage.provider_credits_used,
+            usage.rate_limit_limit,
+            usage.rate_limit_remaining,
+            usage.rate_limit_reset,
+        )
+    ):
+        return None
+    return {
+        "provider_credits_used": usage.provider_credits_used,
+        "rate_limit_limit": usage.rate_limit_limit,
+        "rate_limit_remaining": usage.rate_limit_remaining,
+        "rate_limit_reset": usage.rate_limit_reset,
+    }

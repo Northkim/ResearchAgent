@@ -1,6 +1,6 @@
 # OpenAlex `paper.search/v0.1` Adapter Contract
 
-Status: **APPROVED FOR R3C-I IMPLEMENTATION; LIVE ACCEPTANCE PENDING**
+Status: **R3C-I IMPLEMENTED AND MOCK/SQL QUALIFIED; LIVE ACCEPTANCE PENDING**
 Date: 2026-08-04
 Governing ADR: 0012
 
@@ -109,6 +109,9 @@ preflight and performs no automatic pagination or retry.
 - No retry, provider failover, secondary endpoint or background execution.
 - URLs and transport exceptions are sanitized before logging; the query string
   is never logged because it contains both user data and the Provider key.
+- The HTTPX request logger is suppressed only on the active Provider-call
+  thread so its standard request-line record cannot serialize the query or
+  key. Application logs retain only safe operation/checksum metadata.
 
 ## 6. Response validation and normalization
 
@@ -155,18 +158,18 @@ OpenAlex data can contain malicious or instruction-like text; it remains data.
 
 The adapter parses and bounds these safe current fields when supplied:
 
-- response `meta.cost_usd` as an exact non-negative decimal string;
+- response `meta.cost_usd` as an exact non-negative JSON decimal number or
+  decimal string parsed without binary-float conversion;
 - `X-RateLimit-Limit`;
 - `X-RateLimit-Remaining`;
 - `X-RateLimit-Credits-Used`;
 - `X-RateLimit-Reset`;
-- a safe opaque request ID only if the current Provider supplies one and its
-  value passes a strict length/character allowlist.
 
 Raw headers are not retained. Cost is never rounded down into the existing
-whole-cent Hosted usage field. The Proxy records exact USD evidence or an
-equivalent integer precision sufficient for `$0.001` calls, plus local admitted
-call/cost totals.
+whole-cent Hosted usage field. R3C-I persists integer `cost_microusd` evidence,
+where one USD is 1,000,000 microusd: `$0.001` is exactly 1,000 microusd and
+`$0.05` is exactly 50,000 microusd. Provider credits remain a separate bounded
+decimal string and are never interpreted as USD.
 
 R3C-I freezes a pre-admission reservation of `$0.001` from the current official
 search price. R3C-A rechecks that price before first use. Missing/invalid cost,
@@ -209,8 +212,9 @@ Acceptance-lifetime durable state may contain normalized paper metadata,
 request/result/response checksums, adapter/version, safe Provider IDs,
 status/timestamps/latency and exact usage/cost. It excludes the raw body, key,
 credential URL/header, PDF/full text and unsafe payload. The query is used
-transiently for the call; the durable identity is its canonical request
-checksum.
+transiently for the call. Durable request evidence is limited to the canonical
+request checksum, query SHA-256, UTF-8 byte/character lengths, `max_results`,
+identity pins and idempotency metadata; it contains no query text.
 
 The local Package can record the returned Proxy operation ID as ordinary local
 provenance. The server does not add it to a Progress Report or mutate Package
@@ -219,8 +223,10 @@ files.
 ## 10. Qualification and gates
 
 R3C-I uses only scripted/mock HTTP transport, fictional Provider responses and
-isolated PostgreSQL. Network and credential canaries must prove zero Internet
-and zero key use. R3C-I may end only at:
+isolated PostgreSQL. Migration `20260805_0005` adds privacy-safe request
+evidence and exact integer Provider call/cost fields without a query, key, raw
+body, credential URL or Hosted foreign key. Mock/network and credential
+canaries prove zero Internet and zero real-key use. R3C-I ends at:
 
 ```text
 R3C_STATE = LIVE_ACCEPTANCE_PENDING
