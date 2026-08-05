@@ -84,7 +84,59 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C composite experimental OpenAlex acceptance closed
+### Current milestone — MVP-A0 local V0.1 readiness audit blocked
+
+MVP-A0 began from clean `main` at exact commit
+`fe4e68d82a393e9742a54d58e1a0836777aa30f8`. The audit changed no source,
+test, migration, fixture, Package template, contract, ADR, or Progress Report
+schema and used no live Provider, real key, `.env`, Hosted execution, LLM,
+Judge, or automatic Progress Report path.
+
+Fresh PostgreSQL 18.1, the committed FastAPI app, and the committed Next.js app
+started on loopback. Alembic remained sole/current at `20260805_0005` with no
+drift. External component qualification passed for deterministic Package/ZIP
+validation, explicit native Progress Report upload/original-byte retention/
+projection, fake Proxy exact replay, Package immutability, and backend restart
+continuity. Required PostgreSQL tests ran with zero skip; full backend,
+compileall, frontend unit, lint, and production build checks passed.
+
+V0.1 product readiness is blocked. The frontend remains the preserved Hosted
+research-operations product: its primary path creates/resumes Hosted runs. It
+has no project list/create surface, Package generation/download surface, or
+Progress Report history/projection surface. `/projects` and `/progress` return
+404. Startup documentation is Hosted or partial rather than one supported
+local V0.1 sequence. Standalone frontend typechecking also fails because its
+test files do not receive Vitest globals. Backend data survived physical
+PostgreSQL/FastAPI/frontend restart, but the required product state cannot be
+observed in the frontend.
+
+```text
+MVP_A0_ACCEPTANCE = BLOCKED
+LOCAL_STARTUP_READINESS = FAIL
+FRONTEND_RUNTIME_ACCEPTANCE = PASS
+PROJECT_CREATION_ACCEPTANCE = FAIL
+PACKAGE_DOWNLOAD_ACCEPTANCE = FAIL
+EXTERNAL_PACKAGE_ACCEPTANCE = FAIL
+PROGRESS_UPLOAD_ACCEPTANCE = PASS
+PROGRESS_UI_ACCEPTANCE = FAIL
+FAKE_PROXY_PRODUCT_ACCEPTANCE = PASS
+RESTART_CONTINUITY_ACCEPTANCE = FAIL
+PACKAGE_IMMUTABILITY_ACCEPTANCE = PASS
+MVP_RUNTIME_HOSTED_BOUNDARY = FAIL
+BACKEND_TEST_ACCEPTANCE = PASS
+FRONTEND_TEST_ACCEPTANCE = FAIL
+MVP_GIT_CLOSURE = PASS
+V0_1_STATE = NOT_READY
+R3D_PRODUCTION_PROVIDER_GATE = CLOSED
+```
+
+The detailed audit is
+`docs/acceptance/V0_1_LOCAL_MVP_READINESS_AUDIT.md`; the owner-facing checklist
+is `docs/acceptance/V0_1_OWNER_MANUAL_ACCEPTANCE_CHECKLIST.md`. No product gap
+was repaired. Wait for owner review; do not begin production deployment or
+R3D.
+
+### Preserved milestone — R3C composite experimental OpenAlex acceptance closed
 
 The owner accepted R3C-R2 and ratified accepted ADR 0016. Experimental R3C is
 now closed by composite evidence:
