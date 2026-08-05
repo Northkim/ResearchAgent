@@ -84,7 +84,57 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-A-R2 blocked positive-result live retry
+### Current milestone — R3C-A-R3 blocked after specific live diagnostic
+
+R3C-A-R3 began from exact clean `main` commit
+`a4041af136b673ed58708019f24f2be5dafc5351`. Git, strict owner authorization,
+the official-only pre-key source recheck, fresh loopback PostgreSQL isolation,
+sole migration head `20260805_0005`, the fresh pristine fictional external
+Package, feature-flag fail-closed probes, supervised key injection, and the
+one-call token gate passed.
+
+The provider-neutral client made exactly one new OpenAlex call through the
+committed Proxy. Provider HTTP status was 200 and exact cost was 1,000
+microusd, but strict whole-response normalization settled the operation as
+`FAILED / PROVIDER_INVALID_RESPONSE`. No partial result was returned or
+retained. Exactly one value-free diagnostic identified
+`ABSTRACT_RECONSTRUCTION`, approved path
+`/results/*/abstract_inverted_index`, `record_index=1`,
+`nested_element_index=2`, `observed_kind=CONTROL_CHARACTER`, and
+`validator_code=ABSTRACT_TOKEN_CONTROL`. No Provider value entered tracked
+evidence and no production source or normalization behavior changed.
+
+Both status paths and exact stored-byte replay returned the same operation
+without another admission, call, cost, or event. Changed canonical content
+returned `IDEMPOTENCY_CONFLICT`. Final counters were one operation, one
+admission, one Provider call, zero retries, and exactly 1,000 microusd
+reserved/reported. Query/token/header/full-URL/key-parameter privacy scans
+passed across all 172 PostgreSQL text/JSON fields and protected runtime,
+response, Package, and change surfaces. The Package's 34-entry pre/post
+manifests were byte-identical; Hosted/Runtime/Workflow/LLM/Judge/Progress
+Report rows and invocations remained zero.
+
+Qualification passed 133 focused OpenAlex tests, 195 Proxy tests, 13 isolated
+PostgreSQL tests with zero skip, 43 Package tests, 38 Progress Report tests,
+and 505 aggregate backend tests with four separately gated skips. Compileall
+and Alembic head/current/drift checks passed. The token was revoked, both
+dedicated services stopped and released their ports, and all dedicated
+database, Package, source, diagnostic, request/response, token, wrapper, and
+local owner-input material was deleted. ProjectDB, unrelated services, the
+account key, Package bytes, and all earlier audit records were untouched.
+
+`R3C_A_RETRY_3_ACCEPTANCE = BLOCKED`,
+`R3C_LIVE_OPERATION_OUTCOME = FAILED_WITH_SPECIFIC_STRUCTURAL_DIAGNOSTIC`,
+`R3C_STRUCTURAL_DIAGNOSTIC_EVENT = SPECIFIC`,
+`R3C_DIAGNOSTIC_EVIDENCE = SUFFICIENT_FOR_OWNER_REVIEW`,
+`R3C_LIVE_PROVIDER_CALL_COUNT_THIS_PHASE = 1`, and
+`R3C_REPORTED_COST_MICROUSD = 1000`. `R3C_STATE` remains
+`LIVE_ACCEPTANCE_PENDING`; `R3C_COMPLETE = NOT_COMPLETE`;
+`R3C_I2_IMPLEMENTATION_GATE` and `R3D_PRODUCTION_PROVIDER_GATE` remain closed.
+Detailed evidence is in
+`.agent_read/progress/r3c_openalex_positive_result_live_acceptance_retry_3.md`.
+
+#### Preserved R3C-A-R2 blocked positive-result live retry
 
 R3C-A-R2 began from exact clean `main` commit
 `5c10cd909935f143fce63942b81da9514cfd84de`. The Git gate and owner-input
