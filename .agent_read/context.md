@@ -84,7 +84,55 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-A-R4 blocked at restart status/replay verification
+### Current milestone — R3C-R1 offline restart forensics passed
+
+R3C-R1 began from clean `main` at exact commit
+`c794c6d86689f1d6d7912ef77e5ae0d6d8beea9b`. No real Provider/key/`.env`,
+OpenAlex documentation, external network, production source, Hosted execution,
+Workflow execution, LLM, Judge, or automatic Progress Report path was used.
+
+The tracked R3C-A-R4 record does not preserve the exact failing substep, route,
+HTTP status, parser state, or source line, so
+`EXACT_RESTART_FAILURE_PATH = NOT_PRESERVED`. Source trace and two controlled
+real PostgreSQL/Uvicorn restarts nevertheless identified a deterministic
+delayed-replay defect. `CloudAPIProxyService.submit()` validates the request's
+five-minute timestamp before authenticating and consulting the durable scoped
+idempotency row. After five minutes, byte-exact replay therefore returns
+`CLIENT_TIMESTAMP_OUT_OF_RANGE`; the committed client converts that HTTP error
+to the same value-free `RuntimeError` class preserved by R3C-A-R4.
+
+The original-equivalent synthetic controller passed both status paths after
+restart and reproduced the RuntimeError only at delayed exact replay. The
+explicit controller parsed HTTP 422 / `CLIENT_TIMESTAMP_OUT_OF_RANGE` at that
+stage. A separate immediate restart qualification passed both status paths and
+exact replay with unchanged operation/result/checksum/count/size and one-call/
+1,000-microusd evidence. SQL reload, capability rehydration, Package identity,
+PostgreSQL restart, Uvicorn restart/readiness, and response parsing otherwise
+passed. External network attempts, diagnostics, duplicates, Hosted/runtime
+rows, and Package mutation remained zero.
+
+Qualification passed 154 focused OpenAlex tests, 216 Proxy tests, 13 isolated
+PostgreSQL tests with zero skip, 43 Package tests, 38 Progress Report tests and
+526 full-backend tests with four separately gated integration skips. Compileall
+and sole/current Alembic `20260805_0005` drift checks passed.
+
+The required primary classification is `CLIENT_RECOVERY_DEFECT` with `MEDIUM`
+confidence for linking it to the precise unpreserved historical R3C-A-R4
+substep. The recommended next route is
+`APPLICATION_RECOVERY_REMEDIATION_REQUIRED`: a later owner-approved phase should
+move exact existing-row replay/conflict handling before timestamp freshness for
+new admission, with delayed-replay, stale-new-request, conflict, SQL reload and
+real restart regressions. No migration/API/checksum/retention/cost semantic or
+additional live Provider call should be required. No production fix was made.
+
+`R3C_R1_FORENSICS = PASS`,
+`OFFLINE_RESTART_FAILURE_REPRODUCTION = PASS`, and
+`R3C_LIVE_PROVIDER_CALL_COUNT_THIS_PHASE = 0`. `R3C_STATE` remains
+`LIVE_ACCEPTANCE_PENDING`; `R3C_FINAL_RESTART_ACCEPTANCE_GATE` and
+`R3D_PRODUCTION_PROVIDER_GATE` remain closed. Detailed evidence is in
+`.agent_read/progress/r3c_post_restart_recovery_failure_forensics.md`.
+
+#### Preserved R3C-A-R4 blocked restart acceptance
 
 R3C-A-R4 began from exact clean `main` commit
 `110f54ac7c87453a08e61ae26a5d5afbd6b77bb2`. Git, strict owner authorization,
