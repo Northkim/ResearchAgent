@@ -84,7 +84,55 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-I2 abstract formatting-control remediation qualified offline
+### Current milestone — R3C-A-R4 blocked at restart status/replay verification
+
+R3C-A-R4 began from exact clean `main` commit
+`110f54ac7c87453a08e61ae26a5d5afbd6b77bb2`. Git, strict owner authorization,
+the official-only current-source recheck, fresh isolated PostgreSQL databases
+at sole head `20260805_0005`, the pristine external fictional Package,
+feature-flag fail-closed probes, supervised key injection, and one-call
+capability issuance passed.
+
+The one authorized OpenAlex call through committed loopback Uvicorn and the
+Proxy settled `SUCCEEDED_WITH_REAL_RECORDS`: five normalized Works, an
+8,726-byte canonical normalized body, no structural diagnostic, zero retries,
+and exactly 1,000 microusd. Abstract formatting controls were absent after the
+R3C-I2 normalization path, forbidden controls remained absent, approved
+mapping/coverage and size bounds passed, and no Provider field value entered
+tracked evidence.
+
+Initial status by both identities, exact replay, and changed-content conflict
+passed with no second operation/call/cost/event. Privacy scans found no
+durable query request, token, authorization header, credential parameter, full
+Provider URL, raw body, or arbitrary exception. The 34-entry Package
+pre/post manifests were byte-identical, and Hosted/runtime/Workflow/LLM/Judge/
+Progress Report activity remained zero.
+
+The same PostgreSQL cluster restarted at sole/current `20260805_0005` with no
+drift, and the second supervised Uvicorn child became healthy. The mandatory
+post-restart provider-neutral status/replay controller then failed with a
+value-free `RuntimeError` before producing safe recovery evidence. The token
+was active and SQL remained exactly one successful operation, one Provider
+call, and 1,000 microusd. The phase stopped fail-closed: no retry, replacement
+token, source repair, further acceptance execution, or final test matrix was
+attempted.
+
+Cleanup revoked the token, stopped both services, released both ports, and
+deleted all dedicated database, Package, request/response, diagnostic, token,
+wrapper, PDF-render, and owner-input material. ProjectDB, unrelated services,
+the account key, production source, and prior history were untouched.
+
+`R3C_A_RETRY_4_ACCEPTANCE = BLOCKED`,
+`R3C_LIVE_OPERATION_OUTCOME = SUCCEEDED_WITH_REAL_RECORDS`,
+`R3C_RESTART_ACCEPTANCE = FAIL`,
+`R3C_LIVE_PROVIDER_CALL_COUNT_THIS_PHASE = 1`, and
+`R3C_REPORTED_COST_MICROUSD = 1000`. `R3C_STATE` remains
+`LIVE_ACCEPTANCE_PENDING`; `R3C_COMPLETE = NOT_COMPLETE`;
+`R3C_I2_IMPLEMENTATION_GATE` and `R3D_PRODUCTION_PROVIDER_GATE` remain closed.
+Detailed evidence is in
+`.agent_read/progress/r3c_openalex_post_remediation_live_acceptance_retry_4.md`.
+
+#### Preserved R3C-I2 abstract formatting-control remediation qualification
 
 R3C-I2 began from exact clean `main` commit
 `a980acbc268ce96089bd93a2954a39b9491a3e94`. The OpenAlex key variable was
