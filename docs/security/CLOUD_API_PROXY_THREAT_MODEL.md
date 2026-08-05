@@ -100,7 +100,7 @@ implemented them.
 | Cross-project access | Caller submits another project/package ID or reads its operation. | Server derives tenant/subject/project/Package/Workflow scope from the token record; route/body identity cannot expand it; every read uses the same scope. | Production ownership and multi-user roles remain `SOURCE_UNDECIDED`. |
 | Package identity spoofing | Copied/altered Package claims an allowed identity. | Validate exact token-bound Package ID/checksum and Workflow ID/version/checksum; reject all mismatch before adapter use; no client ownership claims. | Production Package/token issuance remains unapproved. |
 | Stolen bearer capability | Token theft grants its R3B scope. | At least 256 random bits; SHA-256 digest-only server storage; constant-time comparison; 60-minute default/120-minute maximum; narrow exact scope/count; explicit revocation; plaintext outside Package/Git and removed after acceptance. | No proof of possession in R3B; loopback-only use limits but does not remove local-process theft risk. |
-| Replay attack | Captured request is resubmitted to consume quota or obtain data. | Loopback-only R3B transport; short-lived authorization; UUIDv4 idempotency; exact replays return the same operation without a second adapter call; changed-content replay conflicts; status reads are scoped. | Detached signing/nonces/proof of possession are deferred to production security review. |
+| Replay attack | Captured request is resubmitted to consume quota or obtain data. | Loopback-only R3B transport; short-lived authorization; active, unrevoked bearer and exact scope remain mandatory; UUIDv4 idempotency; exact existing-operation replays return the same operation without timestamp freshness or a second adapter call; changed-content replay conflicts before freshness; freshness remains mandatory for new admission; status reads are scoped. | Detached signing/nonces/proof of possession are deferred to production security review. |
 | Idempotency-key substitution | Attacker reuses another key with changed request. | Operation identity binds authorized scope, key and request checksum; conflict before call; key lookup never crosses tenant/project/package scope. | Concurrent-race behavior must be accepted in R3B. |
 | Parameter/query injection | Provider-specific syntax, control characters or huge arrays alter operation. | Capability-specific schema, max lengths/counts, allowlisted enum/range fields, canonical encoding; no raw filter/header/URL; adapter uses structured parameters. | Provider query-language edge cases require adapter tests. |
 | Oversized request | Memory/CPU exhaustion or log amplification. | Enforce 16 KiB before JSON expansion plus depth, UTF-8, query-length and unknown-field checks. | Production limits require separate review. |
@@ -138,6 +138,13 @@ R3B uses loopback HTTP bound to `127.0.0.1`, permits client timestamp skew of
 plus or minus five minutes, and has no detached signature, nonce or proof of
 possession. Non-loopback use requires HTTPS and separate approval.
 
+The freshness window applies to new admission, not to retrieval of an already
+authorized durable operation. After strict request/checksum validation and
+active-token/exact-scope authorization, the server resolves the scoped
+idempotency row. Exact content replays regardless of timestamp age; changed
+content conflicts; only a missing key reaches freshness validation. This does
+not let expired, revoked or wrong-scope tokens replay or probe an operation.
+
 The token record binds token, tenant and subject IDs; project ID; exact Package
 ID/checksum; exact Workflow ID/version/checksum; capability
 `paper.search/v0.1`; the deterministic fake adapter; maximum operation count;
@@ -163,8 +170,10 @@ The authorized fake-provider-only R3B-I implementation includes:
   limits;
 - explicit `RECEIVED`, `RUNNING`, `SUCCEEDED`, `FAILED` and
   `RECONCILIATION_REQUIRED` handling;
-- UUIDv4 scoped idempotency, HTTP 409 `IDEMPOTENCY_CONFLICT`, explicit timeout
-  status reads and no ambiguous automatic retry;
+- UUIDv4 scoped idempotency, exact existing-operation replay before timestamp
+  freshness, HTTP 409 `IDEMPOTENCY_CONFLICT` before freshness, freshness for
+  new admission, explicit timeout status reads and no ambiguous automatic
+  retry;
 - acceptance-lifetime safe retention and complete isolated-environment cleanup;
 - structured redacted logs and a security rejection matrix;
 - provider/AgentRuntime/LLM canaries proving zero forbidden execution.

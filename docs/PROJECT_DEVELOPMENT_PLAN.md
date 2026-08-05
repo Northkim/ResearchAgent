@@ -47,10 +47,12 @@ this engineering order.
 | R3B-A | External fake-adapter API Proxy acceptance | **PASS_WITH_WARNINGS — FAKE_PROXY_ACCEPTED** — external Package, real loopback Uvicorn/HTTP, token lifecycle, isolated PostgreSQL restart and Package non-mutation passed |
 | R3C-D | OpenAlex source qualification and owner decision | **PASS_WITH_CURRENT_SOURCE_WARNINGS** — ADR 0012 approves one supervised experimental OpenAlex Works metadata adapter; no key/API call/implementation |
 | R3C-I | OpenAlex Proxy adapter implementation and mocked qualification | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — fixed adapter, privacy-safe SQL, exact microusd, scripted transport and PostgreSQL qualification; zero key/Internet |
-| R3C-A | Supervised live OpenAlex acceptance | **RETRY 3 BLOCKED — LIVE_ACCEPTANCE_PENDING** — one HTTP-200/1,000-microusd call failed strict abstract reconstruction with a specific value-free `ABSTRACT_TOKEN_CONTROL` diagnostic; no partial result or second call |
+| R3C-A | Supervised live OpenAlex acceptance | **RETRY 4 BLOCKED — LIVE ACCEPTANCE EVIDENCE PRESERVED** — one HTTP-200/1,000-microusd call normalized five real Works; pre-restart recovery passed, but post-restart verification raised a value-free RuntimeError; no retry or repair occurred |
 | R3C-N1 | Live normalization failure forensics | **INCONCLUSIVE** — exact live predicate not preserved; no approved failing shape reproduced offline; no source repair or Provider call |
 | R3C-N2-I | Strict response policy and structural diagnostics | **PASS_WITH_WARNINGS** — strict whole-response failure ratified; default-disabled value-free internal diagnostics synthetic/SQL qualified; no live/key/docs call |
 | R3C-I2 | Abstract formatting-control compatibility | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — ADR 0014 maps only abstract-token TAB/LF/CR to safe spacing; fictional/SQL/backend qualification passed with zero key/network/Provider call |
+| R3C-R1 | Post-restart recovery forensics | **PASS — DEFECT REPRODUCED OFFLINE** — both status routes passed; delayed exact replay deterministically failed freshness before durable idempotency; zero live call/key/docs access |
+| R3C-R2 | Delayed replay ordering remediation | **PASS — READY FOR OWNER REVIEW** — ADR 0015 resolves authorized existing replay/conflict before freshness, retains freshness for new admission, and passes real PostgreSQL/Uvicorn aged-replay restart qualification with zero live call |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -146,6 +148,29 @@ or Package mutation occurred. The exact retry-3 code point was not retained and
 no real response has passed after remediation. `R3C_STATE` remains
 `LIVE_ACCEPTANCE_PENDING`; a future live retry requires fresh owner
 authorization, and R3D production/public deployment remains closed.
+
+R3C-A-R4 subsequently made exactly one owner-authorized live call. It returned
+HTTP 200, five normalized Works and exact 1,000-microusd cost; both status
+routes, exact replay and changed-content conflict passed before restart. The
+same PostgreSQL cluster and Uvicorn restarted successfully and SQL retained one
+operation/call and exact cost, but the post-restart verification controller
+raised a value-free `RuntimeError`. The phase stopped without a retry or source
+repair, preserving the accepted normalization evidence.
+
+R3C-R1 reproduced the recovery failure offline: status remained readable, but
+exact POST replay older than five minutes returned
+`CLIENT_TIMESTAMP_OUT_OF_RANGE` because freshness preceded durable
+idempotency resolution. R3C-R2 accepts ADR 0015 and makes the minimum service
+ordering correction. Strict structure/checksum, active-token and exact-scope
+authorization remain mandatory; an existing matching checksum replays in any
+status, changed content conflicts, and freshness still rejects stale/future new
+admission. Focused, API/client, concurrent and PostgreSQL tests plus a physical
+PostgreSQL/Uvicorn restart with fictional persisted success passed with one
+unchanged operation/call, exact 1,000-microusd totals, no adapter reinvocation,
+no diagnostic, no Package/Hosted mutation and zero external network/key/live
+Provider use. No API, migration, checksum, retention, cost, normalization or
+Provider contract changed. Composite R3C acceptance is ready for owner review
+but remains `LIVE_ACCEPTANCE_PENDING`; R3D remains closed.
 
 ### Preserved optional mode
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from threading import Event, Thread
@@ -15,6 +16,29 @@ from backend.cloud_api_proxy.errors import ProxyError
 from backend.cloud_api_proxy.fake_adapter import DeterministicFakePaperSearchAdapter
 
 from .conftest import CHECKSUM_A, CHECKSUM_B, NOW, make_request
+
+
+def _mutable_proxy_setup(*, adapter=None, maximum_operations: int | None = None):
+    database = InMemoryProxyDatabase()
+    selected_adapter = adapter or DeterministicFakePaperSearchAdapter()
+    current = [NOW]
+    service = CloudAPIProxyService(
+        unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(database),
+        adapter=selected_adapter,
+        clock=lambda: current[0],
+    )
+    token, plaintext = service.issue_token(
+        tenant_id="fictional-tenant",
+        subject_id="fictional-operator",
+        project_id="fictional-project",
+        package_id="fictional-package",
+        package_checksum=CHECKSUM_A,
+        workflow_id="literature-search",
+        workflow_version="1.0.0",
+        workflow_checksum=CHECKSUM_B,
+        maximum_operations=maximum_operations,
+    )
+    return service, database, selected_adapter, token, plaintext, current
 
 
 def test_token_generation_has_256_random_bits_and_enforces_ratified_bounds() -> None:
@@ -54,6 +78,32 @@ def test_submit_and_sequential_exact_replay_are_idempotent(proxy_setup) -> None:
     assert database.tokens[token.scope.token_id].admitted_operations == 1
 
 
+def test_delayed_exact_replay_of_succeeded_precedes_timestamp_freshness() -> None:
+    service, database, adapter, token, plaintext, current = _mutable_proxy_setup()
+    request = make_request()
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    current[0] = NOW + timedelta(minutes=6)
+
+    replay = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+
+    assert replay["operation_status"] == "SUCCEEDED"
+    assert replay["operation_id"] == first["operation_id"]
+    assert replay["request_content_checksum"] == first["request_content_checksum"]
+    assert replay["response_content_checksum"] == first["response_content_checksum"]
+    assert replay["idempotency_result"] == "REPLAYED"
+    assert adapter.invocation_count == 1
+    assert len(database.operations) == 1
+    assert database.tokens[token.scope.token_id].admitted_operations == 1
+
+
 def test_same_key_changed_content_conflicts_before_adapter(proxy_setup) -> None:
     service, _, adapter, _, plaintext = proxy_setup
     first = make_request()
@@ -65,6 +115,59 @@ def test_same_key_changed_content_conflicts_before_adapter(proxy_setup) -> None:
     with pytest.raises(ProxyError) as captured:
         service.submit(bearer_token=plaintext, path_project_id="fictional-project", request=changed)
     assert captured.value.code == "IDEMPOTENCY_CONFLICT"
+    assert adapter.invocation_count == 1
+
+
+def test_stale_changed_content_conflicts_before_timestamp_freshness() -> None:
+    service, database, adapter, token, plaintext, current = _mutable_proxy_setup()
+    first = make_request()
+    accepted = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=first,
+    )
+    current[0] = NOW + timedelta(minutes=6)
+    changed = make_request(
+        idempotency_key=first.idempotency_key,
+        parameters=PaperSearchV01Request(query="changed stale fictional content"),
+    )
+
+    with pytest.raises(ProxyError) as captured:
+        service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=changed,
+        )
+
+    assert captured.value.code == "IDEMPOTENCY_CONFLICT"
+    assert next(iter(database.operations.values())).operation_id == accepted["operation_id"]
+    assert database.tokens[token.scope.token_id].admitted_operations == 1
+    assert adapter.invocation_count == 1
+
+
+def test_existing_key_request_differing_only_in_timestamp_conflicts() -> None:
+    service, database, adapter, _, plaintext, current = _mutable_proxy_setup()
+    first = make_request()
+    accepted = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=first,
+    )
+    current[0] = NOW + timedelta(minutes=6)
+    timestamp_only_change = make_request(
+        idempotency_key=first.idempotency_key,
+        client_timestamp=format_timestamp(NOW + timedelta(seconds=1)),
+    )
+
+    with pytest.raises(ProxyError) as captured:
+        service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=timestamp_only_change,
+        )
+
+    assert captured.value.code == "IDEMPOTENCY_CONFLICT"
+    assert next(iter(database.operations.values())).operation_id == accepted["operation_id"]
     assert adapter.invocation_count == 1
 
 
@@ -94,6 +197,47 @@ def test_revoked_and_expired_tokens_fail_before_adapter(proxy_setup) -> None:
         service.submit(bearer_token=plaintext, path_project_id="fictional-project", request=make_request())
 
 
+def test_revoked_and_expired_tokens_cannot_delayed_replay_existing_operation() -> None:
+    revoked_service, _, revoked_adapter, revoked_token, revoked_plaintext, revoked_now = _mutable_proxy_setup()
+    revoked_request = make_request()
+    revoked_service.submit(
+        bearer_token=revoked_plaintext,
+        path_project_id="fictional-project",
+        request=revoked_request,
+    )
+    revoked_now[0] = NOW + timedelta(minutes=6)
+    revoked_service.revoke_token(revoked_token.scope.token_id)
+    with pytest.raises(ProxyError) as revoked:
+        revoked_service.submit(
+            bearer_token=revoked_plaintext,
+            path_project_id="fictional-project",
+            request=revoked_request,
+        )
+    assert revoked.value.code == "UNAUTHORIZED"
+    assert revoked_adapter.invocation_count == 1
+
+    expired_service, expired_database, expired_adapter, expired_token, expired_plaintext, expired_now = _mutable_proxy_setup()
+    expired_request = make_request()
+    expired_service.submit(
+        bearer_token=expired_plaintext,
+        path_project_id="fictional-project",
+        request=expired_request,
+    )
+    expired_now[0] = NOW + timedelta(minutes=6)
+    expired_database.tokens[expired_token.scope.token_id] = replace(
+        expired_database.tokens[expired_token.scope.token_id],
+        expires_at=format_timestamp(NOW + timedelta(minutes=5)),
+    )
+    with pytest.raises(ProxyError) as expired:
+        expired_service.submit(
+            bearer_token=expired_plaintext,
+            path_project_id="fictional-project",
+            request=expired_request,
+        )
+    assert expired.value.code == "UNAUTHORIZED"
+    assert expired_adapter.invocation_count == 1
+
+
 @pytest.mark.parametrize("field,value", [
     ("package_id", "wrong"), ("package_checksum", "sha256:" + "d" * 64),
     ("workflow_id", "wrong"), ("workflow_version", "2.0.0"),
@@ -108,6 +252,37 @@ def test_scope_mismatch_fails_before_adapter(proxy_setup, field: str, value: str
     assert adapter.invocation_count == 0
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("project_id", "wrong-project"),
+        ("package_id", "wrong-package"),
+        ("workflow_id", "wrong-workflow"),
+    ],
+)
+def test_wrong_scope_cannot_probe_delayed_existing_key(field: str, value: str) -> None:
+    service, database, adapter, _, plaintext, current = _mutable_proxy_setup()
+    first = make_request()
+    service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=first,
+    )
+    current[0] = NOW + timedelta(minutes=6)
+    wrong_scope = make_request(idempotency_key=first.idempotency_key, **{field: value})
+
+    with pytest.raises(ProxyError) as captured:
+        service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=wrong_scope,
+        )
+
+    assert captured.value.code == "AUTHORIZATION_SCOPE_MISMATCH"
+    assert len(database.operations) == 1
+    assert adapter.invocation_count == 1
+
+
 def test_stale_and_future_timestamp_fail_before_adapter(proxy_setup) -> None:
     service, _, adapter, _, plaintext = proxy_setup
     for timestamp in (NOW - timedelta(minutes=6), NOW + timedelta(minutes=6)):
@@ -119,6 +294,23 @@ def test_stale_and_future_timestamp_fail_before_adapter(proxy_setup) -> None:
             )
         assert captured.value.code == "CLIENT_TIMESTAMP_OUT_OF_RANGE"
     assert adapter.invocation_count == 0
+
+
+def test_fresh_new_admission_remains_unchanged() -> None:
+    service, database, adapter, _, plaintext, current = _mutable_proxy_setup()
+    current[0] = NOW + timedelta(minutes=4)
+    request = make_request(client_timestamp=format_timestamp(current[0]))
+
+    result = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+
+    assert result["operation_status"] == "SUCCEEDED"
+    assert result["idempotency_result"] == "CREATED"
+    assert len(database.operations) == 1
+    assert adapter.invocation_count == 1
 
 
 def test_token_operation_limit_counts_admitted_terminal_operations() -> None:
@@ -158,6 +350,32 @@ def test_oversized_result_is_not_persisted_or_delivered() -> None:
     assert result["error_code"] == "RESPONSE_LIMIT_EXCEEDED"
     assert stored.provider_data is None
     assert stored.provider_data_checksum is None
+
+
+def test_delayed_exact_replay_of_failed_operation_never_reinvokes_adapter() -> None:
+    service, database, adapter, token, plaintext, current = _mutable_proxy_setup(
+        adapter=OversizedAdapter(),
+    )
+    request = make_request()
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    current[0] = NOW + timedelta(minutes=6)
+
+    replay = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+
+    assert first["operation_status"] == replay["operation_status"] == "FAILED"
+    assert replay["operation_id"] == first["operation_id"]
+    assert replay["idempotency_result"] == "REPLAYED"
+    assert adapter.invocation_count == 1
+    assert len(database.operations) == 1
+    assert database.tokens[token.scope.token_id].admitted_operations == 1
 
 
 def test_operation_timeout_is_terminal_and_has_no_retry() -> None:
@@ -226,7 +444,12 @@ class InterruptingAdapter:
 def test_interrupted_running_operation_reconciles_without_second_invocation() -> None:
     database = InMemoryProxyDatabase()
     adapter = InterruptingAdapter()
-    service = CloudAPIProxyService(unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(database), adapter=adapter, clock=lambda: NOW)
+    current = [NOW]
+    service = CloudAPIProxyService(
+        unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(database),
+        adapter=adapter,
+        clock=lambda: current[0],
+    )
     _, plaintext = service.issue_token(
         tenant_id="tenant", subject_id="subject", project_id="fictional-project",
         package_id="fictional-package", package_checksum=CHECKSUM_A,
@@ -236,9 +459,93 @@ def test_interrupted_running_operation_reconciles_without_second_invocation() ->
     with pytest.raises(KeyboardInterrupt):
         service.submit(bearer_token=plaintext, path_project_id="fictional-project", request=request)
     assert next(iter(database.operations.values())).status is ProxyOperationStatus.RUNNING
+    current[0] = NOW + timedelta(minutes=6)
+    running_replay = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    assert running_replay["operation_status"] == "RUNNING"
+    assert running_replay["idempotency_result"] == "REPLAYED"
+    assert adapter.invocation_count == 1
     assert service.reconcile_interrupted() == 1
     replay = service.submit(bearer_token=plaintext, path_project_id="fictional-project", request=request)
     assert replay["operation_status"] == "RECONCILIATION_REQUIRED"
+    assert replay["idempotency_result"] == "REPLAYED"
+    assert adapter.invocation_count == 1
+
+
+def test_exhausted_operation_budget_does_not_block_delayed_exact_replay() -> None:
+    service, database, adapter, token, plaintext, current = _mutable_proxy_setup()
+    request = make_request()
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    database.tokens[token.scope.token_id] = replace(
+        database.tokens[token.scope.token_id],
+        admitted_operations=token.scope.maximum_operations,
+    )
+    current[0] = NOW + timedelta(minutes=6)
+
+    replay = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+
+    assert replay["operation_id"] == first["operation_id"]
+    assert replay["idempotency_result"] == "REPLAYED"
+    assert database.tokens[token.scope.token_id].admitted_operations == token.scope.maximum_operations
+    assert adapter.invocation_count == 1
+
+
+def test_concurrent_delayed_replay_and_stale_conflict_keep_stable_ledger() -> None:
+    service, database, adapter, token, plaintext, current = _mutable_proxy_setup()
+    request = make_request()
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    current[0] = NOW + timedelta(minutes=6)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        replays = list(
+            executor.map(
+                lambda _: service.submit(
+                    bearer_token=plaintext,
+                    path_project_id="fictional-project",
+                    request=request,
+                ),
+                range(4),
+            )
+        )
+    changed = make_request(
+        idempotency_key=request.idempotency_key,
+        parameters=PaperSearchV01Request(query="stale concurrent changed content"),
+    )
+
+    def conflict_code(_: int) -> str:
+        try:
+            service.submit(
+                bearer_token=plaintext,
+                path_project_id="fictional-project",
+                request=changed,
+            )
+        except ProxyError as error:
+            return error.code
+        raise AssertionError("changed content was not rejected")
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        conflicts = list(executor.map(conflict_code, range(4)))
+
+    assert {item["operation_id"] for item in replays} == {first["operation_id"]}
+    assert {item["idempotency_result"] for item in replays} == {"REPLAYED"}
+    assert conflicts == ["IDEMPOTENCY_CONFLICT"] * 4
+    assert len(database.operations) == 1
+    assert database.tokens[token.scope.token_id].admitted_operations == 1
     assert adapter.invocation_count == 1
 
 

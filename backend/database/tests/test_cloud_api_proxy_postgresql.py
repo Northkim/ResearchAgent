@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Event
 
 import pytest
@@ -19,7 +19,7 @@ from backend.database import create_postgres_engine, create_session_factory
 from backend.database.orm import Base
 
 from backend.cloud_api_proxy.tests.conftest import CHECKSUM_A, CHECKSUM_B, NOW, make_request
-from backend.cloud_api_proxy.contracts import PaperSearchV01Request
+from backend.cloud_api_proxy.contracts import PaperSearchV01Request, format_timestamp
 
 
 @pytest.fixture(scope="module")
@@ -78,9 +78,21 @@ def test_sql_roundtrip_reload_and_exact_replay(sql_proxy_setup) -> None:
     reloaded = CloudAPIProxyService(
         unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
         adapter=reloaded_adapter,
-        clock=lambda: NOW,
+        clock=lambda: NOW + timedelta(minutes=6),
+    )
+    by_id = reloaded.get_operation(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        operation_id=first["operation_id"],
+    )
+    by_key = reloaded.find_operation(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        package_id=request.package_id,
+        idempotency_key=request.idempotency_key,
     )
     replay = reloaded.submit(bearer_token=plaintext, path_project_id="fictional-project", request=request)
+    assert by_id["operation_id"] == by_key["operation_id"] == first["operation_id"]
     assert replay["operation_id"] == first["operation_id"]
     assert replay["idempotency_result"] == "REPLAYED"
     assert adapter.invocation_count == 1
@@ -90,6 +102,122 @@ def test_sql_roundtrip_reload_and_exact_replay(sql_proxy_setup) -> None:
         assert session.scalar(text("SELECT admitted_operations FROM proxy_capability_tokens WHERE token_id=:token_id"), {"token_id": token.scope.token_id}) == 1
         stored = session.scalar(text("SELECT token_digest_sha256 FROM proxy_capability_tokens WHERE token_id=:token_id"), {"token_id": token.scope.token_id})
         assert stored != plaintext
+
+
+def test_sql_delayed_conflict_and_stale_new_admission_preserve_existing_row(
+    sql_proxy_setup,
+) -> None:
+    service, adapter, token, plaintext, session_factory = sql_proxy_setup
+    request = make_request()
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    reloaded_adapter = DeterministicFakePaperSearchAdapter()
+    reloaded = CloudAPIProxyService(
+        unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
+        adapter=reloaded_adapter,
+        clock=lambda: NOW + timedelta(minutes=6),
+    )
+    changed = make_request(
+        idempotency_key=request.idempotency_key,
+        client_timestamp=format_timestamp(NOW + timedelta(seconds=1)),
+    )
+    with pytest.raises(ProxyError) as conflict_error:
+        reloaded.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=changed,
+        )
+    with pytest.raises(ProxyError) as stale_error:
+        reloaded.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=make_request(),
+        )
+
+    assert conflict_error.value.code == "IDEMPOTENCY_CONFLICT"
+    assert stale_error.value.code == "CLIENT_TIMESTAMP_OUT_OF_RANGE"
+    assert adapter.invocation_count == 1
+    assert reloaded_adapter.invocation_count == 0
+    with session_factory() as session:
+        assert session.scalar(text("SELECT count(*) FROM proxy_operations")) == 1
+        values = session.execute(
+            text(
+                "SELECT admitted_operations, used_provider_calls, "
+                "reserved_provider_cost_microusd, reported_provider_cost_microusd "
+                "FROM proxy_capability_tokens WHERE token_id=:token_id"
+            ),
+            {"token_id": token.scope.token_id},
+        ).mappings().one()
+    assert values == {
+        "admitted_operations": 1,
+        "used_provider_calls": 0,
+        "reserved_provider_cost_microusd": 0,
+        "reported_provider_cost_microusd": 0,
+    }
+    assert first["operation_status"] == "SUCCEEDED"
+
+
+def test_sql_concurrent_delayed_replays_and_conflicts_are_stable(sql_proxy_setup) -> None:
+    service, adapter, token, plaintext, session_factory = sql_proxy_setup
+    request = make_request()
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    reloaded_adapter = DeterministicFakePaperSearchAdapter()
+    reloaded = CloudAPIProxyService(
+        unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
+        adapter=reloaded_adapter,
+        clock=lambda: NOW + timedelta(minutes=6),
+    )
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        replays = list(
+            executor.map(
+                lambda _: reloaded.submit(
+                    bearer_token=plaintext,
+                    path_project_id="fictional-project",
+                    request=request,
+                ),
+                range(4),
+            )
+        )
+    changed = make_request(
+        idempotency_key=request.idempotency_key,
+        parameters=PaperSearchV01Request(query="delayed conflicting fictional content"),
+    )
+
+    def conflict_code(_: int) -> str:
+        try:
+            reloaded.submit(
+                bearer_token=plaintext,
+                path_project_id="fictional-project",
+                request=changed,
+            )
+        except ProxyError as error:
+            return error.code
+        raise AssertionError("changed content was not rejected")
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        conflicts = list(executor.map(conflict_code, range(4)))
+
+    assert {item["operation_id"] for item in replays} == {first["operation_id"]}
+    assert {item["idempotency_result"] for item in replays} == {"REPLAYED"}
+    assert conflicts == ["IDEMPOTENCY_CONFLICT"] * 4
+    assert adapter.invocation_count == 1
+    assert reloaded_adapter.invocation_count == 0
+    with session_factory() as session:
+        assert session.scalar(text("SELECT count(*) FROM proxy_operations")) == 1
+        assert session.scalar(
+            text(
+                "SELECT admitted_operations FROM proxy_capability_tokens "
+                "WHERE token_id=:token_id"
+            ),
+            {"token_id": token.scope.token_id},
+        ) == 1
 
 
 def test_concurrent_exact_replay_creates_one_effective_operation(sql_proxy_setup) -> None:

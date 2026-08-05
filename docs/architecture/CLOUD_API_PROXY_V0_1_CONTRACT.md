@@ -252,6 +252,18 @@ count reservation before invoking the fake adapter.
 | Cloud restarts while `RUNNING` | Mark/read as `RECONCILIATION_REQUIRED` unless the provider supports a trustworthy request-status/idempotency lookup. Do not issue another call merely because the process restarted. |
 | Provider response arrives but artifact/settlement persistence is partial | Keep conservative budget reservation and reconciliation state. Never report success until the immutable normalized result/checksum and terminal settlement are durable. |
 
+Submission ordering is part of this contract. The server first requires a
+strictly parsed request, UUIDv4 idempotency key, parseable UTC client timestamp,
+independently recomputed request checksum, active known bearer token, and exact
+Project/Package/Workflow/capability/adapter authorization scope. It then
+resolves the authoritative operation by `(token_id, idempotency_key)` inside
+the existing token-locked transaction. An existing matching checksum replays
+the operation in any status without applying timestamp freshness; an existing
+different checksum returns `IDEMPOTENCY_CONFLICT` before freshness. Only a key
+with no existing scoped operation is subject to the plus-or-minus five-minute
+freshness rule before admission. Expired/revoked or wrong-scope tokens cannot
+use this ordering to read or probe an operation.
+
 Conceptual API shape for R3B review, not implementation approval:
 
 ```text
@@ -377,9 +389,10 @@ provider or production-authentication implementation.
 - `contracts.py` implements strict immutable request, scope, token, operation,
   usage and response identities with canonical JSON and SHA-256.
 - `service.py` authenticates the digest-only token, derives authorization from
-  its server record, transactionally admits one operation, invokes the fixed
-  fake adapter once, applies result/time/count/concurrency limits and exposes
-  reconciliation reads.
+  its server record, resolves durable scoped replay/conflict before timestamp
+  freshness for new admission, transactionally admits one operation, invokes
+  the fixed fake adapter once, applies result/time/count/concurrency limits and
+  exposes reconciliation reads.
 - `fake_adapter.py` returns only deterministic fictional `PaperRecord` data and
   contains no network or credential path.
 - `api.py` implements `POST /projects/{project_id}/proxy-operations`, GET by
@@ -450,10 +463,12 @@ request to the fixed official Works origin, verifies TLS, disables redirects
 and ambient proxies, permits at most 10 seconds and 512 KiB, and performs zero
 automatic Provider retries.
 
-The existing scoped idempotency rule remains exact: replay returns the durable
-operation without another Provider call; changed content conflicts before
-Provider use; uncertainty becomes `RECONCILIATION_REQUIRED` and is never
-automatically reissued.
+The existing scoped idempotency rule remains exact: after mandatory active-
+token and exact-scope validation, replay returns the durable operation without
+another Provider call even when the original client timestamp is older than
+five minutes; changed content conflicts before timestamp freshness and
+Provider use; freshness remains mandatory for new admission; uncertainty
+becomes `RECONCILIATION_REQUIRED` and is never automatically reissued.
 
 R3C-A ceilings are 20 Provider calls/operations and USD 0.05 reported spend,
 with no prepaid authorization. The current qualified price is `$0.001` per

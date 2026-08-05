@@ -183,8 +183,12 @@ Proxy row counts/statuses and Package manifest. Then:
 6. restart Uvicorn with the same database, key environment and feature flag.
 
 After restart, require identical accepted operation/result/checksums/cost,
-unchanged token state and no duplicate rows. Status reads must work. Exact POST
-replay remains idempotent and causes zero additional OpenAlex call. A reconciled
+unchanged token state and no duplicate rows. Status reads must work. With the
+token still active and exactly scoped, exact POST replay must remain idempotent
+and cause zero additional OpenAlex call even when the original client timestamp
+is outside the five-minute new-admission window. Changed content under the
+existing key must return `IDEMPOTENCY_CONFLICT` before freshness, while a
+distinct stale key must return `CLIENT_TIMESTAMP_OUT_OF_RANGE`. A reconciled
 operation remains uncertain and is not reissued.
 
 ## 11. Regression and qualification
@@ -194,6 +198,9 @@ Against the isolated test database run, without Proxy SQL skips:
 - focused OpenAlex Proxy tests;
 - Proxy PostgreSQL tests;
 - existing fake Proxy tests;
+- delayed exact replay, existing-key conflict and stale-new-admission tests;
+- physical PostgreSQL/Uvicorn restart with the original request timestamp
+  outside the freshness window and zero transport on replay;
 - Workflow Package tests;
 - Progress Report tests;
 - full backend regression;

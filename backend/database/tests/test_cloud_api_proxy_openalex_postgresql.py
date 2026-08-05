@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import secrets
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -15,6 +16,7 @@ from backend.cloud_api_proxy.contracts import (
     OPENALEX_ADAPTER_ID,
     PaperSearchV01Request,
     canonical_json,
+    format_timestamp,
 )
 from backend.cloud_api_proxy.errors import ProxyError
 from backend.cloud_api_proxy.sql import SQLProxyUnitOfWork
@@ -172,7 +174,7 @@ def test_sql_roundtrip_retains_exact_cost_but_no_query_or_key(sql_openalex_setup
 
 
 def test_sql_reload_exact_replay_has_zero_second_provider_call(sql_openalex_setup) -> None:
-    service, adapter, _, _, plaintext, _, session_factory = sql_openalex_setup
+    service, adapter, _, token, plaintext, _, session_factory = sql_openalex_setup
     request = make_request(parameters=PaperSearchV01Request("fictional-reload", 1))
     first = service.submit(bearer_token=plaintext, path_project_id="fictional-project", request=request)
     reloaded_transport = ScriptedTransport([])
@@ -180,18 +182,180 @@ def test_sql_reload_exact_replay_has_zero_second_provider_call(sql_openalex_setu
     reloaded = CloudAPIProxyService(
         unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
         adapters={reloaded_adapter.adapter_id: reloaded_adapter},
-        clock=lambda: NOW,
+        clock=lambda: NOW + timedelta(minutes=6),
+    )
+    by_id = reloaded.get_operation(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        operation_id=first["operation_id"],
+    )
+    by_key = reloaded.find_operation(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        package_id=request.package_id,
+        idempotency_key=request.idempotency_key,
     )
     replay = reloaded.submit(
         bearer_token=plaintext,
         path_project_id="fictional-project",
         request=request,
     )
+    assert by_id["operation_id"] == by_key["operation_id"] == first["operation_id"]
     assert replay["operation_id"] == first["operation_id"]
     assert replay["idempotency_result"] == "REPLAYED"
     assert adapter.invocation_count == 1
     assert reloaded_adapter.invocation_count == 0
     assert reloaded_transport.calls == []
+    with session_factory() as session:
+        values = session.execute(
+            text(
+                "SELECT admitted_operations, used_provider_calls, "
+                "reserved_provider_cost_microusd, reported_provider_cost_microusd "
+                "FROM proxy_capability_tokens WHERE token_id=:token_id"
+            ),
+            {"token_id": token.scope.token_id},
+        ).mappings().one()
+        assert session.scalar(text("SELECT count(*) FROM proxy_operations")) == 1
+    assert values == {
+        "admitted_operations": 1,
+        "used_provider_calls": 1,
+        "reserved_provider_cost_microusd": 1_000,
+        "reported_provider_cost_microusd": 1_000,
+    }
+
+
+def test_sql_delayed_openalex_conflict_and_stale_new_admission_are_zero_call(
+    sql_openalex_setup,
+) -> None:
+    service, adapter, transport, token, plaintext, _, session_factory = sql_openalex_setup
+    request = make_request(parameters=PaperSearchV01Request("fictional-delayed-conflict", 1))
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    reloaded_transport = ScriptedTransport([])
+    reloaded_adapter, _ = _adapter(reloaded_transport)
+    reloaded = CloudAPIProxyService(
+        unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
+        adapters={reloaded_adapter.adapter_id: reloaded_adapter},
+        clock=lambda: NOW + timedelta(minutes=6),
+    )
+    changed = make_request(
+        idempotency_key=request.idempotency_key,
+        parameters=request.parameters,
+        client_timestamp=format_timestamp(NOW + timedelta(seconds=1)),
+    )
+    with pytest.raises(ProxyError) as conflict_error:
+        reloaded.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=changed,
+        )
+    with pytest.raises(ProxyError) as stale_error:
+        reloaded.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=make_request(
+                parameters=PaperSearchV01Request("fictional-stale-new", 1),
+            ),
+        )
+
+    assert conflict_error.value.code == "IDEMPOTENCY_CONFLICT"
+    assert stale_error.value.code == "CLIENT_TIMESTAMP_OUT_OF_RANGE"
+    assert first["operation_status"] == "SUCCEEDED"
+    assert adapter.invocation_count == 1
+    assert len(transport.calls) == 1
+    assert reloaded_adapter.invocation_count == 0
+    assert reloaded_transport.calls == []
+    with session_factory() as session:
+        assert session.scalar(text("SELECT count(*) FROM proxy_operations")) == 1
+        values = session.execute(
+            text(
+                "SELECT admitted_operations, used_provider_calls, "
+                "reserved_provider_cost_microusd, reported_provider_cost_microusd "
+                "FROM proxy_capability_tokens WHERE token_id=:token_id"
+            ),
+            {"token_id": token.scope.token_id},
+        ).mappings().one()
+    assert values == {
+        "admitted_operations": 1,
+        "used_provider_calls": 1,
+        "reserved_provider_cost_microusd": 1_000,
+        "reported_provider_cost_microusd": 1_000,
+    }
+
+
+def test_sql_concurrent_delayed_openalex_replay_and_conflict_keep_exact_cost(
+    sql_openalex_setup,
+) -> None:
+    service, adapter, transport, token, plaintext, _, session_factory = sql_openalex_setup
+    request = make_request(parameters=PaperSearchV01Request("fictional-delayed-concurrency", 1))
+    first = service.submit(
+        bearer_token=plaintext,
+        path_project_id="fictional-project",
+        request=request,
+    )
+    reloaded_transport = ScriptedTransport([])
+    reloaded_adapter, _ = _adapter(reloaded_transport)
+    reloaded = CloudAPIProxyService(
+        unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
+        adapters={reloaded_adapter.adapter_id: reloaded_adapter},
+        clock=lambda: NOW + timedelta(minutes=6),
+    )
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        replays = list(
+            executor.map(
+                lambda _: reloaded.submit(
+                    bearer_token=plaintext,
+                    path_project_id="fictional-project",
+                    request=request,
+                ),
+                range(4),
+            )
+        )
+    changed = make_request(
+        idempotency_key=request.idempotency_key,
+        parameters=PaperSearchV01Request("fictional-delayed-concurrency-changed", 1),
+    )
+
+    def conflict_code(_: int) -> str:
+        try:
+            reloaded.submit(
+                bearer_token=plaintext,
+                path_project_id="fictional-project",
+                request=changed,
+            )
+        except ProxyError as error:
+            return error.code
+        raise AssertionError("changed content was not rejected")
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        conflicts = list(executor.map(conflict_code, range(4)))
+
+    assert {item["operation_id"] for item in replays} == {first["operation_id"]}
+    assert {item["idempotency_result"] for item in replays} == {"REPLAYED"}
+    assert conflicts == ["IDEMPOTENCY_CONFLICT"] * 4
+    assert adapter.invocation_count == 1
+    assert len(transport.calls) == 1
+    assert reloaded_adapter.invocation_count == 0
+    assert reloaded_transport.calls == []
+    with session_factory() as session:
+        assert session.scalar(text("SELECT count(*) FROM proxy_operations")) == 1
+        values = session.execute(
+            text(
+                "SELECT admitted_operations, used_provider_calls, "
+                "reserved_provider_cost_microusd, reported_provider_cost_microusd "
+                "FROM proxy_capability_tokens WHERE token_id=:token_id"
+            ),
+            {"token_id": token.scope.token_id},
+        ).mappings().one()
+    assert values == {
+        "admitted_operations": 1,
+        "used_provider_calls": 1,
+        "reserved_provider_cost_microusd": 1_000,
+        "reported_provider_cost_microusd": 1_000,
+    }
 
 
 def test_sql_concurrent_exact_replay_reserves_one_call_and_cost(sql_openalex_setup) -> None:

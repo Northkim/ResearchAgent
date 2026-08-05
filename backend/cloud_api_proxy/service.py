@@ -196,7 +196,6 @@ class CloudAPIProxyService:
         except ValueError as error:
             raise invalid("request contains prohibited sensitive or machine-specific content", "UNSAFE_REQUEST_CONTENT") from error
         now = self._now()
-        self._validate_client_timestamp(request, now)
         with self.unit_of_work_factory() as uow:
             token = self._authenticate(uow.proxy, bearer_token, now)
             locked = uow.proxy.get_token(token.scope.token_id, for_update=True)
@@ -209,6 +208,7 @@ class CloudAPIProxyService:
                 if existing.request.request_content_checksum != request.request_content_checksum:
                     raise conflict()
                 return existing.delivery(replayed=True, server_timestamp=now)
+            self._validate_client_timestamp(request, now)
             selected_adapter = self.adapters.get(locked.scope.adapter_id)
             if selected_adapter is None:
                 raise unavailable("Authorized Proxy adapter is not configured")

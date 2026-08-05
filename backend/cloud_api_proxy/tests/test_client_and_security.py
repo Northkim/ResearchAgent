@@ -3,17 +3,21 @@ from __future__ import annotations
 import json
 import os
 import socket
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
 
 from backend.cloud_api_proxy import CloudAPIProxyService, DeterministicFakePaperSearchAdapter, InMemoryProxyDatabase, InMemoryProxyUnitOfWork
-from backend.cloud_api_proxy.contracts import OPENALEX_ADAPTER_ID
-from backend.cloud_api_proxy.client import build_request, main, validate_base_url
+from backend.cloud_api_proxy.contracts import OPENALEX_ADAPTER_ID, canonical_json
+from backend.cloud_api_proxy.client import build_request, main, submit, validate_base_url
 from backend.cloud_api_proxy import operator_cli
 from backend.cloud_api_proxy.operator_cli import _write_once
 from backend.cloud_api_proxy.package_identity import read_validated_package_identity
 from backend.workflow_packages import build_literature_search_package
+
+from .conftest import make_request
 
 
 @pytest.mark.parametrize("url", [
@@ -54,6 +58,76 @@ def test_client_build_is_package_read_only(tmp_path: Path, monkeypatch: pytest.M
     after = {path.relative_to(built.package_root): path.read_bytes() for path in built.package_root.rglob("*") if path.is_file()}
     assert request.parameters.query == "fictional query"
     assert before == after
+
+
+def test_client_accepts_delayed_exact_replay_response_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = make_request()
+    calls: list[tuple[str, bytes | None, float]] = []
+    response_body = json.dumps(
+        {
+            "operation_id": "proxyop-v1-" + "a" * 64,
+            "operation_status": "SUCCEEDED",
+            "idempotency_result": "REPLAYED",
+        }
+    ).encode()
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return response_body
+
+    def urlopen(http_request: urllib.request.Request, *, timeout: float):
+        calls.append((http_request.full_url, http_request.data, timeout))
+        return Response()
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+    result = submit(
+        base_url="http://127.0.0.1:8099",
+        token="x" * 43,
+        request=request,
+        timeout=3.0,
+    )
+
+    assert result["idempotency_result"] == "REPLAYED"
+    assert len(calls) == 1
+    assert calls[0][1] == canonical_json(request.to_dict()).encode()
+
+
+def test_client_stale_new_admission_error_is_safe_and_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls = 0
+
+    def urlopen(http_request: urllib.request.Request, *, timeout: float):
+        nonlocal calls
+        calls += 1
+        raise urllib.error.HTTPError(
+            http_request.full_url,
+            422,
+            "synthetic rejection",
+            hdrs=None,
+            fp=None,
+        )
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+
+    with pytest.raises(RuntimeError, match="HTTP 422"):
+        submit(
+            base_url="http://127.0.0.1:8099",
+            token="x" * 43,
+            request=make_request(),
+            timeout=3.0,
+        )
+
+    assert calls == 1
 
 
 def test_token_file_is_0600_and_never_overwritten(tmp_path: Path) -> None:

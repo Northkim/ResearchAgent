@@ -84,7 +84,67 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-R1 offline restart forensics passed
+### Current milestone — R3C-R2 delayed replay remediation passed
+
+R3C-R2 began from clean `main` at exact commit
+`6f802e79edb4991b0256bc9db1d3a3ec49dcc831`. The real OpenAlex key variable
+was absent. No owner credential, `.env`, external documentation, live Provider,
+Hosted execution, Workflow execution, LLM, Judge or automatic Progress Report
+path was read or invoked.
+
+Accepted ADR 0015 ratifies the recovery ordering. Strict request structure,
+UUIDv4, parseable UTC timestamp, recomputed request checksum, sensitive-content
+checks, active/unrevoked/unexpired bearer and exact
+Project/Package/Workflow/capability/adapter scope remain mandatory. Within the
+existing token-locked transaction, durable `(token_id, idempotency_key)`
+resolution now precedes timestamp freshness. An existing matching checksum
+replays `RECEIVED`, `RUNNING`, `SUCCEEDED`, `FAILED`, or
+`RECONCILIATION_REQUIRED` regardless of timestamp age; changed content returns
+`IDEMPOTENCY_CONFLICT`; only a new key is subject to the unchanged plus-or-
+minus five-minute admission window.
+
+The production change is a one-line ordering move in
+`backend/cloud_api_proxy/service.py`. It introduces no API, SQL, migration,
+checksum, operation-ID, timestamp-window, retention, cost, normalization,
+diagnostic, Package or Progress Report change. Focused service/API/client tests
+cover delayed terminal/active replay, timestamp-only conflict, stale/future new
+admission, malformed timestamps, expired/revoked/wrong-scope tokens, exhausted
+budget and concurrent replay/conflict.
+
+A fresh PostgreSQL 18.1 cluster used separate R3C-R2 test and qualification
+databases at sole/current revision `20260805_0005`. SQL reload/concurrency tests
+passed with zero Proxy/OpenAlex skip. A wholly fictional two-Work OpenAlex
+success was seeded through committed adapter/service/repository interfaces with
+one scripted transport call, `CHECKSUM_ONLY` retention and exact 1,000 reserved
+and reported microusd. Real Uvicorn and PostgreSQL were physically stopped and
+restarted. Before and after restart, the already-aged request passed both
+status routes and exact replay; after restart, timestamp-only changed content
+returned 409 and a distinct stale key returned 422. Operation/result/checksums/
+count/canonical size/call/cost were unchanged. DNS/socket/HTTP canaries,
+diagnostic log, Hosted/runtime row audit and Package pre/post manifests proved
+zero external transport, zero diagnostic, zero duplicate/Hosted activity and
+zero Package mutation.
+
+Verification passed 154 focused OpenAlex tests, 231 Proxy tests, 17 isolated
+Proxy/OpenAlex PostgreSQL tests with zero skip, 43 Package tests, 38 Progress
+Report tests and 545 full-backend tests. Four separately gated destructive/live
+integration suites remained skipped. Compileall and Alembic heads/current/check
+passed with no drift.
+
+The fictional capability was revoked through the committed service. Both
+Uvicorn generations and the dedicated PostgreSQL cluster were stopped, both
+selected ports were released, and all dedicated Package, token, credential,
+request, manifest, log, controller, database/data and PDF-render temporary
+state was removed. ProjectDB and unrelated services were untouched.
+
+`R3C_R2_IMPLEMENTATION = PASS`,
+`R3C_REPLAY_TIMESTAMP_ORDERING_POLICY = EXISTING_OPERATION_BEFORE_FRESHNESS`,
+and `R3C_LIVE_PROVIDER_CALL_COUNT_THIS_PHASE = 0`. R3C-A-R4's immutable live
+five-Work/1,000-microusd evidence remains valid. R3C is not complete:
+`R3C_STATE = LIVE_ACCEPTANCE_PENDING` and the composite final restart gate is
+`READY_FOR_OWNER_REVIEW`. `R3D_PRODUCTION_PROVIDER_GATE = CLOSED`.
+
+### Preserved milestone — R3C-R1 offline restart forensics passed
 
 R3C-R1 began from clean `main` at exact commit
 `c794c6d86689f1d6d7912ef77e5ae0d6d8beea9b`. No real Provider/key/`.env`,

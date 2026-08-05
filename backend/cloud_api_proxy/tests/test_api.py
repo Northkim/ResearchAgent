@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -13,9 +14,15 @@ from backend.cloud_api_proxy.composition import (
 )
 from backend.cloud_api_proxy.openalex_diagnostics import STRUCTURAL_DIAGNOSTIC_FEATURE_FLAG
 from backend.cloud_api_proxy.contracts import MAX_REQUEST_BYTES, canonical_json, canonical_hash
+from backend.cloud_api_proxy import (
+    CloudAPIProxyService,
+    DeterministicFakePaperSearchAdapter,
+    InMemoryProxyDatabase,
+    InMemoryProxyUnitOfWork,
+)
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 
-from .conftest import make_request
+from .conftest import CHECKSUM_A, CHECKSUM_B, NOW, make_request
 
 
 def _client(proxy_setup):
@@ -29,6 +36,41 @@ def _client(proxy_setup):
         client=("127.0.0.1", 50123),
     )
     return client, hosted_database, plaintext
+
+
+def _mutable_client():
+    current = [NOW]
+    database = InMemoryProxyDatabase()
+    adapter = DeterministicFakePaperSearchAdapter()
+    service = CloudAPIProxyService(
+        unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(database),
+        adapter=adapter,
+        clock=lambda: current[0],
+    )
+    _, plaintext = service.issue_token(
+        tenant_id="fictional-tenant",
+        subject_id="fictional-subject",
+        project_id="fictional-project",
+        package_id="fictional-package",
+        package_checksum=CHECKSUM_A,
+        workflow_id="literature-search",
+        workflow_version="1.0.0",
+        workflow_checksum=CHECKSUM_B,
+    )
+    hosted_database = InMemoryDatabase()
+    hosted = ApplicationContainer(
+        unit_of_work_factory=lambda: InMemoryUnitOfWork(hosted_database),
+    )
+    client = TestClient(
+        create_app(
+            hosted,
+            proxy_container=ProxyApplicationContainer(service=service),
+            enable_experimental_proxy=True,
+        ),
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 50123),
+    )
+    return client, database, adapter, hosted_database, plaintext, current
 
 
 def test_proxy_is_not_mounted_by_default() -> None:
@@ -148,6 +190,126 @@ def test_submit_get_and_reconcile_read_use_strict_envelopes(proxy_setup) -> None
     assert not hosted_database.checkpoint_records
     assert not hosted_database.memory_revisions
     assert not hosted_database.provider_operations
+
+
+def test_api_delayed_replay_conflict_and_stale_new_admission_keep_existing_contract() -> None:
+    client, database, adapter, hosted_database, plaintext, current = _mutable_client()
+    request = make_request()
+    headers = {
+        "Authorization": f"Bearer {plaintext}",
+        "Content-Type": "application/json",
+    }
+    request_bytes = canonical_json(request.to_dict()).encode()
+
+    with client:
+        created = client.post(
+            "/projects/fictional-project/proxy-operations",
+            content=request_bytes,
+            headers=headers,
+        )
+        current[0] = NOW + timedelta(minutes=6)
+        replay = client.post(
+            "/projects/fictional-project/proxy-operations",
+            content=request_bytes,
+            headers=headers,
+        )
+        changed = make_request(
+            idempotency_key=request.idempotency_key,
+            client_timestamp="2026-08-04T08:00:01Z",
+        )
+        conflict = client.post(
+            "/projects/fictional-project/proxy-operations",
+            content=canonical_json(changed.to_dict()).encode(),
+            headers=headers,
+        )
+        stale_new = client.post(
+            "/projects/fictional-project/proxy-operations",
+            content=canonical_json(make_request().to_dict()).encode(),
+            headers=headers,
+        )
+        malformed_payload = make_request().to_dict()
+        malformed_payload["client_timestamp"] = "not-a-timestamp"
+        malformed = client.post(
+            "/projects/fictional-project/proxy-operations",
+            content=canonical_json(malformed_payload).encode(),
+            headers=headers,
+        )
+        by_id = client.get(
+            f"/projects/fictional-project/proxy-operations/{created.json()['operation_id']}",
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
+        by_key = client.get(
+            "/projects/fictional-project/proxy-operations",
+            params={
+                "package_id": request.package_id,
+                "idempotency_key": request.idempotency_key,
+            },
+            headers={"Authorization": f"Bearer {plaintext}"},
+        )
+
+    assert created.status_code == 201
+    assert replay.status_code == 200
+    assert replay.json()["idempotency_result"] == "REPLAYED"
+    assert replay.json()["operation_id"] == created.json()["operation_id"]
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "IDEMPOTENCY_CONFLICT"
+    assert stale_new.status_code == 422
+    assert stale_new.json()["error"]["code"] == "CLIENT_TIMESTAMP_OUT_OF_RANGE"
+    assert malformed.status_code == 422
+    assert by_id.status_code == by_key.status_code == 200
+    assert by_id.json()["operation_id"] == by_key.json()["operation_id"]
+    assert len(database.operations) == 1
+    assert adapter.invocation_count == 1
+    exposed = "\n".join(
+        json.dumps(item.json(), sort_keys=True)
+        for item in (created, replay, conflict, stale_new, malformed, by_id, by_key)
+    )
+    assert plaintext not in exposed
+    error_exposed = "\n".join(
+        json.dumps(item.json(), sort_keys=True)
+        for item in (conflict, stale_new, malformed)
+    )
+    assert request.parameters.query not in error_exposed
+    assert not hosted_database.executions
+    assert not hosted_database.provider_operations
+
+
+def test_malformed_timestamp_rejects_before_service_or_repository_identity_lookup() -> None:
+    class GuardedService:
+        called = False
+
+        def submit(self, **kwargs):
+            self.called = True
+            raise AssertionError("malformed timestamp reached the Proxy service")
+
+    guarded = GuardedService()
+    hosted = ApplicationContainer(
+        unit_of_work_factory=lambda: InMemoryUnitOfWork(InMemoryDatabase()),
+    )
+    app = create_app(
+        hosted,
+        proxy_container=ProxyApplicationContainer(service=guarded),
+        enable_experimental_proxy=True,
+    )
+    payload = make_request().to_dict()
+    payload["client_timestamp"] = "not-a-timestamp"
+
+    with TestClient(
+        app,
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 50123),
+    ) as client:
+        response = client.post(
+            "/projects/fictional-project/proxy-operations",
+            content=canonical_json(payload).encode(),
+            headers={
+                "Authorization": "Bearer " + "x" * 43,
+                "Content-Type": "application/json",
+            },
+        )
+
+    assert response.status_code == 422
+    assert guarded.called is False
 
 
 def test_missing_token_nonloopback_and_unknown_fields_reject(proxy_setup) -> None:
