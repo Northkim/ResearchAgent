@@ -52,7 +52,8 @@ this engineering order.
 | R3C-N2-I | Strict response policy and structural diagnostics | **PASS_WITH_WARNINGS** — strict whole-response failure ratified; default-disabled value-free internal diagnostics synthetic/SQL qualified; no live/key/docs call |
 | R3C-I2 | Abstract formatting-control compatibility | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — ADR 0014 maps only abstract-token TAB/LF/CR to safe spacing; fictional/SQL/backend qualification passed with zero key/network/Provider call |
 | R3C-R1 | Post-restart recovery forensics | **PASS — DEFECT REPRODUCED OFFLINE** — both status routes passed; delayed exact replay deterministically failed freshness before durable idempotency; zero live call/key/docs access |
-| R3C-R2 | Delayed replay ordering remediation | **PASS — READY FOR OWNER REVIEW** — ADR 0015 resolves authorized existing replay/conflict before freshness, retains freshness for new admission, and passes real PostgreSQL/Uvicorn aged-replay restart qualification with zero live call |
+| R3C-R2 | Delayed replay ordering remediation | **PASS — OWNER ACCEPTED** — ADR 0015 resolves authorized existing replay/conflict before freshness, retains freshness for new admission, and passes real PostgreSQL/Uvicorn aged-replay restart qualification with zero live call |
+| R3C-C | Composite experimental OpenAlex acceptance closure | **PASS_WITH_WARNINGS — LIVE_OPENALEX_ACCEPTED** — ADR 0016 composes immutable R3C-A-R4 live evidence with R3C-R1 diagnosis and owner-accepted R3C-R2 restart qualification; no historical blocked result changes |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -169,8 +170,26 @@ PostgreSQL/Uvicorn restart with fictional persisted success passed with one
 unchanged operation/call, exact 1,000-microusd totals, no adapter reinvocation,
 no diagnostic, no Package/Hosted mutation and zero external network/key/live
 Provider use. No API, migration, checksum, retention, cost, normalization or
-Provider contract changed. Composite R3C acceptance is ready for owner review
-but remains `LIVE_ACCEPTANCE_PENDING`; R3D remains closed.
+Provider contract changed.
+
+The owner has now accepted R3C-R2 and ratified ADR 0016. R3C closes by
+composite evidence: R3C-A-R4 supplies the immutable one-call live transport,
+five-real-Work normalization, exact 1,000-microusd cost, privacy, pre-restart
+idempotency, Package, and Hosted/runtime evidence; R3C-R1 supplies the
+deterministic delayed-replay diagnosis; R3C-R2 supplies the corrected ordering,
+real PostgreSQL/Uvicorn restart, both status routes, aged exact replay, stable
+ledger, and complete regressions with zero additional live Provider use. No
+single run on final HEAD exercised every gate, and R3C-A-R4 remains `BLOCKED`.
+The owner accepts the conclusion compositionally because the changed service
+ordering is before and independent from Provider transport and normalization.
+No unresolved hard gate remains for the experimental R3C slice.
+
+`R3C_STATE = LIVE_OPENALEX_ACCEPTED` and
+`R3C_COMPLETE = PASS_WITH_WARNINGS`. This does not authorize public or
+production deployment. OpenAlex is the only accepted Provider; production
+authentication, multi-user authorization, HTTPS termination, proof of
+possession, secret management, real-user third-party query disclosure, and
+retention remain unresolved. R3D remains closed.
 
 ### Preserved optional mode
 

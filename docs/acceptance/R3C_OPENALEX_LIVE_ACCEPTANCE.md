@@ -1,16 +1,24 @@
 # R3C-A Supervised OpenAlex Live Acceptance Plan
 
-Status: **FUTURE LIVE RETRY — REQUIRES FRESH OWNER AUTHORIZATION / NOT STARTED**
+Status: **HISTORICAL LIVE PLAN — R3C COMPLETED BY COMPOSITE EVIDENCE**
 Provider: OpenAlex only
 Capability: `paper.search/v0.1` only
 
+Closure note (2026-08-05): accepted ADR 0016 and
+`R3C_COMPOSITE_OPENALEX_ACCEPTANCE_REPORT.md` close experimental R3C as
+`LIVE_OPENALEX_ACCEPTED` by composing immutable R3C-A-R4 live sub-gate evidence
+with the R3C-R1 diagnosis and owner-accepted R3C-R2 restart qualification.
+R3C-A-R4 remains `BLOCKED`; no single final-HEAD live run is claimed. The
+original criteria below are preserved as historical criteria and do not
+authorize another R3C live call. Production and R3D remain closed.
+
 ## 1. Authorization and baseline
 
-Another R3C-A retry may start only after owner review of a clean committed
-R3C-I2 baseline whose state is `LIVE_ACCEPTANCE_PENDING`. It requires fresh
-explicit owner permission, a new exact-baseline attestation, and an owner-
-supplied OpenAlex key. R3C-D, R3C-I, the prior live retries, and R3C-I2 do not
-authorize another live call.
+When this historical plan was active, another R3C-A retry could start only
+after owner review of a clean committed R3C-I2 baseline whose state was
+`LIVE_ACCEPTANCE_PENDING`. It required fresh explicit owner permission, a new
+exact-baseline attestation, and an owner-supplied OpenAlex key. R3C-D, R3C-I,
+the prior live retries, and R3C-I2 did not authorize another live call.
 
 Initial gate:
 
@@ -231,9 +239,9 @@ defect produces a blocked evidence commit.
 
 ## 13. Gate result
 
-R3C-A may pass only when every hard call, cost, key, SQL, idempotency, restart,
-Package and boundary gate passes. It must never claim production/public
-authorization.
+The historical plan permitted R3C-A to pass only when every hard call, cost,
+key, SQL, idempotency, restart, Package and boundary gate passed. It never
+permitted a production/public authorization claim.
 
 ```text
 R3C_NEXT_LIVE_RETRY_GATE = READY_FOR_FRESH_OWNER_AUTHORIZATION

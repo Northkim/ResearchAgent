@@ -84,7 +84,60 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-R2 delayed replay remediation passed
+### Current milestone — R3C composite experimental OpenAlex acceptance closed
+
+The owner accepted R3C-R2 and ratified accepted ADR 0016. Experimental R3C is
+now closed by composite evidence:
+
+```text
+R3C_COMPOSITE_OWNER_REVIEW = ACCEPTED
+R3C_COMPOSITE_ACCEPTANCE = PASS_WITH_WARNINGS
+R3C_PROVIDER = OPENALEX_PAPER_SEARCH_ACCEPTED_FOR_EXPERIMENTAL_R3C
+R3C_LIVE_TRANSPORT_ACCEPTANCE = PASS
+R3C_LIVE_NORMALIZATION_ACCEPTANCE = PASS
+R3C_COST_USAGE_ACCEPTANCE = PASS
+R3C_QUERY_CREDENTIAL_PRIVACY_ACCEPTANCE = PASS
+R3C_PRE_RESTART_IDEMPOTENCY_ACCEPTANCE = PASS
+R3C_FINAL_RESTART_ACCEPTANCE = PASS_BY_COMPOSITE_EVIDENCE
+R3C_DELAYED_REPLAY_ACCEPTANCE = PASS
+R3C_PACKAGE_IMMUTABILITY_ACCEPTANCE = PASS
+R3C_RUNTIME_HOSTED_BOUNDARY = PASS
+R3C_STATE = LIVE_OPENALEX_ACCEPTED
+R3C_COMPLETE = PASS_WITH_WARNINGS
+R3D_PRODUCTION_PROVIDER_GATE = CLOSED
+R2_STATE = UPLOAD_ACCEPTED
+R3B_STATE = FAKE_PROXY_ACCEPTED
+```
+
+R3C-A-R4 remains immutable and `BLOCKED`. Its accepted sub-gate evidence is the
+only post-remediation live component: one HTTP-200 OpenAlex call, five real
+normalized Works, 8,726 canonical bytes, exact 1,000-microusd cost, approved
+rate evidence, privacy, both pre-restart status routes, exact replay, conflict,
+Package non-mutation, and Hosted/runtime/LLM isolation. It does not supply a
+passing post-restart controller result.
+
+R3C-R1 deterministically reproduced the delayed exact-replay failure before
+Provider transport. R3C-R2 corrected only service ordering and qualified aged
+replay after physical PostgreSQL/Uvicorn restart with both status routes,
+unchanged result/checksum/call/cost evidence, zero adapter reinvocation, and
+complete regression coverage. Authentication, token expiry/revocation, exact
+scope, existing-key conflict, and stale-new-admission rejection remain intact.
+
+No single run on final HEAD exercised every gate. The owner accepts the
+conclusion compositionally because the R3C-R2 ordering change is orthogonal to
+the Provider transport and normalization proved by R3C-A-R4. No historical
+`BLOCKED`, `FAIL`, or `INCONCLUSIVE` result is rewritten; retry 1 remains
+unexplained.
+
+This is experimental acceptance only. OpenAlex is the only accepted Provider,
+the adapter remains disabled by default, real-user third-party query disclosure
+is not implemented, and public/production authentication, multi-user
+authorization, HTTPS termination, proof of possession, secret management, and
+retention remain unresolved. R3D is closed and must not begin without a new
+owner decision. Detailed evidence is in accepted ADR 0016 and
+`docs/acceptance/R3C_COMPOSITE_OPENALEX_ACCEPTANCE_REPORT.md`.
+
+### Preserved milestone — R3C-R2 delayed replay remediation passed
 
 R3C-R2 began from clean `main` at exact commit
 `6f802e79edb4991b0256bc9db1d3a3ec49dcc831`. The real OpenAlex key variable
@@ -137,12 +190,13 @@ selected ports were released, and all dedicated Package, token, credential,
 request, manifest, log, controller, database/data and PDF-render temporary
 state was removed. ProjectDB and unrelated services were untouched.
 
-`R3C_R2_IMPLEMENTATION = PASS`,
+The owner subsequently accepted this milestone. `R3C_R2_IMPLEMENTATION = PASS`,
 `R3C_REPLAY_TIMESTAMP_ORDERING_POLICY = EXISTING_OPERATION_BEFORE_FRESHNESS`,
 and `R3C_LIVE_PROVIDER_CALL_COUNT_THIS_PHASE = 0`. R3C-A-R4's immutable live
-five-Work/1,000-microusd evidence remains valid. R3C is not complete:
-`R3C_STATE = LIVE_ACCEPTANCE_PENDING` and the composite final restart gate is
-`READY_FOR_OWNER_REVIEW`. `R3D_PRODUCTION_PROVIDER_GATE = CLOSED`.
+five-Work/1,000-microusd evidence remains valid. At this historical milestone,
+R3C was not complete and remained `LIVE_ACCEPTANCE_PENDING`; accepted ADR 0016
+now records the later composite closure. `R3D_PRODUCTION_PROVIDER_GATE` remains
+`CLOSED`.
 
 ### Preserved milestone — R3C-R1 offline restart forensics passed
 
