@@ -1,72 +1,68 @@
 # V0.1 Owner Manual Acceptance Checklist
 
-Target duration after the blocking gaps are corrected: approximately 10
-minutes.
+Target duration: approximately 10 minutes after PostgreSQL and repository
+dependencies are installed.
 
-Current status: **NOT EXECUTABLE END TO END — MVP-A0 IS BLOCKED**.
+Current state: **IMPLEMENTATION QUALIFIED — OWNER ACCEPTANCE PENDING**.
 
-Do not use the existing Hosted demo actions as substitutes. Do not use a real
-Provider credential for this checklist. The owner should not need to inspect
-PostgreSQL manually.
+Use only localhost and a fictional/public topic. Do not use the legacy Hosted
+pages as substitutes, and do not enable a live Provider for this checklist.
 
 ## Ten-minute checklist
 
-1. **Start V0.1 locally — BLOCKED.** Run the supported localhost startup
-   command or short sequence. It must configure local PostgreSQL, apply
-   migrations, and start FastAPI and Next.js with displayed local URLs. No such
-   complete V0.1 procedure exists at this baseline.
-2. **Open the browser — WORKING IN PART.** Confirm the frontend loads on
-   localhost. The current page loads, but it is the Hosted research-operations
-   prototype rather than the V0.1 local-product home.
-3. **Create one Literature Search project — BLOCKED.** Enter a project name and
-   a fictional public topic, then select Literature Search. The required
-   project UI/API does not exist.
-4. **Download its Workflow Package — BLOCKED.** Generate the Package and save
-   the ZIP outside the repository. The compiler works from the CLI, but no
-   frontend generation/download action exists.
-5. **Inspect Package instructions — COMPONENT WORKING.** In a Package produced
-   by the committed compiler, verify that `AGENT.md` directs Codex to validate
-   the Package, write only declared local state, finalize one Progress Report,
-   and upload explicitly. Claude Code is optional and remains untested.
-6. **Validate the Package — COMPONENT WORKING.** Run its bundled validator in
-   the extracted folder. Expect a passing checksum result. Do not place a
-   credential, database URL, or private path in the folder.
-7. **Upload one fictional Progress Report — COMPONENT WORKING.** Use the
-   Package helper to finalize a native report, validate it offline, and use the
-   committed explicit upload client. Expect one accepted receipt. This remains
-   a manual local-client step, not automatic synchronization.
-8. **View progress in the browser — BLOCKED.** Confirm project name, Workflow,
-   round, status, completed work, current state, next action, outputs,
-   warnings/errors, and report history. No corresponding frontend view exists.
-9. **Restart local services — WORKING IN PART.** Stop frontend, backend, and the
-   dedicated local PostgreSQL service using the documented shutdown procedure,
-   then restart them. Backend continuity passed the audit; a complete supported
-   V0.1 shutdown/cleanup sequence is not documented.
-10. **Confirm project and progress remain — BLOCKED.** The project, Package
-    metadata, history, and projection must remain visible with no duplicate or
-    missing report. Backend report bytes and projection survive restart, but
-    the required frontend surfaces are absent.
+1. **Start V0.1 locally.** Export a loopback `REAGENT_DATABASE_URL` for a
+   dedicated database other than ProjectDB, run `make dev`, and confirm that
+   the printed FastAPI and Next.js readiness checks pass.
+2. **Open the browser.** Visit `http://127.0.0.1:3000/projects`. Confirm that
+   the primary navigation is Projects, New project, and Local guide, with no
+   Hosted run/resume action.
+3. **Create one project.** Enter a project name and fictional/public research
+   topic. Confirm Literature Search is fixed and creation opens a project
+   detail page without starting research.
+4. **Generate and download the Package.** Open Package, generate it, note the
+   displayed Package ID and checksum, and download the ZIP outside Git.
+5. **Inspect the local instructions.** Extract the ZIP and read `AGENT.md`.
+   Confirm it tells Codex to treat the folder as authoritative task state,
+   write only declared paths, finalize one Progress Report, and upload only by
+   an explicit later action. Confirm no credential is included.
+6. **Validate the Package.** In the extracted folder run
+   `python validate_package.py --root .`; expect a passing result.
+7. **Create and upload one fictional Progress Report.** Follow the bundled
+   `progress_report.py` instructions, validate again, then run the explicit
+   upload command in `docs/getting-started/LOCAL_V0_1.md`. Do not rely on
+   automatic synchronization.
+8. **View progress.** Refresh the project Progress page. Confirm project name,
+   Workflow, execution round, status, completed work, current state, next
+   action, outputs, warnings/errors, and the new report-history receipt.
+9. **Restart application services.** Run `make stop`, confirm the application
+   ports release, and run `make dev` again against the same PostgreSQL data.
+10. **Confirm continuity.** Reopen the project. Confirm Package metadata,
+    progress projection, and report history remain unchanged and no duplicate
+    report appears. The downloaded external Package must also remain unchanged.
 
-## Optional checks
+The owner does not need to inspect PostgreSQL manually.
 
-- Issue a short-lived fake-Provider capability and submit one fictional local
-  request through the provider-neutral client; exact replay should return the
-  same Proxy operation with zero external Provider call.
-- Inspect the downloaded ZIP checksum shown by the product once that UI exists.
+## Optional deterministic demonstration
+
+An operator may issue a short-lived fake-adapter capability outside Git and the
+Package, then use the provider-neutral client for one fictional
+`paper.search/v0.1` request and exact replay. This is optional and must make no
+external Provider call. Full Proxy operation detail is not required in the
+frontend.
 
 ## Known warnings
 
-- The current primary frontend starts/resumes Hosted Workflow runs and must not
-  be used as the V0.1 research path.
-- Standalone frontend typechecking currently fails in test files even though
-  unit tests, lint, and the production build pass.
-- Claude Code is Experimental / Untested.
-- R3C accepted only OpenAlex and retains its documented warnings.
+- Claude Code is Experimental / Untested; Codex CLI is the supported Harness.
+- OpenAlex is experimental and disabled by default.
+- Progress Report upload is explicit and manual.
+- Literature Search is the only Workflow.
+- V0.1 is local, single-user software and is not accepted for public or
+  production deployment.
 
 ## Out of scope
 
-Public deployment, production authentication, multi-user authorization, OAuth
-or SSO, HTTPS termination, proof of possession, production secret management,
-paid Provider activity, failover, multiple Providers, additional Workflows,
-automatic Progress Report synchronization, Hosted research execution, and
-cloud LLM research work are not part of V0.1 acceptance.
+Production authentication, OAuth/SSO, multi-user authorization, HTTPS
+termination, proof of possession, production secret management, workers,
+queues, paid Provider activity, failover, more Providers or Workflows,
+automatic Progress synchronization, Hosted research execution, cloud LLM
+research, and production deployment are not part of V0.1.

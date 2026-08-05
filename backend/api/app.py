@@ -23,6 +23,7 @@ from .routers import (
     approvals_router,
     artifacts_router,
     health_router,
+    local_projects_router,
     progress_reports_router,
     runs_router,
     workflows_router,
@@ -61,6 +62,7 @@ def create_app(
     application.state.container = composition
     application.state.proxy_container = proxy_composition
     application.include_router(health_router)
+    application.include_router(local_projects_router)
     application.include_router(runs_router)
     application.include_router(approvals_router)
     application.include_router(workflows_router)

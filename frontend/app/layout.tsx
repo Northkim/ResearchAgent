@@ -7,10 +7,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "ReAgent Research Operations",
+    default: "ReAgent Local Research",
     template: "%s · ReAgent",
   },
-  description: "Launch, monitor, and govern durable research agent workflows.",
+  description: "Package local research work for Codex and view uploaded progress.",
 };
 
 export default function RootLayout({

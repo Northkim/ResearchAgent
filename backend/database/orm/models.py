@@ -36,6 +36,45 @@ class WorkflowDefinitionORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class LocalProjectORM(Base):
+    """Cloud metadata for the teacher-aligned local V0.1 project flow."""
+
+    __tablename__ = "local_projects"
+    __table_args__ = (
+        CheckConstraint(
+            "selected_workflow = 'LITERATURE_SEARCH'",
+            name="local_project_literature_search_only",
+        ),
+        CheckConstraint("char_length(name) BETWEEN 1 AND 160", name="local_project_name_length"),
+        CheckConstraint(
+            "char_length(research_topic) BETWEEN 1 AND 500",
+            name="local_project_topic_length",
+        ),
+        Index("ix_local_projects_updated", "updated_at", "project_id"),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    research_topic: Mapped[str] = mapped_column(String(500), nullable=False)
+    selected_workflow: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    current_package_id: Mapped[str | None] = mapped_column(String(255))
+    current_package_schema_version: Mapped[str | None] = mapped_column(String(100))
+    current_package_checksum: Mapped[str | None] = mapped_column(String(71))
+    current_manifest_checksum: Mapped[str | None] = mapped_column(String(71))
+    current_zip_checksum: Mapped[str | None] = mapped_column(String(71))
+    current_workflow_id: Mapped[str | None] = mapped_column(String(255))
+    current_workflow_version: Mapped[str | None] = mapped_column(String(100))
+    current_workflow_checksum: Mapped[str | None] = mapped_column(String(71))
+    current_archive_storage_key: Mapped[str | None] = mapped_column(Text)
+    current_package_file_count: Mapped[int | None] = mapped_column(Integer)
+    current_package_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    current_package_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
+
 class WorkflowRunORM(Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (

@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 
 from backend.execution_events.ports import ExecutionEventStore
 from backend.progress_reports.ports import ProgressReportRepository
+from backend.local_projects.ports import LocalProjectRepository
 
 from .approval_repository import ApprovalRepository
 from .artifact_repository import ArtifactRepository
@@ -47,6 +48,10 @@ class UnitOfWork(ABC):
     @property
     @abstractmethod
     def progress_reports(self) -> ProgressReportRepository: ...
+
+    @property
+    @abstractmethod
+    def local_projects(self) -> LocalProjectRepository: ...
 
     @abstractmethod
     def commit(self) -> None:

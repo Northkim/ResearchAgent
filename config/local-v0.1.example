@@ -1,0 +1,5 @@
+# Safe, credential-free example. Export these values in your shell; scripts do not read .env.
+REAGENT_DATABASE_URL=postgresql://127.0.0.1:5432/reagent_local_v01
+REAGENT_BACKEND_PORT=8000
+REAGENT_FRONTEND_PORT=3000
+REAGENT_LOCAL_RUNTIME_DIR=/tmp/reagent-v0-1-local

@@ -1,20 +1,20 @@
 import Link from "next/link";
 
 const navigation = [
-  { href: "/", label: "Overview", eyebrow: "01" },
-  { href: "/workflows", label: "Workflows", eyebrow: "02" },
-  { href: "/approvals", label: "Approvals", eyebrow: "03" },
+  { href: "/projects", label: "Projects", eyebrow: "01" },
+  { href: "/projects/new", label: "New project", eyebrow: "02" },
+  { href: "/local-guide", label: "Local guide", eyebrow: "03" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-canvas text-ink">
       <aside className="app-sidebar">
-        <Link href="/" className="brand-lockup" aria-label="ReAgent dashboard">
+        <Link href="/projects" className="brand-lockup" aria-label="ReAgent projects">
           <span className="brand-mark">R</span>
           <span>
             <strong>ReAgent</strong>
-            <small>Research operations</small>
+            <small>Local research workspace</small>
           </span>
         </Link>
 
@@ -30,8 +30,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sidebar-note">
           <span className="live-dot" aria-hidden="true" />
           <div>
-            <strong>Prototype workspace</strong>
-            <p>Connected through the stable Phase 7B API.</p>
+            <strong>Local V0.1</strong>
+            <p>Codex executes research in your downloaded folder. Cloud execution is not the primary path.</p>
           </div>
         </div>
       </aside>

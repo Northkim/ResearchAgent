@@ -12,6 +12,11 @@ import type {
   WorkflowRun,
   WorkflowRunPage,
   WorkflowRunStatus,
+  CreateLocalProjectRequest,
+  LocalPackage,
+  LocalProject,
+  ProjectProgress,
+  UploadedProgressReport,
 } from "@/types/api";
 
 const API_BASE = "/backend";
@@ -78,6 +83,43 @@ function queryString(values: Record<string, string | number | undefined>): strin
 }
 
 export const apiClient = {
+  listProjects(): Promise<LocalProject[]> {
+    return request("/projects");
+  },
+
+  getProject(projectId: string): Promise<LocalProject> {
+    return request(`/projects/${encodeURIComponent(projectId)}`);
+  },
+
+  createProject(payload: CreateLocalProjectRequest): Promise<LocalProject> {
+    return request("/projects", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  generatePackage(projectId: string): Promise<LocalPackage> {
+    return request(`/projects/${encodeURIComponent(projectId)}/packages`, {
+      method: "POST",
+    });
+  },
+
+  getLatestPackage(projectId: string): Promise<LocalPackage> {
+    return request(`/projects/${encodeURIComponent(projectId)}/packages/latest`);
+  },
+
+  packageDownloadUrl(projectId: string, packageId: string): string {
+    return `${API_BASE}/projects/${encodeURIComponent(projectId)}/packages/${encodeURIComponent(packageId)}/download`;
+  },
+
+  getProjectProgress(projectId: string): Promise<ProjectProgress> {
+    return request(`/projects/${encodeURIComponent(projectId)}/progress`);
+  },
+
+  listProgressReports(projectId: string): Promise<UploadedProgressReport[]> {
+    return request(`/projects/${encodeURIComponent(projectId)}/progress-reports`);
+  },
+
   listWorkflows(): Promise<WorkflowDefinition[]> {
     return request("/workflows");
   },

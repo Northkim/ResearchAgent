@@ -224,3 +224,110 @@ export interface ApiErrorBody {
     message?: string;
   };
 }
+
+export type LocalWorkflow = "LITERATURE_SEARCH";
+
+export interface LocalPackage {
+  package_id: string;
+  package_schema_version: string;
+  package_checksum: string;
+  manifest_checksum: string;
+  zip_checksum: string;
+  workflow_id: string;
+  workflow_version: string;
+  workflow_checksum: string;
+  file_count: number;
+  package_size_bytes: number;
+  generated_at: string;
+  download_url: string;
+}
+
+export interface ProgressOutputArtifact {
+  relative_path: string;
+  artifact_kind: string;
+  media_type: string;
+  checksum: string;
+  size: number | null;
+}
+
+export interface ProjectProgress {
+  schema_version: string;
+  project_id: string;
+  package_id: string;
+  package_schema_version: string | null;
+  package_checksum: string;
+  workflow_id: string;
+  workflow_version: string;
+  latest_accepted_report_id: string;
+  latest_accepted_report_checksum: string;
+  latest_execution_round: number;
+  latest_status: string;
+  completed_work_summary: string[];
+  current_state_summary: string;
+  next_recommended_action: string;
+  output_artifacts: ProgressOutputArtifact[];
+  warning_count: number;
+  error_count: number;
+  unresolved_question_count: number;
+  harness_type: string;
+  latest_local_execution_timestamp: string;
+  latest_upload_timestamp: string;
+  chain_state: string;
+  legacy_warning_state: boolean;
+  projection_checksum: string;
+}
+
+export interface LocalProject {
+  project_id: string;
+  name: string;
+  research_topic: string;
+  selected_workflow: LocalWorkflow;
+  created_at: string;
+  updated_at: string;
+  current_package: LocalPackage | null;
+  progress: ProjectProgress | null;
+}
+
+export interface CreateLocalProjectRequest {
+  name: string;
+  research_topic: string;
+  selected_workflow: LocalWorkflow;
+}
+
+export interface NormalizedProgressRecord {
+  report_id: string;
+  execution_round: number;
+  status: string;
+  completed_work: string[];
+  current_state: string;
+  next_recommended_action: string;
+  output_artifacts: ProgressOutputArtifact[];
+  warnings: string[];
+  errors: string[];
+  unresolved_questions: string[];
+}
+
+export interface UploadedProgressReport {
+  receipt_id: string;
+  project_id: string;
+  package_id: string;
+  package_checksum: string;
+  report_id: string;
+  report_checksum: string;
+  report_schema_version: string;
+  original_report_checksum: string;
+  original_report_size: number;
+  original_report_media_type: string;
+  envelope_checksum: string;
+  uploaded_at: string;
+  received_at: string;
+  uploader_type: string;
+  client_version: string;
+  source_path_hint: string;
+  validation_status: string;
+  validation_errors: string[];
+  validation_warnings: string[];
+  chain_state: string;
+  accepted_for_projection: boolean;
+  normalized_record: NormalizedProgressRecord | null;
+}

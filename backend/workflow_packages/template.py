@@ -12,13 +12,17 @@ from .serialization import canonical_json, sha256_bytes
 WORKFLOW_ID = "literature-search-local-experimental"
 WORKFLOW_VERSION = "0.1.0"
 TEMPLATE_ID = "literature-search-package-experimental"
-TEMPLATE_VERSION = "0.2.0"
+TEMPLATE_VERSION = "0.3.0"
 SKILL_ID = "reagent.local-literature-search"
 SKILL_VERSION = "0.1.0"
 PROMPT_ID = "literature-search-planning"
 PROMPT_VERSION = "0.1.0"
-GENERATOR_VERSION = "reagent-workflow-package-compiler/0.2.0"
+GENERATOR_VERSION = "reagent-workflow-package-compiler/0.3.0"
 DETERMINISTIC_GENERATED_AT = "2000-01-01T00:00:00Z"
+DEFAULT_RESEARCH_TOPIC = (
+    "How can fictional research assistants preserve transparent task continuity "
+    "across sessions?"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,7 +158,13 @@ def _candidate_schema(selected: bool = False) -> dict[str, Any]:
     }
 
 
-def render_files(*, project_id: str, package_id: str, package_checksum: str) -> dict[str, FileSpec]:
+def render_files(
+    *,
+    project_id: str,
+    package_id: str,
+    package_checksum: str,
+    research_topic: str = DEFAULT_RESEARCH_TOPIC,
+) -> dict[str, FileSpec]:
     experimental_banner = "EXPERIMENTAL — NOT FINALIZED BY THE TEACHER SOURCE"
     agent = f"""# Local Workflow Package Instructions
 
@@ -247,7 +257,7 @@ result as an offline synthetic exercise; do not imply a provider search.
     request = {
         "schema_version": "research-request/v0.1",
         "source_classification": "SYNTHETIC_OFFLINE",
-        "topic": "How can fictional research assistants preserve transparent task continuity across sessions?",
+        "topic": research_topic,
         "requested_selection_size": {"minimum": 2, "maximum": 3},
         "real_external_search_performed": False,
     }

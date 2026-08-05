@@ -3,9 +3,15 @@ SHELL := /bin/bash
 
 COMPOSE := docker compose --env-file .env
 
-.PHONY: demo-configure demo-config-check demo-start demo-stop demo-reset \
+.PHONY: dev stop demo-configure demo-config-check demo-start demo-stop demo-reset \
 	demo-seed demo-status demo-logs test-backend compile-backend \
 	test-frontend lint-frontend build-frontend test-integration test-e2e test-all
+
+dev:
+	./scripts/dev-start.sh
+
+stop:
+	./scripts/dev-stop.sh
 
 demo-configure:
 	@if [[ -f .env ]]; then \

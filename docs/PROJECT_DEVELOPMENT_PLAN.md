@@ -54,6 +54,8 @@ this engineering order.
 | R3C-R1 | Post-restart recovery forensics | **PASS — DEFECT REPRODUCED OFFLINE** — both status routes passed; delayed exact replay deterministically failed freshness before durable idempotency; zero live call/key/docs access |
 | R3C-R2 | Delayed replay ordering remediation | **PASS — OWNER ACCEPTED** — ADR 0015 resolves authorized existing replay/conflict before freshness, retains freshness for new admission, and passes real PostgreSQL/Uvicorn aged-replay restart qualification with zero live call |
 | R3C-C | Composite experimental OpenAlex acceptance closure | **PASS_WITH_WARNINGS — LIVE_OPENALEX_ACCEPTED** — ADR 0016 composes immutable R3C-A-R4 live evidence with R3C-R1 diagnosis and owner-accepted R3C-R2 restart qualification; no historical blocked result changes |
+| MVP-A0 | Local V0.1 product readiness audit | **BLOCKED — GAPS PRESERVED** — component backends passed, but project, Package, Progress UI, startup, typecheck, and teacher-aligned E2E product gaps prevented owner acceptance |
+| MVP-I | Local V0.1 product integration | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — local project persistence/API, deterministic Package download, existing Progress projection/history UI, primary local navigation, safe startup, and full-stack tests are integrated; no Hosted/cloud research execution |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -190,6 +192,25 @@ production deployment. OpenAlex is the only accepted Provider; production
 authentication, multi-user authorization, HTTPS termination, proof of
 possession, secret management, real-user third-party query disclosure, and
 retention remain unresolved. R3D remains closed.
+
+MVP-A0 then audited the first local product and correctly stopped on seven
+integration gaps. MVP-I implements only those gaps. Accepted ADR 0017 adds an
+independent `local_projects` Cloud Project State boundary at migration
+`20260805_0006`, exposes project/list/detail and deterministic Package
+generation/download APIs, aggregates the already accepted Progress Report
+projection/history, and makes `/projects` the Next.js primary path. The old
+Hosted pages remain labelled legacy/internal and absent from primary
+navigation. `make dev`/`make stop` now provide a fail-closed loopback startup
+sequence while leaving PostgreSQL under the owner's control.
+
+The V0.1 implementation is qualified with real PostgreSQL, Uvicorn, Next.js,
+browser-driven project/Package/report flow, physical restart continuity,
+Package checksum/non-mutation evidence, and complete backend/frontend checks.
+Project creation and Package generation produced no WorkflowRun, StepRun,
+AgentRuntime, Hosted ProviderOperation, Provider/LLM call, server research
+output, automatic resume, or automatic Progress Report. V0.1 remains
+`OWNER_ACCEPTANCE_PENDING`; only the owner can accept it. R3D and public/
+production deployment remain closed.
 
 ### Preserved optional mode
 

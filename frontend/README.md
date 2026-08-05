@@ -1,22 +1,29 @@
-# ReAgent frontend
+# ReAgent V0.1 frontend
 
-Next.js App Router prototype for launching and monitoring ReAgent research workflows.
+Next.js App Router product surface for the teacher-aligned local workflow:
+create a project, download its Literature Search Package, work in the external
+folder with Codex, explicitly upload a Progress Report, and view cloud progress.
 
 ## Local development
 
-1. Copy `.env.example` to `.env.local` if the FastAPI backend is not available at `http://127.0.0.1:8000`.
-2. Start the backend with its configured PostgreSQL database.
-3. Run `npm run dev` in this directory and open `http://localhost:3000`.
+Use `make dev` from the repository root and open
+`http://127.0.0.1:3000/projects`. See
+`docs/getting-started/LOCAL_V0_1.md` for the supported full-stack sequence.
+
+For frontend-only development, set `REAGENT_API_URL` if FastAPI is not at
+`http://127.0.0.1:8000`, then run `npm run dev -- --hostname 127.0.0.1`.
 
 Browser requests use `/backend/*`; the Next.js rewrite forwards them to `REAGENT_API_URL`, avoiding a separate browser CORS dependency.
 
 ## Checks
 
 - `npm test`
+- `npm run typecheck`
 - `npm run lint`
 - `npm run build`
-- `npm run test:e2e` against a running real backend/PostgreSQL stack
+- `npx playwright test tests/e2e/local-v0-1.spec.ts` against a running real
+  backend/PostgreSQL stack
 
-The E2E project uses system Chrome by default and never mocks API responses.
-See the repository-root `DEMO.md` for full-stack startup, database reset, and
-Playwright browser setup.
+The V0.1 E2E test uses system Chrome, real loopback HTTP, and real PostgreSQL;
+it does not mock API responses or invoke a Provider. Preserved Hosted E2E tests
+are historical/internal coverage and are not V0.1 product acceptance evidence.

@@ -30,7 +30,7 @@ def test_required_package_files_and_pins(built_package: BuildResult, manifest: d
     assert manifest["harness_acceptance_status"] == "CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED"
     assert manifest["progress_report_schema_version"] == "progress-report/v0.2"
     assert manifest["progress_upload_status"] == "UPLOAD_ACCEPTANCE_PENDING"
-    assert manifest["package_template_version"] == "0.2.0"
+    assert manifest["package_template_version"] == "0.3.0"
     assert manifest["proxy_capability_declaration"] == (
         "DISABLED_BY_DEFAULT_R3B_FAKE_PAPER_SEARCH_ONLY; NO CREDENTIAL; NO REAL PROVIDER"
     )
@@ -48,6 +48,30 @@ def test_deterministic_folder_and_zip(tmp_path: Path, monkeypatch: pytest.Monkey
     first_files = {path.relative_to(first.package_root).as_posix(): path.read_bytes() for path in first.package_root.rglob("*") if path.is_file()}
     second_files = {path.relative_to(second.package_root).as_posix(): path.read_bytes() for path in second.package_root.rglob("*") if path.is_file()}
     assert first_files == second_files
+
+
+def test_owner_declared_topic_is_bound_into_package_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    first = build_literature_search_package(
+        project_id="topic-project",
+        research_topic="A fictional public topic about portable research state",
+        output_root=Path("first"),
+    )
+    second = build_literature_search_package(
+        project_id="topic-project",
+        research_topic="A different fictional public topic",
+        output_root=Path("second"),
+    )
+    first_request = json.loads(
+        (first.package_root / "inputs/research_request.json").read_text()
+    )
+    assert first_request["topic"] == (
+        "A fictional public topic about portable research state"
+    )
+    assert first.package_checksum != second.package_checksum
 
 
 def test_idempotent_same_target_rebuild(built_package: BuildResult) -> None:

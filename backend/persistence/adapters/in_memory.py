@@ -32,6 +32,7 @@ from backend.persistence.ports import (
 )
 from backend.progress_reports import ProjectProgressProjection, UploadedProgressReport
 from backend.progress_reports.ports import ProgressReportRepository
+from backend.local_projects import LocalProject, LocalProjectRepository
 from backend.research.contracts import ProviderOperation, SettlementState
 
 
@@ -56,6 +57,38 @@ class InMemoryDatabase:
     progress_projections: dict[
         tuple[str, str, str, str], ProjectProgressProjection
     ] = field(default_factory=dict)
+    local_projects: dict[str, LocalProject] = field(default_factory=dict)
+
+
+class InMemoryLocalProjectRepository(LocalProjectRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def add(self, project: LocalProject) -> None:
+        if project.project_id in self._uow._local_projects:
+            raise DuplicateEntityError(
+                f"Local project {project.project_id} already exists"
+            )
+        self._uow._local_projects[project.project_id] = project
+        self._uow._dirty_local_projects.add(project.project_id)
+
+    def save(self, project: LocalProject) -> None:
+        if project.project_id not in self._uow._local_projects:
+            raise ValueError("Local project does not exist")
+        self._uow._local_projects[project.project_id] = project
+        self._uow._dirty_local_projects.add(project.project_id)
+
+    def get(self, project_id: str) -> LocalProject | None:
+        return self._uow._local_projects.get(project_id)
+
+    def list_all(self) -> tuple[LocalProject, ...]:
+        return tuple(
+            sorted(
+                self._uow._local_projects.values(),
+                key=lambda project: (project.updated_at, project.project_id),
+                reverse=True,
+            )
+        )
 
 
 class InMemoryProgressReportRepository(ProgressReportRepository):
@@ -752,6 +785,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._event_store = InMemoryExecutionEventStore(self)
         self._provider_operation_repository = InMemoryProviderOperationRepository(self)
         self._progress_report_repository = InMemoryProgressReportRepository(self)
+        self._local_project_repository = InMemoryLocalProjectRepository(self)
         self._refresh()
 
     @property
@@ -786,6 +820,10 @@ class InMemoryUnitOfWork(UnitOfWork):
     def progress_reports(self) -> ProgressReportRepository:
         return self._progress_report_repository
 
+    @property
+    def local_projects(self) -> LocalProjectRepository:
+        return self._local_project_repository
+
     def commit(self) -> None:
         self._validate_concurrency()
         for run_id in self._dirty_workflows:
@@ -808,6 +846,8 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.progress_reports[receipt_id] = self._progress_reports[receipt_id]
         for key in self._dirty_progress_projections:
             self.database.progress_projections[key] = self._progress_projections[key]
+        for project_id in self._dirty_local_projects:
+            self.database.local_projects[project_id] = self._local_projects[project_id]
         self._refresh()
 
     def rollback(self) -> None:
@@ -927,6 +967,14 @@ class InMemoryUnitOfWork(UnitOfWork):
                     f"Progress receipt {receipt_id} was concurrently reused"
                 )
 
+        for project_id in self._dirty_local_projects:
+            current = self.database.local_projects.get(project_id)
+            expected = self._local_project_expected.get(project_id)
+            if current != expected:
+                raise StaleStateError(
+                    f"Local project {project_id} changed concurrently"
+                )
+
     def _refresh(self) -> None:
         self._executions = dict(self.database.executions)
         self._checkpoint_records = dict(self.database.checkpoint_records)
@@ -937,6 +985,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._provider_operations = dict(self.database.provider_operations)
         self._progress_reports = dict(self.database.progress_reports)
         self._progress_projections = dict(self.database.progress_projections)
+        self._local_projects = dict(self.database.local_projects)
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -952,6 +1001,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._workflow_expected: dict[str, int | None] = {}
         self._approval_expected: dict[str, int | None] = {}
         self._provider_operation_expected: dict[str, int | None] = {}
+        self._local_project_expected = dict(self.database.local_projects)
         self._dirty_workflows: set[str] = set()
         self._dirty_checkpoint_runs: set[str] = set()
         self._dirty_memory_scopes: set[tuple[str, str]] = set()
@@ -961,3 +1011,4 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_provider_operations: set[str] = set()
         self._dirty_progress_reports: set[str] = set()
         self._dirty_progress_projections: set[tuple[str, str, str, str]] = set()
+        self._dirty_local_projects: set[str] = set()

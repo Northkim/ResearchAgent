@@ -36,6 +36,7 @@ from backend.domain.services import ExecutionCoordinator
 from backend.domain.models._utils import utc_now
 from backend.persistence.ports import UnitOfWork
 from backend.progress_reports import ProgressReportService
+from backend.local_projects.service import LocalProjectService
 from backend.skill_system.registry import SkillRegistry
 from backend.skill_system.models import SkillCapabilities
 from backend.skill_system.runtime import SkillExecutor, register_fake_skills
@@ -97,6 +98,14 @@ class ProgressApplicationServices:
     progress_reports: ProgressReportService
 
 
+@dataclass(frozen=True, slots=True)
+class LocalProductApplicationServices:
+    """Local project/Package/progress graph with no Hosted Runtime."""
+
+    local_projects: LocalProjectService
+    progress_reports: ProgressReportService
+
+
 class ApplicationContainer:
     """Own process-scoped factories; build request-scoped service graphs."""
 
@@ -114,6 +123,8 @@ class ApplicationContainer:
         structured_generation_provider: StructuredGenerationProvider | None = None,
         grounded_paper_search_provider: PaperSearchProvider | None = None,
         close_callback: Callable[[], None] | None = None,
+        local_package_root: str = "runtime_data/local_packages",
+        project_id_factory: Callable[[], str] | None = None,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
@@ -152,6 +163,8 @@ class ApplicationContainer:
         self.source_content_provider = FakeSourceContentProvider()
         self.llm_provider = FakeLLMProvider()
         self._close_callback = close_callback
+        self.local_package_root = local_package_root
+        self.project_id_factory = project_id_factory
 
     def build_services(self, unit_of_work: UnitOfWork) -> ApplicationServices:
         domain = ExecutionCoordinator(clock=self.clock)
@@ -251,12 +264,33 @@ class ApplicationContainer:
         unit_of_work: UnitOfWork,
     ) -> ProgressApplicationServices:
         return ProgressApplicationServices(
-            progress_reports=ProgressReportService(
-                repository=unit_of_work.progress_reports,
-                content_storage=self.artifact_storage,
+            progress_reports=self._progress_report_service(unit_of_work)
+        )
+
+    def build_local_product_services(
+        self,
+        unit_of_work: UnitOfWork,
+    ) -> LocalProductApplicationServices:
+        return LocalProductApplicationServices(
+            local_projects=LocalProjectService(
+                repository=unit_of_work.local_projects,
                 commit_callback=unit_of_work.commit,
+                package_root=self.local_package_root,
                 clock=self.clock,
-            )
+                project_id_factory=self.project_id_factory,
+            ),
+            progress_reports=self._progress_report_service(unit_of_work),
+        )
+
+    def _progress_report_service(
+        self,
+        unit_of_work: UnitOfWork,
+    ) -> ProgressReportService:
+        return ProgressReportService(
+            repository=unit_of_work.progress_reports,
+            content_storage=self.artifact_storage,
+            commit_callback=unit_of_work.commit,
+            clock=self.clock,
         )
 
     def close(self) -> None:
@@ -322,4 +356,8 @@ class ApplicationContainer:
             paper_search_provider=paper_search_provider,
             provider_execution_policy=execution_policy,
             close_callback=engine.dispose,
+            local_package_root=os.environ.get(
+                "REAGENT_LOCAL_PACKAGE_ROOT",
+                "runtime_data/local_packages",
+            ),
         )

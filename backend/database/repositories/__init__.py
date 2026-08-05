@@ -7,6 +7,7 @@ from .events import SQLAlchemyExecutionEventStore
 from .memory import SQLAlchemyMemoryRepository
 from .provider_operation import SQLAlchemyProviderOperationRepository
 from .progress_report import SQLAlchemyProgressReportRepository
+from .local_project import SQLAlchemyLocalProjectRepository
 from .workflow import SQLAlchemyWorkflowRepository
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "SQLAlchemyMemoryRepository",
     "SQLAlchemyProviderOperationRepository",
     "SQLAlchemyProgressReportRepository",
+    "SQLAlchemyLocalProjectRepository",
     "SQLAlchemyWorkflowRepository",
 ]

@@ -84,57 +84,76 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — MVP-A0 local V0.1 readiness audit blocked
+### Current milestone — MVP-I local V0.1 product integration qualified
 
-MVP-A0 began from clean `main` at exact commit
-`fe4e68d82a393e9742a54d58e1a0836777aa30f8`. The audit changed no source,
-test, migration, fixture, Package template, contract, ADR, or Progress Report
-schema and used no live Provider, real key, `.env`, Hosted execution, LLM,
-Judge, or automatic Progress Report path.
+MVP-I began from clean `main` at exact commit
+`97c8df4ca6c4d13c1c737721af12303b5a1e9e29`, preserving the blocked MVP-A0
+audit as immutable history. Accepted ADR 0017 implements only the seven recorded
+product-integration gaps.
 
-Fresh PostgreSQL 18.1, the committed FastAPI app, and the committed Next.js app
-started on loopback. Alembic remained sole/current at `20260805_0005` with no
-drift. External component qualification passed for deterministic Package/ZIP
-validation, explicit native Progress Report upload/original-byte retention/
-projection, fake Proxy exact replay, Package immutability, and backend restart
-continuity. Required PostgreSQL tests ran with zero skip; full backend,
-compileall, frontend unit, lint, and production build checks passed.
+An independent local project domain and additive migration `20260805_0006`
+store Cloud Project State: identity, name, fictional/public topic, fixed
+Literature Search selection, timestamps, and current Package receipt. FastAPI
+provides project create/list/get and deterministic Package generate/latest/
+download routes. Project responses aggregate the existing accepted Progress
+Report projection/history. There is no Hosted Workflow foreign key, second
+progress model, automatic upload, or research execution.
 
-V0.1 product readiness is blocked. The frontend remains the preserved Hosted
-research-operations product: its primary path creates/resumes Hosted runs. It
-has no project list/create surface, Package generation/download surface, or
-Progress Report history/projection surface. `/projects` and `/progress` return
-404. Startup documentation is Hosted or partial rather than one supported
-local V0.1 sequence. Standalone frontend typechecking also fails because its
-test files do not receive Vitest globals. Backend data survived physical
-PostgreSQL/FastAPI/frontend restart, but the required product state cannot be
-observed in the frontend.
+Next.js now redirects `/` to `/projects`. The primary product covers project
+list/create/detail, Package identity/checksum/download, Progress projection and
+report history, and local Codex instructions. Preserved Hosted pages are absent
+from primary navigation and visibly labelled
+`Legacy Hosted Mode — not part of V0.1`. Standalone TypeScript, Vitest, ESLint,
+production build, and a real-browser local-product E2E all pass.
+
+`make dev` and `make stop` are the supported application workflow. Startup
+requires a loopback PostgreSQL URL other than ProjectDB, verifies Conda and
+dependencies, migrates, binds FastAPI/Next.js to literal loopback, waits for
+readiness, and keeps runtime files outside Git. Shutdown stops only the
+application process trees and leaves PostgreSQL untouched. Neither script reads
+`.env`; experimental OpenAlex and Proxy routes are explicitly disabled.
+
+A fresh isolated PostgreSQL 18.x cluster with separate local and test databases
+passed sole-head/current/no-drift checks at `20260805_0006`, downgrade/re-
+upgrade, repository reload, and physical PostgreSQL/Uvicorn/Next.js restart.
+The browser-created project, downloaded deterministic Package, explicit
+fictional Progress Report upload, projection/history, checksums, row counts,
+and Package manifest remained unchanged. SQL and runtime canaries recorded zero
+WorkflowRun, StepRun, AgentRuntime, ExecutionDispatcher, Hosted
+ProviderOperation, Provider/LLM call, automatic resume/upload, or Package
+mutation.
+
+Verification passed 19 focused product tests, 44 Package tests, 38 Progress
+tests, 231 Proxy tests, 33 selected PostgreSQL tests with zero relevant skip,
+556 full-backend tests, compileall, frontend typecheck, 8 Vitest files/11 tests,
+ESLint, production build, and the teacher-aligned Playwright E2E. Four
+pre-existing separately gated destructive/Hosted/OpenAlex integration suites
+were skipped; none is a required V0.1 or PostgreSQL test.
 
 ```text
-MVP_A0_ACCEPTANCE = BLOCKED
-LOCAL_STARTUP_READINESS = FAIL
-FRONTEND_RUNTIME_ACCEPTANCE = PASS
-PROJECT_CREATION_ACCEPTANCE = FAIL
-PACKAGE_DOWNLOAD_ACCEPTANCE = FAIL
-EXTERNAL_PACKAGE_ACCEPTANCE = FAIL
-PROGRESS_UPLOAD_ACCEPTANCE = PASS
-PROGRESS_UI_ACCEPTANCE = FAIL
-FAKE_PROXY_PRODUCT_ACCEPTANCE = PASS
-RESTART_CONTINUITY_ACCEPTANCE = FAIL
-PACKAGE_IMMUTABILITY_ACCEPTANCE = PASS
-MVP_RUNTIME_HOSTED_BOUNDARY = FAIL
-BACKEND_TEST_ACCEPTANCE = PASS
-FRONTEND_TEST_ACCEPTANCE = FAIL
-MVP_GIT_CLOSURE = PASS
-V0_1_STATE = NOT_READY
+MVP_I_IMPLEMENTATION = PASS_WITH_WARNINGS
+LOCAL_PROJECT_IMPLEMENTATION = PASS
+PROJECT_API_IMPLEMENTATION = PASS
+PACKAGE_PRODUCT_FLOW_IMPLEMENTATION = PASS
+PROGRESS_PRODUCT_FLOW_IMPLEMENTATION = PASS
+TEACHER_ALIGNED_FRONTEND = PASS
+LOCAL_STARTUP_IMPLEMENTATION = PASS
+FRONTEND_TYPECHECK = PASS
+FRONTEND_TESTS = PASS
+BACKEND_TESTS = PASS
+POSTGRESQL_QUALIFICATION = PASS
+MVP_RUNTIME_HOSTED_BOUNDARY = PASS
+V0_1_STATE = OWNER_ACCEPTANCE_PENDING
 R3D_PRODUCTION_PROVIDER_GATE = CLOSED
 ```
 
-The detailed audit is
-`docs/acceptance/V0_1_LOCAL_MVP_READINESS_AUDIT.md`; the owner-facing checklist
-is `docs/acceptance/V0_1_OWNER_MANUAL_ACCEPTANCE_CHECKLIST.md`. No product gap
-was repaired. Wait for owner review; do not begin production deployment or
-R3D.
+MVP-I does not perform owner acceptance. Claude Code remains untested; OpenAlex
+remains experimental and disabled by default; Progress upload is explicit;
+only Literature Search exists; V0.1 is local/single-user; public deployment and
+R3D remain closed. Detailed implementation evidence is in
+`.agent_read/progress/v0_1_local_mvp_product_integration.md`; the owner checklist
+is `docs/acceptance/V0_1_OWNER_MANUAL_ACCEPTANCE_CHECKLIST.md`. Wait for owner
+review.
 
 ### Preserved milestone — R3C composite experimental OpenAlex acceptance closed
 

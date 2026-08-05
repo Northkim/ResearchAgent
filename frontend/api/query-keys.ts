@@ -1,4 +1,9 @@
 export const queryKeys = {
+  projects: ["projects"] as const,
+  project: (projectId: string) => ["projects", projectId] as const,
+  projectPackage: (projectId: string) => ["projects", projectId, "package"] as const,
+  projectProgress: (projectId: string) => ["projects", projectId, "progress"] as const,
+  projectProgressReports: (projectId: string) => ["projects", projectId, "progress-reports"] as const,
   workflows: ["workflows"] as const,
   runs: ["runs"] as const,
   run: (runId: string) => ["runs", runId] as const,

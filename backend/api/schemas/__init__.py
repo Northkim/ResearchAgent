@@ -23,6 +23,11 @@ from .progress import (
 from .runs import CreateRunRequest, WorkflowRunResponse
 from .research import ArtifactResponse, ProviderOperationResponse
 from .runs import CreateCatalogRunRequest
+from .local_projects import (
+    CreateLocalProjectRequest,
+    LocalPackageResponse,
+    LocalProjectResponse,
+)
 
 __all__ = [
     "ApprovalDecisionResponse",
@@ -31,6 +36,7 @@ __all__ = [
     "ApproveRequest",
     "CreateRunRequest",
     "CreateCatalogRunRequest",
+    "CreateLocalProjectRequest",
     "ArtifactResponse",
     "ProviderOperationResponse",
     "ProgressReportUploadRequest",
@@ -39,6 +45,8 @@ __all__ = [
     "ErrorResponse",
     "ExecutionEventResponse",
     "HealthResponse",
+    "LocalPackageResponse",
+    "LocalProjectResponse",
     "RejectRequest",
     "WorkflowDefinitionResponse",
     "WorkflowRunPageResponse",

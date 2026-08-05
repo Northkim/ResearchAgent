@@ -36,6 +36,7 @@ from .template import (
     TEMPLATE_VERSION,
     WORKFLOW_ID,
     WORKFLOW_VERSION,
+    DEFAULT_RESEARCH_TOPIC,
     FileSpec,
     render_files,
     workflow_document,
@@ -70,6 +71,18 @@ def _project_id(value: str) -> str:
     if not value[0].isalnum() or len(value) > 96:
         raise ValueError("project identity is invalid")
     return value
+
+
+def _research_topic(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("research topic must be text")
+    normalized = value.strip()
+    if not normalized or len(normalized) > 500:
+        raise ValueError("research topic must contain 1 to 500 characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+        raise ValueError("research topic must not contain control characters")
+    reject_sensitive_content(normalized.encode("utf-8"), path="research_topic")
+    return normalized
 
 
 def _entry(path: str, spec: FileSpec) -> PackageFileEntry:
@@ -239,10 +252,24 @@ def _make_manifest(project_id: str, package_id: str, files: dict[str, FileSpec])
     )
 
 
-def _render(project_id: str, package_id: str) -> tuple[dict[str, FileSpec], WorkflowPackageManifest]:
-    placeholder_files = render_files(project_id=project_id, package_id=package_id, package_checksum=_ZERO_HASH)
+def _render(
+    project_id: str,
+    package_id: str,
+    research_topic: str,
+) -> tuple[dict[str, FileSpec], WorkflowPackageManifest]:
+    placeholder_files = render_files(
+        project_id=project_id,
+        package_id=package_id,
+        package_checksum=_ZERO_HASH,
+        research_topic=research_topic,
+    )
     preliminary = _make_manifest(project_id, package_id, placeholder_files)
-    files = render_files(project_id=project_id, package_id=package_id, package_checksum=preliminary.package_checksum)
+    files = render_files(
+        project_id=project_id,
+        package_id=package_id,
+        package_checksum=preliminary.package_checksum,
+        research_topic=research_topic,
+    )
     manifest = _make_manifest(project_id, package_id, files)
     if manifest.package_checksum != preliminary.package_checksum:
         raise RuntimeError("mutable context unexpectedly affected package identity")
@@ -286,17 +313,24 @@ def _write_immutable(path: Path, content: bytes) -> None:
     path.write_bytes(content)
 
 
-def build_literature_search_package(*, project_id: str, output_root: str | Path) -> BuildResult:
+def build_literature_search_package(
+    *,
+    project_id: str,
+    output_root: str | Path,
+    research_topic: str = DEFAULT_RESEARCH_TOPIC,
+    allow_absolute_output_root: bool = False,
+) -> BuildResult:
     project_id = _project_id(project_id)
+    research_topic = _research_topic(research_topic)
     output = Path(output_root)
-    if output.is_absolute():
+    if output.is_absolute() and not allow_absolute_output_root:
         raise ValueError("output_root must be repository-relative")
     if output.is_symlink():
         raise ValueError("output_root must not be a symbolic link")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
     package_id = f"literature-search-{project_id}-v0.2"
-    files, manifest = _render(project_id, package_id)
+    files, manifest = _render(project_id, package_id, research_topic)
 
     with tempfile.TemporaryDirectory(prefix=".r1a-build-", dir=output.parent) as temporary:
         temporary_root = Path(temporary) / "package"
@@ -329,8 +363,8 @@ def build_literature_search_package(*, project_id: str, output_root: str | Path)
         "manifest_checksum": manifest.manifest_checksum,
         "package_checksum": manifest.package_checksum,
         "zip_checksum": zip_checksum,
-        "relative_package_root": f"{output.as_posix()}/package",
-        "relative_archive_path": f"{output.as_posix()}/{archive_path.name}",
+        "relative_package_root": "package",
+        "relative_archive_path": archive_path.name,
         "validation": "PASS",
         "harness_acceptance_status": CURRENT_HARNESS_ACCEPTANCE_STATUS,
         "progress_report_schema_version": CURRENT_PROGRESS_SCHEMA_VERSION,

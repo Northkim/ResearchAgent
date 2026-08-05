@@ -15,6 +15,7 @@ from .composition import (
     ApplicationContainer,
     ApplicationServices,
     ProgressApplicationServices,
+    LocalProductApplicationServices,
 )
 
 
@@ -51,6 +52,13 @@ def get_progress_services(
     return container.build_progress_services(unit_of_work)
 
 
+def get_local_product_services(
+    container: Annotated[ApplicationContainer, Depends(get_container)],
+    unit_of_work: Annotated[UnitOfWork, Depends(get_unit_of_work)],
+) -> LocalProductApplicationServices:
+    return container.build_local_product_services(unit_of_work)
+
+
 def get_runtime(
     services: Annotated[ApplicationServices, Depends(get_application_services)],
 ) -> AgentRuntime:
@@ -73,4 +81,8 @@ UnitOfWorkDependency = Annotated[UnitOfWork, Depends(get_unit_of_work)]
 ProgressServicesDependency = Annotated[
     ProgressApplicationServices,
     Depends(get_progress_services),
+]
+LocalProductServicesDependency = Annotated[
+    LocalProductApplicationServices,
+    Depends(get_local_product_services),
 ]

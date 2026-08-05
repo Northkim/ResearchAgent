@@ -16,6 +16,7 @@ from backend.database.orm import (
     CheckpointRecordORM,
     ExecutionEventORM,
     MemoryRevisionORM,
+    LocalProjectORM,
     ProviderOperationORM,
     ProjectProgressProjectionORM,
     StepRunORM,
@@ -36,6 +37,7 @@ from backend.persistence.ports import (
     WorkflowRepository,
 )
 from backend.progress_reports.ports import ProgressReportRepository
+from backend.local_projects.ports import LocalProjectRepository
 
 from .repositories import (
     SQLAlchemyApprovalRepository,
@@ -43,6 +45,7 @@ from .repositories import (
     SQLAlchemyCheckpointRepository,
     SQLAlchemyExecutionEventStore,
     SQLAlchemyMemoryRepository,
+    SQLAlchemyLocalProjectRepository,
     SQLAlchemyProviderOperationRepository,
     SQLAlchemyProgressReportRepository,
     SQLAlchemyWorkflowRepository,
@@ -75,6 +78,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._events = SQLAlchemyExecutionEventStore(self.session)
         self._provider_operations = SQLAlchemyProviderOperationRepository(self.session)
         self._progress_reports = SQLAlchemyProgressReportRepository(self.session)
+        self._local_projects = SQLAlchemyLocalProjectRepository(self.session)
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -107,6 +111,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     @property
     def progress_reports(self) -> ProgressReportRepository:
         return self._progress_reports
+
+    @property
+    def local_projects(self) -> LocalProjectRepository:
+        return self._local_projects
 
     def commit(self) -> None:
         try:
@@ -151,6 +159,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         """Flush staged rows in FK order without exposing ORM relationships."""
 
         self._flush_type(WorkflowDefinitionORM)
+        self._flush_type(LocalProjectORM)
         self._flush_type(WorkflowRunORM)
         self._flush_type(AgentSessionORM)
         self._flush_type(StepRunORM)

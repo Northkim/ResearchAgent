@@ -7,11 +7,64 @@ import type {
   Approval,
   ApprovalStatus,
   CreateCatalogRunRequest,
+  CreateLocalProjectRequest,
   WorkflowRunStatus,
 } from "@/types/api";
 
 import { apiClient } from "./client";
 import { queryKeys } from "./query-keys";
+
+export function useProjects() {
+  return useQuery({ queryKey: queryKeys.projects, queryFn: apiClient.listProjects });
+}
+
+export function useProject(projectId: string) {
+  return useQuery({
+    queryKey: queryKeys.project(projectId),
+    queryFn: () => apiClient.getProject(projectId),
+  });
+}
+
+export function useCreateProject() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateLocalProjectRequest) => apiClient.createProject(payload),
+    onSuccess: async (project) => {
+      queryClient.setQueryData(queryKeys.project(project.project_id), project);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+    },
+  });
+}
+
+export function useGeneratePackage(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient.generatePackage(projectId),
+    onSuccess: async (pkg) => {
+      queryClient.setQueryData(queryKeys.projectPackage(projectId), pkg);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.project(projectId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.projects }),
+      ]);
+    },
+  });
+}
+
+export function useProjectProgress(projectId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.projectProgress(projectId),
+    queryFn: () => apiClient.getProjectProgress(projectId),
+    enabled,
+    retry: false,
+  });
+}
+
+export function useProgressReports(projectId: string) {
+  return useQuery({
+    queryKey: queryKeys.projectProgressReports(projectId),
+    queryFn: () => apiClient.listProgressReports(projectId),
+  });
+}
 
 function decisionId(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
