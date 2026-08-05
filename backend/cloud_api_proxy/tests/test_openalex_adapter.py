@@ -39,6 +39,7 @@ from backend.cloud_api_proxy.openalex_adapter import (
     HTTPXOpenAlexTransport,
     OpenAlexPaperSearchAdapter,
     SafeTransportFailure,
+    normalize_abstract_token_formatting_whitespace,
     usd_decimal_to_microusd,
 )
 from backend.cloud_api_proxy.openalex_diagnostics import (
@@ -224,6 +225,116 @@ def test_exact_request_mapping_normalization_and_cost_are_provider_neutral() -> 
     encoded = canonical_json(result.provider_data)
     assert "provider.invalid" not in encoded
     assert "unknown_provider_field" not in encoded
+
+
+@pytest.mark.parametrize("control", ("\t", "\n", "\r"))
+def test_abstract_formatting_control_is_converted_to_one_safe_space(control: str) -> None:
+    assert normalize_abstract_token_formatting_whitespace(f"left{control}right") == "left right"
+
+    transport = ScriptedTransport(
+        [_response(results=[_work(abstract_inverted_index={f"left{control}right": [0]})])]
+    )
+    adapter, _ = _adapter(transport)
+    result = adapter.search(PaperSearchV01Request("fictional formatting probe", 1))
+    assert result.provider_data["papers"][0]["abstract"] == "left right"
+
+
+def test_mixed_abstract_formatting_controls_collapse_only_their_whitespace_run() -> None:
+    token = "left  alone \t \n\r  right  unchanged"
+    assert normalize_abstract_token_formatting_whitespace(token) == (
+        "left  alone right  unchanged"
+    )
+    assert "\t" not in normalize_abstract_token_formatting_whitespace(token)
+    assert "\n" not in normalize_abstract_token_formatting_whitespace(token)
+    assert "\r" not in normalize_abstract_token_formatting_whitespace(token)
+
+
+@pytest.mark.parametrize("token", ("\tboundary", "boundary\n", "\r boundary \t"))
+def test_abstract_formatting_control_at_token_boundary_uses_existing_outer_normalization(
+    token: str,
+) -> None:
+    transport = ScriptedTransport(
+        [
+            _response(
+                results=[
+                    _work(
+                        abstract_inverted_index={
+                            "before": [0],
+                            token: [1],
+                            "after": [2],
+                        }
+                    )
+                ]
+            )
+        ]
+    )
+    adapter, _ = _adapter(transport)
+    result = adapter.search(PaperSearchV01Request("fictional boundary probe", 1))
+    assert result.provider_data["papers"][0]["abstract"] == "before boundary after"
+
+
+def test_repeated_abstract_positions_reconstruct_in_existing_deterministic_order() -> None:
+    transport = ScriptedTransport(
+        [
+            _response(
+                results=[
+                    _work(
+                        abstract_inverted_index={
+                            "repeat": [0, 2],
+                            "middle\tword": [1],
+                        }
+                    )
+                ]
+            )
+        ]
+    )
+    adapter, _ = _adapter(transport)
+    result = adapter.search(PaperSearchV01Request("fictional position probe", 1))
+    assert result.provider_data["papers"][0]["abstract"] == "repeat middle word repeat"
+
+
+@pytest.mark.parametrize(
+    "token",
+    (
+        "left\x00right",
+        "\x01left",
+        "right\x0b",
+        "\x0cright",
+        "right\x1f",
+        "left\x7fright",
+        "left\u200bright",
+    ),
+)
+def test_forbidden_abstract_controls_keep_the_specific_rejection(token: str) -> None:
+    transport = ScriptedTransport(
+        [_response(results=[_work(abstract_inverted_index={token: [0]})])]
+    )
+    adapter, _ = _adapter(transport)
+    with pytest.raises(ProxyAdapterError) as captured:
+        adapter.search(PaperSearchV01Request("fictional forbidden-control probe", 1))
+    failure = captured.value.structural_failure
+    assert failure is not None
+    assert failure.failure_stage is FailureStage.ABSTRACT_RECONSTRUCTION
+    assert failure.approved_json_path == "/results/*/abstract_inverted_index"
+    assert failure.observed_kind is ObservedKind.CONTROL_CHARACTER
+    assert failure.validator_code is ValidatorCode.ABSTRACT_TOKEN_CONTROL
+    assert failure.nested_element_index == 0
+
+
+@pytest.mark.parametrize("control", ("\t", "\n", "\r"))
+def test_non_abstract_title_formatting_controls_remain_rejected(control: str) -> None:
+    transport = ScriptedTransport(
+        [_response(results=[_work(display_name=f"Synthetic{control}Title")])]
+    )
+    adapter, _ = _adapter(transport)
+    with pytest.raises(ProxyAdapterError) as captured:
+        adapter.search(PaperSearchV01Request("fictional title-control probe", 1))
+    failure = captured.value.structural_failure
+    assert failure is not None
+    assert failure.failure_stage is FailureStage.WORK_NORMALIZATION
+    assert failure.approved_json_path == "/results/*/display_name"
+    assert failure.observed_kind is ObservedKind.CONTROL_CHARACTER
+    assert failure.validator_code is ValidatorCode.DISPLAY_NAME_CONTROL
 
 
 def test_json_numeric_provider_cost_is_parsed_exactly_as_decimal() -> None:
@@ -905,6 +1016,20 @@ def test_structural_shape_checksum_is_deterministic_and_value_independent() -> N
     assert provider_structural_shape_checksum(first) != provider_structural_shape_checksum(different_shape)
 
 
+def test_abstract_formatting_values_do_not_affect_structural_shape_checksum() -> None:
+    first = {
+        "meta": {"cost_usd": "0.001"},
+        "results": [_work(1, abstract_inverted_index={"synthetic\tvalue": [0]})],
+    }
+    same_shape = {
+        "meta": {"cost_usd": "9.999"},
+        "results": [_work(9, abstract_inverted_index={"different\ntext": [7]})],
+    }
+    assert provider_structural_shape_checksum(first) == provider_structural_shape_checksum(
+        same_shape
+    )
+
+
 def _pipeline_failure_case(
     case: str,
 ) -> tuple[ProviderHTTPResponse, int, FailureStage, str, ObservedKind, ValidatorCode]:
@@ -1059,6 +1184,133 @@ def test_enabled_structural_diagnostics_emit_one_value_free_event_and_same_failu
         assert prohibited not in exposed
     assert "structural" not in canonical_json(result)
     assert "diagnostic" not in persisted
+
+
+def test_retry3_equivalent_formatting_control_response_now_succeeds_wholly(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    query_marker = "query-" + uuid4().hex
+    results = [
+        _work(1),
+        _work(
+            2,
+            abstract_inverted_index={
+                "synthetic": [0],
+                "compatibility": [1],
+                "word\tboundary": [2],
+            },
+        ),
+    ]
+    transport = ScriptedTransport([_response(results=results)])
+    adapter, _ = _adapter(transport)
+    service, database, token, plaintext = _service(adapter, diagnostics_enabled=True)
+    request = make_request(parameters=PaperSearchV01Request(query_marker, 2))
+    with caplog.at_level(logging.WARNING, logger="reagent.openalex_structural_diagnostic"):
+        first = service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=request,
+        )
+        replay = service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=request,
+        )
+        changed = make_request(
+            idempotency_key=request.idempotency_key,
+            parameters=PaperSearchV01Request(query_marker + "-changed", 2),
+        )
+        with pytest.raises(ProxyError) as conflict:
+            service.submit(
+                bearer_token=plaintext,
+                path_project_id="fictional-project",
+                request=changed,
+            )
+
+    operation = next(iter(database.operations.values()))
+    stored_token = database.tokens[token.scope.token_id]
+    assert first["operation_status"] == "SUCCEEDED"
+    assert len(first["provider_data"]["papers"]) == 2
+    assert first["provider_data"]["papers"][1]["abstract"] == (
+        "synthetic compatibility word boundary"
+    )
+    assert replay["operation_id"] == first["operation_id"]
+    assert replay["idempotency_result"] == "REPLAYED"
+    assert conflict.value.code == "IDEMPOTENCY_CONFLICT"
+    assert operation.usage is not None
+    assert operation.usage.provider_http_calls == 1
+    assert operation.usage.reserved_cost_microusd == 1_000
+    assert operation.usage.reported_cost_microusd == 1_000
+    assert stored_token.admitted_operations == 1
+    assert stored_token.used_provider_calls == 1
+    assert stored_token.reported_provider_cost_microusd == 1_000
+    assert adapter.invocation_count == 1
+    assert len(transport.calls) == 1
+    assert _diagnostic_events(caplog) == []
+
+
+def test_retry3_equivalent_forbidden_control_still_fails_wholly_and_privately(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    query_marker = "query-" + uuid4().hex
+    key_marker = "key-" + secrets.token_urlsafe(32)
+    provider_marker = "provider-" + uuid4().hex
+    results = [
+        _work(1),
+        _work(
+            2,
+            display_name=provider_marker,
+            abstract_inverted_index={
+                "synthetic": [0],
+                "compatibility": [1],
+                f"word\x00{provider_marker}": [2],
+            },
+        ),
+    ]
+    transport = ScriptedTransport([_response(results=results)])
+    adapter, _ = _adapter(transport, key=key_marker)
+    service, database, token, plaintext = _service(adapter, diagnostics_enabled=True)
+    request = make_request(parameters=PaperSearchV01Request(query_marker, 2))
+    with caplog.at_level(logging.WARNING, logger="reagent.openalex_structural_diagnostic"):
+        first = service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=request,
+        )
+        replay = service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=request,
+        )
+
+    events = _diagnostic_events(caplog)
+    operation = next(iter(database.operations.values()))
+    stored_token = database.tokens[token.scope.token_id]
+    assert first["operation_status"] == "FAILED"
+    assert first["error_code"] == "PROVIDER_INVALID_RESPONSE"
+    assert first.get("provider_data") is None
+    assert replay["operation_id"] == first["operation_id"]
+    assert replay["idempotency_result"] == "REPLAYED"
+    assert len(events) == 1
+    assert events[0]["failure_stage"] == "ABSTRACT_RECONSTRUCTION"
+    assert events[0]["approved_json_path"] == "/results/*/abstract_inverted_index"
+    assert events[0]["record_index"] == 1
+    assert events[0]["nested_element_index"] == 2
+    assert events[0]["normalized_records_before_failure"] == 1
+    assert events[0]["observed_kind"] == "CONTROL_CHARACTER"
+    assert events[0]["validator_code"] == "ABSTRACT_TOKEN_CONTROL"
+    exposed = canonical_json(first) + canonical_json(replay) + caplog.text
+    for prohibited in (query_marker, key_marker, plaintext, provider_marker):
+        assert prohibited not in exposed
+    assert operation.provider_data is None
+    assert operation.usage is not None
+    assert operation.usage.provider_http_calls == 1
+    assert operation.usage.reported_cost_microusd == 1_000
+    assert stored_token.admitted_operations == 1
+    assert stored_token.used_provider_calls == 1
+    assert stored_token.reported_provider_cost_microusd == 1_000
+    assert adapter.invocation_count == 1
+    assert len(transport.calls) == 1
 
 
 def test_mixed_records_fail_completely_settle_cost_once_and_replay_without_an_event(

@@ -1,15 +1,16 @@
 # R3C-A Supervised OpenAlex Live Acceptance Plan
 
-Status: **FUTURE LIVE ACCEPTANCE PLAN — GATE CLOSED / NOT STARTED**
+Status: **FUTURE LIVE RETRY — REQUIRES FRESH OWNER AUTHORIZATION / NOT STARTED**
 Provider: OpenAlex only
 Capability: `paper.search/v0.1` only
 
 ## 1. Authorization and baseline
 
-R3C-A may start only after owner review of a clean committed R3C-I baseline
-whose state is `LIVE_ACCEPTANCE_PENDING`. It requires explicit owner permission
-for this live run and an owner-supplied OpenAlex key. R3C-D and R3C-I do not
-authorize the live call.
+Another R3C-A retry may start only after owner review of a clean committed
+R3C-I2 baseline whose state is `LIVE_ACCEPTANCE_PENDING`. It requires fresh
+explicit owner permission, a new exact-baseline attestation, and an owner-
+supplied OpenAlex key. R3C-D, R3C-I, the prior live retries, and R3C-I2 do not
+authorize another live call.
 
 Initial gate:
 
@@ -107,6 +108,8 @@ request with an explicit UUIDv4 key. Require:
 - status `SUCCEEDED` and adapter `reagent.openalex-paper-search/v0.1`;
 - at most 20 results and 512 KiB;
 - only the approved normalized `PaperRecord` fields;
+- abstract-token TAB/LF/CR formatting normalized exactly under ADR 0014, with
+  every other control and all non-abstract control behavior unchanged;
 - untrusted-provider-data declaration and no cloud relevance/synthesis fields;
 - independently valid request, operation, provider-data, response-content and
   response checksums;
@@ -226,6 +229,7 @@ Package and boundary gate passes. It must never claim production/public
 authorization.
 
 ```text
-R3C_A_LIVE_ACCEPTANCE_GATE = CLOSED  # until owner starts the future phase
+R3C_NEXT_LIVE_RETRY_GATE = READY_FOR_FRESH_OWNER_AUTHORIZATION
+R3C_STATE = LIVE_ACCEPTANCE_PENDING
 R3D_PRODUCTION_PROVIDER_GATE = CLOSED
 ```

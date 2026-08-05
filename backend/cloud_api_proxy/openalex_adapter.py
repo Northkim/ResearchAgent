@@ -68,6 +68,8 @@ OPENALEX_ADAPTER_VERSION = "v0.1"
 _WORK_ID = re.compile(r"https://openalex\.org/(W[0-9]+)\Z")
 _AUTHOR_ID = re.compile(r"https://openalex\.org/(A[0-9]+)\Z")
 _SAFE_HEADER_NUMBER = re.compile(r"[0-9]+(?:\.[0-9]+)?\Z")
+_ABSTRACT_FORMATTING_CONTROLS = frozenset(("\t", "\n", "\r"))
+_ABSTRACT_FORMATTING_WHITESPACE = _ABSTRACT_FORMATTING_CONTROLS | {" "}
 
 
 class EnvironmentOpenAlexCredentialSource:
@@ -859,6 +861,31 @@ def _safe_text(
     return result
 
 
+def normalize_abstract_token_formatting_whitespace(token: str) -> str:
+    """Normalize only approved formatting controls in one abstract token."""
+
+    if not isinstance(token, str):
+        raise TypeError("abstract token must be a string")
+    normalized: list[str] = []
+    index = 0
+    while index < len(token):
+        if token[index] not in _ABSTRACT_FORMATTING_WHITESPACE:
+            normalized.append(token[index])
+            index += 1
+            continue
+        end = index + 1
+        while end < len(token) and token[end] in _ABSTRACT_FORMATTING_WHITESPACE:
+            end += 1
+        whitespace = token[index:end]
+        normalized.append(
+            " "
+            if any(character in _ABSTRACT_FORMATTING_CONTROLS for character in whitespace)
+            else whitespace
+        )
+        index = end
+    return "".join(normalized)
+
+
 def _authors(
     value: Any,
     context: _WorkDiagnosticContext,
@@ -999,6 +1026,18 @@ def _abstract(value: Any, context: _WorkDiagnosticContext) -> str | None:
         )
     positions: dict[int, str] = {}
     for token_index, (token, raw_positions) in enumerate(value.items()):
+        if isinstance(token, str):
+            token = normalize_abstract_token_formatting_whitespace(token)
+            if any(unicodedata.category(character).startswith("C") for character in token):
+                raise _invalid_field(
+                    "abstract token",
+                    context=context,
+                    failure_stage=FailureStage.ABSTRACT_RECONSTRUCTION,
+                    approved_json_path="/results/*/abstract_inverted_index",
+                    observed_kind=ObservedKind.CONTROL_CHARACTER,
+                    validator_code=ValidatorCode.ABSTRACT_TOKEN_CONTROL,
+                    nested_element_index=token_index,
+                )
         safe_token = _safe_text(
             token,
             "abstract token",

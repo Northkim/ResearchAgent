@@ -84,7 +84,77 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — R3C-A-R3 blocked after specific live diagnostic
+### Current milestone — R3C-I2 abstract formatting-control remediation qualified offline
+
+R3C-I2 began from exact clean `main` commit
+`a980acbc268ce96089bd93a2954a39b9491a3e94`. The OpenAlex key variable was
+absent; legacy owner-input path variables were ignored and removed from
+subprocess environments. No credential file or `.env` was opened, and no
+Provider API, OpenAlex documentation site, or other external network endpoint
+was contacted.
+
+Accepted ADR 0014 ratifies one narrow abstract-token policy. Within
+`/results/*/abstract_inverted_index` keys only, U+0009 TAB, U+000A LF, and
+U+000D CR become U+0020 SPACE. A contiguous ASCII SPACE/TAB/LF/CR run containing
+a permitted control becomes one SPACE, while a space-only run remains
+unchanged. Existing outer trimming and deterministic position reconstruction
+then apply. The adapter implements this as one pure helper immediately before
+the existing abstract-token validator. No other field or request/operation path
+uses the helper. A narrow abstract-only pre-trim check keeps forbidden
+whitespace-like controls from disappearing during generic outer normalization.
+
+All other C0 controls, U+007F, and other rejected control/format characters
+continue to fail with `ABSTRACT_RECONSTRUCTION`,
+`/results/*/abstract_inverted_index`, `CONTROL_CHARACTER`, and
+`ABSTRACT_TOKEN_CONTROL`. Title TAB/LF/CR rejection remains unchanged. Strict
+complete-response failure remains authoritative: malformed mixed arrays return
+and persist no partial normalized result, skip, quarantine, or warning-bearing
+success.
+
+Wholly fictional tests reproduce the R3C-A-R3 structure: a first valid Work and
+a second Work whose abstract token index `2` contains permitted formatting now
+normalize completely with no diagnostic. The prohibited-control twin fails the
+whole result with one unchanged value-free event at record index `1`/token index
+`2`. Runtime-generated query, synthetic-key, bearer, and Provider-value markers
+are absent from the event, responses, and durable operation. Same-shape/
+different-value structural checksums remain equal.
+
+The corrected success settles one scripted invocation and exactly 1,000
+microusd. Exact replay adds no admission/call/cost/event; changed canonical
+content conflicts before adapter use. The prohibited-control failure settles
+cost once and replays without another call/event. Reconciliation, fake adapter,
+Package, Progress Report, and Hosted/Runtime boundary regressions remain green.
+No retry, API/SQL/checksum algorithm, query/raw-body retention, migration,
+Package, frontend, Hosted execution, Workflow, Skill, LLM, or Judge path was
+introduced.
+
+A fresh loopback-only PostgreSQL 18.1 cluster used dedicated database
+`reagent_r3ci2_tests`, never ProjectDB. The 13 required Proxy/OpenAlex SQL tests
+ran with zero skip; Alembic head/current remained `20260805_0005` with no drift.
+The cluster stopped cleanly, its port was released, and only its dedicated
+temporary data/socket/log directory was removed. ProjectDB and unrelated
+services were untouched.
+
+Qualification passed 154 focused OpenAlex tests, 216 Proxy tests, 13 isolated
+PostgreSQL tests with zero skip, 43 Package tests, 38 Progress Report tests, and
+526 aggregate backend tests with four separately gated integration skips.
+Compileall and final Alembic checks passed. Live Provider/documentation/key
+access counts were all zero.
+
+`R3C_I2_IMPLEMENTATION = PASS_WITH_WARNINGS`,
+`R3C_ABSTRACT_FORMATTING_CONTROL_POLICY = TAB_LF_CR_TO_SPACE`,
+`R3C_FORBIDDEN_CONTROL_REJECTION = PASS`,
+`R3C_STRICT_RESPONSE_POLICY = PASS`,
+`R3C_RETRY3_SYNTHETIC_REPRODUCTION = PASS`,
+`R3C_DIAGNOSTIC_PRIVACY_BOUNDARY = PASS`,
+`R3C_IDEMPOTENCY_RECONCILIATION = PASS`, `R3C_SQL_REGRESSION = PASS`,
+and `R3C_RUNTIME_HOSTED_BOUNDARY = PASS`. `R3C_STATE` remains
+`LIVE_ACCEPTANCE_PENDING`; `R3C_NEXT_LIVE_RETRY_GATE` is
+`READY_FOR_FRESH_OWNER_AUTHORIZATION`; `R3D_PRODUCTION_PROVIDER_GATE` remains
+closed. Detailed evidence is in
+`.agent_read/progress/r3c_openalex_abstract_control_compatibility_remediation.md`.
+
+#### Preserved R3C-A-R3 blocked specific live diagnostic
 
 R3C-A-R3 began from exact clean `main` commit
 `a4041af136b673ed58708019f24f2be5dafc5351`. Git, strict owner authorization,

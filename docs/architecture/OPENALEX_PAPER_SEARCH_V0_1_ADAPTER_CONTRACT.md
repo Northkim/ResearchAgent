@@ -1,8 +1,8 @@
 # OpenAlex `paper.search/v0.1` Adapter Contract
 
-Status: **R3C-N2-I STRICT FAILURE/DIAGNOSTICS QUALIFIED; LIVE ACCEPTANCE PENDING**
-Date: 2026-08-04
-Governing ADRs: 0012 and 0013
+Status: **R3C-I2 ABSTRACT COMPATIBILITY OFFLINE QUALIFIED; LIVE ACCEPTANCE PENDING**
+Date: 2026-08-05
+Governing ADRs: 0012, 0013, and 0014
 
 ## 1. Responsibility boundary
 
@@ -136,7 +136,7 @@ Each accepted Work maps as follows:
 | `provider_id` | validated `W` plus digits from `id` |
 | `title` | `display_name`, normalized and length/control validated |
 | `authors` | bounded `authorships[].author` names plus validated OpenAlex author ID and optional ORCID string |
-| `abstract` | deterministic reconstruction of bounded `abstract_inverted_index`; optional/untrusted |
+| `abstract` | deterministic reconstruction of bounded `abstract_inverted_index`; TAB/LF/CR token formatting becomes safe spacing; optional/untrusted |
 | `publication_year` | optional valid integer year |
 | `publication_venue` | optional `primary_location.source.display_name` |
 | `doi` | optional normalized DOI |
@@ -166,9 +166,20 @@ success, or rejected-record count is returned or persisted. Provider order is
 used only to normalize sequentially and, when diagnostics are enabled, identify
 the safe first-failure record index and normalized-record count.
 
-R3C-N2-I does not change accepted/rejected response shapes. Required/nullable
-fields, identity, abstract, year, location/source, language, model,
-control/safety, ordering, count and size predicates remain unchanged.
+R3C-I2 changes exactly one accepted abstract-token shape. Within keys of
+`abstract_inverted_index` only, U+0009 TAB, U+000A LF, and U+000D CR become
+U+0020 SPACE. A contiguous ASCII SPACE/TAB/LF/CR run containing at least one of
+those controls becomes one SPACE; space-only runs remain unchanged. Existing
+outer trimming and deterministic position reconstruction then apply, so words
+are not concatenated and none of the three controls survives in normalized
+text.
+
+All other control/format characters remain rejected as
+`ABSTRACT_RECONSTRUCTION / CONTROL_CHARACTER / ABSTRACT_TOKEN_CONTROL` at
+`/results/*/abstract_inverted_index`. No formatting compatibility rule applies
+to Work ID, DOI, title, authors, source/venue, language, or any other field.
+All other required/nullable, model, safety, ordering, count, and size predicates
+remain unchanged.
 
 ### 6.1 Internal structural diagnostic
 
@@ -277,3 +288,11 @@ structural diagnostics with synthetic responses and the unchanged SQL schema.
 It made no Provider/documentation call and read no key. The future at-most-one-
 call diagnostic remains separately owner-gated; it is not R3C-A retry 2 and
 does not open compatibility remediation.
+
+R3C-A-R3 later produced the specific value-free abstract-token diagnostic that
+supports ADR 0014. R3C-I2 implements and offline-qualifies the narrowly approved
+TAB/LF/CR-to-space rule with fictional responses only. It changes no Provider
+request, public/SQL schema, operation/request identity, persistence rule, cost,
+idempotency, or reconciliation behavior. No live response has passed after the
+correction; a future live acceptance remains separately owner-gated and R3D
+remains closed.

@@ -1,8 +1,8 @@
 # R3C OpenAlex Credential, Privacy, and Cost Policy
 
-Status: **R3C-N2-I DIAGNOSTICS QUALIFIED; LIVE DIAGNOSTIC OWNER-GATED**
-Date: 2026-08-04
-Governing ADRs: 0012 and 0013
+Status: **R3C-I2 ABSTRACT COMPATIBILITY OFFLINE QUALIFIED; LIVE ACCEPTANCE PENDING**
+Date: 2026-08-05
+Governing ADRs: 0012, 0013, and 0014
 
 This is an engineering security policy, not legal advice and not production
 authorization.
@@ -174,7 +174,7 @@ exhaust service limits or trigger prepaid use.
 | query/private-data disclosure | fictional public queries only; no query-at-rest/logging; future disclosure gate | Provider still receives query and technical metadata |
 | cost/quota abuse | token scope, 20-call ledger, exact `$0.05` cap, zero retry, no prepaid approval | first response can reveal an unexpected price; source recheck and stop are mandatory |
 | idempotent replay charges twice | durable Proxy operation before call; exact replay returns existing state | uncertain network completion cannot be proved from Provider; reconcile, never retry |
-| malicious Provider text/prompt injection | strict fields/Unicode/length; untrusted-data flag; no cloud LLM/execution; no link following | general-purpose local Harness must continue to separate data from instructions |
+| malicious Provider text/prompt injection | strict fields/Unicode/length; abstract-only TAB/LF/CR-to-space compatibility; all other controls rejected; untrusted-data flag; no cloud LLM/execution; no link following | general-purpose local Harness must continue to separate data from instructions |
 | oversized/compressed response | actual decoded bytes bounded to 512 KiB before persistence | streaming implementation must prevent buffering beyond cap |
 | raw/unsafe retention | normalize allowlist only; reject before durable body storage; isolated cleanup | normalization defects require tests and review |
 | Hosted execution scope expansion | dedicated Proxy composition/import canaries; no Hosted rows/Skills/Runtime | optional Hosted code still exists elsewhere in repository |
@@ -238,6 +238,14 @@ Strict complete-response failure remains mandatory. The sensitive-content
 scanner is unchanged and emits only its fixed `SERVICE_SAFETY` classification,
 never the matched substring or surrounding text. Exact replay emits no second
 event, adapter call, reservation, or settlement.
+
+ADR 0014 permits only U+0009, U+000A, and U+000D within abstract inverted-index
+tokens. They become U+0020, and a contiguous adjacent ASCII SPACE/TAB/LF/CR run
+containing a permitted control becomes one SPACE before the unchanged control-
+character validator runs. The original and normalized token are never emitted
+to the diagnostic or logged independently. All other controls and every non-
+abstract field retain the existing rejection policy. This introduces no new
+retention sink, schema field, URL, request mapping, retry, or execution path.
 
 ## 10. Deferred production decisions
 

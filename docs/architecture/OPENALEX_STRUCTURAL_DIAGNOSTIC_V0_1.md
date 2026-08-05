@@ -1,10 +1,10 @@
 # OpenAlex Structural Diagnostic v0.1
 
-Status: **R3C-N2-I IMPLEMENTED AND SYNTHETIC/SQL QUALIFIED; LIVE DIAGNOSTIC OWNER-GATED**
+Status: **R3C-I2 ABSTRACT COMPATIBILITY OFFLINE QUALIFIED; LIVE ACCEPTANCE PENDING**
 
-Date: 2026-08-04
+Date: 2026-08-05
 
-Governing ADRs: 0012 and 0013
+Governing ADRs: 0012, 0013, and 0014
 
 ## 1. Purpose and boundary
 
@@ -16,6 +16,11 @@ repair, or acceptance evidence by itself.
 Strict complete-response failure remains authoritative. Diagnostics do not
 change request mapping, validation, normalization, cost, idempotency,
 reconciliation, persistence, or the public error category.
+
+ADR 0014 separately changes one normalization predicate without changing this
+diagnostic schema: TAB, LF, and CR inside abstract inverted-index tokens are
+accepted as formatting whitespace and therefore emit no event. Every other
+control/format rejection retains the existing specific classification.
 
 ## 2. Activation
 
@@ -193,9 +198,16 @@ submit response, status response, or client option is introduced.
 Synthetic tests cover all current response/per-Work predicates, service safety,
 mixed-record complete failure, value-independent hashing, leakage canaries,
 cost, replay, reconciliation, fake-adapter isolation, and no-network behavior.
-Existing SQL suites verify durable compatibility without a diagnostic column.
+R3C-I2 adds fictional coverage proving accepted TAB/LF/CR controls emit no
+event, while prohibited controls at the R3C-A-R3-equivalent record/token index
+emit exactly one unchanged value-free event and still fail the complete
+response. Existing SQL suites verify durable compatibility without a diagnostic
+column.
 
-No live diagnostic has occurred. `R3C_I2_IMPLEMENTATION_GATE` remains closed.
-The at-most-one-call live diagnostic gate requires separate owner authorization
-under `R3C_OPENALEX_STRUCTURAL_DIAGNOSTIC_LIVE_ACCEPTANCE.md`. R3D remains
-closed.
+R3C-A-R3 recorded one live specific diagnostic at
+`ABSTRACT_RECONSTRUCTION`, `/results/*/abstract_inverted_index`, record index
+`1`, nested token index `2`, `CONTROL_CHARACTER`, and
+`ABSTRACT_TOKEN_CONTROL`, without retaining the Provider value. R3C-I2 is
+offline remediation evidence only: it made no Provider/documentation call and
+read no key. No real OpenAlex response has passed after remediation. Any future
+live acceptance requires fresh owner authorization; R3D remains closed.

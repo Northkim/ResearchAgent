@@ -47,9 +47,10 @@ this engineering order.
 | R3B-A | External fake-adapter API Proxy acceptance | **PASS_WITH_WARNINGS — FAKE_PROXY_ACCEPTED** — external Package, real loopback Uvicorn/HTTP, token lifecycle, isolated PostgreSQL restart and Package non-mutation passed |
 | R3C-D | OpenAlex source qualification and owner decision | **PASS_WITH_CURRENT_SOURCE_WARNINGS** — ADR 0012 approves one supervised experimental OpenAlex Works metadata adapter; no key/API call/implementation |
 | R3C-I | OpenAlex Proxy adapter implementation and mocked qualification | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — fixed adapter, privacy-safe SQL, exact microusd, scripted transport and PostgreSQL qualification; zero key/Internet |
-| R3C-A | Supervised live OpenAlex acceptance | **RETRY 1 BLOCKED — LIVE_ACCEPTANCE_PENDING** — owner/source/SQL/Package/composition gates passed; the first and only call cost 1,000 microusd but settled `PROVIDER_INVALID_RESPONSE`; no second call or repair |
+| R3C-A | Supervised live OpenAlex acceptance | **RETRY 3 BLOCKED — LIVE_ACCEPTANCE_PENDING** — one HTTP-200/1,000-microusd call failed strict abstract reconstruction with a specific value-free `ABSTRACT_TOKEN_CONTROL` diagnostic; no partial result or second call |
 | R3C-N1 | Live normalization failure forensics | **INCONCLUSIVE** — exact live predicate not preserved; no approved failing shape reproduced offline; no source repair or Provider call |
 | R3C-N2-I | Strict response policy and structural diagnostics | **PASS_WITH_WARNINGS** — strict whole-response failure ratified; default-disabled value-free internal diagnostics synthetic/SQL qualified; no live/key/docs call |
+| R3C-I2 | Abstract formatting-control compatibility | **PASS_WITH_WARNINGS — LIVE_ACCEPTANCE_PENDING** — ADR 0014 maps only abstract-token TAB/LF/CR to safe spacing; fictional/SQL/backend qualification passed with zero key/network/Provider call |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -110,8 +111,7 @@ retry 1 passed the owner/source/isolated-SQL/external-Package/composition gates
 and made one live call. OpenAlex returned HTTP 200 and exact 1,000-microusd
 cost/rate evidence, but the adapter settled `PROVIDER_INVALID_RESPONSE` without
 an accepted normalized result. Retry 1 stopped fail-closed with no second call,
-restart, regression run or production repair. `R3C_STATE` therefore remains
-`LIVE_ACCEPTANCE_PENDING`; R3D production/public deployment remains closed.
+restart, regression run or production repair.
 
 R3C-N1 then preserved the retry result and traced the response pipeline without
 source changes or another call. It found no surviving field/path/type/validator
@@ -124,10 +124,28 @@ distinguish per-Work normalization from service sensitive-content rejection.
 The public API, SQL schema, operation/checksum identity, validation outcomes,
 query/raw-body policy, Packages and Progress Reports remain unchanged.
 
-No live diagnostic has occurred. A separate plan allows at most one future
-owner-authorized diagnostic call after a fresh attestation, key, official-source
-recheck and isolated acceptance environment. That gate is only ready for owner
-authorization; R3C-I2 compatibility remediation and R3D remain closed.
+R3C-N2-A then made one separately authorized call that succeeded with zero
+records and no diagnostic, leaving evidence insufficient. Retry 2 stopped at
+its owner-allowance gate before source/key/database/Provider use. Retry 3 passed
+its owner/source/isolation/Package/composition gates and made exactly one call.
+It returned HTTP 200 and exact 1,000-microusd cost; one Work normalized before
+the next failed at `ABSTRACT_RECONSTRUCTION`, abstract inverted-index token
+index `2`, with `CONTROL_CHARACTER / ABSTRACT_TOKEN_CONTROL`. Strict whole-
+response failure retained no partial result or Provider value; replay and
+conflict made no second call.
+
+ADR 0014 now ratifies the minimal R3C-I2 compatibility rule: only TAB, LF, and
+CR within abstract inverted-index tokens become ASCII SPACE, with adjacent
+formatting-whitespace runs collapsed without concatenating words. Other
+controls and every non-abstract field retain their existing rejection policy.
+Fictional scripted tests, the unchanged Proxy/Package/Progress suites, a fresh
+isolated PostgreSQL cluster at sole revision `20260805_0005`, and the full
+backend regression qualify the correction offline. No Provider/documentation
+call, key read, API/SQL schema change, retry, partial success, Hosted execution,
+or Package mutation occurred. The exact retry-3 code point was not retained and
+no real response has passed after remediation. `R3C_STATE` remains
+`LIVE_ACCEPTANCE_PENDING`; a future live retry requires fresh owner
+authorization, and R3D production/public deployment remains closed.
 
 ### Preserved optional mode
 
