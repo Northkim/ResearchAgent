@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:runtime-schema:reagent.workspace-capsule-registry:v0.1",
+  "title": "reagent.workspace-capsule-registry/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "workspace_id", "created_at", "entries", "registry_checksum"],
+  "properties": {
+    "schema_version": {"const": "reagent.workspace-capsule-registry/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "created_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "entries": {"type": "array", "maxItems": 100},
+    "registry_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}
