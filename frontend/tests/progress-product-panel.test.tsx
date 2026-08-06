@@ -26,3 +26,15 @@ test("renders projection, outputs, warnings, errors, and report history", async 
   expect(screen.getByText(/complete artifact contents remain/)).toBeVisible();
   expect(screen.getByRole("heading", { name: "Progress Report receipts" })).toBeVisible();
 });
+
+test("describes cloud uncertainty and same-Package upload recovery", async () => {
+  vi.spyOn(apiClient, "getProject").mockResolvedValue({ ...localProjectFixture, progress: null });
+  vi.spyOn(apiClient, "listProgressReports").mockResolvedValue([]);
+  render(<Providers><ProgressProductPanel projectId={localProjectFixture.project_id} /></Providers>);
+  expect(await screen.findByRole("heading", { name: "No Progress Report received" })).toBeVisible();
+  expect(screen.getByText(/may not have been run yet/)).toBeVisible();
+  expect(screen.getByText(/cannot inspect the local workspace/)).toBeVisible();
+  expect(screen.getByText(/Retry from the same local Package/)).toBeVisible();
+  expect(screen.getByText(/Do not download a new Package/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "Read run guide" })).toBeVisible();
+});

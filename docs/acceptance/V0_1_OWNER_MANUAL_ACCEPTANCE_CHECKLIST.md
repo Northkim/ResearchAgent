@@ -32,8 +32,9 @@ explicit demo mode.
    stages and opens Codex in the current terminal. Review and confirm the
    search plan, inspect the candidate-screening summary, ask a bounded question
    or revision if desired, then type `finish`. Confirm fictional evidence is
-   labelled, the report uploads only after finalization, the projection
-   verifies, and the local session is revoked.
+   labelled, the search session closes, a fresh upload-only session is opened
+   only after finalization, the projection verifies, and both phases are
+   cleaned up.
 7. **Inspect the local results.** Confirm the four declared output files, one
    append-only Progress Report, and one verified receipt exist. Run the same
    command again and confirm it reports the round already uploaded rather than
@@ -63,7 +64,9 @@ Use `--auto` only when explicitly choosing unattended execution.
 - Claude Code is Experimental / Untested; Codex CLI is the supported Harness.
 - OpenAlex is experimental and disabled by default.
 - Progress Report upload is automatic only after the local round and remains
-  idempotent; it does not upload the complete research workspace.
+  idempotent; it uses a fresh exact-report session and does not upload the
+  complete research workspace. If the receipt is missing, rerun the same
+  Package command—do not download a new Package for recovery.
 - `Ctrl+C` preserves valid local files, revokes the session, and uploads no
   incomplete report. `--resume` continues partial work; a confirmed
   `--restart-round` removes only round-scoped mutable artifacts.

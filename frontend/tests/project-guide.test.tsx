@@ -20,6 +20,8 @@ test("explains the exact command, modes, retry, and privacy boundary", async () 
   expect(screen.getByText("python reagent_local.py run . --restart-round")).toBeVisible();
   expect(screen.getByText("Advanced / unattended mode")).toBeVisible();
   expect(screen.getByRole("heading", { name: "Cloud and privacy boundary" })).toBeVisible();
-  expect(screen.getByText(/upload-only recovery/i)).toBeVisible();
+  expect(screen.getByText(/fresh upload-only session/i)).toBeVisible();
+  expect(screen.getByText(/fresh report-bound upload-only session/i)).toBeVisible();
+  expect(screen.getByText(/a new download is not needed/i)).toBeVisible();
   expect(screen.getByText(/There is no fake fallback/)).toBeVisible();
 });

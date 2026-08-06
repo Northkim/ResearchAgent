@@ -52,8 +52,9 @@ The complete owner flow, one-round command, and recovery behavior are in
 - From an extracted Package, `python reagent_local.py run .` opens Codex in the
   current terminal. The owner reviews the search plan and candidate screening,
   types `finish` to finalize exactly one round, and the launcher then validates,
-  uploads, and verifies its Progress Report. An interrupted upload is retried
-  without rerunning research.
+  closes the search session, and opens a fresh report-bound upload-only session
+  to upload and verify its Progress Report. A pending upload is retried from the
+  same Package without rerunning research or Provider search.
 - `--auto` is the explicit unattended mode for bounded batch use and tests; it
   is never selected implicitly.
 - OpenAlex is experimental and disabled by default. The deterministic fake

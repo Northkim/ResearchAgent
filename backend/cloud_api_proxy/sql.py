@@ -14,6 +14,7 @@ from backend.database.orm import ProxyCapabilityTokenORM, ProxyOperationORM
 
 from .contracts import (
     CloudProxyRequestEnvelope,
+    LocalProgressReportScope,
     ProxyAuthorizationScope,
     ProxyCapabilityToken,
     ProxyOperation,
@@ -199,7 +200,14 @@ class SQLProxyRepository:
             maximum_provider_calls=scope.maximum_provider_calls,
             used_provider_calls=token.used_provider_calls,
             maximum_provider_cost_microusd=scope.maximum_provider_cost_microusd,
-            local_session_capabilities_json=list(scope.local_session_capabilities),
+            local_session_capabilities_json=(
+                {
+                    "capabilities": list(scope.local_session_capabilities),
+                    "report_scope": scope.local_progress_report_scope.to_dict(),
+                }
+                if scope.local_progress_report_scope is not None
+                else list(scope.local_session_capabilities)
+            ),
             reserved_provider_cost_microusd=token.reserved_provider_cost_microusd,
             reported_provider_cost_microusd=token.reported_provider_cost_microusd,
             issued_at=parse_timestamp(token.issued_at, "issued_at"),
@@ -226,7 +234,18 @@ class SQLProxyRepository:
                 maximum_operations=row.maximum_operations,
                 maximum_provider_calls=row.maximum_provider_calls,
                 maximum_provider_cost_microusd=row.maximum_provider_cost_microusd,
-                local_session_capabilities=tuple(row.local_session_capabilities_json),
+                local_session_capabilities=tuple(
+                    row.local_session_capabilities_json.get("capabilities", [])
+                    if isinstance(row.local_session_capabilities_json, dict)
+                    else row.local_session_capabilities_json
+                ),
+                local_progress_report_scope=(
+                    LocalProgressReportScope(
+                        **row.local_session_capabilities_json["report_scope"]
+                    )
+                    if isinstance(row.local_session_capabilities_json, dict)
+                    else None
+                ),
             ),
             token_digest_sha256=row.token_digest_sha256,
             issued_at=format_timestamp(row.issued_at),

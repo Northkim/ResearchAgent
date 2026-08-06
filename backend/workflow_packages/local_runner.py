@@ -73,6 +73,17 @@ class LocalRoundError(RuntimeError):
     pass
 
 
+class LocalHTTPError(LocalRoundError):
+    """Value-safe local API failure retaining a machine-readable code."""
+
+    def __init__(self, *, stage: str, code: str, http_status: int | None) -> None:
+        self.stage = stage
+        self.code = code
+        self.http_status = http_status
+        suffix = f"HTTP {http_status}" if http_status is not None else "outcome unknown"
+        super().__init__(f"stage = {stage}; code = {code}; {suffix}")
+
+
 class RoundInterrupted(LocalRoundError):
     pass
 
@@ -171,6 +182,7 @@ def _http_json(
     method: str,
     payload: dict[str, Any] | None = None,
     token: str | None = None,
+    stage: str = "LOCAL_REQUEST",
 ) -> tuple[int, dict[str, Any]]:
     data = None if payload is None else canonical_json(payload).encode("utf-8")
     headers = {"Accept": "application/json"}
@@ -190,12 +202,12 @@ def _http_json(
             code = body.get("error", {}).get("code", "HTTP_ERROR")
         except Exception:
             code = "HTTP_ERROR"
-        raise LocalRoundError(
-            f"Local ReAgent request failed closed with HTTP {error.code} ({code})"
+        raise LocalHTTPError(
+            stage=stage, code=str(code), http_status=error.code
         ) from None
     except urllib.error.URLError as error:
-        raise LocalRoundError(
-            "Local ReAgent request outcome is unknown; do not rerun research"
+        raise LocalHTTPError(
+            stage=stage, code="RESPONSE_OUTCOME_UNKNOWN", http_status=None
         ) from error
     if len(raw) > MAXIMUM_LOCAL_RESPONSE_BYTES:
         raise LocalRoundError("Local ReAgent response exceeded the safe size bound")
@@ -240,8 +252,21 @@ def _open_session(
     base_url: str,
     manifest: dict[str, Any],
     mode: str,
+    report_path: Path | None = None,
 ) -> dict[str, Any]:
     project_id = urllib.parse.quote(manifest["experimental_project_identity"], safe="")
+    report_scope: dict[str, Any] = {}
+    if mode == "UPLOAD_ONLY":
+        if report_path is None:
+            raise LocalRoundError("Upload-only session requires a finalized Progress Report")
+        report = _load_object(report_path, "Progress Report")
+        report_scope = {
+            "execution_round": report["execution_round"],
+            "report_id": report["report_id"],
+            "report_content_checksum": report["report_content_checksum"],
+        }
+    elif report_path is not None:
+        raise LocalRoundError("Search sessions cannot receive a Progress Report scope")
     try:
         _, session = _http_json(
             url=f"{base_url}/projects/{project_id}/local-sessions",
@@ -253,9 +278,16 @@ def _open_session(
                 "workflow_version": manifest["workflow_version"],
                 "workflow_checksum": manifest["workflow_checksum"],
                 "mode": mode,
+                **report_scope,
             },
+            stage="UPLOAD_SESSION_CREATE" if mode == "UPLOAD_ONLY" else "SEARCH_SESSION_CREATE",
         )
     except LocalRoundError as error:
+        if mode == "UPLOAD_ONLY":
+            raise LocalRoundError(
+                "Stage [6/6] failed: the fresh report-bound upload-only "
+                "session was denied or unavailable"
+            ) from error
         if mode == "NORMAL":
             raise LocalRoundError(
                 "Stage [3/6] failed: normal mode requires the explicitly enabled "
@@ -294,7 +326,33 @@ def _close_session(
         ),
         method="DELETE",
         token=session["session_token"],
+        stage="SESSION_REVOCATION",
     )
+
+
+def _cleanup_session(
+    *,
+    base_url: str,
+    manifest: dict[str, Any],
+    session: dict[str, Any],
+    label: str,
+) -> None:
+    """Best-effort revocation that never replaces the primary phase outcome."""
+
+    try:
+        _close_session(base_url=base_url, manifest=manifest, session=session)
+        print(f"{label} session revoked.", flush=True)
+    except LocalHTTPError as error:
+        if error.code in {"SESSION_EXPIRED", "TOKEN_EXPIRED", "TOKEN_REVOKED"}:
+            state = "already expired" if error.code != "TOKEN_REVOKED" else "already revoked"
+            print(f"{label} session {state}.", flush=True)
+        else:
+            print(
+                f"{label} session revoke failed; cleanup code = {error.code}.",
+                flush=True,
+            )
+    except LocalRoundError:
+        print(f"{label} session revoke failed; cleanup code = CLEANUP_FAILED.", flush=True)
 
 
 def _validate_package(root: Path) -> None:
@@ -1195,6 +1253,7 @@ def _upload_and_verify(
     manifest: dict[str, Any],
     session: dict[str, Any],
     report_path: Path,
+    envelope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     project = urllib.parse.quote(manifest["experimental_project_identity"], safe="")
     session_id = urllib.parse.quote(session["session_id"], safe="")
@@ -1205,7 +1264,9 @@ def _upload_and_verify(
             "workflow_checksum": manifest["workflow_checksum"],
         }
     )
-    envelope = _upload_envelope(root=root, manifest=manifest, report_path=report_path)
+    envelope = envelope or _upload_envelope(
+        root=root, manifest=manifest, report_path=report_path
+    )
     _, receipt = _http_json(
         url=(
             f"{base_url}/projects/{project}/local-sessions/{session_id}/"
@@ -1214,6 +1275,7 @@ def _upload_and_verify(
         method="POST",
         payload=envelope,
         token=session["session_token"],
+        stage="PROGRESS_REPORT_UPLOAD",
     )
     identity_query = _identity_query(manifest)
     _, history_response = _http_json_list_as_object(
@@ -1222,6 +1284,7 @@ def _upload_and_verify(
             f"progress-reports?{identity_query}"
         ),
         token=session["session_token"],
+        stage="REPORT_HISTORY_VERIFICATION",
     )
     history = history_response["items"]
     _, projection = _http_json(
@@ -1231,6 +1294,7 @@ def _upload_and_verify(
         ),
         method="GET",
         token=session["session_token"],
+        stage="PROJECTION_VERIFICATION",
     )
     if (
         receipt.get("validation_status") != "ACCEPTED"
@@ -1265,6 +1329,7 @@ def _http_json_list_as_object(
     *,
     url: str,
     token: str,
+    stage: str = "REPORT_HISTORY_VERIFICATION",
 ) -> tuple[int, dict[str, Any]]:
     request = urllib.request.Request(
         url,
@@ -1276,11 +1341,19 @@ def _http_json_list_as_object(
             raw = response.read(MAXIMUM_LOCAL_RESPONSE_BYTES + 1)
             status = response.status
     except urllib.error.HTTPError as error:
-        raise LocalRoundError(
-            f"Local ReAgent verification failed with HTTP {error.code}"
+        raw = error.read(MAXIMUM_LOCAL_RESPONSE_BYTES + 1)
+        try:
+            body = json.loads(raw.decode("utf-8"))
+            code = body.get("error", {}).get("code", "HTTP_ERROR")
+        except Exception:
+            code = "HTTP_ERROR"
+        raise LocalHTTPError(
+            stage=stage, code=str(code), http_status=error.code
         ) from None
     except urllib.error.URLError as error:
-        raise LocalRoundError("Local ReAgent verification outcome is unknown") from error
+        raise LocalHTTPError(
+            stage=stage, code="RESPONSE_OUTCOME_UNKNOWN", http_status=None
+        ) from error
     if len(raw) > MAXIMUM_LOCAL_RESPONSE_BYTES:
         raise LocalRoundError("Local ReAgent history exceeded the safe size bound")
     try:
@@ -1299,17 +1372,69 @@ def _pending_upload(
     manifest: dict[str, Any],
     report_path: Path,
 ) -> dict[str, Any]:
-    session = _open_session(base_url=base_url, manifest=manifest, mode="UPLOAD_ONLY")
-    try:
-        return _upload_and_verify(
-            root=root,
+    return _upload_with_fresh_session(
+        root=root,
+        base_url=base_url,
+        manifest=manifest,
+        report_path=report_path,
+    )
+
+
+def _upload_with_fresh_session(
+    *,
+    root: Path,
+    base_url: str,
+    manifest: dict[str, Any],
+    report_path: Path,
+) -> dict[str, Any]:
+    """Upload one exact report with at most one safe session replacement."""
+
+    envelope = _upload_envelope(root=root, manifest=manifest, report_path=report_path)
+    recoverable_authentication = {"SESSION_EXPIRED", "TOKEN_EXPIRED"}
+    refreshes = 0
+    while True:
+        session = _open_session(
             base_url=base_url,
             manifest=manifest,
-            session=session,
+            mode="UPLOAD_ONLY",
             report_path=report_path,
         )
-    finally:
-        _close_session(base_url=base_url, manifest=manifest, session=session)
+        try:
+            return _upload_and_verify(
+                root=root,
+                base_url=base_url,
+                manifest=manifest,
+                session=session,
+                report_path=report_path,
+                envelope=envelope,
+            )
+        except LocalHTTPError as error:
+            may_refresh = (
+                error.code in recoverable_authentication
+                or error.code == "RESPONSE_OUTCOME_UNKNOWN"
+            )
+            if refreshes == 0 and may_refresh:
+                action = "opening one fresh upload-only session"
+                print(
+                    f"Progress upload recovery: stage = {error.stage}; "
+                    f"code = {error.code}; action = {action}",
+                    flush=True,
+                )
+                refreshes += 1
+                continue
+            print(
+                f"Progress upload failed: stage = {error.stage}; code = {error.code}; "
+                "action = local report preserved; rerun the same Package command",
+                flush=True,
+            )
+            raise
+        finally:
+            _cleanup_session(
+                base_url=base_url,
+                manifest=manifest,
+                session=session,
+                label="Upload",
+            )
 
 
 def _print_round_summary(root: Path, mode: str) -> None:
@@ -1471,9 +1596,16 @@ def run_round(
                 "status": "ROUND_ALREADY_UPLOADED",
                 "report_id": _load_object(reports[0], "Progress Report")["report_id"],
             }
+        print(
+            "Upload-only recovery selected: a finalized local report has no "
+            "verified receipt. Codex and Provider search will be skipped.",
+            flush=True,
+        )
         _stage(3, "Opening scoped local session")
         _stage(5, "Validating completed round")
         control = _load_control(root, manifest)
+        if control["mode"] != mode:
+            raise LocalRoundError("Upload-only recovery must use the completed round mode")
         if _effective_state(control) == "FINALIZED":
             _mark_report_finalized(root, reports[0])
         _validate_package(root)
@@ -1511,7 +1643,7 @@ def run_round(
     started_at = _timestamp()
     _stage(3, "Opening scoped local session")
     session = _open_session(base_url=base_url, manifest=manifest, mode=mode)
-    primary_error: BaseException | None = None
+    search_session_closed = False
     try:
         if session["maximum_query_variants"] != MAXIMUM_QUERY_VARIANTS:
             raise LocalRoundError("Session query budget does not match the fixed policy")
@@ -1545,6 +1677,14 @@ def run_round(
                 resume=resume,
             )
         print("Codex round completed.", flush=True)
+        print("Revoking search session...", flush=True)
+        _cleanup_session(
+            base_url=base_url,
+            manifest=manifest,
+            session=session,
+            label="Search",
+        )
+        search_session_closed = True
         _stage(5, "Validating completed round")
         print("Validating outputs...", flush=True)
         _validate_finalized_control(root, manifest)
@@ -1557,11 +1697,10 @@ def run_round(
         _validate_package(root)
         _stage(6, "Uploading and verifying Progress Report")
         print("Uploading Progress Report...", flush=True)
-        receipt = _upload_and_verify(
+        receipt = _upload_with_fresh_session(
             root=root,
             base_url=base_url,
             manifest=manifest,
-            session=session,
             report_path=report_path,
         )
         print("Verifying receipt...", flush=True)
@@ -1577,17 +1716,18 @@ def run_round(
             "queries": len(queries),
         }
     except BaseException as error:
-        primary_error = error
         if isinstance(error, RoundInterrupted):
             _mark_interrupted(root, "INTERACTIVE_CODEX")
         raise
     finally:
-        print("Revoking local session...", flush=True)
-        try:
-            _close_session(base_url=base_url, manifest=manifest, session=session)
-        except LocalRoundError:
-            if primary_error is None:
-                raise
+        if not search_session_closed:
+            print("Revoking search session...", flush=True)
+            _cleanup_session(
+                base_url=base_url,
+                manifest=manifest,
+                session=session,
+                label="Search",
+            )
 
 
 def main(argv: list[str] | None = None) -> int:

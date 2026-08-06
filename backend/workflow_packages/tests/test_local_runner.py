@@ -657,6 +657,41 @@ def _write_receipt(root: Path, report_path: Path, *, replay: bool = False) -> di
     return receipt
 
 
+def test_upload_session_request_is_exact_report_bound_and_contains_no_token(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    manifest = json.loads((root / "package-manifest.json").read_text())
+    report = {
+        "execution_round": 1,
+        "report_id": "prv2-" + "a" * 64,
+        "report_content_checksum": "sha256:" + "b" * 64,
+    }
+    report_path = root / "memory/progress/reports" / f"{report['report_id']}.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def request(**kwargs):
+        captured.update(kwargs)
+        return 201, _session("UPLOAD_ONLY")
+
+    monkeypatch.setattr(local_runner, "_http_json", request)
+    local_runner._open_session(
+        base_url="http://127.0.0.1:8000",
+        manifest=manifest,
+        mode="UPLOAD_ONLY",
+        report_path=report_path,
+    )
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["execution_round"] == 1
+    assert payload["report_id"] == report["report_id"]
+    assert payload["report_content_checksum"] == report["report_content_checksum"]
+    assert "session_token" not in payload
+    assert "token" not in payload
+
+
 def test_one_command_round_generates_four_outputs_and_uploads_once(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -701,7 +736,7 @@ def test_one_command_round_generates_four_outputs_and_uploads_once(
         auto=True,
     )
     assert result["status"] == "ROUND_COMPLETED"
-    assert calls == {"codex": 2, "queries": 2, "upload": 1, "close": 1}
+    assert calls == {"codex": 2, "queries": 2, "upload": 1, "close": 2}
     assert len(list((root / "memory/progress/reports").glob("prv2-*.json"))) == 1
     assert validate_package(root).valid
 
@@ -712,12 +747,13 @@ def test_one_command_round_generates_four_outputs_and_uploads_once(
         auto=True,
     )
     assert replay["status"] == "ROUND_ALREADY_UPLOADED"
-    assert calls == {"codex": 2, "queries": 2, "upload": 1, "close": 1}
+    assert calls == {"codex": 2, "queries": 2, "upload": 1, "close": 2}
 
 
 def test_upload_failure_preserves_report_and_next_run_is_upload_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     root = _package(tmp_path)
     opened: list[str] = []
@@ -774,7 +810,10 @@ def test_upload_failure_preserves_report_and_next_run_is_upload_only(
         auto=True,
     )
     assert result["status"] == "PENDING_UPLOAD_COMPLETED"
-    assert opened == ["DEMO", "UPLOAD_ONLY"]
+    output = capsys.readouterr().out
+    assert "Upload-only recovery selected" in output
+    assert "Codex and Provider search will be skipped" in output
+    assert opened == ["DEMO", "UPLOAD_ONLY", "UPLOAD_ONLY"]
     assert output_checksums == {
         path.name: sha256_bytes(path.read_bytes())
         for path in (root / "outputs").iterdir()
@@ -784,6 +823,188 @@ def test_upload_failure_preserves_report_and_next_run_is_upload_only(
         next((root / "memory/progress/receipts").glob("*.json")).read_text()
     )
     assert receipt["idempotent_replay"] is True
+
+
+def test_expired_search_session_does_not_block_fresh_first_upload(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    opened: list[str] = []
+    uploaded_with: list[str] = []
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
+    monkeypatch.setattr(
+        local_runner,
+        "_open_session",
+        lambda **kwargs: opened.append(kwargs["mode"]) or _session(kwargs["mode"]),
+    )
+    monkeypatch.setattr(
+        local_runner,
+        "_invoke_codex",
+        lambda *, root, instruction, interactive: (
+            _planning(root) if "PLANNING_STAGE" in instruction else _synthesis(root, "DEMO")
+        ),
+    )
+    monkeypatch.setattr(
+        local_runner,
+        "_execute_queries",
+        lambda **kwargs: _record_results(kwargs["root"], kwargs["mode"], kwargs["queries"]),
+    )
+
+    def close(**kwargs) -> None:
+        if kwargs["session"]["mode"] == "DEMO":
+            raise local_runner.LocalHTTPError(
+                stage="SESSION_REVOCATION", code="SESSION_EXPIRED", http_status=401
+            )
+
+    def upload(**kwargs):
+        uploaded_with.append(kwargs["session"]["mode"])
+        return _write_receipt(kwargs["root"], kwargs["report_path"])
+
+    monkeypatch.setattr(local_runner, "_close_session", close)
+    monkeypatch.setattr(local_runner, "_upload_and_verify", upload)
+    result = local_runner.run_round(
+        package_root=root,
+        base_url="http://127.0.0.1:8000",
+        mode="DEMO",
+        auto=True,
+    )
+    assert result["status"] == "ROUND_COMPLETED"
+    assert opened == ["DEMO", "UPLOAD_ONLY"]
+    assert uploaded_with == ["UPLOAD_ONLY"]
+
+
+@pytest.mark.parametrize(
+    ("failure_code", "expected_upload_attempts"),
+    [("SESSION_EXPIRED", 2), ("TOKEN_UNKNOWN", 1), ("PACKAGE_SCOPE_MISMATCH", 1)],
+)
+def test_upload_refreshes_only_explicit_expiry_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_code: str,
+    expected_upload_attempts: int,
+) -> None:
+    root = _package(tmp_path)
+    attempts: list[str] = []
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
+    monkeypatch.setattr(local_runner, "_open_session", lambda **kwargs: _session(kwargs["mode"]))
+    monkeypatch.setattr(local_runner, "_close_session", lambda **kwargs: None)
+    monkeypatch.setattr(
+        local_runner,
+        "_invoke_codex",
+        lambda *, root, instruction, interactive: (
+            _planning(root) if "PLANNING_STAGE" in instruction else _synthesis(root, "DEMO")
+        ),
+    )
+    monkeypatch.setattr(
+        local_runner,
+        "_execute_queries",
+        lambda **kwargs: _record_results(kwargs["root"], kwargs["mode"], kwargs["queries"]),
+    )
+
+    def upload(**kwargs):
+        attempts.append(kwargs["envelope"]["envelope_checksum"])
+        if len(attempts) == 1 or expected_upload_attempts == 1:
+            raise local_runner.LocalHTTPError(
+                stage="PROGRESS_REPORT_UPLOAD", code=failure_code, http_status=401
+            )
+        return _write_receipt(kwargs["root"], kwargs["report_path"], replay=True)
+
+    monkeypatch.setattr(local_runner, "_upload_and_verify", upload)
+    if expected_upload_attempts == 1:
+        with pytest.raises(local_runner.LocalHTTPError) as captured:
+            local_runner.run_round(
+                package_root=root,
+                base_url="http://127.0.0.1:8000",
+                mode="DEMO",
+                auto=True,
+            )
+        assert captured.value.code == failure_code
+    else:
+        result = local_runner.run_round(
+            package_root=root,
+            base_url="http://127.0.0.1:8000",
+            mode="DEMO",
+            auto=True,
+        )
+        assert result["status"] == "ROUND_COMPLETED"
+    assert len(attempts) == expected_upload_attempts
+    assert len(set(attempts)) == 1
+
+
+def test_unknown_response_reconciles_exact_report_without_duplicate_local_receipt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    attempts: list[str] = []
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
+    monkeypatch.setattr(local_runner, "_open_session", lambda **kwargs: _session(kwargs["mode"]))
+    monkeypatch.setattr(local_runner, "_close_session", lambda **kwargs: None)
+    monkeypatch.setattr(
+        local_runner,
+        "_invoke_codex",
+        lambda *, root, instruction, interactive: (
+            _planning(root) if "PLANNING_STAGE" in instruction else _synthesis(root, "DEMO")
+        ),
+    )
+    monkeypatch.setattr(
+        local_runner,
+        "_execute_queries",
+        lambda **kwargs: _record_results(kwargs["root"], kwargs["mode"], kwargs["queries"]),
+    )
+
+    def upload(**kwargs):
+        attempts.append(kwargs["envelope"]["envelope_checksum"])
+        if len(attempts) == 1:
+            raise local_runner.LocalHTTPError(
+                stage="PROGRESS_REPORT_UPLOAD",
+                code="RESPONSE_OUTCOME_UNKNOWN",
+                http_status=None,
+            )
+        return _write_receipt(kwargs["root"], kwargs["report_path"], replay=True)
+
+    monkeypatch.setattr(local_runner, "_upload_and_verify", upload)
+    result = local_runner.run_round(
+        package_root=root,
+        base_url="http://127.0.0.1:8000",
+        mode="DEMO",
+        auto=True,
+    )
+    assert result["status"] == "ROUND_COMPLETED"
+    assert attempts[0] == attempts[1]
+    assert len(local_runner._reports(root)) == 1
+    assert len(local_runner._receipts(root)) == 1
+
+
+def test_cleanup_failure_does_not_mask_primary_round_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
+    monkeypatch.setattr(local_runner, "_open_session", lambda **kwargs: _session(kwargs["mode"]))
+    monkeypatch.setattr(
+        local_runner,
+        "_run_auto_codex",
+        lambda **kwargs: (_ for _ in ()).throw(local_runner.LocalRoundError("primary round failure")),
+    )
+    monkeypatch.setattr(
+        local_runner,
+        "_close_session",
+        lambda **kwargs: (_ for _ in ()).throw(
+            local_runner.LocalHTTPError(
+                stage="SESSION_REVOCATION", code="TOKEN_UNKNOWN", http_status=401
+            )
+        ),
+    )
+    with pytest.raises(local_runner.LocalRoundError, match="primary round failure"):
+        local_runner.run_round(
+            package_root=root,
+            base_url="http://127.0.0.1:8000",
+            mode="DEMO",
+            auto=True,
+        )
 
 
 def test_interruption_before_report_stops_recovery_without_overwrite(

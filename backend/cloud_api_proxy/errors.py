@@ -14,8 +14,12 @@ def invalid(message: str, code: str = "INVALID_REQUEST") -> ProxyError:
     return ProxyError(code, message, http_status=422)
 
 
-def unauthorized(message: str = "Bearer capability token is not valid") -> ProxyError:
-    return ProxyError("UNAUTHORIZED", message, http_status=401)
+def unauthorized(
+    message: str = "Bearer capability token is not valid",
+    *,
+    code: str = "TOKEN_UNKNOWN",
+) -> ProxyError:
+    return ProxyError(code, message, http_status=401)
 
 
 def forbidden(message: str = "Capability token scope does not authorize this request") -> ProxyError:

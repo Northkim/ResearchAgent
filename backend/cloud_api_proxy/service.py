@@ -16,6 +16,7 @@ from backend.workflow_packages.security import reject_sensitive_content
 
 from .contracts import (
     ADAPTER_ID,
+    CAPABILITY,
     ALLOWED_ADAPTER_IDS,
     MAX_ACTIVE_OPERATIONS,
     MAX_RESULT_BYTES,
@@ -26,6 +27,9 @@ from .contracts import (
     OPENALEX_ADAPTER_ID,
     OPENALEX_MAX_PROVIDER_CALLS,
     OPENALEX_MAX_PROVIDER_COST_MICROUSD,
+    LOCAL_PROGRESS_ADAPTER_ID,
+    LOCAL_PROGRESS_SESSION_CAPABILITY,
+    LocalProgressReportScope,
     OPENALEX_RESERVED_SEARCH_COST_MICROUSD,
     TOKEN_DEFAULT_MINUTES,
     TOKEN_MAX_MINUTES,
@@ -114,6 +118,8 @@ class CloudAPIProxyService:
         maximum_operations: int | None = None,
         adapter_id: str = ADAPTER_ID,
         local_session_capabilities: tuple[str, ...] = (),
+        local_progress_report_scope: LocalProgressReportScope | None = None,
+        capability: str = CAPABILITY,
     ) -> tuple[ProxyCapabilityToken, str]:
         if isinstance(lifetime_minutes, bool) or not isinstance(lifetime_minutes, int):
             raise ValueError("token lifetime must be an integer number of minutes")
@@ -142,8 +148,11 @@ class CloudAPIProxyService:
             raise ValueError(
                 f"maximum operations must be between {minimum_operations} and {maximum_allowed}"
             )
-        if maximum_operations == 0 and adapter_id != ADAPTER_ID:
-            raise ValueError("upload-only local sessions use the network-free fake adapter scope")
+        if maximum_operations == 0 and adapter_id not in {
+            ADAPTER_ID,
+            LOCAL_PROGRESS_ADAPTER_ID,
+        }:
+            raise ValueError("zero-operation local sessions require a network-free scope")
         plaintext = secrets.token_urlsafe(32)
         digest = token_digest(plaintext)
         now = self._now()
@@ -157,7 +166,7 @@ class CloudAPIProxyService:
             workflow_id=workflow_id,
             workflow_version=workflow_version,
             workflow_checksum=workflow_checksum,
-            capability="paper.search/v0.1",
+            capability=capability,
             adapter_id=adapter_id,
             maximum_operations=maximum_operations,
             maximum_provider_calls=(maximum_operations if adapter_id == OPENALEX_ADAPTER_ID else 0),
@@ -167,6 +176,7 @@ class CloudAPIProxyService:
                 else 0
             ),
             local_session_capabilities=local_session_capabilities,
+            local_progress_report_scope=local_progress_report_scope,
         )
         token = ProxyCapabilityToken(
             scope=scope,
@@ -209,6 +219,36 @@ class CloudAPIProxyService:
                 or scope.workflow_version != workflow_version
                 or scope.workflow_checksum != workflow_checksum
                 or capability not in scope.local_session_capabilities
+            ):
+                raise forbidden()
+            return token
+
+    def authorize_local_session_identity(
+        self,
+        *,
+        bearer_token: str,
+        token_id: str,
+        project_id: str,
+        package_id: str,
+        package_checksum: str,
+        workflow_id: str,
+        workflow_version: str,
+        workflow_checksum: str,
+    ) -> ProxyCapabilityToken:
+        """Authenticate one exact local session without granting a capability."""
+
+        now = self._now()
+        with self.unit_of_work_factory() as uow:
+            token = self._authenticate(uow.proxy, bearer_token, now)
+            scope = token.scope
+            if (
+                scope.token_id != token_id
+                or scope.project_id != project_id
+                or scope.package_id != package_id
+                or scope.package_checksum != package_checksum
+                or scope.workflow_id != workflow_id
+                or scope.workflow_version != workflow_version
+                or scope.workflow_checksum != workflow_checksum
             ):
                 raise forbidden()
             return token
@@ -551,22 +591,22 @@ class CloudAPIProxyService:
     def _authenticate(self, repository, plaintext: str, now: datetime) -> ProxyCapabilityToken:
         if not isinstance(plaintext, str) or not _OPAQUE_TOKEN.fullmatch(plaintext):
             hmac.compare_digest(_DUMMY_DIGEST, token_digest("invalid-token-shape"))
-            raise unauthorized()
+            raise unauthorized(code="MALFORMED_AUTHORIZATION")
         digest = token_digest(plaintext)
         token = repository.find_token_by_digest(digest)
         stored = token.token_digest_sha256 if token is not None else _DUMMY_DIGEST
         matched = hmac.compare_digest(stored, digest)
         if token is None or not matched:
-            raise unauthorized()
+            raise unauthorized(code="TOKEN_UNKNOWN")
         self._validate_token(token, now)
         return token
 
     @staticmethod
     def _validate_token(token: ProxyCapabilityToken, now: datetime) -> None:
         if token.revoked:
-            raise unauthorized("Bearer capability token is revoked")
+            raise unauthorized("Bearer capability token is revoked", code="TOKEN_REVOKED")
         if now >= parse_timestamp(token.expires_at, "expires_at"):
-            raise unauthorized("Bearer capability token is expired")
+            raise unauthorized("Bearer capability token is expired", code="SESSION_EXPIRED")
 
     @staticmethod
     def _authorize(scope: ProxyAuthorizationScope, path_project_id: str, request: CloudProxyRequestEnvelope) -> None:

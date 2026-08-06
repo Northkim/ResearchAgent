@@ -14,8 +14,11 @@ from sqlalchemy import inspect, text
 from backend.cloud_api_proxy import CloudAPIProxyService, DeterministicFakePaperSearchAdapter
 from backend.cloud_api_proxy.contracts import (
     ADAPTER_ID,
+    LOCAL_PROGRESS_ADAPTER_ID,
+    LOCAL_PROGRESS_SESSION_CAPABILITY,
     LOCAL_PROGRESS_READ_CAPABILITY,
     LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+    LocalProgressReportScope,
 )
 from backend.cloud_api_proxy.errors import ProxyError
 from backend.cloud_api_proxy.sql import SQLProxyUnitOfWork
@@ -89,10 +92,17 @@ def test_local_session_scope_persists_and_authorizes_after_reload(
         workflow_version="1.0.0",
         workflow_checksum=CHECKSUM_B,
         maximum_operations=0,
+        adapter_id=LOCAL_PROGRESS_ADAPTER_ID,
         local_session_capabilities=(
             LOCAL_PROGRESS_UPLOAD_CAPABILITY,
             LOCAL_PROGRESS_READ_CAPABILITY,
         ),
+        local_progress_report_scope=LocalProgressReportScope(
+            execution_round=1,
+            report_id="prv2-" + "a" * 64,
+            report_content_checksum=CHECKSUM_A,
+        ),
+        capability=LOCAL_PROGRESS_SESSION_CAPABILITY,
     )
     reloaded = CloudAPIProxyService(
         unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
@@ -114,6 +124,12 @@ def test_local_session_scope_persists_and_authorizes_after_reload(
     assert authorized.scope.local_session_capabilities == (
         LOCAL_PROGRESS_READ_CAPABILITY,
         LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+    )
+    assert authorized.scope.adapter_id == LOCAL_PROGRESS_ADAPTER_ID
+    assert authorized.scope.local_progress_report_scope == LocalProgressReportScope(
+        execution_round=1,
+        report_id="prv2-" + "a" * 64,
+        report_content_checksum=CHECKSUM_A,
     )
     with session_factory() as session:
         assert session.scalar(text("SELECT count(*) FROM proxy_operations")) == 0

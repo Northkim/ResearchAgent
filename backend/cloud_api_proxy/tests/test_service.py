@@ -214,7 +214,7 @@ def test_missing_malformed_and_unknown_tokens_fail(proxy_setup, token: str) -> N
     service, _, adapter, _, _ = proxy_setup
     with pytest.raises(ProxyError) as captured:
         service.submit(bearer_token=token, path_project_id="fictional-project", request=make_request())
-    assert captured.value.code == "UNAUTHORIZED"
+    assert captured.value.code in {"MALFORMED_AUTHORIZATION", "TOKEN_UNKNOWN"}
     assert adapter.invocation_count == 0
 
 
@@ -251,7 +251,7 @@ def test_revoked_and_expired_tokens_cannot_delayed_replay_existing_operation() -
             path_project_id="fictional-project",
             request=revoked_request,
         )
-    assert revoked.value.code == "UNAUTHORIZED"
+    assert revoked.value.code == "TOKEN_REVOKED"
     assert revoked_adapter.invocation_count == 1
 
     expired_service, expired_database, expired_adapter, expired_token, expired_plaintext, expired_now = _mutable_proxy_setup()
@@ -272,7 +272,7 @@ def test_revoked_and_expired_tokens_cannot_delayed_replay_existing_operation() -
             path_project_id="fictional-project",
             request=expired_request,
         )
-    assert expired.value.code == "UNAUTHORIZED"
+    assert expired.value.code == "SESSION_EXPIRED"
     assert expired_adapter.invocation_count == 1
 
 

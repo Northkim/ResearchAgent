@@ -11,6 +11,8 @@ from backend.cloud_api_proxy import (
     InMemoryProxyUnitOfWork,
 )
 from backend.cloud_api_proxy.contracts import (
+    LOCAL_PROGRESS_ADAPTER_ID,
+    LOCAL_PROGRESS_SESSION_CAPABILITY,
     LOCAL_PROGRESS_READ_CAPABILITY,
     OPENALEX_ADAPTER_ID,
 )
@@ -79,17 +81,33 @@ def test_normal_demo_and_upload_only_sessions_are_bounded(tmp_path) -> None:
     sessions, database, fake, canary, _, identity, package_root = _setup(tmp_path)
     normal = sessions.open(mode=LocalSessionMode.NORMAL, **identity)
     demo = sessions.open(mode=LocalSessionMode.DEMO, **identity)
-    upload = sessions.open(mode=LocalSessionMode.UPLOAD_ONLY, **identity)
+    upload = sessions.open(
+        mode=LocalSessionMode.UPLOAD_ONLY,
+        execution_round=1,
+        report_id="prv2-" + "a" * 64,
+        report_content_checksum="sha256:" + "b" * 64,
+        **identity,
+    )
     assert normal.maximum_provider_calls == 3
     assert normal.maximum_query_variants == 3
     assert demo.maximum_provider_calls == 0
     assert upload.maximum_query_variants == 0
     assert fake.invocation_count == canary.invocation_count == 0
-    for token in database.tokens.values():
-        assert set(token.scope.local_session_capabilities) == {
-            "progress.upload/v0.2",
-            "progress.read/v0.1",
-        }
+    normal_token = database.tokens[normal.session_id]
+    demo_token = database.tokens[demo.session_id]
+    upload_token = database.tokens[upload.session_id]
+    assert normal_token.scope.local_session_capabilities == ()
+    assert demo_token.scope.local_session_capabilities == ()
+    assert upload_token.scope.adapter_id == LOCAL_PROGRESS_ADAPTER_ID
+    assert upload_token.scope.maximum_operations == 0
+    assert upload_token.scope.maximum_provider_calls == 0
+    assert upload_token.scope.maximum_provider_cost_microusd == 0
+    assert upload_token.scope.capability == LOCAL_PROGRESS_SESSION_CAPABILITY
+    assert set(upload_token.scope.local_session_capabilities) == {
+        "progress.upload/v0.2",
+        "progress.read/v0.1",
+    }
+    assert upload_token.scope.local_progress_report_scope is not None
     package_bytes = b"".join(
         path.read_bytes() for path in package_root.rglob("*") if path.is_file()
     )
@@ -109,7 +127,13 @@ def test_normal_mode_never_falls_back_to_fake(tmp_path) -> None:
 
 def test_exact_scope_expiry_revocation_and_cross_project_denial(tmp_path) -> None:
     sessions, _, _, _, now, identity, _ = _setup(tmp_path)
-    session = sessions.open(mode=LocalSessionMode.DEMO, **identity)
+    session = sessions.open(
+        mode=LocalSessionMode.UPLOAD_ONLY,
+        execution_round=1,
+        report_id="prv2-" + "a" * 64,
+        report_content_checksum="sha256:" + "b" * 64,
+        **identity,
+    )
     authorized = sessions.authorize(
         bearer_token=session.session_token,
         session_id=session.session_id,
@@ -135,8 +159,14 @@ def test_exact_scope_expiry_revocation_and_cross_project_denial(tmp_path) -> Non
         )
     assert revoked.value.http_status == 401
 
-    expiring = sessions.open(mode=LocalSessionMode.DEMO, **identity)
-    now[0] += timedelta(minutes=16)
+    expiring = sessions.open(
+        mode=LocalSessionMode.UPLOAD_ONLY,
+        execution_round=1,
+        report_id="prv2-" + "c" * 64,
+        report_content_checksum="sha256:" + "d" * 64,
+        **identity,
+    )
+    now[0] += timedelta(minutes=3)
     with pytest.raises(ProxyError) as expired:
         sessions.authorize(
             bearer_token=expiring.session_token,
@@ -145,3 +175,23 @@ def test_exact_scope_expiry_revocation_and_cross_project_denial(tmp_path) -> Non
             **identity,
         )
     assert expired.value.http_status == 401
+    assert expired.value.code == "SESSION_EXPIRED"
+
+
+def test_search_session_has_no_progress_capability_but_can_be_revoked(tmp_path) -> None:
+    sessions, _, _, _, _, identity, _ = _setup(tmp_path)
+    search = sessions.open(mode=LocalSessionMode.DEMO, **identity)
+    with pytest.raises(ProxyError) as denied:
+        sessions.authorize(
+            bearer_token=search.session_token,
+            session_id=search.session_id,
+            capability=LOCAL_PROGRESS_READ_CAPABILITY,
+            **identity,
+        )
+    assert denied.value.http_status == 403
+    sessions.authorize_identity(
+        bearer_token=search.session_token,
+        session_id=search.session_id,
+        **identity,
+    )
+    sessions.close(search.session_id)

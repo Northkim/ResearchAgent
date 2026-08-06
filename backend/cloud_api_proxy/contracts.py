@@ -14,10 +14,14 @@ from uuid import UUID
 
 PROXY_CONTRACT_VERSION = "reagent.cloud-api-proxy/v0.1"
 CAPABILITY = "paper.search/v0.1"
+LOCAL_PROGRESS_SESSION_CAPABILITY = "local.progress-session/v0.1"
 ADAPTER_ID = "reagent.deterministic-fake-paper-search/v0.1"
 FAKE_ADAPTER_ID = ADAPTER_ID
 OPENALEX_ADAPTER_ID = "reagent.openalex-paper-search/v0.1"
-ALLOWED_ADAPTER_IDS = frozenset({FAKE_ADAPTER_ID, OPENALEX_ADAPTER_ID})
+LOCAL_PROGRESS_ADAPTER_ID = "reagent.local-progress-only/v0.1"
+ALLOWED_ADAPTER_IDS = frozenset(
+    {FAKE_ADAPTER_ID, OPENALEX_ADAPTER_ID, LOCAL_PROGRESS_ADAPTER_ID}
+)
 POLICY_VERSION = "r3b-experimental-policy/v0.1"
 OPENALEX_POLICY_VERSION = "r3c-experimental-policy/v0.1"
 MAX_REQUEST_BYTES = 16 * 1024
@@ -397,6 +401,32 @@ class ProxyRequestEvidence:
 
 
 @dataclass(frozen=True, slots=True)
+class LocalProgressReportScope:
+    """Exact report identity authorized for one post-round upload lifecycle."""
+
+    execution_round: int
+    report_id: str
+    report_content_checksum: str
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.execution_round, bool)
+            or not isinstance(self.execution_round, int)
+            or self.execution_round < 1
+        ):
+            raise ValueError("execution_round must be a positive integer")
+        object.__setattr__(self, "report_id", _text(self.report_id, "report_id"))
+        _checksum(self.report_content_checksum, "report_content_checksum")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "execution_round": self.execution_round,
+            "report_id": self.report_id,
+            "report_content_checksum": self.report_content_checksum,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ProxyAuthorizationScope:
     token_id: str
     tenant_id: str
@@ -413,6 +443,7 @@ class ProxyAuthorizationScope:
     maximum_provider_calls: int = 0
     maximum_provider_cost_microusd: int = 0
     local_session_capabilities: tuple[str, ...] = ()
+    local_progress_report_scope: LocalProgressReportScope | None = None
 
     def __post_init__(self) -> None:
         if not _TOKEN_ID.fullmatch(self.token_id):
@@ -421,7 +452,10 @@ class ProxyAuthorizationScope:
             object.__setattr__(self, field, _text(getattr(self, field), field))
         _checksum(self.package_checksum, "package_checksum")
         _checksum(self.workflow_checksum, "workflow_checksum")
-        if self.capability != CAPABILITY or self.adapter_id not in ALLOWED_ADAPTER_IDS:
+        if (
+            self.capability not in {CAPABILITY, LOCAL_PROGRESS_SESSION_CAPABILITY}
+            or self.adapter_id not in ALLOWED_ADAPTER_IDS
+        ):
             raise ValueError("scope must bind a ratified capability and adapter")
         object.__setattr__(
             self,
@@ -430,6 +464,19 @@ class ProxyAuthorizationScope:
         )
         if not set(self.local_session_capabilities) <= ALLOWED_LOCAL_SESSION_CAPABILITIES:
             raise ValueError("local session capability is not allowlisted")
+        if self.local_progress_report_scope is not None:
+            if not isinstance(self.local_progress_report_scope, LocalProgressReportScope):
+                raise ValueError("local_progress_report_scope is invalid")
+            if self.capability != LOCAL_PROGRESS_SESSION_CAPABILITY:
+                raise ValueError("report-bound tokens cannot authorize paper search")
+            if self.adapter_id != LOCAL_PROGRESS_ADAPTER_ID:
+                raise ValueError("report-bound tokens require the local progress-only adapter")
+            if set(self.local_session_capabilities) != ALLOWED_LOCAL_SESSION_CAPABILITIES:
+                raise ValueError("report-bound tokens require exact Progress capabilities")
+            if self.maximum_operations != 0:
+                raise ValueError("report-bound tokens cannot admit Provider operations")
+        elif self.capability != CAPABILITY:
+            raise ValueError("the local progress capability requires a report scope")
         if not 0 <= self.maximum_operations <= MAX_TOKEN_OPERATIONS:
             raise ValueError("maximum_operations must be between 0 and 50")
         if self.maximum_operations == 0 and not self.local_session_capabilities:
@@ -460,6 +507,10 @@ class ProxyAuthorizationScope:
         if self.local_session_capabilities:
             value["local_session_capabilities"] = list(
                 self.local_session_capabilities
+            )
+        if self.local_progress_report_scope is not None:
+            value["local_progress_report_scope"] = (
+                self.local_progress_report_scope.to_dict()
             )
         return value
 

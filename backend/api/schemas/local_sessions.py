@@ -16,6 +16,9 @@ class CreateLocalWorkflowSessionRequest(StrictDTO):
     workflow_version: str
     workflow_checksum: str
     mode: Literal["NORMAL", "DEMO", "UPLOAD_ONLY"]
+    execution_round: int | None = None
+    report_id: str | None = None
+    report_content_checksum: str | None = None
 
 
 class LocalWorkflowSessionResponse(StrictDTO):

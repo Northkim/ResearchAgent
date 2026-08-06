@@ -29,5 +29,21 @@ class ApplicationAuthenticationError(ApplicationError):
     code = "UNAUTHORIZED"
 
 
+class ApplicationCodedAuthenticationError(ApplicationAuthenticationError):
+    """Authentication failure retaining one allowlisted safe boundary code."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 class ApplicationAuthorizationError(ApplicationError):
     code = "AUTHORIZATION_SCOPE_MISMATCH"
+
+
+class ApplicationCodedAuthorizationError(ApplicationAuthorizationError):
+    """Authorization failure retaining one allowlisted safe boundary code."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code

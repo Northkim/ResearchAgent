@@ -9,6 +9,8 @@ from fastapi import APIRouter, Query, Request, Response, status
 from backend.application.errors import (
     ApplicationAuthenticationError,
     ApplicationAuthorizationError,
+    ApplicationCodedAuthenticationError,
+    ApplicationCodedAuthorizationError,
     ApplicationConflictError,
     ApplicationNotFoundError,
     ApplicationUnavailableError,
@@ -17,6 +19,7 @@ from backend.application.errors import (
 from backend.cloud_api_proxy.contracts import (
     LOCAL_PROGRESS_READ_CAPABILITY,
     LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+    ProxyCapabilityToken,
 )
 from backend.cloud_api_proxy.errors import ProxyError
 from backend.local_sessions import LocalSessionMode, LocalWorkflowSessionService
@@ -94,9 +97,9 @@ def _authorize(
     workflow_version: str,
     workflow_checksum: str,
     capability: str,
-) -> None:
+) -> ProxyCapabilityToken:
     try:
-        _service(request, services).authorize(
+        return _service(request, services).authorize(
             bearer_token=_bearer(request),
             session_id=session_id,
             project_id=project_id,
@@ -108,12 +111,46 @@ def _authorize(
             capability=capability,
         )
     except ProxyError as error:
-        failure = (
-            ApplicationAuthenticationError
-            if error.http_status == status.HTTP_401_UNAUTHORIZED
-            else ApplicationAuthorizationError
+        if error.http_status == status.HTTP_401_UNAUTHORIZED:
+            raise ApplicationCodedAuthenticationError(
+                "Local session authorization failed", code=error.code
+            ) from error
+        raise ApplicationCodedAuthorizationError(
+            "Local session authorization failed", code=error.code
+        ) from error
+
+
+def _authorize_identity(
+    *,
+    request: Request,
+    services,
+    project_id: str,
+    session_id: str,
+    package_id: str,
+    package_checksum: str,
+    workflow_id: str,
+    workflow_version: str,
+    workflow_checksum: str,
+) -> ProxyCapabilityToken:
+    try:
+        return _service(request, services).authorize_identity(
+            bearer_token=_bearer(request),
+            session_id=session_id,
+            project_id=project_id,
+            package_id=package_id,
+            package_checksum=package_checksum,
+            workflow_id=workflow_id,
+            workflow_version=workflow_version,
+            workflow_checksum=workflow_checksum,
         )
-        raise failure("Local session authorization failed") from error
+    except ProxyError as error:
+        if error.http_status == status.HTTP_401_UNAUTHORIZED:
+            raise ApplicationCodedAuthenticationError(
+                "Local session authorization failed", code=error.code
+            ) from error
+        raise ApplicationCodedAuthorizationError(
+            "Local session authorization failed", code=error.code
+        ) from error
 
 
 @router.post(
@@ -154,7 +191,7 @@ async def close_local_workflow_session(
     workflow_checksum: str = Query(...),
 ) -> Response:
     _require_loopback(request)
-    _authorize(
+    _authorize_identity(
         request=request,
         services=services,
         project_id=project_id,
@@ -164,7 +201,6 @@ async def close_local_workflow_session(
         workflow_id=workflow_id,
         workflow_version=workflow_version,
         workflow_checksum=workflow_checksum,
-        capability=LOCAL_PROGRESS_READ_CAPABILITY,
     )
     _service(request, services).close(session_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -191,7 +227,7 @@ async def upload_session_progress_report(
         envelope = request_body.to_contract()
     except ValueError as error:
         raise ApplicationValidationError(str(error)) from error
-    _authorize(
+    token = _authorize(
         request=request,
         services=services,
         project_id=project_id,
@@ -211,6 +247,16 @@ async def upload_session_progress_report(
         raise ApplicationValidationError(
             "Progress Report failed local-session validation"
         ) from error
+    report_scope = token.scope.local_progress_report_scope
+    if report_scope is None or (
+        report_scope.execution_round != normalized.execution_round
+        or report_scope.report_id != normalized.report_id
+        or report_scope.report_content_checksum != normalized.report_content_checksum
+    ):
+        raise ApplicationCodedAuthorizationError(
+            "Progress Report is outside the upload-only session scope",
+            code="REPORT_SCOPE_MISMATCH",
+        )
     if (
         normalized.project_id != project_id
         or normalized.package_id != envelope.package_id
@@ -253,7 +299,7 @@ async def list_session_progress_reports(
     workflow_checksum: str = Query(...),
 ) -> list[UploadedProgressReportResponse]:
     _require_loopback(request)
-    _authorize(
+    token = _authorize(
         request=request,
         services=services,
         project_id=project_id,
@@ -265,12 +311,19 @@ async def list_session_progress_reports(
         workflow_checksum=workflow_checksum,
         capability=LOCAL_PROGRESS_READ_CAPABILITY,
     )
+    report_scope = token.scope.local_progress_report_scope
+    if report_scope is None:
+        raise ApplicationCodedAuthorizationError(
+            "Report history requires an upload-only report scope",
+            code="REPORT_SCOPE_MISMATCH",
+        )
     return [
         UploadedProgressReportResponse.from_contract(item)
         for item in services.progress_reports.list_reports(
             project_id=project_id,
             package_id=package_id,
         )
+        if item.report_id == report_scope.report_id
     ]
 
 
@@ -290,7 +343,7 @@ async def get_session_progress(
     workflow_checksum: str = Query(...),
 ) -> ProjectProgressResponse:
     _require_loopback(request)
-    _authorize(
+    token = _authorize(
         request=request,
         services=services,
         project_id=project_id,
@@ -308,4 +361,14 @@ async def get_session_progress(
     )
     if projection is None:
         raise ApplicationNotFoundError("Accepted local progress is not available")
+    report_scope = token.scope.local_progress_report_scope
+    if (
+        report_scope is None
+        or projection.latest_execution_round != report_scope.execution_round
+        or projection.latest_accepted_report_id != report_scope.report_id
+    ):
+        raise ApplicationCodedAuthorizationError(
+            "Project Progress is outside the upload-only report scope",
+            code="REPORT_SCOPE_MISMATCH",
+        )
     return ProjectProgressResponse.from_contract(projection)

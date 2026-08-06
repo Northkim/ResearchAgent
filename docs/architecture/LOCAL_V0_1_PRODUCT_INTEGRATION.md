@@ -12,6 +12,8 @@ Next.js project UI
   -> owner confirms plan, reviews candidates and explicitly finalizes
   -> bounded provider-neutral searches through the ReAgent Proxy
   -> four local outputs + one Progress Report
+  -> search session closes
+  -> fresh exact-report upload session
   -> automatic idempotent upload and receipt/projection verification
   -> immutable report history + Project Progress Projection
   -> Next.js progress UI
@@ -35,14 +37,17 @@ Progress Report repository and `ProjectProgressService`; it does not introduce
 a second progress model. Package ZIPs are stored under an externally configured
 artifact root, and their stored checksum is revalidated before download.
 
-Migration `20260806_0007` adds only the local-session capability tuple to the
-existing Proxy token record and permits a zero-operation upload-only token. It
+Migration `20260806_0007` adds only local-session capability JSON to the
+existing Proxy token record and permits a zero-operation upload-only token. The
+same JSON column now stores an optional exact round/report/content-checksum
+binding while retaining backward-compatible list-form decoding. It
 does not add task execution state, change Progress Report schemas, or link to a
 Hosted Workflow. The token remains active, unexpired, unrevoked, and exactly
 scoped to project, Package checksum, Workflow version/checksum, adapter, and
 capability. Normal sessions use the accepted OpenAlex adapter; explicit demo
-sessions use the fake adapter; upload-only sessions cannot submit Proxy
-operations.
+sessions use the fake adapter; neither has Progress capabilities. A separate
+two-minute upload session uses a neutral local-progress capability, exact
+report binding, and zero search operation/Provider budget.
 
 ## Frontend
 
@@ -67,7 +72,7 @@ require literal loopback. The fake Proxy is enabled for explicit demonstration;
 OpenAlex remains disabled unless the owner explicitly enables it and supplies
 the key to the backend process. Capability plaintext is returned once to the
 local launcher, kept in parent-process memory, stripped from the Codex
-environment, and revoked after the round. The launcher executes the installed
+environment, and revoked after its phase. The launcher executes the installed
 Codex CLI attached directly to the owner's current terminal; neither backend
 nor frontend invokes Codex or an LLM.
 
@@ -88,8 +93,8 @@ never sufficient evidence of completion.
   overwrite and require explicit `--resume` or confirmed `--restart-round`.
 
 Default and explicit `--auto` paths converge at the same artifact validation,
-report-chain finalization, upload, receipt/projection verification, and session
-revocation boundary. Signals are forwarded to the child; bounded cleanup reaps
+report-chain finalization, fresh upload-session issuance, receipt/projection
+verification, and session-revocation boundary. Signals are forwarded to the child; bounded cleanup reaps
 it, marks an interruption safely, revokes the session, and performs no upload.
 
 The cloud receives a bounded summary through the unchanged Progress Report

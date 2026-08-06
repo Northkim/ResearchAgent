@@ -135,6 +135,9 @@ def test_project_response_aggregates_uploaded_progress(product_client) -> None:
         project_id=project["project_id"],
         package_id=package["package_id"],
         package_checksum=package["package_checksum"],
+        workflow_id=package["workflow_id"],
+        workflow_version=package["workflow_version"],
+        workflow_checksum=package["workflow_checksum"],
     )
     upload = client.post(
         f"/projects/{project['project_id']}/progress-reports",
@@ -204,3 +207,106 @@ def test_local_session_is_exact_package_scoped_and_revokeable(session_client) ->
     assert database.executions == {}
     assert database.execution_events == {}
     assert database.provider_operations == {}
+
+
+def test_report_bound_upload_session_accepts_only_its_exact_report(session_client) -> None:
+    client, database = session_client
+    project = _create(client)
+    package = client.post(f"/projects/{project['project_id']}/packages").json()
+    report = native_report(
+        project_id=project["project_id"],
+        package_id=package["package_id"],
+        package_checksum=package["package_checksum"],
+        workflow_id=package["workflow_id"],
+        workflow_version=package["workflow_version"],
+        workflow_checksum=package["workflow_checksum"],
+    )
+    session_response = client.post(
+        f"/projects/{project['project_id']}/local-sessions",
+        json={
+            "package_id": package["package_id"],
+            "package_checksum": package["package_checksum"],
+            "workflow_id": package["workflow_id"],
+            "workflow_version": package["workflow_version"],
+            "workflow_checksum": package["workflow_checksum"],
+            "mode": "UPLOAD_ONLY",
+            "execution_round": report.execution_round,
+            "report_id": report.report_id,
+            "report_content_checksum": report.report_content_checksum,
+        },
+    )
+    assert session_response.status_code == 201
+    session = session_response.json()
+    assert session["maximum_provider_calls"] == 0
+    assert session["maximum_provider_cost_microusd"] == 0
+    workflow = {
+        "workflow_id": package["workflow_id"],
+        "workflow_version": package["workflow_version"],
+        "workflow_checksum": package["workflow_checksum"],
+    }
+    upload = client.post(
+        f"/projects/{project['project_id']}/local-sessions/{session['session_id']}/progress-reports",
+        params=workflow,
+        json=upload_envelope(report).to_dict(),
+        headers={"Authorization": f"Bearer {session['session_token']}"},
+    )
+    assert upload.status_code == 201
+    replay = client.post(
+        f"/projects/{project['project_id']}/local-sessions/{session['session_id']}/progress-reports",
+        params=workflow,
+        json=upload_envelope(report).to_dict(),
+        headers={"Authorization": f"Bearer {session['session_token']}"},
+    )
+    assert replay.status_code == 200
+    assert replay.json()["receipt_id"] == upload.json()["receipt_id"]
+    assert len(database.progress_reports) == 1
+
+
+def test_report_bound_upload_session_rejects_another_report(session_client) -> None:
+    client, _ = session_client
+    project = _create(client)
+    package = client.post(f"/projects/{project['project_id']}/packages").json()
+    allowed = native_report(
+        project_id=project["project_id"],
+        package_id=package["package_id"],
+        package_checksum=package["package_checksum"],
+        workflow_id=package["workflow_id"],
+        workflow_version=package["workflow_version"],
+        workflow_checksum=package["workflow_checksum"],
+    )
+    other = native_report(
+        project_id=project["project_id"],
+        package_id=package["package_id"],
+        package_checksum=package["package_checksum"],
+        workflow_id=package["workflow_id"],
+        workflow_version=package["workflow_version"],
+        workflow_checksum=package["workflow_checksum"],
+        current_state="A distinct fictional completed state.",
+    )
+    response = client.post(
+        f"/projects/{project['project_id']}/local-sessions",
+        json={
+            "package_id": package["package_id"],
+            "package_checksum": package["package_checksum"],
+            "workflow_id": package["workflow_id"],
+            "workflow_version": package["workflow_version"],
+            "workflow_checksum": package["workflow_checksum"],
+            "mode": "UPLOAD_ONLY",
+            "execution_round": allowed.execution_round,
+            "report_id": allowed.report_id,
+            "report_content_checksum": allowed.report_content_checksum,
+        },
+    )
+    session = response.json()
+    denied = client.post(
+        f"/projects/{project['project_id']}/local-sessions/{session['session_id']}/progress-reports",
+        params={
+            "workflow_id": package["workflow_id"],
+            "workflow_version": package["workflow_version"],
+            "workflow_checksum": package["workflow_checksum"],
+        },
+        json=upload_envelope(other).to_dict(),
+        headers={"Authorization": f"Bearer {session['session_token']}"},
+    )
+    assert denied.status_code == 403
+    assert denied.json()["error"]["code"] == "REPORT_SCOPE_MISMATCH"

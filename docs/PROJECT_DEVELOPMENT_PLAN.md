@@ -59,6 +59,7 @@ this engineering order.
 | MVP-I1 | Persistent local dotenv startup | **PASS — OWNER ACCEPTANCE PENDING** — `make dev` safely resolves exported/custom/root dotenv database configuration without executing or printing values, while retaining loopback/ProjectDB safeguards and external PostgreSQL lifecycle |
 | MVP-LS1 | Complete autonomous Literature Search round | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — one Package command runs one bounded local Codex round, normal OpenAlex-only or explicit fictional demo transport, four local outputs, one automatic idempotent report upload, verified projection, and guided UI; no Hosted/cloud research execution |
 | MVP-LS2 | Interactive Codex Literature Search experience | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — default Package command attaches Codex to the current terminal, gates search/final writing on owner checkpoints, validates a versioned completion artifact, cleans up interrupts, preserves explicit auto/recovery modes, and retains the LS1 cloud/local boundary |
+| MVP-LS2.1 | Fresh post-round upload authorization | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — ADR 0021 separates search and exact-report upload sessions, safely reconciles expiry/response loss without rerunning Codex or search, and makes no-report cloud uncertainty explicit; zero live OpenAlex use |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -275,6 +276,18 @@ application restart. No live OpenAlex call or owner Demo artifact was used.
 `MVP_LS2_INTERACTIVE_UX = READY_FOR_OWNER_ACCEPTANCE`,
 `LITERATURE_SEARCH_AUTONOMOUS_WORKFLOW = READY_FOR_OWNER_ACCEPTANCE`, and
 `V0_1_STATE = OWNER_ACCEPTANCE_PENDING`. Only the owner can accept V0.1.
+
+MVP-LS2.1 corrects the post-round authorization lifetime without reusing the
+failed owner Demo. Search tokens now carry no Progress capability and close
+before report upload. After local output/context/round-control/report-chain
+validation, a new two-minute session binds the exact round, report ID, and
+report-content checksum, admits zero search operations/Provider budget, and
+permits only upload plus scoped history/projection verification. Explicit
+expiry or unknown response outcome may replace that upload session once;
+revoked, unknown, malformed, scope/report/checksum, and unclassified failures
+remain terminal. Exact response-loss replay retains one report and projection.
+Real PostgreSQL/Uvicorn/Chromium qualification and physical restart passed with
+zero live OpenAlex call. V0.1 remains owner-acceptance pending and R3D closed.
 
 ### Preserved optional mode
 

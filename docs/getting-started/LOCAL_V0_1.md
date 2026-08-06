@@ -91,9 +91,11 @@ stop PostgreSQL, delete a database, or remove a downloaded Package.
 
    Only after `finish` does Codex write final outputs, update context, and
    finalize one report draft. The launcher validates those machine-readable
-   artifacts, creates exactly one Progress Report, uploads it idempotently,
-   verifies history/projection, stores a safe receipt, revokes the session,
-   and stops.
+   artifacts, closes the search session, creates exactly one Progress Report,
+   and opens a fresh report-bound upload-only session. That new session uploads
+   idempotently, verifies history/projection, stores a safe receipt, is revoked,
+   and stops. The length of the interactive conversation cannot age this later
+   upload authorization.
 4. Refresh the project Progress page. It displays the round status, concise
    result summary, query/candidate/selection counts, evidence limitation,
    output names/checksums, warnings, next action, and immutable upload receipt.
@@ -118,8 +120,10 @@ round-scoped mutable files; it requires typing `restart-round` and never alters
 immutable inputs, Workflow definitions, or uploaded history.
 
 If a valid report exists without its receipt, run the same command again. It
-opens an upload-only session, uploads the exact report idempotently, verifies
-the server receipt/history/projection, and does not rerun search or Codex. If
+opens a fresh upload-only session bound to that exact report, uploads it
+idempotently, verifies the server receipt/history/projection, and does not rerun
+search or Codex. Use the same Package; downloading another Package is neither
+required nor appropriate for upload recovery. If
 partial outputs exist without a valid report, the command stops without
 overwriting them and prints the resume/restart choices. A completed round is
 not repeated automatically.
@@ -141,10 +145,13 @@ python reagent_local.py run . --mode demo
 ```
 
 Demo mode is explicit and every result is labelled fictional. Normal mode
-never falls back to demo. Local sessions use literal loopback, last 15 minutes,
+never falls back to demo. Search sessions use literal loopback, last 15 minutes,
 are scoped to the exact project/Package/Workflow, allow at most three
-five-result searches, and are revoked after the round. Token plaintext remains
-process-local and is removed from the Codex subprocess environment.
+five-result searches, have no Progress capability, and close after research.
+Post-round upload sessions last two minutes, bind the exact report round/ID/
+content checksum, and have zero search calls or Provider budget. All token
+plaintext remains process-local and is removed from the Codex subprocess
+environment.
 
 For explicitly unattended execution, add `--auto`:
 

@@ -11,8 +11,12 @@ from backend.application.errors import (
 )
 from backend.cloud_api_proxy.contracts import (
     ADAPTER_ID,
+    CAPABILITY,
+    LOCAL_PROGRESS_ADAPTER_ID,
+    LOCAL_PROGRESS_SESSION_CAPABILITY,
     LOCAL_PROGRESS_READ_CAPABILITY,
     LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+    LocalProgressReportScope,
     OPENALEX_ADAPTER_ID,
     ProxyCapabilityToken,
 )
@@ -20,6 +24,7 @@ from backend.cloud_api_proxy.service import CloudAPIProxyService
 from backend.local_projects.service import LocalProjectService
 
 SESSION_LIFETIME_MINUTES = 15
+UPLOAD_SESSION_LIFETIME_MINUTES = 2
 MAXIMUM_QUERY_VARIANTS = 3
 MAXIMUM_RESULTS_PER_QUERY = 5
 
@@ -67,6 +72,9 @@ class LocalWorkflowSessionService:
         workflow_version: str,
         workflow_checksum: str,
         mode: LocalSessionMode,
+        execution_round: int | None = None,
+        report_id: str | None = None,
+        report_content_checksum: str | None = None,
     ) -> LocalWorkflowSession:
         project = self._projects.get(project_id)
         package = project.current_package
@@ -92,17 +100,48 @@ class LocalWorkflowSessionService:
             raise ApplicationValidationError(
                 "Local session identity does not match the project's current Package"
             )
+        supplied_report_scope = (
+            execution_round,
+            report_id,
+            report_content_checksum,
+        )
+        if mode is not LocalSessionMode.UPLOAD_ONLY and any(
+            value is not None for value in supplied_report_scope
+        ):
+            raise ApplicationValidationError(
+                "Search sessions cannot receive a Progress Report scope"
+            )
 
         if mode is LocalSessionMode.NORMAL:
             adapter_id = OPENALEX_ADAPTER_ID
             maximum_operations = MAXIMUM_QUERY_VARIANTS
+            lifetime_minutes = SESSION_LIFETIME_MINUTES
+            local_capabilities: tuple[str, ...] = ()
+            report_scope = None
         elif mode is LocalSessionMode.DEMO:
             adapter_id = ADAPTER_ID
             maximum_operations = MAXIMUM_QUERY_VARIANTS
+            lifetime_minutes = SESSION_LIFETIME_MINUTES
+            local_capabilities = ()
+            report_scope = None
         else:
-            adapter_id = ADAPTER_ID
+            if execution_round is None or report_id is None or report_content_checksum is None:
+                raise ApplicationValidationError(
+                    "Upload-only sessions require an exact Progress Report scope"
+                )
+            adapter_id = LOCAL_PROGRESS_ADAPTER_ID
             maximum_operations = 0
-        if adapter_id not in self._proxy.adapters:
+            lifetime_minutes = UPLOAD_SESSION_LIFETIME_MINUTES
+            local_capabilities = (
+                LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+                LOCAL_PROGRESS_READ_CAPABILITY,
+            )
+            report_scope = LocalProgressReportScope(
+                execution_round=execution_round,
+                report_id=report_id,
+                report_content_checksum=report_content_checksum,
+            )
+        if mode is not LocalSessionMode.UPLOAD_ONLY and adapter_id not in self._proxy.adapters:
             if mode is LocalSessionMode.NORMAL:
                 raise ApplicationUnavailableError(
                     "Normal Literature Search requires the explicitly enabled OpenAlex Proxy"
@@ -120,12 +159,15 @@ class LocalWorkflowSessionService:
             workflow_id=workflow_id,
             workflow_version=workflow_version,
             workflow_checksum=workflow_checksum,
-            lifetime_minutes=SESSION_LIFETIME_MINUTES,
+            lifetime_minutes=lifetime_minutes,
             maximum_operations=maximum_operations,
             adapter_id=adapter_id,
-            local_session_capabilities=(
-                LOCAL_PROGRESS_UPLOAD_CAPABILITY,
-                LOCAL_PROGRESS_READ_CAPABILITY,
+            local_session_capabilities=local_capabilities,
+            local_progress_report_scope=report_scope,
+            capability=(
+                LOCAL_PROGRESS_SESSION_CAPABILITY
+                if mode is LocalSessionMode.UPLOAD_ONLY
+                else CAPABILITY
             ),
         )
         scope = token.scope
@@ -174,3 +216,26 @@ class LocalWorkflowSessionService:
 
     def close(self, session_id: str) -> None:
         self._proxy.revoke_token(session_id)
+
+    def authorize_identity(
+        self,
+        *,
+        bearer_token: str,
+        session_id: str,
+        project_id: str,
+        package_id: str,
+        package_checksum: str,
+        workflow_id: str,
+        workflow_version: str,
+        workflow_checksum: str,
+    ) -> ProxyCapabilityToken:
+        return self._proxy.authorize_local_session_identity(
+            bearer_token=bearer_token,
+            token_id=session_id,
+            project_id=project_id,
+            package_id=package_id,
+            package_checksum=package_checksum,
+            workflow_id=workflow_id,
+            workflow_version=workflow_version,
+            workflow_checksum=workflow_checksum,
+        )

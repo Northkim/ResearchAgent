@@ -84,7 +84,70 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — MVP-LS2 interactive Literature Search qualified
+### Current milestone — MVP-LS2.1 fresh post-round upload qualified
+
+MVP-LS2.1 began from clean `main` at exact commit
+`9db9d9eb1f7d4554191e75408ce8432abddd5d13`. The owner-observed failed Demo
+remains excluded: no Package, output, report, receipt, token, or request from it
+was opened, imported, retried, uploaded, or committed. Tracked evidence
+preserves HTTP 401 during the automatic post-finalization phase but not the
+exact upload/history/projection substage or application code.
+
+Accepted ADR 0021 removes the deterministic design risk. Search sessions carry
+only bounded paper-search authority and no Progress capability. Once Codex is
+finished, the search session closes; expired cleanup cannot invalidate already
+valid local artifacts. After output, context, round-control, Progress Report,
+and chain validation, the launcher opens a new two-minute upload-only session
+bound to exact project, Package checksum, Workflow version/checksum, execution
+round, report ID, and report-content checksum. Its neutral local-progress scope
+has zero search operations, Provider calls, and Provider cost.
+
+First upload and pending-upload recovery share the same implementation and
+exact envelope. Explicit expiry or unknown response outcome can open one new
+upload session. Unknown/revoked/malformed tokens, scope/report/checksum
+mismatch, and unclassified 401s remain terminal. Cleanup warnings are separate
+from the primary failure. Persisted-response/local-receipt loss reconciles the
+existing receipt with no duplicate report or projection; the same Package
+command skips Codex and Provider search.
+
+The Progress page now says **No Progress Report received**, acknowledges that
+the cloud cannot inspect unuploaded local state, and directs same-Package
+recovery rather than a new download.
+
+Qualification passed 307 focused tests; 597 full-backend tests with four
+unrelated gated skips; compileall; frontend typecheck, 14 Vitest tests, ESLint,
+and production build; and two Chromium E2E cases. Real PostgreSQL 18.1,
+Uvicorn, Next.js, an external fictional Package, and deterministic fixtures
+proved an aged search token followed by fresh first upload, response-loss
+reconciliation with stable one-report/one-projection state, and physical
+PostgreSQL/application restart continuity in API and browser. Alembic remained
+at `20260806_0007` with no drift. All temporary resources and ports were
+cleaned. No live OpenAlex, real Codex model, owner Demo, Hosted Runtime, or cloud
+LLM activity occurred.
+
+```text
+MVP_LS21_IMPLEMENTATION = PASS_WITH_WARNINGS
+OWNER_FAILED_UPLOAD_EXCLUDED = PASS
+OWNER_401_EXACT_STAGE = NOT_PRESERVED
+SEPARATE_SEARCH_UPLOAD_SESSIONS = PASS
+FRESH_FIRST_UPLOAD_SESSION = PASS
+UPLOAD_SESSION_ZERO_SEARCH_CAPABILITY = PASS
+RECOVERABLE_SESSION_REFRESH = PASS
+UNSAFE_401_FAIL_CLOSED = PASS
+UPLOAD_RESPONSE_LOSS_RECONCILIATION = PASS
+NEXT_RUN_UPLOAD_ONLY_RECOVERY = PASS
+NO_CODEX_RERUN_DURING_RECOVERY = PASS
+CLOUD_STATUS_UNCERTAINTY_UX = PASS
+MVP_RUNTIME_HOSTED_BOUNDARY = PASS
+V0_1_STATE = OWNER_ACCEPTANCE_PENDING
+R3D_PRODUCTION_PROVIDER_GATE = CLOSED
+```
+
+Do not perform owner acceptance, reuse the failed owner Demo, call live
+OpenAlex without separate authority, begin deployment, another Workflow, or
+R3D.
+
+### Preserved milestone — MVP-LS2 interactive Literature Search qualified
 
 MVP-LS2 began from clean `main` at exact commit
 `33bc1d367f7f740a211f127ab0614b7bfa87039a`. Its manually aborted owner Demo

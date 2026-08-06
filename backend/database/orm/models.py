@@ -687,7 +687,7 @@ class ProxyCapabilityTokenORM(Base):
     workflow_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
     allowed_capability: Mapped[str] = mapped_column(String(100), nullable=False)
     allowed_adapter: Mapped[str] = mapped_column(String(255), nullable=False)
-    local_session_capabilities_json: Mapped[list[str]] = mapped_column(
+    local_session_capabilities_json: Mapped[object] = mapped_column(
         JSONB, nullable=False, default=list
     )
     maximum_operations: Mapped[int] = mapped_column(Integer, nullable=False)

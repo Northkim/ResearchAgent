@@ -10,7 +10,7 @@ import { ErrorState, LoadingState } from "./query-state";
 
 const roundStates = [
   "Package not generated",
-  "Ready for local execution",
+  "No Progress Report received",
   "Local round pending",
   "Upload pending",
   "Round completed",
@@ -43,7 +43,7 @@ export function ProgressProductPanel({ projectId }: { projectId: string }) {
         ? "Round failed"
         : hasAccepted
           ? "Local round pending"
-          : "Ready for local execution";
+          : "No Progress Report received";
   const completedWork = progress.data?.completed_work_summary ?? [];
   const evidenceLimitation = latestAccepted?.normalized_record?.warnings.find((warning) => /metadata|abstract|full text/i.test(warning));
 
@@ -63,9 +63,13 @@ export function ProgressProductPanel({ projectId }: { projectId: string }) {
       {!hasAccepted ? (
         <section className="progress-empty">
           <p className="eyebrow">Current state · {currentState}</p>
-          <h2>{project.data.current_package ? "Run the extracted Package locally" : "Generate the Workflow Package first"}</h2>
-          <p>The one-command workflow opens interactive Codex, waits for your explicit <code>finish</code>, then uploads and verifies its Progress Report. If upload is interrupted, rerunning performs upload-only recovery.</p>
-          <Link href={`/projects/${projectId}/${project.data.current_package ? "guide" : "package"}`} className="button button-primary">{project.data.current_package ? "Read run guide" : "Generate Package"}</Link>
+          <h2>{project.data.current_package ? "No Progress Report received" : "Generate the Workflow Package first"}</h2>
+          <p>{project.data.current_package ? "The Package may not have been run yet, or a completed local round may still be waiting for upload. ReAgent cannot inspect the local workspace." : "Generate and extract the Package before starting the local workflow."}</p>
+          {project.data.current_package ? <p><strong>Retry from the same local Package.</strong> Run the same command there; upload-only recovery skips Codex and Provider search. Do not download a new Package for upload recovery.</p> : null}
+          <div className="button-row">
+            <Link href={`/projects/${projectId}/${project.data.current_package ? "guide" : "package"}`} className="button button-primary">{project.data.current_package ? "Read run guide" : "Generate Package"}</Link>
+            {project.data.current_package ? <Link href={`/projects/${projectId}/package`} className="button button-ghost">View same Package</Link> : null}
+          </div>
         </section>
       ) : null}
       {progress.isLoading ? <LoadingState label="Building progress projection" /> : null}
