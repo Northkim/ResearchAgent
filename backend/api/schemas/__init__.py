@@ -32,6 +32,15 @@ from .local_sessions import (
     CreateLocalWorkflowSessionRequest,
     LocalWorkflowSessionResponse,
 )
+from .project_workspaces import (
+    CreateWorkflowInstanceRequest,
+    DesiredProjectManifestResponse,
+    RetireWorkflowInstanceRequest,
+    WorkflowCatalogDetailResponse,
+    WorkflowCatalogPageResponse,
+    WorkflowInstancePageResponse,
+    WorkflowInstanceResponse,
+)
 
 __all__ = [
     "ApprovalDecisionResponse",
@@ -59,4 +68,11 @@ __all__ = [
     "WorkflowRunResponse",
     "WorkflowRunSummaryResponse",
     "UploadedProgressReportResponse",
+    "CreateWorkflowInstanceRequest",
+    "DesiredProjectManifestResponse",
+    "RetireWorkflowInstanceRequest",
+    "WorkflowCatalogDetailResponse",
+    "WorkflowCatalogPageResponse",
+    "WorkflowInstancePageResponse",
+    "WorkflowInstanceResponse",
 ]

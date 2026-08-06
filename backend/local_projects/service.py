@@ -35,6 +35,8 @@ class LocalProjectService:
         package_root: str | Path,
         clock: Callable[[], datetime] | None = None,
         project_id_factory: Callable[[], str] | None = None,
+        workspace_initializer: Callable[[LocalProject], None] | None = None,
+        rollback_callback: Callable[[], None] | None = None,
     ) -> None:
         self._repository = repository
         self._commit = commit_callback
@@ -43,6 +45,8 @@ class LocalProjectService:
         self._project_id_factory = project_id_factory or (
             lambda: f"project-{uuid.uuid4().hex}"
         )
+        self._workspace_initializer = workspace_initializer
+        self._rollback = rollback_callback
 
     def create(
         self,
@@ -64,7 +68,14 @@ class LocalProjectService:
         except ValueError as error:
             raise ApplicationValidationError(str(error)) from error
         self._repository.add(project)
-        self._commit()
+        try:
+            if self._workspace_initializer is not None:
+                self._workspace_initializer(project)
+            self._commit()
+        except Exception:
+            if self._rollback is not None:
+                self._rollback()
+            raise
         return project
 
     def list_projects(self) -> tuple[LocalProject, ...]:

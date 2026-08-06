@@ -8,6 +8,7 @@ from .local_projects import router as local_projects_router
 from .local_sessions import router as local_sessions_router
 from .runs import router as runs_router
 from .workflows import router as workflows_router
+from .project_workspaces import router as project_workspaces_router
 
 __all__ = [
     "artifacts_router",
@@ -18,4 +19,5 @@ __all__ = [
     "local_sessions_router",
     "runs_router",
     "workflows_router",
+    "project_workspaces_router",
 ]

@@ -30,6 +30,7 @@ from .routers import (
     progress_reports_router,
     runs_router,
     workflows_router,
+    project_workspaces_router,
 )
 
 
@@ -73,6 +74,7 @@ def create_app(
     application.state.proxy_container = proxy_composition
     application.include_router(health_router)
     application.include_router(local_projects_router)
+    application.include_router(project_workspaces_router)
     application.include_router(runs_router)
     application.include_router(approvals_router)
     application.include_router(workflows_router)
@@ -104,14 +106,16 @@ def create_app(
             status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         else:
             status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+        error_body: dict[str, Any] = {
+            "code": error.code,
+            "message": str(error),
+        }
+        details = getattr(error, "details", None)
+        if details is not None:
+            error_body["details"] = details
         return JSONResponse(
             status_code=status_code,
-            content={
-                "error": {
-                    "code": error.code,
-                    "message": str(error),
-                }
-            },
+            content={"error": error_body},
         )
 
     @application.exception_handler(RequestValidationError)

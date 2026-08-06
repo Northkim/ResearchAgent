@@ -37,6 +37,7 @@ from backend.domain.models._utils import utc_now
 from backend.persistence.ports import UnitOfWork
 from backend.progress_reports import ProgressReportService
 from backend.local_projects.service import LocalProjectService
+from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.skill_system.registry import SkillRegistry
 from backend.skill_system.models import SkillCapabilities
 from backend.skill_system.runtime import SkillExecutor, register_fake_skills
@@ -104,6 +105,7 @@ class LocalProductApplicationServices:
 
     local_projects: LocalProjectService
     progress_reports: ProgressReportService
+    project_workspaces: ProjectWorkspaceApplicationService
 
 
 class ApplicationContainer:
@@ -271,6 +273,10 @@ class ApplicationContainer:
         self,
         unit_of_work: UnitOfWork,
     ) -> LocalProductApplicationServices:
+        project_workspaces = ProjectWorkspaceApplicationService(
+            unit_of_work=unit_of_work,
+            clock=self.clock,
+        )
         return LocalProductApplicationServices(
             local_projects=LocalProjectService(
                 repository=unit_of_work.local_projects,
@@ -278,8 +284,11 @@ class ApplicationContainer:
                 package_root=self.local_package_root,
                 clock=self.clock,
                 project_id_factory=self.project_id_factory,
+                workspace_initializer=project_workspaces.initialize_project,
+                rollback_callback=unit_of_work.rollback,
             ),
             progress_reports=self._progress_report_service(unit_of_work),
+            project_workspaces=project_workspaces,
         )
 
     def _progress_report_service(

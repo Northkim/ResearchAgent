@@ -21,6 +21,13 @@ class ApplicationConflictError(ApplicationError):
     code = "CONFLICT"
 
 
+class ApplicationCodedConflictError(ApplicationConflictError):
+    def __init__(self, message: str, *, code: str, details: dict | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.details = details
+
+
 class ApplicationUnavailableError(ApplicationError):
     code = "SERVICE_UNAVAILABLE"
 
@@ -44,6 +51,18 @@ class ApplicationAuthorizationError(ApplicationError):
 class ApplicationCodedAuthorizationError(ApplicationAuthorizationError):
     """Authorization failure retaining one allowlisted safe boundary code."""
 
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class ApplicationCodedNotFoundError(ApplicationNotFoundError):
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class ApplicationCodedValidationError(ApplicationValidationError):
     def __init__(self, message: str, *, code: str) -> None:
         super().__init__(message)
         self.code = code
