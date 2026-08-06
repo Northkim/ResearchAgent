@@ -75,6 +75,155 @@ class LocalProjectORM(Base):
     )
 
 
+class LocalWorkflowDefinitionORM(Base):
+    __tablename__ = "local_workflow_definitions"
+    __table_args__ = (Index("ix_local_workflow_definitions_lifecycle", "lifecycle"),)
+
+    workflow_definition_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(2000), nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(20), nullable=False)
+    allows_multiple_instances: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LocalWorkflowDefinitionVersionORM(Base):
+    __tablename__ = "local_workflow_definition_versions"
+    __table_args__ = (
+        Index(
+            "ix_local_workflow_definition_versions_definition_review",
+            "workflow_definition_id",
+            "review_status",
+        ),
+    )
+
+    workflow_definition_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("local_workflow_definitions.workflow_definition_id"),
+        primary_key=True,
+    )
+    version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    contract_checksum: Mapped[str] = mapped_column(String(71), nullable=False, unique=True)
+    input_schema_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    output_schema_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    compatibility: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LocalWorkflowCapsuleVersionORM(Base):
+    __tablename__ = "local_workflow_capsule_versions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_definition_id", "workflow_version"],
+            [
+                "local_workflow_definition_versions.workflow_definition_id",
+                "local_workflow_definition_versions.version",
+            ],
+            name="fk_local_workflow_capsule_versions_definition_version",
+        ),
+        CheckConstraint(
+            "archive_size_bytes BETWEEN 0 AND 536870912",
+            name="local_workflow_capsule_archive_size",
+        ),
+        Index(
+            "ix_local_workflow_capsule_versions_workflow_version",
+            "workflow_definition_id",
+            "workflow_version",
+        ),
+        Index("ix_local_workflow_capsule_versions_review_status", "review_status"),
+    )
+
+    capsule_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    capsule_version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    workflow_definition_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    definition_checksum: Mapped[str] = mapped_column(String(71), nullable=False, unique=True)
+    archive_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    archive_media_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    mutable_roots: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    capability_requirements: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    compatibility: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    legacy_package_compatible: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProjectWorkflowInstanceORM(Base):
+    __tablename__ = "project_workflow_instances"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_definition_id", "workflow_version"],
+            [
+                "local_workflow_definition_versions.workflow_definition_id",
+                "local_workflow_definition_versions.version",
+            ],
+            name="fk_project_workflow_instances_definition_version",
+        ),
+        ForeignKeyConstraint(
+            ["capsule_id", "capsule_version"],
+            [
+                "local_workflow_capsule_versions.capsule_id",
+                "local_workflow_capsule_versions.capsule_version",
+            ],
+            name="fk_project_workflow_instances_capsule_version",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "workflow_instance_id",
+            name="uq_project_workflow_instances_project_identity",
+        ),
+        CheckConstraint(
+            "created_manifest_revision >= 0",
+            name="project_workflow_instance_created_revision",
+        ),
+        CheckConstraint(
+            "retired_manifest_revision IS NULL OR retired_manifest_revision >= 0",
+            name="project_workflow_instance_retired_revision",
+        ),
+        CheckConstraint(
+            "(capsule_id IS NULL AND capsule_version IS NULL) OR "
+            "(capsule_id IS NOT NULL AND capsule_version IS NOT NULL)",
+            name="project_workflow_instance_capsule_pair",
+        ),
+        CheckConstraint(
+            "(desired_state = 'ACTIVE' AND retired_manifest_revision IS NULL) OR "
+            "(desired_state = 'RETIRED' AND retired_manifest_revision IS NOT NULL)",
+            name="project_workflow_instance_retirement_state",
+        ),
+        Index(
+            "ix_project_workflow_instances_project_state",
+            "project_id",
+            "desired_state",
+        ),
+        Index(
+            "ix_project_workflow_instances_project_definition",
+            "project_id",
+            "workflow_definition_id",
+        ),
+    )
+
+    workflow_instance_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("local_projects.project_id"), nullable=False
+    )
+    workflow_definition_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    capsule_id: Mapped[str | None] = mapped_column(String(40))
+    capsule_version: Mapped[str | None] = mapped_column(String(100))
+    desired_state: Mapped[str] = mapped_column(String(20), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    created_manifest_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    retired_manifest_revision: Mapped[int | None] = mapped_column(BigInteger)
+    legacy_package_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class WorkflowRunORM(Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (
