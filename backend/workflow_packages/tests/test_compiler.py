@@ -20,21 +20,23 @@ def test_required_package_files_and_pins(built_package: BuildResult, manifest: d
         "AGENT.md", "AGENTS.md", "CLAUDE.md", "README.md", "package-manifest.json",
         "reagent_local.py", "validate_package.py", "progress_report.py",
         "workflow/AGENT.md", "workflow/workflow.json", "workflow/search-policy.json",
+        "workflow/state/round-initial.json", "workflow/schemas/round-control.schema.json",
         "workflow/skills/literature-search/SKILL.md", "workflow/prompts/one-round.md",
-        "inputs/research_request.json",
+        "inputs/project.json", "inputs/research_request.json",
         "outputs/README.md", "memory/context.md", "memory/progress/report-draft.json",
         "memory/progress/reports/README.md", "memory/progress/receipts/README.md",
-        "memory/search/query_plan.json", "memory/search/operations/README.md",
+        "memory/round-control.json", "memory/search/query_plan.json",
+        "memory/search/operations/README.md",
     ):
         assert (root / relative).is_file(), relative
     assert manifest["experimental_status_declaration"] == "EXPERIMENTAL_V0_1"
     assert manifest["harness_acceptance_status"] == "CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED"
     assert manifest["progress_report_schema_version"] == "progress-report/v0.2"
     assert manifest["progress_upload_status"] == "AUTOMATIC_UPLOAD_SUPPORTED"
-    assert manifest["package_template_version"] == "0.4.0"
+    assert manifest["package_template_version"] == "0.5.0"
     assert "NORMAL OPENALEX" in str(manifest["proxy_capability_declaration"])
-    assert manifest["skill_pins"][0]["semantic_version"] == "0.2.0"  # type: ignore[index]
-    assert manifest["prompt_pins"][0]["version"] == "0.2.0"  # type: ignore[index]
+    assert manifest["skill_pins"][0]["semantic_version"] == "0.3.0"  # type: ignore[index]
+    assert manifest["prompt_pins"][0]["version"] == "0.3.0"  # type: ignore[index]
 
 
 def test_deterministic_folder_and_zip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -116,7 +118,10 @@ def test_normal_mode_has_no_bundled_fictional_provider_evidence(
     built_package: BuildResult,
 ) -> None:
     inputs = built_package.package_root / "inputs"
-    assert [path.name for path in inputs.iterdir()] == ["research_request.json"]
+    assert sorted(path.name for path in inputs.iterdir()) == [
+        "project.json",
+        "research_request.json",
+    ]
     request = json.loads((inputs / "research_request.json").read_text())
     assert request["real_external_search_required_in_normal_mode"] is True
     assert not any(

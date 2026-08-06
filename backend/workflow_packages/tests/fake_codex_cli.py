@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Deterministic Codex-equivalent used only by the no-network LS1 E2E."""
+"""Deterministic terminal-attached Codex fixture for no-network LS2 tests."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 
@@ -18,8 +20,22 @@ def checksum(value) -> str:
     return "sha256:" + hashlib.sha256(content).hexdigest()
 
 
+def file_checksum(path: Path) -> str:
+    return checksum(path.read_bytes())
+
+
 def write_json(path: Path, value) -> None:
-    path.write_text(canonical(value) + "\n", encoding="utf-8")
+    temporary = path.with_name(f".{path.name}.fixture.tmp")
+    temporary.write_text(canonical(value) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def update_control(root: Path, **changes) -> None:
+    path = root / "memory/round-control.json"
+    control = json.loads(path.read_text())
+    control.update(changes)
+    control["updated_at"] = "2026-08-06T02:01:00Z"
+    write_json(path, control)
 
 
 def plan(root: Path) -> None:
@@ -184,13 +200,134 @@ The first three fictional candidate identities in selected_papers.json.
     write_json(draft_path, draft)
 
 
+def mark_plan_confirmed(root: Path) -> None:
+    control = json.loads((root / "memory/round-control.json").read_text())
+    update_control(
+        root,
+        state="PLAN_CONFIRMED",
+        last_completed_state="PLAN_CONFIRMED",
+        plan_confirmation_count=control["plan_confirmation_count"] + 1,
+        query_plan_checksum=file_checksum(root / "memory/search/query_plan.json"),
+        candidate_review_confirmed=False,
+        finalization_confirmed=False,
+        failure_code=None,
+    )
+
+
+def mark_finalized(root: Path) -> None:
+    outputs = {
+        relative: file_checksum(root / relative)
+        for relative in (
+            "outputs/search_plan.md",
+            "outputs/candidate_papers.json",
+            "outputs/selected_papers.json",
+            "outputs/literature_search_report.md",
+        )
+    }
+    update_control(
+        root,
+        state="FINALIZED",
+        last_completed_state="FINALIZED",
+        candidate_review_confirmed=True,
+        finalization_confirmed=True,
+        output_checksums=outputs,
+        context_checksum=file_checksum(root / "memory/context.md"),
+        report_draft_checksum=file_checksum(root / "memory/progress/report-draft.json"),
+        failure_code=None,
+    )
+
+
+def read_until(expected: str) -> None:
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            raise RuntimeError("interactive input closed before finalization")
+        print(f"Owner input received: {line.strip()}", flush=True)
+        if line.strip().casefold() == expected:
+            return
+
+
+def wait_for_state(root: Path, expected: str) -> None:
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        control = json.loads((root / "memory/round-control.json").read_text())
+        if control["state"] == expected:
+            return
+        if control["state"] == "FAILED":
+            raise RuntimeError("launcher Provider controller failed")
+        time.sleep(0.05)
+    raise RuntimeError("launcher state transition timed out")
+
+
+def interactive(root: Path) -> None:
+    delay = float(os.environ.get("REAGENT_FAKE_CODEX_DELAY_SECONDS", "0"))
+    print("CHECKPOINT: SEARCH PLAN", flush=True)
+    print("Interpretation, two bounded queries, screening rules, metadata/abstract-only.", flush=True)
+    print("Type proceed, request a revision, or abort safely.", flush=True)
+    read_until("proceed")
+    if delay:
+        time.sleep(delay)
+    plan(root)
+    mark_plan_confirmed(root)
+    print("Search plan confirmed; waiting for bounded Provider metadata.", flush=True)
+    wait_for_state(root, "SEARCH_COMPLETED")
+    print("CHECKPOINT: CANDIDATE SCREENING", flush=True)
+    print("Retrieved 10; deduplicated 5; likely relevant 3; uncertain 1; excluded 1.", flush=True)
+    print("Themes: transparent continuity and portable local state. Type continue.", flush=True)
+    read_until("continue")
+    print("CHECKPOINT: FINALIZATION", flush=True)
+    print("Four local outputs; three selected; bounded summary uploads; libraries stay local.", flush=True)
+    print("Type finish to finalize the round.", flush=True)
+    read_until("finish")
+    if os.environ.get("REAGENT_FAKE_CODEX_NONZERO") == "1":
+        raise RuntimeError("fixture requested a nonzero Codex exit")
+    synthesize(root)
+    if os.environ.get("REAGENT_FAKE_CODEX_INVALID_ARTIFACTS") == "1":
+        (root / "outputs/selected_papers.json").unlink()
+    mark_finalized(root)
+    print("Codex fixture finalized exactly one local round.", flush=True)
+
+
+def compatibility_command(arguments: list[str]) -> int | None:
+    if arguments == ["--version"]:
+        print("codex-cli 0.146.0")
+        return 0
+    if arguments == ["login", "status"]:
+        print("Logged in (deterministic test fixture)")
+        return 0
+    if arguments in (["--help"], ["exec", "--help"]):
+        print("--sandbox --ask-for-approval --no-alt-screen --cd -C --ephemeral --skip-git-repo-check")
+        return 0
+    return None
+
+
 def main() -> int:
+    compatibility = compatibility_command(sys.argv[1:])
+    if compatibility is not None:
+        return compatibility
+    if any(
+        key in os.environ
+        for key in (
+            "REAGENT_PROXY_TOKEN",
+            "REAGENT_LOCAL_SESSION_TOKEN",
+            "REAGENT_OPENALEX_API_KEY",
+            "REAGENT_DATABASE_URL",
+        )
+    ):
+        print("Codex fixture received a prohibited secret environment", file=sys.stderr)
+        return 9
     instruction = sys.argv[-1]
     root = Path.cwd()
     if "PLANNING_STAGE" in instruction:
         plan(root)
     elif "SYNTHESIS_STAGE" in instruction:
         synthesize(root)
+    elif "INTERACTIVE_ONE_ROUND" in instruction:
+        try:
+            interactive(root)
+        except KeyboardInterrupt:
+            print("Codex fixture interrupted safely.", file=sys.stderr, flush=True)
+            return 130
     else:
         return 2
     return 0

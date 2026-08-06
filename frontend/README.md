@@ -2,7 +2,10 @@
 
 Next.js App Router product surface for the teacher-aligned local workflow:
 create a project, download its Literature Search Package, work in the external
-folder with Codex through one bounded command, automatically upload its Progress Report, and view cloud progress.
+folder with interactive Codex through one bounded command, confirm the search
+plan and screening, type `finish`, automatically upload its Progress Report,
+and view cloud progress. Explicit `--auto` remains available for deterministic
+unattended qualification.
 
 ## Local development
 

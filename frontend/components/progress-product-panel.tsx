@@ -64,7 +64,7 @@ export function ProgressProductPanel({ projectId }: { projectId: string }) {
         <section className="progress-empty">
           <p className="eyebrow">Current state · {currentState}</p>
           <h2>{project.data.current_package ? "Run the extracted Package locally" : "Generate the Workflow Package first"}</h2>
-          <p>The one-command workflow automatically uploads and verifies its Progress Report. If an upload is interrupted, rerunning the command performs upload-only recovery.</p>
+          <p>The one-command workflow opens interactive Codex, waits for your explicit <code>finish</code>, then uploads and verifies its Progress Report. If upload is interrupted, rerunning performs upload-only recovery.</p>
           <Link href={`/projects/${projectId}/${project.data.current_package ? "guide" : "package"}`} className="button button-primary">{project.data.current_package ? "Read run guide" : "Generate Package"}</Link>
         </section>
       ) : null}

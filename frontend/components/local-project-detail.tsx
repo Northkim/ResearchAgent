@@ -63,14 +63,18 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
 
       <section className="quick-start" aria-labelledby="quick-start-title">
         <div className="section-heading">
-          <div><p className="eyebrow">Quick Start</p><h2 id="quick-start-title">Four owner actions</h2></div>
+          <div><p className="eyebrow">Quick Start</p><h2 id="quick-start-title">Eight guided steps</h2></div>
           <Link href={`/projects/${projectId}/guide`} className="text-link">Read full guide →</Link>
         </div>
         <ol>
           <li><span>1</span><div><strong>Generate and download Package</strong><p>Compile the immutable topic and pinned workflow into a credential-free ZIP.</p></div></li>
           <li><span>2</span><div><strong>Extract Package locally</strong><p>Keep the folder outside this repository; its files are authoritative research state.</p></div></li>
-          <li><span>3</span><div><strong>Run the one-command Codex workflow</strong><code>python reagent_local.py run .</code></div></li>
-          <li><span>4</span><div><strong>View uploaded results</strong><p>The completed round uploads and verifies its bounded progress summary automatically.</p></div></li>
+          <li><span>3</span><div><strong>Run the launch command</strong><code>python reagent_local.py run .</code><p>Codex opens interactively in this terminal; no graphical window opens.</p></div></li>
+          <li><span>4</span><div><strong>Review the search plan with Codex</strong><p>Revise, narrow, broaden, or ask for an explanation before any Provider search.</p></div></li>
+          <li><span>5</span><div><strong>Inspect candidate-paper screening</strong><p>Ask why papers were included or excluded and refine bounded screening.</p></div></li>
+          <li><span>6</span><div><strong>Type finish when ready</strong><p>Final outputs and the Progress Report are not created before explicit finalization.</p></div></li>
+          <li><span>7</span><div><strong>Let ReAgent validate and upload</strong><p>After Codex exits, the launcher verifies artifacts and uploads only the bounded Progress summary.</p></div></li>
+          <li><span>8</span><div><strong>Return to view the result</strong><p>Ctrl+C preserves valid local work and uploads nothing incomplete.</p></div></li>
         </ol>
       </section>
 

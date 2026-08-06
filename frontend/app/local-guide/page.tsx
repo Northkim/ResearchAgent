@@ -19,14 +19,15 @@ export default function LocalGuidePage() {
           <li>Create a Literature Search project using a fictional or public topic.</li>
           <li>Generate and download the Package ZIP, then extract it outside the repository.</li>
           <li>From the extracted folder run <code>python reagent_local.py run .</code>.</li>
-          <li>The launcher validates the Package, starts a short-lived exact-Package session, and invokes Codex for one planning and synthesis round.</li>
+          <li>The launcher validates the Package, starts a short-lived exact-Package session, and opens interactive Codex in the current terminal.</li>
+          <li>Review and confirm the search plan before Provider search, inspect candidate screening, then type <code>finish</code> to finalize.</li>
           <li>Normal mode searches real OpenAlex metadata only through the ReAgent Proxy; explicit <code>--mode demo</code> uses labelled fictional results.</li>
-          <li>The launcher validates the four outputs and one report, uploads it idempotently, verifies the projection, revokes the session, and stops.</li>
+          <li>After finalization, the launcher validates the four outputs and one report, uploads it idempotently, verifies the projection, revokes the session, and stops.</li>
           <li>Return to the project Progress page to view the bounded summary and immutable receipt history.</li>
         </ol>
         <div className="boundary-callout">
           <strong>Current limits</strong>
-          <p>OpenAlex is experimental and disabled by default. Fake Provider mode must be selected explicitly and is suitable only for fictional demonstrations. Progress upload is automatic after a successful round and supports upload-only retry. Claude Code is untested. Public deployment is unsupported.</p>
+          <p>OpenAlex is experimental and disabled by default. Fake Provider mode must be selected explicitly and is suitable only for fictional demonstrations. Ctrl+C preserves valid local work and uploads nothing incomplete; use <code>--resume</code> for partial work. The explicit <code>--auto</code> option is advanced unattended mode. Progress upload is automatic only after finalization and supports upload-only retry. Claude Code is untested. Public deployment is unsupported.</p>
         </div>
       </section>
     </div>

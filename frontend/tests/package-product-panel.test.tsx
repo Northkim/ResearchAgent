@@ -20,6 +20,10 @@ test("shows Package checksum, ZIP download, and local Codex instructions", async
   );
   expect(screen.getByText(/Credentials are not included/)).toBeVisible();
   expect(screen.getByText("python reagent_local.py run .")).toBeVisible();
+  expect(screen.getByText("python reagent_local.py run . --mode demo")).toBeVisible();
+  expect(screen.getByText(/interactive Codex session in your current terminal/)).toBeVisible();
+  expect(screen.getByText("finish", { selector: "code" })).toBeVisible();
+  expect(screen.getByText("Advanced / unattended mode")).toBeVisible();
   expect(screen.getByText(/Four research artifacts/)).toBeVisible();
   expect(screen.getByRole("link", { name: /Read full guide/ })).toHaveAttribute(
     "href",

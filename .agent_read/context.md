@@ -84,7 +84,89 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — MVP-LS1 complete Literature Search qualified
+### Current milestone — MVP-LS2 interactive Literature Search qualified
+
+MVP-LS2 began from clean `main` at exact commit
+`33bc1d367f7f740a211f127ab0614b7bfa87039a`. Its manually aborted owner Demo
+was excluded and not uploaded or reused:
+
+```text
+CURRENT_DEMO_RUN = ABORTED
+CURRENT_DEMO_OUTPUTS = NOT_ACCEPTANCE_EVIDENCE
+CURRENT_DEMO_REPORT_UPLOAD = NOT_AUTHORIZED
+CURRENT_DEMO_RUN_EXCLUDED = PASS
+MVP_LS1_TECHNICAL_AUTOMATION = PRESERVED
+```
+
+Accepted ADR 0020 makes `python reagent_local.py run .` interactive by default.
+The launcher prints six safe stages and starts top-level Codex attached to the
+current terminal with inherited input/output/error. A fixed instruction makes
+the owner confirm or revise the search plan before transport, review candidate
+screening, and type `finish` before final outputs/context/report draft are
+written. Untrusted topic content stays in immutable Package files.
+
+The parent launcher alone retains the session bearer and performs Proxy and
+upload requests; secret environment values are stripped from Codex. The new
+manifest-declared `literature-search-round-control/v0.1` binds exact identity,
+round, mode, confirmed plan, normalized query-result checksums, candidate and
+finalization confirmations, all output/context/report checksums, report, and
+receipt. Provider search cannot precede valid plan confirmation, and Codex exit
+alone cannot establish completion.
+
+`--auto` explicitly preserves the LS1 unattended path and converges on the same
+output/report/upload contracts. Signals are forwarded and followed by bounded
+child reaping, safe interrupted state, session revocation, preserved valid
+local files, and zero upload. `--resume`, confirmed `--restart-round`, pending-
+upload-only retry, and verified-receipt no-repeat cover next-run recovery.
+
+Project Quick Start, Package, Progress, project Guide, and Local Guide explain
+the current-terminal experience, three checkpoints, `finish`, advanced auto
+mode, interruption, recovery, upload order, and stage-specific safe errors.
+
+Fresh real-stack qualification used PostgreSQL 18.1 at migration
+`20260806_0007`, Uvicorn, Next.js, Chromium, an external Package, fake Proxy,
+and a deterministic PTY Codex fixture. Interactive and auto E2E passed. The PTY
+asserted no normalized result before plan confirmation and no final output
+before `finish`; automatic upload and browser result/history passed. Physical
+restart retained state. An interrupt probe retained zero report/receipt/Proxy
+operation/active token and no orphan child, and explicit resume completed the
+same round. The installed `codex-cli 0.146.0` version/login/help path was
+smoke-checked without a model call.
+
+Verification passed the 77-test Workflow Package/local-project subset, a 351-
+test broader focused matrix, 21 relevant PostgreSQL tests with zero relevant
+skip, 587 full-backend tests with four unrelated gated skips, compileall,
+frontend typecheck/Vitest/ESLint/build, two real-stack Literature Search
+Playwright cases, and Alembic head/current/check. No live OpenAlex, OpenAI
+model, owner Demo, Hosted Runtime, or cloud LLM activity occurred.
+
+```text
+MVP_LS2_IMPLEMENTATION = PASS_WITH_WARNINGS
+DEFAULT_INTERACTIVE_MODE = PASS
+AUTO_MODE_PRESERVED = PASS
+VISIBLE_CODEX_OUTPUT = PASS
+INTERACTIVE_CODEX_INPUT = PASS
+SEARCH_PLAN_CONFIRMATION = PASS
+CANDIDATE_REVIEW_INTERACTION = PASS
+EXPLICIT_ROUND_FINALIZATION = PASS
+MACHINE_VERIFIABLE_COMPLETION = PASS
+INTERRUPT_SESSION_CLEANUP = PASS
+PARTIAL_ROUND_RECOVERY = PASS
+AUTOMATIC_PROGRESS_UPLOAD = PASS
+UPLOAD_ONLY_RETRY = PASS
+PROJECT_INTERACTIVE_GUIDANCE = PASS
+PACKAGE_INTERACTIVE_GUIDANCE = PASS
+MVP_RUNTIME_HOSTED_BOUNDARY = PASS
+MVP_LS2_INTERACTIVE_UX = READY_FOR_OWNER_ACCEPTANCE
+LITERATURE_SEARCH_AUTONOMOUS_WORKFLOW = READY_FOR_OWNER_ACCEPTANCE
+V0_1_STATE = OWNER_ACCEPTANCE_PENDING
+R3D_PRODUCTION_PROVIDER_GATE = CLOSED
+```
+
+Do not perform owner acceptance, use the aborted Demo, start another Workflow,
+call live OpenAlex without separate authority, begin deployment, or open R3D.
+
+### Preserved milestone — MVP-LS1 complete Literature Search qualified
 
 MVP-LS1 began from clean `main` at exact commit
 `9d76c7b89ce124829fd76741a676d7bb50a4eb43`. The earlier manual owner test was

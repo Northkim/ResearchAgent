@@ -8,7 +8,8 @@ Next.js project UI
   -> deterministic Literature Search Package + ZIP
   -> downloaded external folder (authoritative task state)
   -> one-command launcher obtains an exact short-lived local session
-  -> Codex plans, screens and synthesizes locally
+  -> interactive Codex plans, screens and synthesizes locally
+  -> owner confirms plan, reviews candidates and explicitly finalizes
   -> bounded provider-neutral searches through the ReAgent Proxy
   -> four local outputs + one Progress Report
   -> automatic idempotent upload and receipt/projection verification
@@ -47,7 +48,7 @@ operations.
 
 The primary navigation contains Projects, New project, and Local guide. The
 root redirects to `/projects`. Project detail is task-oriented: Start here,
-current step, primary action, four-step Quick Start, expected outputs, latest
+current step, primary action, an eight-step interactive Quick Start, expected outputs, latest
 summary, and links to dedicated Package, Progress, and project Guide pages.
 
 Historical Hosted routes remain source-compatible but are absent from primary
@@ -65,16 +66,31 @@ Git. Local-session endpoints mount only under explicit V0.1 local mode and
 require literal loopback. The fake Proxy is enabled for explicit demonstration;
 OpenAlex remains disabled unless the owner explicitly enables it and supplies
 the key to the backend process. Capability plaintext is returned once to the
-local launcher, kept in process memory, stripped from the Codex environment,
-and revoked after the round. Neither backend nor frontend invokes Codex or an
-LLM.
+local launcher, kept in parent-process memory, stripped from the Codex
+environment, and revoked after the round. The launcher executes the installed
+Codex CLI attached directly to the owner's current terminal; neither backend
+nor frontend invokes Codex or an LLM.
+
+The parent launcher, not Codex, owns the bearer token and Proxy transport. A
+versioned `memory/round-control.json` binds the exact project, Package,
+Workflow, round, confirmed plan, normalized query-result checksums, final
+output/context/report-draft checksums, and receipt. Codex first records
+`PLAN_CONFIRMED`; only then may the parent issue bounded Proxy calls. Codex
+records `FINALIZED` only after the owner's explicit `finish`. Process exit is
+never sufficient evidence of completion.
 
 ## One-round state machine
 
-- no report and no partial work: plan and execute round 1;
+- no report and no partial work: launch interactive round 1;
 - valid report but no receipt: upload-only idempotent recovery;
 - verified receipt: report already uploaded, no second round;
-- partial outputs without a valid report: fail closed without overwrite.
+- interrupted/partial outputs without a valid report: fail closed without
+  overwrite and require explicit `--resume` or confirmed `--restart-round`.
+
+Default and explicit `--auto` paths converge at the same artifact validation,
+report-chain finalization, upload, receipt/projection verification, and session
+revocation boundary. Signals are forwarded to the child; bounded cleanup reaps
+it, marks an interruption safely, revokes the session, and performs no upload.
 
 The cloud receives a bounded summary through the unchanged Progress Report
 v0.2 contract. Complete candidates, selections, query text, local context, and

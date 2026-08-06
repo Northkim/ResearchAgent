@@ -58,6 +58,7 @@ this engineering order.
 | MVP-I | Local V0.1 product integration | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — local project persistence/API, deterministic Package download, existing Progress projection/history UI, primary local navigation, safe startup, and full-stack tests are integrated; no Hosted/cloud research execution |
 | MVP-I1 | Persistent local dotenv startup | **PASS — OWNER ACCEPTANCE PENDING** — `make dev` safely resolves exported/custom/root dotenv database configuration without executing or printing values, while retaining loopback/ProjectDB safeguards and external PostgreSQL lifecycle |
 | MVP-LS1 | Complete autonomous Literature Search round | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — one Package command runs one bounded local Codex round, normal OpenAlex-only or explicit fictional demo transport, four local outputs, one automatic idempotent report upload, verified projection, and guided UI; no Hosted/cloud research execution |
+| MVP-LS2 | Interactive Codex Literature Search experience | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — default Package command attaches Codex to the current terminal, gates search/final writing on owner checkpoints, validates a versioned completion artifact, cleans up interrupts, preserves explicit auto/recovery modes, and retains the LS1 cloud/local boundary |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -254,6 +255,26 @@ authoritative for the adapter; a full real OpenAlex LS1 round requires separate
 owner authorization. `LITERATURE_SEARCH_AUTONOMOUS_WORKFLOW =
 READY_FOR_OWNER_ACCEPTANCE` and `V0_1_STATE = OWNER_ACCEPTANCE_PENDING`.
 R3D and public/production deployment remain closed.
+
+MVP-LS2 corrects the LS1 interaction model without changing its Provider,
+output, upload, or cloud/local contracts. `python reagent_local.py run .` is now
+interactive by default: the current terminal shows Codex output and accepts
+owner input at search-plan, candidate-screening, and finalization checkpoints.
+Search waits for a machine-recorded plan confirmation, and final artifacts wait
+for explicit `finish`. A versioned round-control artifact binds plan, normalized
+query results, outputs, context, report, and receipt; Codex exit alone cannot
+signal success. The launcher retains tokens and transport in its parent process
+and strips secrets from Codex.
+
+`--auto` explicitly preserves the LS1 unattended path. `Ctrl+C` forwards the
+signal, reaps Codex, revokes the session, preserves valid local work, and does
+not upload. `--resume`, confirmed `--restart-round`, pending-upload recovery,
+and verified-receipt no-repeat are explicit. Deterministic real-stack
+interactive and auto demo qualification passed after physical PostgreSQL and
+application restart. No live OpenAlex call or owner Demo artifact was used.
+`MVP_LS2_INTERACTIVE_UX = READY_FOR_OWNER_ACCEPTANCE`,
+`LITERATURE_SEARCH_AUTONOMOUS_WORKFLOW = READY_FOR_OWNER_ACCEPTANCE`, and
+`V0_1_STATE = OWNER_ACCEPTANCE_PENDING`. Only the owner can accept V0.1.
 
 ### Preserved optional mode
 

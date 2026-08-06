@@ -226,6 +226,7 @@ def _validate_semantics(manifest: dict[str, Any], package_root: Path) -> None:
     if not context.get("mutable_by_harness") or context.get("state_classification") != "STATE":
         raise PackageValidationError("local context must be mutable Harness state")
     _validate_local_context(manifest, package_root)
+    _validate_round_control(manifest, package_root)
     if not manifest.get("skill_pins") or not manifest.get("prompt_pins"):
         raise PackageValidationError("pinned Skill and prompt identities are required")
     if not SHA256.fullmatch(str(manifest.get("workflow_checksum", ""))):
@@ -259,6 +260,160 @@ def _validate_semantics(manifest: dict[str, Any], package_root: Path) -> None:
         if not safe_relative_path(output["required_output_path"]).startswith("outputs/"):
             raise PackageValidationError("output contract escapes outputs/")
     _validate_literature_outputs(package_root)
+
+
+def _validate_round_control(manifest: dict[str, Any], package_root: Path) -> None:
+    control = _read_json_if_present(
+        package_root / "memory/round-control.json",
+        "round control",
+    )
+    if control is None:
+        raise PackageValidationError("round control is required")
+    fields = {
+        "schema_version", "project_id", "package_id", "package_checksum",
+        "workflow_id", "workflow_version", "workflow_checksum",
+        "execution_round", "mode", "execution_style", "state",
+        "last_completed_state", "plan_confirmation_count",
+        "query_plan_checksum", "context_before_checksum", "search_result_checksums",
+        "candidate_review_confirmed", "finalization_confirmed",
+        "output_checksums", "context_checksum", "report_draft_checksum",
+        "report_id", "report_checksum", "receipt_id", "receipt_checksum",
+        "interrupted_stage", "failure_code", "updated_at",
+    }
+    completed_states = {
+        "NOT_STARTED", "PLAN_CONFIRMED", "SEARCH_COMPLETED", "FINALIZED",
+        "REPORT_FINALIZED", "UPLOADED",
+    }
+    if set(control) != fields:
+        raise PackageValidationError("round-control fields mismatch")
+    if (
+        control["schema_version"] != "literature-search-round-control/v0.1"
+        or control["project_id"] != manifest["experimental_project_identity"]
+        or control["package_id"] != manifest["package_id"]
+        or control["package_checksum"] != manifest["package_checksum"]
+        or control["workflow_id"] != manifest["workflow_id"]
+        or control["workflow_version"] != manifest["workflow_version"]
+        or control["workflow_checksum"] != manifest["workflow_checksum"]
+        or control["execution_round"] != 1
+        or control["state"] not in completed_states | {"INTERRUPTED", "FAILED"}
+        or control["last_completed_state"] not in completed_states
+        or control["mode"] not in {None, "NORMAL", "DEMO"}
+        or control["execution_style"] not in {None, "INTERACTIVE", "AUTO"}
+        or isinstance(control["plan_confirmation_count"], bool)
+        or not isinstance(control["plan_confirmation_count"], int)
+        or not 0 <= control["plan_confirmation_count"] <= 2
+        or not isinstance(control["candidate_review_confirmed"], bool)
+        or not isinstance(control["finalization_confirmed"], bool)
+        or not isinstance(control["output_checksums"], dict)
+        or not isinstance(control["search_result_checksums"], list)
+    ):
+        raise PackageValidationError("round-control identity or state is invalid")
+    for field in (
+        "query_plan_checksum", "context_before_checksum", "context_checksum",
+        "report_draft_checksum", "report_checksum", "receipt_checksum",
+    ):
+        if control[field] is not None and not SHA256.fullmatch(str(control[field])):
+            raise PackageValidationError(f"round-control {field} is invalid")
+    if any(
+        not isinstance(value, (str, type(None)))
+        for value in (
+            control["report_id"], control["receipt_id"], control["interrupted_stage"],
+            control["failure_code"],
+        )
+    ):
+        raise PackageValidationError("round-control optional text field is invalid")
+    try:
+        updated = datetime.fromisoformat(control["updated_at"].replace("Z", "+00:00"))
+    except (AttributeError, ValueError) as error:
+        raise PackageValidationError("round-control timestamp is invalid") from error
+    if updated.tzinfo is None:
+        raise PackageValidationError("round-control timestamp requires a timezone")
+
+    effective = (
+        control["last_completed_state"]
+        if control["state"] in {"INTERRUPTED", "FAILED"}
+        else control["state"]
+    )
+    order = {
+        "NOT_STARTED": 0, "PLAN_CONFIRMED": 1, "SEARCH_COMPLETED": 2,
+        "FINALIZED": 3, "REPORT_FINALIZED": 4, "UPLOADED": 5,
+    }
+    plan_path = package_root / "memory/search/query_plan.json"
+    plan = _read_json_if_present(plan_path, "query plan")
+    if plan is None:
+        raise PackageValidationError("query plan is required")
+    if order[effective] >= 1:
+        if (
+            control["plan_confirmation_count"] < 1
+            or control["query_plan_checksum"] != sha256_bytes(plan_path.read_bytes())
+            or not SHA256.fullmatch(str(control["context_before_checksum"]))
+            or plan.get("schema_version") != "literature-search-query-plan/v0.1"
+            or plan.get("status") != "READY"
+            or not isinstance(plan.get("queries"), list)
+            or not 2 <= len(plan["queries"]) <= 3
+        ):
+            raise PackageValidationError("confirmed round-control plan binding is invalid")
+    results: list[dict[str, str]] = []
+    for path in sorted((package_root / "memory/search/operations").glob("query-*.result.json")):
+        results.append(
+            {
+                "query_id": path.name.removesuffix(".result.json"),
+                "checksum": sha256_bytes(path.read_bytes()),
+            }
+        )
+    if order[effective] >= 2:
+        query_ids = [
+            item.get("query_id") if isinstance(item, dict) else None
+            for item in plan["queries"]
+        ]
+        if (
+            query_ids != [f"query-{index}" for index in range(1, len(query_ids) + 1)]
+            or [item["query_id"] for item in results] != query_ids
+            or control["search_result_checksums"] != results
+        ):
+            raise PackageValidationError("round-control search-result binding is invalid")
+    if order[effective] >= 3:
+        output_paths = {
+            "outputs/search_plan.md", "outputs/candidate_papers.json",
+            "outputs/selected_papers.json", "outputs/literature_search_report.md",
+        }
+        if (
+            not control["candidate_review_confirmed"]
+            or not control["finalization_confirmed"]
+            or set(control["output_checksums"]) != output_paths
+            or any(
+                control["output_checksums"][relative]
+                != sha256_bytes(package_root.joinpath(*relative.split("/")).read_bytes())
+                for relative in output_paths
+            )
+            or control["context_checksum"]
+            != sha256_bytes((package_root / "memory/context.md").read_bytes())
+            or control["report_draft_checksum"]
+            != sha256_bytes((package_root / "memory/progress/report-draft.json").read_bytes())
+        ):
+            raise PackageValidationError("round-control final artifact binding is invalid")
+    reports = sorted((package_root / "memory/progress/reports").glob("prv2-*.json"))
+    if order[effective] >= 4:
+        if len(reports) != 1:
+            raise PackageValidationError("finalized round control requires one report")
+        report = _read_json_if_present(reports[0], "Progress Report")
+        assert report is not None
+        if (
+            control["report_id"] != report.get("report_id")
+            or control["report_checksum"] != report.get("report_checksum")
+        ):
+            raise PackageValidationError("round-control report binding is invalid")
+    receipts = sorted((package_root / "memory/progress/receipts").glob("*.json"))
+    if order[effective] >= 5:
+        if len(receipts) != 1:
+            raise PackageValidationError("uploaded round control requires one receipt")
+        receipt = _read_json_if_present(receipts[0], "local upload receipt")
+        assert receipt is not None
+        if (
+            control["receipt_id"] != receipt.get("receipt_id")
+            or control["receipt_checksum"] != receipt.get("receipt_checksum")
+        ):
+            raise PackageValidationError("round-control receipt binding is invalid")
 
 
 def _validate_local_context(manifest: dict[str, Any], package_root: Path) -> None:

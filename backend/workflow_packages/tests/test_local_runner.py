@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from pathlib import Path
-from subprocess import CompletedProcess
+from types import SimpleNamespace
 
 import pytest
 
@@ -172,6 +174,26 @@ Records 1-3.
     draft_path.write_text(json.dumps(draft), encoding="utf-8")
 
 
+def _record_results(root: Path, mode: str, queries: list[dict[str, str]]) -> None:
+    adapter = (
+        local_runner.FAKE_ADAPTER_ID
+        if mode == "DEMO"
+        else local_runner.OPENALEX_ADAPTER_ID
+    )
+    for item in queries:
+        local_runner._write_atomic(
+            root / "memory/search/operations" / f"{item['query_id']}.result.json",
+            {
+                "schema_version": "literature-search-normalized-query-result/v0.1",
+                "mode": mode,
+                "query_id": item["query_id"],
+                "issued_query": item["query"],
+                "provider_adapter": {"adapter_id": adapter},
+                "provider_data": {"papers": []},
+            },
+        )
+
+
 def _package(tmp_path: Path) -> Path:
     return build_literature_search_package(
         project_id="project-0123456789abcdef0123456789abcdef",
@@ -195,14 +217,23 @@ def test_codex_invocation_uses_supported_noninteractive_policy_and_strips_secret
     ):
         monkeypatch.setenv(key, "must-not-reach-codex")
 
-    def run(command, **kwargs):
-        captured["command"] = command
-        captured["environment"] = kwargs["env"]
-        return CompletedProcess(command, 0, b"", b"")
+    class Process:
+        returncode = 0
 
-    monkeypatch.setattr(local_runner.subprocess, "run", run)
-    local_runner._invoke_codex(root=tmp_path, instruction="fixed-stage")
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            captured["environment"] = kwargs["env"]
 
+        def poll(self):
+            return 0
+
+    monkeypatch.setattr(local_runner, "_codex_preflight", lambda *args, **kwargs: "codex-cli 0.146.0")
+    monkeypatch.setattr(local_runner.subprocess, "Popen", Process)
+    local_runner._invoke_codex(
+        root=tmp_path,
+        instruction="fixed-stage",
+        interactive=False,
+    )
     command = captured["command"]
     assert isinstance(command, list)
     assert "--ask-for-approval" not in command
@@ -218,6 +249,379 @@ def test_codex_invocation_uses_supported_noninteractive_policy_and_strips_secret
             "REAGENT_DATABASE_URL",
         )
     )
+
+
+def test_default_cli_selects_interactive_and_auto_is_explicit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        local_runner,
+        "run_round",
+        lambda **kwargs: calls.append(kwargs) or {"status": "FIXTURE"},
+    )
+    assert local_runner.main(["run", str(tmp_path)]) == 0
+    assert calls[-1]["auto"] is False
+    assert local_runner.main(["run", str(tmp_path), "--auto"]) == 0
+    assert calls[-1]["auto"] is True
+
+
+def test_interactive_codex_inherits_terminal_and_passes_fixed_instruction_as_data(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class Process:
+        returncode = 0
+
+        def __init__(self, command, **kwargs):
+            captured["command"] = command
+            captured["kwargs"] = kwargs
+
+        def poll(self):
+            return 0
+
+    terminal = SimpleNamespace(isatty=lambda: True)
+    monkeypatch.setattr(local_runner.sys, "stdin", terminal)
+    monkeypatch.setattr(local_runner.sys, "stdout", terminal)
+    monkeypatch.setattr(local_runner.sys, "stderr", terminal)
+    monkeypatch.setattr(local_runner, "_codex_executable", lambda: "/safe/codex")
+    monkeypatch.setattr(local_runner, "_codex_preflight", lambda *args, **kwargs: "codex-cli 0.146.0")
+    monkeypatch.setattr(local_runner.subprocess, "Popen", Process)
+    instruction = "fixed instruction; topic remains in Package data"
+    local_runner._invoke_codex(
+        root=tmp_path,
+        instruction=instruction,
+        interactive=True,
+    )
+    command = captured["command"]
+    assert isinstance(command, list)
+    assert command[0] == "/safe/codex"
+    assert "exec" not in command
+    assert command[-1] == instruction
+    kwargs = captured["kwargs"]
+    assert isinstance(kwargs, dict)
+    assert kwargs["stdin"] is None
+    assert "stdout" not in kwargs and "stderr" not in kwargs
+
+
+def test_interactive_codex_requires_a_real_terminal_before_process_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    terminal = SimpleNamespace(isatty=lambda: False)
+    monkeypatch.setattr(local_runner.sys, "stdin", terminal)
+    monkeypatch.setattr(local_runner.sys, "stdout", terminal)
+    monkeypatch.setattr(local_runner.sys, "stderr", terminal)
+    monkeypatch.setattr(
+        local_runner,
+        "_codex_executable",
+        lambda: (_ for _ in ()).throw(AssertionError("must not resolve Codex")),
+    )
+    with pytest.raises(
+        local_runner.LocalRoundError,
+        match=r"Stage \[4/6\].*requires a terminal.*--auto",
+    ):
+        local_runner._invoke_codex(
+            root=tmp_path,
+            instruction="fixed",
+            interactive=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("version", "login_code", "expected"),
+    (
+        ("codex-cli 0.145.0", 0, "version is not supported"),
+        ("codex-cli 0.146.0", 1, "not authenticated"),
+    ),
+)
+def test_codex_preflight_reports_safe_stage_specific_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    version: str,
+    login_code: int,
+    expected: str,
+) -> None:
+    results = iter(
+        (
+            SimpleNamespace(returncode=0, stdout=version),
+            SimpleNamespace(
+                returncode=0,
+                stdout="--ask-for-approval --sandbox --cd --no-alt-screen",
+            ),
+            SimpleNamespace(returncode=login_code, stdout="sensitive fixture detail"),
+        )
+    )
+    monkeypatch.setattr(
+        local_runner.subprocess,
+        "run",
+        lambda *args, **kwargs: next(results),
+    )
+    with pytest.raises(local_runner.LocalRoundError, match=expected) as captured:
+        local_runner._codex_preflight("/safe/codex", auto=False)
+    assert "sensitive fixture detail" not in str(captured.value)
+
+
+def test_interactive_instruction_declares_all_owner_checkpoints_without_topic_data() -> None:
+    instruction = local_runner._interactive_instruction("NORMAL", resume=False)
+    for phrase in (
+        "SEARCH-PLAN CHECKPOINT",
+        "CANDIDATE-SCREENING CHECKPOINT",
+        "FINALIZATION CHECKPOINT",
+        "explicit proceed",
+        "command finish",
+        "Do not create the final Progress",
+    ):
+        assert phrase in instruction
+    assert "A fictional public topic about transparent continuity" not in instruction
+
+
+def test_provider_controller_waits_for_machine_plan_confirmation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    manifest = json.loads((root / "package-manifest.json").read_text())
+    calls = {"queries": 0}
+    monkeypatch.setattr(
+        local_runner,
+        "_execute_queries",
+        lambda **kwargs: calls.__setitem__("queries", calls["queries"] + len(kwargs["queries"])),
+    )
+    local_runner._initialize_control(
+        root=root,
+        manifest=manifest,
+        mode="DEMO",
+        execution_style="INTERACTIVE",
+    )
+    stop = threading.Event()
+    errors: list[BaseException] = []
+    controller = threading.Thread(
+        target=local_runner._provider_controller,
+        kwargs={
+            "root": root,
+            "base_url": "http://127.0.0.1:8000",
+            "manifest": manifest,
+            "session": _session("DEMO"),
+            "mode": "DEMO",
+            "topic": json.loads((root / "inputs/research_request.json").read_text())["topic"],
+            "stop": stop,
+            "errors": errors,
+        },
+    )
+    controller.start()
+    time.sleep(local_runner.CONTROL_POLL_SECONDS * 3)
+    assert calls["queries"] == 0
+    _planning(root)
+    local_runner._mark_plan_confirmed(root)
+    deadline = time.monotonic() + 2
+    while calls["queries"] == 0 and time.monotonic() < deadline:
+        time.sleep(0.02)
+    stop.set()
+    controller.join(timeout=2)
+    assert not errors
+    assert calls["queries"] == 2
+    assert local_runner._load_control(root)["state"] == "SEARCH_COMPLETED"
+
+
+def test_interruption_revokes_session_and_never_uploads(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    calls = {"close": 0, "upload": 0}
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
+    monkeypatch.setattr(local_runner, "_open_session", lambda **kwargs: _session(kwargs["mode"]))
+    monkeypatch.setattr(
+        local_runner,
+        "_run_interactive_codex",
+        lambda **kwargs: (_ for _ in ()).throw(local_runner.RoundInterrupted("fixture")),
+    )
+    monkeypatch.setattr(
+        local_runner,
+        "_upload_and_verify",
+        lambda **kwargs: calls.__setitem__("upload", calls["upload"] + 1),
+    )
+    monkeypatch.setattr(
+        local_runner,
+        "_close_session",
+        lambda **kwargs: calls.__setitem__("close", calls["close"] + 1),
+    )
+    with pytest.raises(local_runner.RoundInterrupted):
+        local_runner.run_round(
+            package_root=root,
+            base_url="http://127.0.0.1:8000",
+            mode="DEMO",
+        )
+    control = local_runner._load_control(root)
+    assert control["state"] == "INTERRUPTED"
+    assert control["failure_code"] == "OWNER_INTERRUPTED"
+    assert calls == {"close": 1, "upload": 0}
+    assert not local_runner._reports(root)
+
+
+def test_keyboard_interrupt_is_forwarded_and_child_is_reaped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class Process:
+        returncode = None
+
+        def __init__(self, command, **kwargs):
+            self.polls = 0
+
+        def poll(self):
+            self.polls += 1
+            if self.polls == 1:
+                raise KeyboardInterrupt
+            return self.returncode
+
+        def send_signal(self, value):
+            calls.append(f"signal:{value}")
+            self.returncode = 130
+
+        def wait(self, timeout=None):
+            calls.append("wait")
+            return 130
+
+    terminal = SimpleNamespace(isatty=lambda: True)
+    monkeypatch.setattr(local_runner.sys, "stdin", terminal)
+    monkeypatch.setattr(local_runner.sys, "stdout", terminal)
+    monkeypatch.setattr(local_runner.sys, "stderr", terminal)
+    monkeypatch.setattr(local_runner, "_codex_executable", lambda: "/safe/codex")
+    monkeypatch.setattr(local_runner, "_codex_preflight", lambda *args, **kwargs: "codex-cli 0.146.0")
+    monkeypatch.setattr(local_runner.subprocess, "Popen", Process)
+    with pytest.raises(local_runner.RoundInterrupted):
+        local_runner._invoke_codex(
+            root=tmp_path,
+            instruction="fixed",
+            interactive=True,
+        )
+    assert calls == [f"signal:{local_runner.signal.SIGINT}", "wait"]
+
+
+def test_termination_signal_is_converted_to_cleanup_and_reaps_child(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    handlers: dict[int, object] = {}
+
+    class Process:
+        returncode = None
+
+        def __init__(self, command, **kwargs):
+            self.polls = 0
+
+        def poll(self):
+            self.polls += 1
+            if self.polls == 1:
+                handler = handlers[local_runner.signal.SIGTERM]
+                assert callable(handler)
+                handler(local_runner.signal.SIGTERM, None)
+            return self.returncode
+
+        def send_signal(self, value):
+            calls.append(f"signal:{value}")
+            self.returncode = 143
+
+        def wait(self, timeout=None):
+            calls.append("wait")
+            return 143
+
+    terminal = SimpleNamespace(isatty=lambda: True)
+    monkeypatch.setattr(local_runner.sys, "stdin", terminal)
+    monkeypatch.setattr(local_runner.sys, "stdout", terminal)
+    monkeypatch.setattr(local_runner.sys, "stderr", terminal)
+    monkeypatch.setattr(local_runner, "_codex_executable", lambda: "/safe/codex")
+    monkeypatch.setattr(local_runner, "_codex_preflight", lambda *args, **kwargs: "codex-cli 0.146.0")
+    monkeypatch.setattr(local_runner.subprocess, "Popen", Process)
+    monkeypatch.setattr(local_runner.signal, "getsignal", lambda signum: "previous")
+    monkeypatch.setattr(
+        local_runner.signal,
+        "signal",
+        lambda signum, handler: handlers.__setitem__(signum, handler),
+    )
+    with pytest.raises(local_runner.RoundInterrupted, match="termination signal"):
+        local_runner._invoke_codex(
+            root=tmp_path,
+            instruction="fixed",
+            interactive=True,
+        )
+    assert calls == [f"signal:{local_runner.signal.SIGINT}", "wait"]
+    assert handlers[local_runner.signal.SIGTERM] == "previous"
+
+
+def test_explicit_restart_removes_only_round_mutable_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    manifest = json.loads((root / "package-manifest.json").read_text())
+    immutable = sha256_bytes((root / "inputs/research_request.json").read_bytes())
+    _planning(root)
+    (root / "memory/search/operations/query-1.request.json").write_text("{}\n")
+    monkeypatch.setattr("builtins.input", lambda prompt: "restart-round")
+    local_runner._reset_round(root, manifest)
+    assert not (root / "outputs/search_plan.md").exists()
+    assert not list((root / "memory/search/operations").glob("*.json"))
+    assert local_runner._load_control(root)["state"] == "NOT_STARTED"
+    assert sha256_bytes((root / "inputs/research_request.json").read_bytes()) == immutable
+
+
+def test_explicit_resume_preserves_plan_and_completes_same_round(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = _package(tmp_path)
+    manifest = json.loads((root / "package-manifest.json").read_text())
+    local_runner._initialize_control(
+        root=root,
+        manifest=manifest,
+        mode="DEMO",
+        execution_style="INTERACTIVE",
+    )
+    _planning(root)
+    local_runner._mark_plan_confirmed(root)
+    queries = local_runner._validate_query_plan(
+        root,
+        json.loads((root / "inputs/research_request.json").read_text())["topic"],
+    )
+    _record_results(root, "DEMO", queries)
+    local_runner._mark_search_completed(root)
+    local_runner._mark_interrupted(root, "CANDIDATE_SCREENING")
+    plan_checksum = sha256_bytes((root / "outputs/search_plan.md").read_bytes())
+    observed = {"resume": False}
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
+    monkeypatch.setattr(local_runner, "_open_session", lambda **kwargs: _session(kwargs["mode"]))
+    monkeypatch.setattr(local_runner, "_close_session", lambda **kwargs: None)
+
+    def resume_codex(**kwargs) -> None:
+        observed["resume"] = kwargs["resume"]
+        _synthesis(kwargs["root"], "DEMO")
+        local_runner._mark_finalized(kwargs["root"])
+
+    monkeypatch.setattr(local_runner, "_run_interactive_codex", resume_codex)
+    monkeypatch.setattr(
+        local_runner,
+        "_upload_and_verify",
+        lambda **kwargs: _write_receipt(kwargs["root"], kwargs["report_path"]),
+    )
+    result = local_runner.run_round(
+        package_root=root,
+        base_url="http://127.0.0.1:8000",
+        mode="DEMO",
+        resume=True,
+    )
+    assert result["status"] == "ROUND_COMPLETED"
+    assert observed["resume"] is True
+    assert sha256_bytes((root / "outputs/search_plan.md").read_bytes()) == plan_checksum
+    assert len(local_runner._reports(root)) == 1
+    assert len(local_runner._receipts(root)) == 1
 
 
 def _session(mode: str) -> dict:
@@ -259,13 +663,15 @@ def test_one_command_round_generates_four_outputs_and_uploads_once(
 ) -> None:
     root = _package(tmp_path)
     calls = {"codex": 0, "queries": 0, "upload": 0, "close": 0}
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
     monkeypatch.setattr(
         local_runner,
         "_open_session",
         lambda **kwargs: _session(kwargs["mode"]),
     )
 
-    def codex(*, root: Path, instruction: str) -> None:
+    def codex(*, root: Path, instruction: str, interactive: bool) -> None:
+        assert interactive is False
         calls["codex"] += 1
         if "PLANNING_STAGE" in instruction:
             _planning(root)
@@ -274,6 +680,7 @@ def test_one_command_round_generates_four_outputs_and_uploads_once(
 
     def queries(**kwargs) -> None:
         calls["queries"] += len(kwargs["queries"])
+        _record_results(kwargs["root"], kwargs["mode"], kwargs["queries"])
 
     def upload(**kwargs):
         calls["upload"] += 1
@@ -291,6 +698,7 @@ def test_one_command_round_generates_four_outputs_and_uploads_once(
         package_root=root,
         base_url="http://127.0.0.1:8000",
         mode="DEMO",
+        auto=True,
     )
     assert result["status"] == "ROUND_COMPLETED"
     assert calls == {"codex": 2, "queries": 2, "upload": 1, "close": 1}
@@ -301,6 +709,7 @@ def test_one_command_round_generates_four_outputs_and_uploads_once(
         package_root=root,
         base_url="http://127.0.0.1:8000",
         mode="DEMO",
+        auto=True,
     )
     assert replay["status"] == "ROUND_ALREADY_UPLOADED"
     assert calls == {"codex": 2, "queries": 2, "upload": 1, "close": 1}
@@ -312,6 +721,7 @@ def test_upload_failure_preserves_report_and_next_run_is_upload_only(
 ) -> None:
     root = _package(tmp_path)
     opened: list[str] = []
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
     monkeypatch.setattr(
         local_runner,
         "_open_session",
@@ -320,11 +730,15 @@ def test_upload_failure_preserves_report_and_next_run_is_upload_only(
     monkeypatch.setattr(
         local_runner,
         "_invoke_codex",
-        lambda *, root, instruction: (
+        lambda *, root, instruction, interactive: (
             _planning(root) if "PLANNING_STAGE" in instruction else _synthesis(root, "DEMO")
         ),
     )
-    monkeypatch.setattr(local_runner, "_execute_queries", lambda **kwargs: None)
+    monkeypatch.setattr(
+        local_runner,
+        "_execute_queries",
+        lambda **kwargs: _record_results(kwargs["root"], kwargs["mode"], kwargs["queries"]),
+    )
     monkeypatch.setattr(local_runner, "_close_session", lambda **kwargs: None)
     server_persisted = {"value": False}
 
@@ -338,6 +752,7 @@ def test_upload_failure_preserves_report_and_next_run_is_upload_only(
             package_root=root,
             base_url="http://127.0.0.1:8000",
             mode="DEMO",
+            auto=True,
         )
     report_path = next((root / "memory/progress/reports").glob("prv2-*.json"))
     assert server_persisted["value"] is True
@@ -356,6 +771,7 @@ def test_upload_failure_preserves_report_and_next_run_is_upload_only(
         package_root=root,
         base_url="http://127.0.0.1:8000",
         mode="DEMO",
+        auto=True,
     )
     assert result["status"] == "PENDING_UPLOAD_COMPLETED"
     assert opened == ["DEMO", "UPLOAD_ONLY"]
@@ -375,6 +791,7 @@ def test_interruption_before_report_stops_recovery_without_overwrite(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = _package(tmp_path)
+    monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
     monkeypatch.setattr(
         local_runner,
         "_open_session",
@@ -384,25 +801,31 @@ def test_interruption_before_report_stops_recovery_without_overwrite(
     monkeypatch.setattr(
         local_runner,
         "_invoke_codex",
-        lambda *, root, instruction: (
+        lambda *, root, instruction, interactive: (
             _planning(root)
             if "PLANNING_STAGE" in instruction
             else (_ for _ in ()).throw(local_runner.LocalRoundError("synthesis interrupted"))
         ),
     )
-    monkeypatch.setattr(local_runner, "_execute_queries", lambda **kwargs: None)
+    monkeypatch.setattr(
+        local_runner,
+        "_execute_queries",
+        lambda **kwargs: _record_results(kwargs["root"], kwargs["mode"], kwargs["queries"]),
+    )
     with pytest.raises(local_runner.LocalRoundError, match="synthesis interrupted"):
         local_runner.run_round(
             package_root=root,
             base_url="http://127.0.0.1:8000",
             mode="DEMO",
+            auto=True,
         )
     plan_checksum = sha256_bytes((root / "outputs/search_plan.md").read_bytes())
-    with pytest.raises(local_runner.LocalRoundError, match="Partial local outputs"):
+    with pytest.raises(local_runner.LocalRoundError, match="Partial local work"):
         local_runner.run_round(
             package_root=root,
             base_url="http://127.0.0.1:8000",
             mode="DEMO",
+            auto=True,
         )
     assert sha256_bytes((root / "outputs/search_plan.md").read_bytes()) == plan_checksum
 

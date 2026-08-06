@@ -85,6 +85,18 @@ def _research_topic(value: str) -> str:
     return normalized
 
 
+def _project_name(value: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError("project name must be text")
+    normalized = value.strip()
+    if not normalized or len(normalized) > 160:
+        raise ValueError("project name must contain 1 to 160 characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in normalized):
+        raise ValueError("project name must not contain control characters")
+    reject_sensitive_content(normalized.encode("utf-8"), path="project_name")
+    return normalized
+
+
 def _entry(path: str, spec: FileSpec) -> PackageFileEntry:
     reject_sensitive_content(spec.content, path=path)
     return PackageFileEntry(
@@ -169,6 +181,14 @@ def _pins(files: dict[str, FileSpec]) -> tuple[tuple[SkillPin, ...], tuple[Promp
 def _inputs(files: dict[str, FileSpec]) -> tuple[PackageInputManifest, ...]:
     return (
         PackageInputManifest(
+            input_id="local-project-display",
+            relative_path="inputs/project.json",
+            checksum=sha256_bytes(files["inputs/project.json"].content),
+            read_only_required=True,
+            content_type="application/json",
+            source_classification="CLOUD_SUPPLIED",
+        ),
+        PackageInputManifest(
             input_id="owner-research-request",
             relative_path="inputs/research_request.json",
             checksum=sha256_bytes(files["inputs/research_request.json"].content),
@@ -251,11 +271,13 @@ def _make_manifest(project_id: str, package_id: str, files: dict[str, FileSpec])
 
 def _render(
     project_id: str,
+    project_name: str,
     package_id: str,
     research_topic: str,
 ) -> tuple[dict[str, FileSpec], WorkflowPackageManifest]:
     placeholder_files = render_files(
         project_id=project_id,
+        project_name=project_name,
         package_id=package_id,
         package_checksum=_ZERO_HASH,
         research_topic=research_topic,
@@ -263,6 +285,7 @@ def _render(
     preliminary = _make_manifest(project_id, package_id, placeholder_files)
     files = render_files(
         project_id=project_id,
+        project_name=project_name,
         package_id=package_id,
         package_checksum=preliminary.package_checksum,
         research_topic=research_topic,
@@ -314,10 +337,12 @@ def build_literature_search_package(
     *,
     project_id: str,
     output_root: str | Path,
+    project_name: str = "Local Literature Search",
     research_topic: str = DEFAULT_RESEARCH_TOPIC,
     allow_absolute_output_root: bool = False,
 ) -> BuildResult:
     project_id = _project_id(project_id)
+    project_name = _project_name(project_name)
     research_topic = _research_topic(research_topic)
     output = Path(output_root)
     if output.is_absolute() and not allow_absolute_output_root:
@@ -326,8 +351,8 @@ def build_literature_search_package(
         raise ValueError("output_root must not be a symbolic link")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
-    package_id = f"literature-search-{project_id}-v0.3"
-    files, manifest = _render(project_id, package_id, research_topic)
+    package_id = f"literature-search-{project_id}-v0.5"
+    files, manifest = _render(project_id, project_name, package_id, research_topic)
 
     with tempfile.TemporaryDirectory(prefix=".r1a-build-", dir=output.parent) as temporary:
         temporary_root = Path(temporary) / "package"

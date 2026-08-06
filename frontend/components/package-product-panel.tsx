@@ -11,6 +11,7 @@ import { PageHeader } from "./page-header";
 import { ErrorState, LoadingState } from "./query-state";
 
 const launchCommand = "python reagent_local.py run .";
+const demoCommand = "python reagent_local.py run . --mode demo";
 
 export function PackageProductPanel({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
@@ -55,7 +56,14 @@ export function PackageProductPanel({ projectId }: { projectId: string }) {
           <section className="launch-command-card">
             <div><p className="eyebrow">Step 2–3 · Extract, then launch</p><h2>Run from the extracted Package</h2></div>
             <div className="copy-command"><code>{launchCommand}</code><button className="button button-secondary" onClick={copyCommand}>{copied ? "Copied" : "Copy command"}</button></div>
-            <p>This validates the Package, opens a short-lived exact-Package local session, launches Codex for one bounded round, uploads one Progress Report, verifies the receipt, revokes the session, and stops.</p>
+            <p><strong>This command launches an interactive Codex session in your current terminal.</strong> No graphical window opens.</p>
+            <p>You can review and revise the search plan, inspect candidate screening, ask questions, type <code>finish</code> to finalize, or press Ctrl+C to interrupt safely.</p>
+            <div className="copy-command"><code>{demoCommand}</code><span>Interactive fictional demo</span></div>
+            <details className="technical-details">
+              <summary>Advanced / unattended mode</summary>
+              <p>Use only when batch execution is intentional. Interactive mode is the default.</p>
+              <pre><code>python reagent_local.py run . --auto{"\n"}python reagent_local.py run . --mode demo --auto</code></pre>
+            </details>
           </section>
           <section className="expected-output-card">
             <div><p className="eyebrow">What remains local</p><h2>Four research artifacts</h2></div>
@@ -68,7 +76,7 @@ export function PackageProductPanel({ projectId }: { projectId: string }) {
             <p>Only a bounded Progress summary and artifact checksums are uploaded. The complete libraries and report remain in this folder.</p>
           </section>
           <section className="package-next-row">
-            <div><strong>Step 4</strong><p>Return after the command finishes to view the uploaded summary and immutable receipt history.</p></div>
+            <div><strong>After finalization</strong><p>Return after validation and upload finish to view the summary and immutable receipt history.</p></div>
             <Link href={`/projects/${projectId}/progress`} className="button button-secondary">View progress</Link>
             <Link href={`/projects/${projectId}/guide`} className="text-link">Read full guide →</Link>
           </section>

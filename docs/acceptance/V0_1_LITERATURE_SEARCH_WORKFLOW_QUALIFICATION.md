@@ -4,6 +4,11 @@ Date: 2026-08-06
 
 Status: **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE**
 
+> Historical MVP-LS1 qualification. MVP-LS2 preserves these output, session,
+> upload, recovery, and product-boundary results while replacing the default
+> opaque/unattended Codex experience with an interactive terminal session.
+> See `V0_1_INTERACTIVE_LITERATURE_SEARCH_QUALIFICATION.md`.
+
 ## Baseline and excluded evidence
 
 MVP-LS1 began from clean `main` at exact commit

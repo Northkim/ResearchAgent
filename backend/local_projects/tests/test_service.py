@@ -64,14 +64,21 @@ def test_package_generation_binds_topic_and_is_deterministic(tmp_path: Path) -> 
         tmp_path
         / "packages"
         / project.project_id
-        / "literature-search-v0.3"
+        / "literature-search-v0.5"
         / "package"
     )
     assert validate_package(package_root, pristine=True).valid
     import json
 
     request = json.loads((package_root / "inputs/research_request.json").read_text())
+    project_input = json.loads((package_root / "inputs/project.json").read_text())
     assert request["topic"] == project.research_topic
+    assert project_input == {
+        "schema_version": "local-project-input/v0.1",
+        "project_id": project.project_id,
+        "project_name": project.name,
+        "selected_workflow": LITERATURE_SEARCH_WORKFLOW,
+    }
 
 
 def test_missing_or_tampered_archive_fails_closed(tmp_path: Path) -> None:

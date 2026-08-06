@@ -80,11 +80,20 @@ stop PostgreSQL, delete a database, or remove a downloaded Package.
    python reagent_local.py run .
    ```
 
-   The launcher validates the Package, starts a short-lived exact-Package
-   session, invokes Codex with fixed planning and synthesis boundaries, performs
-   at most three bounded searches, creates the four outputs, finalizes exactly
-   one report, uploads it idempotently, verifies history/projection, stores a
-   safe receipt, revokes the session, and stops.
+   The launcher prints six safe stages and opens Codex interactively in the
+   current terminal. No graphical window opens. Codex first presents its topic
+   interpretation, bounded query plan, screening rules, and metadata/abstract
+   limitation. Search starts only after the owner confirms that plan. After
+   retrieval, the owner can inspect candidate counts and themes, ask why a
+   paper was included or excluded, revise a screening rule, or request one
+   additional query when budget remains. Codex then describes the final local
+   files and cloud summary and waits for the explicit command `finish`.
+
+   Only after `finish` does Codex write final outputs, update context, and
+   finalize one report draft. The launcher validates those machine-readable
+   artifacts, creates exactly one Progress Report, uploads it idempotently,
+   verifies history/projection, stores a safe receipt, revokes the session,
+   and stops.
 4. Refresh the project Progress page. It displays the round status, concise
    result summary, query/candidate/selection counts, evidence limitation,
    output names/checksums, warnings, next action, and immutable upload receipt.
@@ -101,12 +110,19 @@ cloud receives only the existing bounded Progress Report summary and artifact
 names/checksums. V0.1 uses metadata and available abstracts; it never claims
 that papers were read in full.
 
+Press `Ctrl+C` to interrupt safely. The launcher forwards the signal, reaps
+Codex, revokes the local session, preserves valid local files, and uploads
+nothing incomplete. Run `python reagent_local.py run . --resume` to continue
+partial round work. Use `--restart-round` only when intentionally discarding
+round-scoped mutable files; it requires typing `restart-round` and never alters
+immutable inputs, Workflow definitions, or uploaded history.
+
 If a valid report exists without its receipt, run the same command again. It
 opens an upload-only session, uploads the exact report idempotently, verifies
 the server receipt/history/projection, and does not rerun search or Codex. If
 partial outputs exist without a valid report, the command stops without
-overwriting them and prints recovery guidance. A completed round is not
-repeated automatically.
+overwriting them and prints the resume/restart choices. A completed round is
+not repeated automatically.
 
 ## Provider boundary
 
@@ -129,6 +145,27 @@ never falls back to demo. Local sessions use literal loopback, last 15 minutes,
 are scoped to the exact project/Package/Workflow, allow at most three
 five-result searches, and are revoked after the round. Token plaintext remains
 process-local and is removed from the Codex subprocess environment.
+
+For explicitly unattended execution, add `--auto`:
+
+```bash
+python reagent_local.py run . --auto
+python reagent_local.py run . --mode demo --auto
+```
+
+Auto mode preserves the same output, validation, report, upload, receipt, and
+projection contracts, but uses the fixed bounded policy without owner input.
+It is intended for CI, repeatable demonstrations, and explicitly requested
+batch use; it is not the default owner experience.
+
+## Terminal errors
+
+Stage-labelled errors distinguish a missing or unauthenticated Codex CLI,
+unsupported CLI version, missing interactive terminal, unavailable backend,
+disabled normal-mode Provider, denied/expired local session, nonzero Codex
+exit, invalid completion artifacts, and upload failure. The launcher never
+prints credentials or complete sensitive URLs. A completed local report whose
+upload fails remains pending for upload-only recovery.
 
 ## Known limits
 

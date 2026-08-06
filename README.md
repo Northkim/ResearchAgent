@@ -49,9 +49,13 @@ The complete owner flow, one-round command, and recovery behavior are in
 
 - Literature Search is the only selectable Workflow.
 - Codex CLI is the supported Harness; Claude Code remains untested.
-- From an extracted Package, `python reagent_local.py run .` performs exactly
-  one local round, uploads its one Progress Report, verifies the projection,
-  and stops. An interrupted upload is retried without rerunning research.
+- From an extracted Package, `python reagent_local.py run .` opens Codex in the
+  current terminal. The owner reviews the search plan and candidate screening,
+  types `finish` to finalize exactly one round, and the launcher then validates,
+  uploads, and verifies its Progress Report. An interrupted upload is retried
+  without rerunning research.
+- `--auto` is the explicit unattended mode for bounded batch use and tests; it
+  is never selected implicitly.
 - OpenAlex is experimental and disabled by default. The deterministic fake
   Provider is available only through explicit `--mode demo`; normal mode never
   silently falls back to fictional evidence.

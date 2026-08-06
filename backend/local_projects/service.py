@@ -83,10 +83,11 @@ class LocalProjectService:
         storage_root = self._resolved_storage_root()
         # Keep older immutable Package generations readable while allowing the
         # current template identity to produce a new deterministic artifact.
-        output = storage_root / project.project_id / "literature-search-v0.3"
+        output = storage_root / project.project_id / "literature-search-v0.5"
         try:
             built = build_literature_search_package(
                 project_id=project.project_id,
+                project_name=project.name,
                 research_topic=project.research_topic,
                 output_root=output,
                 allow_absolute_output_root=True,

@@ -3,7 +3,7 @@
 Target duration: approximately 10 minutes after PostgreSQL and repository
 dependencies are installed.
 
-Current state: **AUTONOMOUS WORKFLOW QUALIFIED — OWNER ACCEPTANCE PENDING**.
+Current state: **INTERACTIVE WORKFLOW QUALIFIED — OWNER ACCEPTANCE PENDING**.
 
 Use only localhost and a fictional/public topic. Do not use the legacy Hosted
 pages as substitutes. A real OpenAlex run requires separate explicit owner
@@ -27,11 +27,13 @@ explicit demo mode.
 5. **Inspect the local instructions.** Extract the ZIP and read `AGENT.md`.
    Confirm it identifies the folder as authoritative, names the four outputs,
    limits evidence to metadata/abstracts, and includes no credential.
-6. **Run one deterministic round.** From the extracted folder run
-   `python reagent_local.py run . --mode demo`. Confirm the launcher validates
-   the Package, runs the Codex workflow once, labels all evidence fictional,
-   uploads one report automatically, verifies the projection, and revokes its
-   local session.
+6. **Run one deterministic interactive round.** From the extracted folder run
+   `python reagent_local.py run . --mode demo`. Confirm the launcher shows six
+   stages and opens Codex in the current terminal. Review and confirm the
+   search plan, inspect the candidate-screening summary, ask a bounded question
+   or revision if desired, then type `finish`. Confirm fictional evidence is
+   labelled, the report uploads only after finalization, the projection
+   verifies, and the local session is revoked.
 7. **Inspect the local results.** Confirm the four declared output files, one
    append-only Progress Report, and one verified receipt exist. Run the same
    command again and confirm it reports the round already uploaded rather than
@@ -54,6 +56,7 @@ After separately authorizing real OpenAlex use, start the local product with the
 experimental OpenAlex adapter and server-side key, then run
 `python reagent_local.py run .`. Normal mode stops if the adapter is unavailable
 and never uses fictional fallback. Do not put the key or token in the Package.
+Use `--auto` only when explicitly choosing unattended execution.
 
 ## Known warnings
 
@@ -61,6 +64,9 @@ and never uses fictional fallback. Do not put the key or token in the Package.
 - OpenAlex is experimental and disabled by default.
 - Progress Report upload is automatic only after the local round and remains
   idempotent; it does not upload the complete research workspace.
+- `Ctrl+C` preserves valid local files, revokes the session, and uploads no
+  incomplete report. `--resume` continues partial work; a confirmed
+  `--restart-round` removes only round-scoped mutable artifacts.
 - Literature Search is the only Workflow.
 - V0.1 is local, single-user software and is not accepted for public or
   production deployment.
