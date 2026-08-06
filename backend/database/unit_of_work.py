@@ -17,8 +17,12 @@ from backend.database.orm import (
     ExecutionEventORM,
     MemoryRevisionORM,
     LocalProjectORM,
+    LocalWorkflowCapsuleVersionORM,
+    LocalWorkflowDefinitionORM,
+    LocalWorkflowDefinitionVersionORM,
     ProviderOperationORM,
     ProjectProgressProjectionORM,
+    ProjectWorkflowInstanceORM,
     StepRunORM,
     UploadedProgressReportORM,
     WorkflowDefinitionORM,
@@ -38,6 +42,7 @@ from backend.persistence.ports import (
 )
 from backend.progress_reports.ports import ProgressReportRepository
 from backend.local_projects.ports import LocalProjectRepository
+from backend.project_workspaces.ports import WorkflowFoundationRepository
 
 from .repositories import (
     SQLAlchemyApprovalRepository,
@@ -49,6 +54,7 @@ from .repositories import (
     SQLAlchemyProviderOperationRepository,
     SQLAlchemyProgressReportRepository,
     SQLAlchemyWorkflowRepository,
+    SQLAlchemyWorkflowFoundationRepository,
 )
 
 
@@ -79,6 +85,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._provider_operations = SQLAlchemyProviderOperationRepository(self.session)
         self._progress_reports = SQLAlchemyProgressReportRepository(self.session)
         self._local_projects = SQLAlchemyLocalProjectRepository(self.session)
+        self._workflow_foundation = SQLAlchemyWorkflowFoundationRepository(self.session)
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -115,6 +122,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     @property
     def local_projects(self) -> LocalProjectRepository:
         return self._local_projects
+
+    @property
+    def workflow_foundation(self) -> WorkflowFoundationRepository:
+        return self._workflow_foundation
 
     def commit(self) -> None:
         try:
@@ -160,6 +171,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
 
         self._flush_type(WorkflowDefinitionORM)
         self._flush_type(LocalProjectORM)
+        self._flush_type(LocalWorkflowDefinitionORM)
+        self._flush_type(LocalWorkflowDefinitionVersionORM)
+        self._flush_type(LocalWorkflowCapsuleVersionORM)
+        self._flush_type(ProjectWorkflowInstanceORM)
         self._flush_type(WorkflowRunORM)
         self._flush_type(AgentSessionORM)
         self._flush_type(StepRunORM)

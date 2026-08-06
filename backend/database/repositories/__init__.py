@@ -9,6 +9,7 @@ from .provider_operation import SQLAlchemyProviderOperationRepository
 from .progress_report import SQLAlchemyProgressReportRepository
 from .local_project import SQLAlchemyLocalProjectRepository
 from .workflow import SQLAlchemyWorkflowRepository
+from .workflow_foundation import SQLAlchemyWorkflowFoundationRepository
 
 __all__ = [
     "SQLAlchemyApprovalRepository",
@@ -20,4 +21,5 @@ __all__ = [
     "SQLAlchemyProgressReportRepository",
     "SQLAlchemyLocalProjectRepository",
     "SQLAlchemyWorkflowRepository",
+    "SQLAlchemyWorkflowFoundationRepository",
 ]
