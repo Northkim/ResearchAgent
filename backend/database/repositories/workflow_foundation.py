@@ -92,6 +92,23 @@ class SQLAlchemyWorkflowFoundationRepository(WorkflowFoundationRepository):
         row = row or self.session.get(LocalWorkflowDefinitionVersionORM, key)
         return _definition_version(row) if row is not None else None
 
+    def list_definition_versions(
+        self, workflow_definition_id: str
+    ) -> tuple[WorkflowDefinitionVersion, ...]:
+        rows = list(self.session.scalars(
+            select(LocalWorkflowDefinitionVersionORM).where(
+                LocalWorkflowDefinitionVersionORM.workflow_definition_id
+                == workflow_definition_id
+            )
+        ))
+        rows.extend(
+            row
+            for row in pending_instances(self.session, LocalWorkflowDefinitionVersionORM)
+            if row.workflow_definition_id == workflow_definition_id and row not in rows
+        )
+        rows.sort(key=lambda row: row.version)
+        return tuple(_definition_version(row) for row in rows)
+
     def add_capsule_version(self, capsule: WorkflowCapsuleVersion) -> None:
         existing = self.get_capsule_version(capsule.capsule_id, capsule.capsule_version)
         if existing is not None:
@@ -119,6 +136,23 @@ class SQLAlchemyWorkflowFoundationRepository(WorkflowFoundationRepository):
         row = pending_by_composite_key(self.session, LocalWorkflowCapsuleVersionORM, key, ("capsule_id", "capsule_version"))
         row = row or self.session.get(LocalWorkflowCapsuleVersionORM, key)
         return _capsule(row) if row is not None else None
+
+    def list_capsule_versions(
+        self, workflow_definition_id: str
+    ) -> tuple[WorkflowCapsuleVersion, ...]:
+        rows = list(self.session.scalars(
+            select(LocalWorkflowCapsuleVersionORM).where(
+                LocalWorkflowCapsuleVersionORM.workflow_definition_id
+                == workflow_definition_id
+            )
+        ))
+        rows.extend(
+            row
+            for row in pending_instances(self.session, LocalWorkflowCapsuleVersionORM)
+            if row.workflow_definition_id == workflow_definition_id and row not in rows
+        )
+        rows.sort(key=lambda row: (row.capsule_version, row.capsule_id))
+        return tuple(_capsule(row) for row in rows)
 
     def add_workflow_instance(self, instance: ProjectWorkflowInstance) -> None:
         existing = self.get_workflow_instance(instance.workflow_instance_id)
@@ -151,6 +185,33 @@ class SQLAlchemyWorkflowFoundationRepository(WorkflowFoundationRepository):
         rows.extend(row for row in pending_instances(self.session, ProjectWorkflowInstanceORM) if row.project_id == project_id and row not in rows)
         rows.sort(key=lambda row: (row.created_at, row.workflow_instance_id))
         return tuple(_instance(row) for row in rows)
+
+    def save_workflow_instance(self, instance: ProjectWorkflowInstance) -> None:
+        row = _pending_single(
+            self.session,
+            ProjectWorkflowInstanceORM,
+            "workflow_instance_id",
+            instance.workflow_instance_id,
+        ) or self.session.get(ProjectWorkflowInstanceORM, instance.workflow_instance_id)
+        if row is None:
+            raise ValueError("Project Workflow Instance does not exist")
+        if _instance_identity_content(_instance(row)) != _instance_identity_content(instance):
+            raise WorkflowFoundationConflictError(
+                "Project Workflow Instance immutable-content conflict"
+            )
+        if (
+            row.capsule_id != instance.capsule_id
+            or row.capsule_version != instance.capsule_version
+            or row.created_manifest_revision != instance.created_manifest_revision
+            or row.legacy_package_id != instance.legacy_package_id
+        ):
+            raise WorkflowFoundationConflictError(
+                "Project Workflow Instance immutable-content conflict"
+            )
+        row.desired_state = instance.desired_state.value
+        row.display_name = instance.display_name
+        row.retired_manifest_revision = instance.retired_manifest_revision
+        row.updated_at = instance.updated_at
 
 
 def _pending_single(session: Session, model_type, field: str, value: str):

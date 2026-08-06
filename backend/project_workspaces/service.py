@@ -61,10 +61,8 @@ def reconcile_legacy_workflow_foundation(
     timestamp = now or datetime.now(timezone.utc)
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise ValueError("now must be timezone-aware")
+    ensure_literature_search_foundation(uow, now=timestamp)
     repository = uow.workflow_foundation
-    repository.add_definition(_definition(timestamp))
-    repository.add_definition_version(_definition_version(timestamp))
-    repository.add_capsule_version(_capsule_version(timestamp))
 
     instances: list[ProjectWorkflowInstance] = []
     for project in uow.local_projects.list_all():
@@ -78,8 +76,8 @@ def reconcile_legacy_workflow_foundation(
             project_id=project.project_id,
             workflow_definition_id=WORKFLOW_ID,
             workflow_version=WORKFLOW_VERSION,
-            capsule_id=LITERATURE_SEARCH_CAPSULE_ID if package else None,
-            capsule_version=TEMPLATE_VERSION if package else None,
+            capsule_id=LITERATURE_SEARCH_CAPSULE_ID,
+            capsule_version=TEMPLATE_VERSION,
             desired_state=WorkflowInstanceDesiredState.ACTIVE,
             display_name="Literature Search",
             created_manifest_revision=0,
@@ -91,6 +89,20 @@ def reconcile_legacy_workflow_foundation(
         repository.add_workflow_instance(instance)
         instances.append(instance)
     return tuple(instances)
+
+
+def ensure_literature_search_foundation(
+    uow: UnitOfWork, *, now: datetime | None = None
+) -> tuple[WorkflowDefinition, WorkflowDefinitionVersion, WorkflowCapsuleVersion]:
+    timestamp = now or datetime.now(timezone.utc)
+    definition = _definition(timestamp)
+    version = _definition_version(timestamp)
+    capsule = _capsule_version(timestamp)
+    repository = uow.workflow_foundation
+    repository.add_definition(definition)
+    repository.add_definition_version(version)
+    repository.add_capsule_version(capsule)
+    return definition, version, capsule
 
 
 def _definition(now: datetime) -> WorkflowDefinition:

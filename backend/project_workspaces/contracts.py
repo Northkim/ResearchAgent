@@ -15,6 +15,8 @@ _STABLE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
 _CAPSULE_ID = re.compile(r"^capsule-[0-9a-f]{32}$")
 _WORKFLOW_INSTANCE_ID = re.compile(r"^wfi-[0-9a-f]{32}$")
 _PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
+_WORKSPACE_ID = re.compile(r"^workspace-[0-9a-f]{32}$")
+_ENTRY_ID = re.compile(r"^entry-[0-9a-f]{32}$")
 _SEMVER = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$"
 )
@@ -39,6 +41,114 @@ class WorkflowInstanceDesiredState(str, Enum):
 
 class CapsuleTrustClassification(str, Enum):
     TRUSTED_BUILT_IN_UNSIGNED = "TRUSTED_BUILT_IN_UNSIGNED"
+
+
+class CloudProjectStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    ARCHIVED = "ARCHIVED"
+
+
+class ManifestEntryKind(str, Enum):
+    WORKFLOW_INSTANCE = "WORKFLOW_INSTANCE"
+
+
+class ManifestDesiredAction(str, Enum):
+    ENSURE_PRESENT = "ENSURE_PRESENT"
+    RETIRE = "RETIRE"
+
+
+@dataclass(frozen=True, slots=True)
+class CloudProject:
+    project_id: str
+    workspace_id: str
+    name: str
+    research_topic: str
+    status: CloudProjectStatus
+    current_manifest_revision: int
+    legacy_local_project_id: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(self.project_id, _PROJECT_ID, "project_id")
+        _require_match(self.workspace_id, _WORKSPACE_ID, "workspace_id")
+        _require_bounded(self.name, 1, 200, "name")
+        _require_bounded(self.research_topic, 1, 4000, "research_topic")
+        if self.current_manifest_revision < 0:
+            raise ValueError("current_manifest_revision must be non-negative")
+        if self.legacy_local_project_id is not None:
+            _require_match(
+                self.legacy_local_project_id,
+                _PROJECT_ID,
+                "legacy_local_project_id",
+            )
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+
+
+@dataclass(frozen=True, slots=True)
+class DesiredProjectManifest:
+    project_id: str
+    manifest_revision: int
+    workspace_id: str
+    base_revision: int
+    schema_version: str
+    canonical_checksum: str
+    manifest_json: Mapping[str, Any]
+    created_by_subject_id: str
+    idempotency_key: str
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(self.project_id, _PROJECT_ID, "project_id")
+        _require_match(self.workspace_id, _WORKSPACE_ID, "workspace_id")
+        if self.manifest_revision < 1:
+            raise ValueError("manifest_revision must be positive")
+        if self.base_revision < 0 or self.base_revision >= self.manifest_revision:
+            raise ValueError("base_revision must precede manifest_revision")
+        if self.manifest_revision != self.base_revision + 1:
+            raise ValueError("manifest revision must increase exactly once")
+        if self.schema_version != "reagent.project-desired-manifest/v0.1":
+            raise ValueError("unsupported desired manifest schema")
+        require_sha256(self.canonical_checksum, "canonical_checksum")
+        object.__setattr__(self, "manifest_json", _freeze_json(self.manifest_json))
+        _require_bounded(self.created_by_subject_id, 1, 255, "created_by_subject_id")
+        try:
+            from uuid import UUID
+
+            parsed = UUID(self.idempotency_key)
+        except (ValueError, AttributeError) as error:
+            raise ValueError("idempotency_key must be a UUID") from error
+        if str(parsed) != self.idempotency_key:
+            raise ValueError("idempotency_key must use canonical UUID text")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectManifestEntry:
+    entry_id: str
+    project_id: str
+    manifest_revision: int
+    entry_kind: ManifestEntryKind
+    workflow_instance_id: str
+    desired_action: ManifestDesiredAction
+    entry_checksum: str
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(self.entry_id, _ENTRY_ID, "entry_id")
+        _require_match(self.project_id, _PROJECT_ID, "project_id")
+        _require_match(
+            self.workflow_instance_id,
+            _WORKFLOW_INSTANCE_ID,
+            "workflow_instance_id",
+        )
+        if self.manifest_revision < 1:
+            raise ValueError("manifest_revision must be positive")
+        require_sha256(self.entry_checksum, "entry_checksum")
+        _require_aware(self.created_at, "created_at")
 
 
 @dataclass(frozen=True, slots=True)

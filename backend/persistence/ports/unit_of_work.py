@@ -7,7 +7,10 @@ from abc import ABC, abstractmethod
 from backend.execution_events.ports import ExecutionEventStore
 from backend.progress_reports.ports import ProgressReportRepository
 from backend.local_projects.ports import LocalProjectRepository
-from backend.project_workspaces.ports import WorkflowFoundationRepository
+from backend.project_workspaces.ports import (
+    ProjectManifestRepository,
+    WorkflowFoundationRepository,
+)
 
 from .approval_repository import ApprovalRepository
 from .artifact_repository import ArtifactRepository
@@ -59,6 +62,12 @@ class UnitOfWork(ABC):
         """Optional additive local-product repository for Phase 1 adapters."""
 
         raise NotImplementedError("workflow foundation persistence is unavailable")
+
+    @property
+    def project_manifests(self) -> ProjectManifestRepository:
+        """Optional canonical Project/Desired Manifest repository."""
+
+        raise NotImplementedError("Project Manifest persistence is unavailable")
 
     @abstractmethod
     def commit(self) -> None:

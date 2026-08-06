@@ -2,6 +2,12 @@
 
 from .contracts import (
     CapsuleTrustClassification,
+    CloudProject,
+    CloudProjectStatus,
+    DesiredProjectManifest,
+    ManifestDesiredAction,
+    ManifestEntryKind,
+    ProjectManifestEntry,
     ProjectWorkflowInstance,
     WorkflowDefinition,
     WorkflowDefinitionLifecycle,
@@ -13,10 +19,16 @@ from .contracts import (
 from .legacy import (
     LEGACY_WORKFLOW_INSTANCE_NAMESPACE,
     legacy_workflow_instance_id,
+    initial_manifest_idempotency_key,
+    workspace_id_for_project,
 )
-from .errors import WorkflowFoundationConflictError
-from .ports import WorkflowFoundationRepository
-from .service import reconcile_legacy_workflow_foundation
+from .manifest import build_desired_manifest, mutation_idempotency_key
+from .errors import ManifestRevisionConflictError, WorkflowFoundationConflictError
+from .ports import ProjectManifestRepository, WorkflowFoundationRepository
+from .service import (
+    ensure_literature_search_foundation,
+    reconcile_legacy_workflow_foundation,
+)
 from .literature_search import (
     LITERATURE_SEARCH_CAPSULE_ID,
     LITERATURE_SEARCH_CAPSULE_VERSION,
@@ -29,6 +41,9 @@ from .literature_search import (
 
 __all__ = [
     "CapsuleTrustClassification",
+    "CloudProject",
+    "CloudProjectStatus",
+    "DesiredProjectManifest",
     "LEGACY_WORKFLOW_INSTANCE_NAMESPACE",
     "LITERATURE_SEARCH_CAPSULE_ID",
     "LITERATURE_SEARCH_CAPSULE_VERSION",
@@ -36,6 +51,11 @@ __all__ = [
     "LITERATURE_SEARCH_DEFINITION_VERSION",
     "LITERATURE_SEARCH_STABLE_KEY",
     "ProjectWorkflowInstance",
+    "ProjectManifestEntry",
+    "ProjectManifestRepository",
+    "ManifestDesiredAction",
+    "ManifestEntryKind",
+    "ManifestRevisionConflictError",
     "WorkflowCapsuleVersion",
     "WorkflowDefinition",
     "WorkflowDefinitionLifecycle",
@@ -45,7 +65,12 @@ __all__ = [
     "WorkflowFoundationRepository",
     "WorkflowReviewStatus",
     "legacy_workflow_instance_id",
+    "initial_manifest_idempotency_key",
     "literature_search_capsule_definition_checksum",
     "literature_search_contract_checksum",
     "reconcile_legacy_workflow_foundation",
+    "ensure_literature_search_foundation",
+    "workspace_id_for_project",
+    "build_desired_manifest",
+    "mutation_idempotency_key",
 ]

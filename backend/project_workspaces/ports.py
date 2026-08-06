@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 
 from .contracts import (
+    CloudProject,
+    DesiredProjectManifest,
+    ProjectManifestEntry,
     ProjectWorkflowInstance,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
@@ -34,12 +38,22 @@ class WorkflowFoundationRepository(ABC):
     ) -> WorkflowDefinitionVersion | None: ...
 
     @abstractmethod
+    def list_definition_versions(
+        self, workflow_definition_id: str
+    ) -> tuple[WorkflowDefinitionVersion, ...]: ...
+
+    @abstractmethod
     def add_capsule_version(self, capsule: WorkflowCapsuleVersion) -> None: ...
 
     @abstractmethod
     def get_capsule_version(
         self, capsule_id: str, capsule_version: str
     ) -> WorkflowCapsuleVersion | None: ...
+
+    @abstractmethod
+    def list_capsule_versions(
+        self, workflow_definition_id: str
+    ) -> tuple[WorkflowCapsuleVersion, ...]: ...
 
     @abstractmethod
     def add_workflow_instance(self, instance: ProjectWorkflowInstance) -> None: ...
@@ -53,3 +67,44 @@ class WorkflowFoundationRepository(ABC):
     def list_workflow_instances(
         self, project_id: str
     ) -> tuple[ProjectWorkflowInstance, ...]: ...
+
+    @abstractmethod
+    def save_workflow_instance(self, instance: ProjectWorkflowInstance) -> None: ...
+
+
+class ProjectManifestRepository(ABC):
+    @abstractmethod
+    def add_project(self, project: CloudProject) -> None: ...
+
+    @abstractmethod
+    def get_project(self, project_id: str) -> CloudProject | None: ...
+
+    @abstractmethod
+    def add_manifest(self, manifest: DesiredProjectManifest) -> None: ...
+
+    @abstractmethod
+    def add_manifest_entries(
+        self, entries: tuple[ProjectManifestEntry, ...]
+    ) -> None: ...
+
+    @abstractmethod
+    def get_manifest(
+        self, project_id: str, manifest_revision: int
+    ) -> DesiredProjectManifest | None: ...
+
+    @abstractmethod
+    def get_current_manifest(self, project_id: str) -> DesiredProjectManifest | None: ...
+
+    @abstractmethod
+    def list_manifest_entries(
+        self, project_id: str, manifest_revision: int
+    ) -> tuple[ProjectManifestEntry, ...]: ...
+
+    @abstractmethod
+    def compare_and_swap_revision(
+        self,
+        *,
+        project_id: str,
+        base_revision: int,
+        updated_at: datetime,
+    ) -> int: ...

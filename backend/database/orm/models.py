@@ -18,7 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -157,6 +157,11 @@ class ProjectWorkflowInstanceORM(Base):
     __tablename__ = "project_workflow_instances"
     __table_args__ = (
         ForeignKeyConstraint(
+            ["project_id"],
+            ["projects.project_id"],
+            name="fk_project_workflow_instances_project_id_projects",
+        ),
+        ForeignKeyConstraint(
             ["workflow_definition_id", "workflow_version"],
             [
                 "local_workflow_definition_versions.workflow_definition_id",
@@ -222,6 +227,131 @@ class ProjectWorkflowInstanceORM(Base):
     legacy_package_id: Mapped[str | None] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProjectORM(Base):
+    """Canonical cloud Project identity and Desired Manifest revision head."""
+
+    __tablename__ = "projects"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "workspace_id", name="uq_projects_project_workspace"
+        ),
+        CheckConstraint(
+            "status IN ('ACTIVE','ARCHIVED')", name="project_status"
+        ),
+        CheckConstraint(
+            "current_manifest_revision >= 0", name="project_manifest_revision"
+        ),
+        Index("ix_projects_status_updated", "status", "updated_at"),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(42), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    research_topic: Mapped[str] = mapped_column(String(4000), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    current_manifest_revision: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0
+    )
+    legacy_local_project_id: Mapped[str | None] = mapped_column(
+        String(255), unique=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProjectDesiredManifestORM(Base):
+    __tablename__ = "project_desired_manifests"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["projects.project_id", "projects.workspace_id"],
+            name="fk_project_desired_manifests_project_workspace",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "idempotency_key",
+            name="uq_project_desired_manifests_project_idempotency",
+        ),
+        CheckConstraint(
+            "manifest_revision > 0", name="desired_manifest_revision_positive"
+        ),
+        CheckConstraint(
+            "base_revision >= 0 AND manifest_revision = base_revision + 1",
+            name="desired_manifest_revision_step",
+        ),
+        Index(
+            "ix_project_desired_manifests_project_revision",
+            "project_id",
+            "manifest_revision",
+        ),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    manifest_revision: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(42), nullable=False)
+    base_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    canonical_checksum: Mapped[str] = mapped_column(String(71), nullable=False, unique=True)
+    manifest_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_by_subject_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProjectManifestEntryORM(Base):
+    __tablename__ = "project_manifest_entries"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "manifest_revision"],
+            [
+                "project_desired_manifests.project_id",
+                "project_desired_manifests.manifest_revision",
+            ],
+            name="fk_project_manifest_entries_manifest",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_project_manifest_entries_workflow_instance",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "manifest_revision",
+            "entry_kind",
+            "entry_id",
+            name="uq_project_manifest_entries_revision_identity",
+        ),
+        CheckConstraint(
+            "entry_kind = 'WORKFLOW_INSTANCE'", name="manifest_entry_kind"
+        ),
+        CheckConstraint(
+            "desired_action IN ('ENSURE_PRESENT','RETIRE')",
+            name="manifest_entry_desired_action",
+        ),
+        Index(
+            "ix_project_manifest_entries_instance", "workflow_instance_id"
+        ),
+        Index(
+            "ix_project_manifest_entries_project_revision",
+            "project_id",
+            "manifest_revision",
+        ),
+    )
+
+    entry_id: Mapped[str] = mapped_column(String(38), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    manifest_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    entry_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    desired_action: Mapped[str] = mapped_column(String(20), nullable=False)
+    entry_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class WorkflowRunORM(Base):

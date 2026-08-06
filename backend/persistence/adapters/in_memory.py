@@ -34,6 +34,23 @@ from backend.progress_reports import ProjectProgressProjection, UploadedProgress
 from backend.progress_reports.ports import ProgressReportRepository
 from backend.local_projects import LocalProject, LocalProjectRepository
 from backend.research.contracts import ProviderOperation, SettlementState
+from backend.project_workspaces.contracts import (
+    CloudProject,
+    DesiredProjectManifest,
+    ProjectManifestEntry,
+    ProjectWorkflowInstance,
+    WorkflowCapsuleVersion,
+    WorkflowDefinition,
+    WorkflowDefinitionVersion,
+)
+from backend.project_workspaces.errors import (
+    ManifestRevisionConflictError,
+    WorkflowFoundationConflictError,
+)
+from backend.project_workspaces.ports import (
+    ProjectManifestRepository,
+    WorkflowFoundationRepository,
+)
 
 
 @dataclass(slots=True)
@@ -58,6 +75,251 @@ class InMemoryDatabase:
         tuple[str, str, str, str], ProjectProgressProjection
     ] = field(default_factory=dict)
     local_projects: dict[str, LocalProject] = field(default_factory=dict)
+    workflow_definitions: dict[str, WorkflowDefinition] = field(default_factory=dict)
+    workflow_definition_versions: dict[
+        tuple[str, str], WorkflowDefinitionVersion
+    ] = field(default_factory=dict)
+    workflow_capsule_versions: dict[
+        tuple[str, str], WorkflowCapsuleVersion
+    ] = field(default_factory=dict)
+    project_workflow_instances: dict[str, ProjectWorkflowInstance] = field(
+        default_factory=dict
+    )
+    projects: dict[str, CloudProject] = field(default_factory=dict)
+    desired_manifests: dict[tuple[str, int], DesiredProjectManifest] = field(
+        default_factory=dict
+    )
+    manifest_entries: dict[str, ProjectManifestEntry] = field(default_factory=dict)
+
+
+class InMemoryWorkflowFoundationRepository(WorkflowFoundationRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def add_definition(self, definition: WorkflowDefinition) -> None:
+        self._add_immutable(
+            self._uow._workflow_definitions,
+            definition.workflow_definition_id,
+            definition,
+            "Workflow Definition",
+        )
+
+    def get_definition(self, workflow_definition_id: str) -> WorkflowDefinition | None:
+        return self._uow._workflow_definitions.get(workflow_definition_id)
+
+    def get_definition_by_stable_key(self, stable_key: str) -> WorkflowDefinition | None:
+        from backend.project_workspaces.literature_search import (
+            LITERATURE_SEARCH_DEFINITION_ID,
+            LITERATURE_SEARCH_STABLE_KEY,
+        )
+        if stable_key == LITERATURE_SEARCH_STABLE_KEY:
+            return self.get_definition(LITERATURE_SEARCH_DEFINITION_ID)
+        return self.get_definition(stable_key)
+
+    def list_definitions(self) -> tuple[WorkflowDefinition, ...]:
+        return tuple(
+            sorted(
+                self._uow._workflow_definitions.values(),
+                key=lambda item: item.workflow_definition_id,
+            )
+        )
+
+    def add_definition_version(self, version: WorkflowDefinitionVersion) -> None:
+        self._add_immutable(
+            self._uow._workflow_definition_versions,
+            (version.workflow_definition_id, version.version),
+            version,
+            "Workflow Definition Version",
+        )
+
+    def get_definition_version(
+        self, workflow_definition_id: str, version: str
+    ) -> WorkflowDefinitionVersion | None:
+        return self._uow._workflow_definition_versions.get(
+            (workflow_definition_id, version)
+        )
+
+    def list_definition_versions(
+        self, workflow_definition_id: str
+    ) -> tuple[WorkflowDefinitionVersion, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._workflow_definition_versions.values()
+                if item.workflow_definition_id == workflow_definition_id
+            ),
+            key=lambda item: item.version,
+        ))
+
+    def add_capsule_version(self, capsule: WorkflowCapsuleVersion) -> None:
+        self._add_immutable(
+            self._uow._workflow_capsule_versions,
+            (capsule.capsule_id, capsule.capsule_version),
+            capsule,
+            "Workflow Capsule Version",
+        )
+
+    def get_capsule_version(
+        self, capsule_id: str, capsule_version: str
+    ) -> WorkflowCapsuleVersion | None:
+        return self._uow._workflow_capsule_versions.get((capsule_id, capsule_version))
+
+    def list_capsule_versions(
+        self, workflow_definition_id: str
+    ) -> tuple[WorkflowCapsuleVersion, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._workflow_capsule_versions.values()
+                if item.workflow_definition_id == workflow_definition_id
+            ),
+            key=lambda item: (item.capsule_version, item.capsule_id),
+        ))
+
+    def add_workflow_instance(self, instance: ProjectWorkflowInstance) -> None:
+        self._add_immutable(
+            self._uow._project_workflow_instances,
+            instance.workflow_instance_id,
+            instance,
+            "Project Workflow Instance",
+        )
+
+    def get_workflow_instance(
+        self, workflow_instance_id: str
+    ) -> ProjectWorkflowInstance | None:
+        return self._uow._project_workflow_instances.get(workflow_instance_id)
+
+    def list_workflow_instances(
+        self, project_id: str
+    ) -> tuple[ProjectWorkflowInstance, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._project_workflow_instances.values()
+                if item.project_id == project_id
+            ),
+            key=lambda item: (item.created_at, item.workflow_instance_id),
+        ))
+
+    def save_workflow_instance(self, instance: ProjectWorkflowInstance) -> None:
+        existing = self.get_workflow_instance(instance.workflow_instance_id)
+        if existing is None:
+            raise ValueError("Project Workflow Instance does not exist")
+        immutable = lambda value: (
+            value.workflow_instance_id,
+            value.project_id,
+            value.workflow_definition_id,
+            value.workflow_version,
+            value.capsule_id,
+            value.capsule_version,
+            value.created_manifest_revision,
+            value.legacy_package_id,
+        )
+        if immutable(existing) != immutable(instance):
+            raise WorkflowFoundationConflictError(
+                "Project Workflow Instance immutable-content conflict"
+            )
+        self._uow._project_workflow_instances[instance.workflow_instance_id] = instance
+        self._uow._dirty_project_workflow_instances.add(instance.workflow_instance_id)
+
+    def _add_immutable(self, collection, key, value, label: str) -> None:
+        existing = collection.get(key)
+        if existing is not None:
+            if existing != value:
+                # Seed timestamps are intentionally not identity content.
+                left = tuple(
+                    getattr(existing, field)
+                    for field in existing.__dataclass_fields__
+                    if field not in {"created_at", "updated_at", "published_at"}
+                )
+                right = tuple(
+                    getattr(value, field)
+                    for field in value.__dataclass_fields__
+                    if field not in {"created_at", "updated_at", "published_at"}
+                )
+                if left != right:
+                    raise WorkflowFoundationConflictError(
+                        f"{label} immutable-content conflict"
+                    )
+            return
+        collection[key] = value
+        self._uow._workflow_foundation_dirty = True
+
+
+class InMemoryProjectManifestRepository(ProjectManifestRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def add_project(self, project: CloudProject) -> None:
+        if project.project_id in self._uow._projects:
+            raise DuplicateEntityError("Canonical Project already exists")
+        self._uow._projects[project.project_id] = project
+        self._uow._dirty_projects.add(project.project_id)
+
+    def get_project(self, project_id: str) -> CloudProject | None:
+        return self._uow._projects.get(project_id)
+
+    def add_manifest(self, manifest: DesiredProjectManifest) -> None:
+        key = (manifest.project_id, manifest.manifest_revision)
+        if key in self._uow._desired_manifests:
+            raise DuplicateEntityError("Desired Project Manifest already exists")
+        self._uow._desired_manifests[key] = manifest
+        self._uow._dirty_manifests.add(key)
+
+    def add_manifest_entries(
+        self, entries: tuple[ProjectManifestEntry, ...]
+    ) -> None:
+        for entry in entries:
+            if entry.entry_id in self._uow._manifest_entries:
+                raise DuplicateEntityError("Desired Project Manifest entry already exists")
+            self._uow._manifest_entries[entry.entry_id] = entry
+            self._uow._dirty_manifest_entries.add(entry.entry_id)
+
+    def get_manifest(
+        self, project_id: str, manifest_revision: int
+    ) -> DesiredProjectManifest | None:
+        return self._uow._desired_manifests.get((project_id, manifest_revision))
+
+    def get_current_manifest(self, project_id: str) -> DesiredProjectManifest | None:
+        project = self.get_project(project_id)
+        if project is None or project.current_manifest_revision == 0:
+            return None
+        return self.get_manifest(project_id, project.current_manifest_revision)
+
+    def list_manifest_entries(
+        self, project_id: str, manifest_revision: int
+    ) -> tuple[ProjectManifestEntry, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._manifest_entries.values()
+                if item.project_id == project_id
+                and item.manifest_revision == manifest_revision
+            ),
+            key=lambda item: (item.entry_kind.value, item.entry_id),
+        ))
+
+    def compare_and_swap_revision(
+        self, *, project_id: str, base_revision: int, updated_at
+    ) -> int:
+        project = self.get_project(project_id)
+        if project is None:
+            raise ValueError("Canonical Project does not exist")
+        if project.current_manifest_revision != base_revision:
+            raise ManifestRevisionConflictError(
+                expected=base_revision,
+                current=project.current_manifest_revision,
+            )
+        self._uow._manifest_revision_expected[project_id] = base_revision
+        from dataclasses import replace
+
+        self._uow._projects[project_id] = replace(
+            project,
+            current_manifest_revision=base_revision + 1,
+            updated_at=updated_at,
+        )
+        self._uow._dirty_projects.add(project_id)
+        return base_revision + 1
 
 
 class InMemoryLocalProjectRepository(LocalProjectRepository):
@@ -786,6 +1048,8 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._provider_operation_repository = InMemoryProviderOperationRepository(self)
         self._progress_report_repository = InMemoryProgressReportRepository(self)
         self._local_project_repository = InMemoryLocalProjectRepository(self)
+        self._workflow_foundation_repository = InMemoryWorkflowFoundationRepository(self)
+        self._project_manifest_repository = InMemoryProjectManifestRepository(self)
         self._refresh()
 
     @property
@@ -824,6 +1088,14 @@ class InMemoryUnitOfWork(UnitOfWork):
     def local_projects(self) -> LocalProjectRepository:
         return self._local_project_repository
 
+    @property
+    def workflow_foundation(self) -> WorkflowFoundationRepository:
+        return self._workflow_foundation_repository
+
+    @property
+    def project_manifests(self) -> ProjectManifestRepository:
+        return self._project_manifest_repository
+
     def commit(self) -> None:
         self._validate_concurrency()
         for run_id in self._dirty_workflows:
@@ -848,6 +1120,23 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.progress_projections[key] = self._progress_projections[key]
         for project_id in self._dirty_local_projects:
             self.database.local_projects[project_id] = self._local_projects[project_id]
+        if self._workflow_foundation_dirty or self._dirty_project_workflow_instances:
+            self.database.workflow_definitions = dict(self._workflow_definitions)
+            self.database.workflow_definition_versions = dict(
+                self._workflow_definition_versions
+            )
+            self.database.workflow_capsule_versions = dict(
+                self._workflow_capsule_versions
+            )
+            self.database.project_workflow_instances = dict(
+                self._project_workflow_instances
+            )
+        for project_id in self._dirty_projects:
+            self.database.projects[project_id] = self._projects[project_id]
+        for key in self._dirty_manifests:
+            self.database.desired_manifests[key] = self._desired_manifests[key]
+        for entry_id in self._dirty_manifest_entries:
+            self.database.manifest_entries[entry_id] = self._manifest_entries[entry_id]
         self._refresh()
 
     def rollback(self) -> None:
@@ -974,6 +1263,16 @@ class InMemoryUnitOfWork(UnitOfWork):
                 raise StaleStateError(
                     f"Local project {project_id} changed concurrently"
                 )
+        for project_id, expected in self._manifest_revision_expected.items():
+            current = self.database.projects.get(project_id)
+            current_revision = (
+                current.current_manifest_revision if current is not None else None
+            )
+            if current_revision != expected:
+                raise ManifestRevisionConflictError(
+                    expected=expected,
+                    current=current_revision if current_revision is not None else -1,
+                )
 
     def _refresh(self) -> None:
         self._executions = dict(self.database.executions)
@@ -986,6 +1285,17 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._progress_reports = dict(self.database.progress_reports)
         self._progress_projections = dict(self.database.progress_projections)
         self._local_projects = dict(self.database.local_projects)
+        self._workflow_definitions = dict(self.database.workflow_definitions)
+        self._workflow_definition_versions = dict(
+            self.database.workflow_definition_versions
+        )
+        self._workflow_capsule_versions = dict(self.database.workflow_capsule_versions)
+        self._project_workflow_instances = dict(
+            self.database.project_workflow_instances
+        )
+        self._projects = dict(self.database.projects)
+        self._desired_manifests = dict(self.database.desired_manifests)
+        self._manifest_entries = dict(self.database.manifest_entries)
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -1012,3 +1322,9 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_progress_reports: set[str] = set()
         self._dirty_progress_projections: set[tuple[str, str, str, str]] = set()
         self._dirty_local_projects: set[str] = set()
+        self._workflow_foundation_dirty = False
+        self._dirty_project_workflow_instances: set[str] = set()
+        self._dirty_projects: set[str] = set()
+        self._dirty_manifests: set[tuple[str, int]] = set()
+        self._dirty_manifest_entries: set[str] = set()
+        self._manifest_revision_expected: dict[str, int] = {}
