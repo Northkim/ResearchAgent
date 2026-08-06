@@ -84,7 +84,62 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-B3 Workspace bootstrap and legacy adoption qualified
+### Current milestone — NIGHT-B4 pull sync and installation acknowledgement qualified
+
+NIGHT-B4 continued directly on clean `main` from accepted B3 final commit
+`d3c1735504f7782af255fe081837edd1dcfb054f`. Additive migration
+`20260806_0010` is the sole head. It adds exact Project/Workflow-Instance-bound
+`local_workflow_capsule_artifacts` and idempotent
+`workspace_installation_acknowledgements`; B1–B3 identity, Package bytes,
+Progress, Proxy/OpenAlex and Hosted tables remain unchanged.
+
+`POST /projects/{project_id}/workspace/sync-plan` reconstructs the current
+Desired Manifest snapshot and deterministic operations from repositories. The
+only executable/available artifact remains Literature Search. The deterministic
+legacy instance reuses its accepted current Package when present; every
+additional Literature Search instance receives a distinct deterministic
+Package/archive identity. Planned Workflows remain unavailable and never
+receive fabricated artifacts. Exact bound downloads and
+`POST /projects/{project_id}/workspace/sync-ack` preserve Project/Workspace,
+Manifest, Capsule-pin and idempotency boundaries.
+
+The standard-library Workspace CLI now supports explicit `sync`. It compares
+cloud desired pins against the checksum-bound
+`.reagent/installed-lock.json`, migrates a verified B3 adoption without
+download, stages missing archives on the destination filesystem, rejects
+unsafe files/paths/checksums/trust/identity, atomically publishes one Capsule
+at a time, revalidates it, then atomically writes the Lock. The Lock binds only
+the immutable Package contract: declared outputs, memory, Progress and receipts
+remain mutable. `.reagent/capsule-registry.json` is frozen legacy evidence and
+is never dual-written. Retired Capsules are retained, and version conflicts
+fail without overwrite.
+
+An OS advisory lock enforces one local writer. A checksummed journal and
+pending acknowledgement envelope recover download/publication/Lock/receipt
+crash windows. Failed acknowledgement leaves valid local state as
+`ACK_PENDING`; exact retry reuses the original idempotency key. Cloud rejects a
+stale Manifest acknowledgement, so revision N is never reported as current N+1.
+Acknowledgement is explicitly client-reported metadata, not cloud inspection,
+byte retention or backup.
+
+Qualification used a dedicated loopback PostgreSQL 18.1 cluster and fictional
+temporary Workspaces. Empty/populated upgrade, B3 backfill, downgrade/re-upgrade,
+rollback, restart, Alembic no-drift, repository reload and concurrent
+acknowledgement passed. Focused filesystem/API/race tests and the full backend
+suite passed; frontend typecheck/Vitest/ESLint/build and compileall passed. The
+only skips are the four existing external/live integration gates. No `.env`,
+credential, owner database, ProjectDB, external Provider, live OpenAlex,
+frontend source, Hosted execution, worktree, branch, or push was used.
+
+ADR 0024 records Installed Lock as the sole installed-state source, B3 registry
+as one-time verified migration input, explicit owner-authorized pull, retained
+retired Capsules, and checksum-bound but metadata-only acknowledgement.
+NIGHT-B5 remains owner-gated: multi-Workflow Progress aggregation, Cloud
+Workflow Board, project-level Progress projection and frontend Workflow
+navigation are unimplemented. Artifact handoff, Idea Discovery, Skills,
+Resources, background sync and Workspace backup also remain deferred.
+
+### Prior milestone — NIGHT-B3 Workspace bootstrap and legacy adoption qualified
 
 NIGHT-B3 continued directly on clean `main` from accepted B2 final commit
 `d46633a752abc6050b5905eabeac1ba4cdd15c3b`. It reuses the canonical B2

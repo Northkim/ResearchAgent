@@ -1,8 +1,9 @@
 # Project Workspace Bootstrap and Legacy Package Adoption
 
-NIGHT-B3 adds an optional long-lived Project Workspace around the existing
-Literature Search Package. It does not replace standalone Package operation and
-does not implement cloud/local sync.
+NIGHT-B3 added an optional long-lived Project Workspace around the existing
+Literature Search Package. NIGHT-B4 adds explicit pull sync, safe Capsule
+installation, an Installed Workspace Lock, and installation acknowledgement.
+Standalone Package operation remains supported.
 
 ## Boundary
 
@@ -66,10 +67,9 @@ The B3 layout is deliberately minimal:
 └── capsules/
 ```
 
-`project.json` is checksum-bound identity metadata. Do not edit it. It names the
-future `.reagent/installed-lock.json` path required by ARCH-D1, but NIGHT-B3
-does not create that file. No sync state or installation acknowledgement is
-created.
+`project.json` is checksum-bound identity metadata. Do not edit it. Bootstrap
+does not claim installation. The first successful B4 sync creates the distinct
+`.reagent/installed-lock.json`; acknowledgement metadata is stored separately.
 
 Inspect identity without changing the Workspace:
 
@@ -78,6 +78,48 @@ python reagent_local.py workspace status "$WORKSPACE_DIR"
 ```
 
 Add `--json` to any command for one stable machine-readable result on stdout.
+
+## Explicitly synchronize desired Capsules
+
+With the loopback ReAgent API running, execute:
+
+```bash
+python reagent_local.py sync "$WORKSPACE_DIR"
+```
+
+Preview without writing local installation state:
+
+```bash
+python reagent_local.py sync "$WORKSPACE_DIR" --dry-run --json
+```
+
+The command reads current cloud desired state, compares exact Workflow
+Instance/version/checksum pins with `.reagent/installed-lock.json`, downloads
+only missing available Capsules, verifies the ZIP and immutable Package
+contract, stages on the destination filesystem, and atomically publishes each
+Capsule. It then atomically writes the lock and reports the active installation
+set to the cloud. No downloaded script is executed during installation.
+
+The lock is the sole installed-state truth source. The B3
+`.reagent/capsule-registry.json` remains immutable legacy adoption evidence; on
+first sync it is revalidated against the Package and cloud Manifest before an
+Installed Lock is created. It is not updated afterward. Declared mutable
+outputs, memory, Progress and receipts are excluded from immutable drift and
+are never overwritten by no-op sync.
+
+`workspace status` distinguishes `BOOTSTRAPPED_NO_LOCK`,
+`INSTALLED_LOCK_CURRENT`, `ACK_PENDING`, and `ACKNOWLEDGED_CURRENT`. A cloud
+acknowledgement means only that the client submitted a checksum-bound report
+matching a cloud Manifest revision. It does not mean ReAgent has copied,
+inspected, or backed up local files.
+
+If acknowledgement fails after installation, sync returns `ACK_PENDING` and
+preserves the Capsule and Lock. Run the same command again; it retries only the
+stored envelope with the same idempotency key. If the Manifest advanced during
+installation, the stale acknowledgement is rejected, the revision-N local
+files remain, and the next plan handles the new revision. A retired instance is
+marked `RETAINED_NOT_DESIRED`; its local Capsule and research files are not
+deleted.
 
 ## Adopt an existing Literature Search Package
 
@@ -149,6 +191,8 @@ Stable exit classes are:
 - `2`: command usage;
 - `10`: identity/schema/descriptor conflict;
 - `20`: bootstrap descriptor unavailable;
+- `30`: installation complete with cloud acknowledgement pending;
+- `40`: Workspace busy or cloud revision/idempotency conflict;
 - `50`: Package validation, identity, or checksum failure;
 - `60`: filesystem conflict, unsafe path, or recoverable partial state;
 - `70`: unexpected internal failure.
@@ -156,10 +200,16 @@ Stable exit classes are:
 Errors print a safe stage and application code. They do not print credentials,
 database URLs, tokens, or complete sensitive request URLs.
 
+Sync additionally uses `.reagent/sync/current.json` as a checksummed recovery
+journal and an OS advisory lock at `.reagent/runtime/sync.lock`. Staging is not
+installed state. If a process stops after Capsule publication but before Lock
+write, rerunning sync revalidates and adopts the exact published directory
+without overwrite. Damaged Lock/receipt files and immutable drift fail closed.
+
 ## Not implemented
 
-NIGHT-B3 does not implement pull-based sync, Manifest diff, generic Capsule
-download/installation, Installed Lock, installation acknowledgement,
-multi-Workflow Progress aggregation, Artifact handoff, Idea Discovery,
-Skills/Resources products, Workspace snapshots, automatic cross-device
-recovery, or frontend Workflow management.
+NIGHT-B4 does not implement multi-Workflow Progress aggregation, Artifact
+handoff/materialization, Idea Discovery or another executable Workflow,
+Skills/Resources products, Workspace snapshots, automatic/background sync,
+cross-device recovery, in-place Capsule upgrade/deletion, or frontend Workflow
+management. Literature Search remains the only executable Workflow.

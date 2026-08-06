@@ -55,6 +55,7 @@ Workflow Capsule path:
 ```bash
 python reagent_local.py bootstrap "$WORKSPACE_DIR" --descriptor workspace-bootstrap.json
 python reagent_local.py adopt "$LEGACY_PACKAGE" "$WORKSPACE_DIR"
+python reagent_local.py sync "$WORKSPACE_DIR"
 ```
 
 Obtain `workspace-bootstrap.json` from the repository-backed
@@ -63,10 +64,14 @@ Package. The source Package is not moved, rewritten, deleted, or executed during
 adoption; declared outputs, memory, Progress and receipts are preserved. The
 adopted Capsule retains the original `python reagent_local.py run .` command.
 
-See the [Workspace bootstrap and adoption guide](docs/getting-started/PROJECT_WORKSPACE_BOOTSTRAP.md)
-for layout, integrity checks, recovery and exit codes. This is bootstrap and
-legacy adoption only: pull sync, generic Capsule installation, Installed Lock,
-acknowledgement and cross-device file restoration are not implemented.
+See the [Workspace bootstrap, adoption, and sync guide](docs/getting-started/PROJECT_WORKSPACE_BOOTSTRAP.md)
+for layout, integrity checks, recovery and exit codes. Sync is always an
+explicit local command: the web service never writes the Workspace. It installs
+only exact, available Literature Search Capsule pins, preserves retired and
+mutable research state, and reports checksum-bound installation metadata. The
+acknowledgement is not a cloud backup. Artifact handoff, other executable
+Workflows, background sync, and cross-device file restoration are not
+implemented.
 
 ## V0.1 boundary
 

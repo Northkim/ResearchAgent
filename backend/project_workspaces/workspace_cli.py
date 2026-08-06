@@ -63,6 +63,7 @@ EXIT_SUCCESS = 0
 EXIT_USAGE = 2
 EXIT_IDENTITY = 10
 EXIT_CLOUD = 20
+EXIT_ACK_PENDING = 30
 EXIT_CONCURRENCY = 40
 EXIT_VALIDATION = 50
 EXIT_FILESYSTEM = 60
@@ -78,6 +79,7 @@ SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]
 MAX_FILES = 5_000
 MAX_PACKAGE_BYTES = 536_870_912
 MAX_FILE_BYTES = 134_217_728
+MAX_CONTROL_JSON_BYTES = 2_097_152
 
 _SECRET_PATTERNS = (
     re.compile(b"sk-" + rb"ant-[A-Za-z0-9_-]{8,}"),
@@ -1125,8 +1127,10 @@ configuration only; they do not prove local installation or execution state.
 - Never place credentials, database URLs, access tokens, or private keys in
   this Workspace.
 - Do not write into another Capsule or outside this Workspace.
-- `sync`, a general Capsule installer, Installed Lock, and cloud
-  acknowledgement are not implemented in NIGHT-B3.
+- Run `python reagent_local.py sync .` explicitly to pull reviewed, exact-pinned
+  Capsules. Sync never executes downloaded code or deletes retired Capsules.
+- `.reagent/installed-lock.json` is local installed-state metadata; cloud
+  acknowledgement is not a backup of this Workspace.
 """
 
 
@@ -1213,6 +1217,8 @@ def _record_case_path(
 def _read_json(path: Path) -> Any:
     if path.is_symlink() or not path.is_file():
         raise _identity("WORKSPACE_DESCRIPTOR_INVALID", "Required Workspace metadata is missing")
+    if path.stat(follow_symlinks=False).st_size > MAX_CONTROL_JSON_BYTES:
+        raise _identity("WORKSPACE_DESCRIPTOR_INVALID", "Workspace metadata exceeds size limits")
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -1222,6 +1228,8 @@ def _read_json(path: Path) -> Any:
 def _read_package_json(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package manifest is missing")
+    if path.stat(follow_symlinks=False).st_size > MAX_CONTROL_JSON_BYTES:
+        raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package manifest exceeds size limits")
     try:
         return _object_package(json.loads(path.read_text(encoding="utf-8")), "Package manifest")
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -1394,7 +1402,7 @@ class HTTPWorkspaceSyncTransport:
             "POST", f"/projects/{project_id}/workspace/sync-plan", payload
         )
 
-    def download(self, path: str) -> bytes:
+    def download(self, path: str, expected: dict[str, Any] | None = None) -> bytes:
         if not path.startswith("/projects/") or not path.endswith("/download"):
             raise WorkspaceCLIError(
                 "CAPSULE_DOWNLOAD_FAILED", "Capsule acquisition path is invalid", EXIT_CLOUD
@@ -1404,6 +1412,20 @@ class HTTPWorkspaceSyncTransport:
             with urllib.request.urlopen(request, timeout=30) as response:
                 if response.status != 200:
                     raise OSError("unexpected response status")
+                if response.geturl() != self._base_url + path:
+                    raise OSError("Capsule download redirect is forbidden")
+                if expected is not None:
+                    artifact = expected["artifact"]
+                    path_parts = path.split("/")
+                    expected_headers = {
+                        "X-ReAgent-Project-ID": path_parts[2],
+                        "X-ReAgent-Workflow-Instance-ID": expected["workflow_instance_id"],
+                        "X-ReAgent-Capsule-ID": expected["capsule_id"],
+                        "X-ReAgent-Capsule-Version": expected["capsule_version"],
+                        "ETag": f'"{artifact["archive_checksum"]}"',
+                    }
+                    if any(response.headers.get(key) != value for key, value in expected_headers.items()):
+                        raise OSError("Capsule download response identity mismatch")
                 content = response.read(MAX_PACKAGE_BYTES + 1)
         except (OSError, urllib.error.URLError, urllib.error.HTTPError) as error:
             raise WorkspaceCLIError(
@@ -1587,6 +1609,14 @@ def validate_sync_plan(document: Any, workspace: dict[str, Any]) -> dict[str, An
     previous = ""
     for expected_sequence, action in enumerate(actions, 1):
         item = _object(action, "Workspace sync action")
+        required = {
+            "sequence", "action_type", "workflow_instance_id",
+            "workflow_definition_id", "workflow_definition_version",
+            "capsule_id", "capsule_version", "capsule_definition_checksum",
+            "trust_classification", "destination_relative_path", "artifact",
+        }
+        if set(item) != required:
+            raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync action fields are invalid")
         if item.get("sequence") != expected_sequence:
             raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync action ordering is invalid")
         instance_id = item.get("workflow_instance_id")
@@ -1598,7 +1628,21 @@ def validate_sync_plan(document: Any, workspace: dict[str, Any]) -> dict[str, An
             "NOOP", "INSTALL_CAPSULE", "CONFLICT", "UNAVAILABLE", "RETAINED_NOT_DESIRED"
         }:
             raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync action type is invalid")
-        _safe_package_path(item.get("destination_relative_path"))
+        if (
+            item["workflow_definition_id"] != WORKFLOW_ID
+            or item["workflow_definition_version"] != WORKFLOW_VERSION
+            or item["capsule_version"] != CAPSULE_VERSION
+            or item["trust_classification"] != TRUST_CLASSIFICATION
+        ):
+            raise _identity("CAPSULE_TRUST_REJECTED", "Workspace sync Capsule pin or trust is unsupported")
+        _match(item["capsule_id"], CAPSULE_ID, "capsule_id")
+        expected_path = (
+            f"capsules/{item['workflow_definition_id']}/"
+            f"{item['workflow_instance_id']}/{item['capsule_version']}"
+        )
+        if item.get("destination_relative_path") != expected_path:
+            raise _identity("CAPSULE_IDENTITY_MISMATCH", "Capsule destination identity is invalid")
+        _safe_package_path(item["destination_relative_path"])
         _checksum(item.get("capsule_definition_checksum"), "capsule_definition_checksum")
         if item.get("action_type") == "INSTALL_CAPSULE":
             _validate_acquisition(item.get("artifact"), value, item)
@@ -1809,7 +1853,7 @@ def _execute_sync_plan(*, workspace, descriptor, cached_bootstrap, plan, prior_l
 
 def _install_action(workspace, descriptor, plan, action, transport):
     artifact = action["artifact"]
-    content = transport.download(artifact["download_path"])
+    content = transport.download(artifact["download_path"], action)
     if sha256_bytes(content) != artifact["archive_checksum"]:
         raise _package_error("CAPSULE_CHECKSUM_MISMATCH", "Downloaded Capsule archive checksum mismatch")
     destination = workspace / action["destination_relative_path"]
@@ -1877,6 +1921,17 @@ def _validate_acquisition(raw, plan, action):
     _exact_fields(artifact, required, "Capsule acquisition")
     for field in ("package_checksum", "manifest_checksum", "archive_checksum"):
         _checksum(artifact[field], field)
+    if artifact["package_schema_version"] != PACKAGE_SCHEMA:
+        raise _identity("CAPSULE_VERSION_MISMATCH", "Capsule Package schema is unsupported")
+    if (
+        isinstance(artifact["archive_size_bytes"], bool)
+        or not isinstance(artifact["archive_size_bytes"], int)
+        or not 0 <= artifact["archive_size_bytes"] <= MAX_PACKAGE_BYTES
+        or isinstance(artifact["file_count"], bool)
+        or not isinstance(artifact["file_count"], int)
+        or not 1 <= artifact["file_count"] <= MAX_FILES
+    ):
+        raise _identity("CAPSULE_ARTIFACT_UNAVAILABLE", "Capsule artifact bounds are invalid")
     if artifact["media_type"] != "application/zip":
         raise _identity("CAPSULE_ARTIFACT_UNAVAILABLE", "Capsule media type is unsupported")
     prefix = (
@@ -2194,6 +2249,11 @@ def main(argv: list[str] | None = None) -> int:
             result = workspace_status(args.workspace)
             json_output = args.json
         _print_result(result, json_output=json_output)
+        if (
+            isinstance(result, WorkspaceSyncResult)
+            and result.acknowledgement_status == "ACK_PENDING"
+        ):
+            return EXIT_ACK_PENDING
         return EXIT_SUCCESS
     except WorkspaceCLIError as error:
         print(
@@ -2231,6 +2291,9 @@ def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
     if lock_path.exists() or lock_path.is_symlink():
         lock = validate_installed_lock(_read_json(lock_path), descriptor)
     pending = _pending_acknowledgements(workspace, descriptor)
+    acknowledged = (
+        False if lock is None else _has_acknowledged_lock(workspace, descriptor, lock)
+    )
     active = 0 if lock is None else sum(
         item["lifecycle"] == "ACTIVE" for item in lock["installed_capsules"]
     )
@@ -2242,6 +2305,8 @@ def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
         state = "BOOTSTRAPPED_NO_LOCK"
     elif pending:
         state = "ACK_PENDING"
+    elif acknowledged:
+        state = "ACKNOWLEDGED_CURRENT"
     else:
         state = "INSTALLED_LOCK_CURRENT"
     return {
@@ -2254,8 +2319,10 @@ def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
         "installed_lock_checksum": None if lock is None else lock["lock_checksum"],
         "active_capsules": active,
         "retained_capsules": retained,
-        "acknowledgement_status": "ACK_PENDING" if pending else "NONE",
-        "sync_required": lock is None or bool(pending),
+        "acknowledgement_status": (
+            "ACK_PENDING" if pending else "ACKNOWLEDGED" if acknowledged else "NONE"
+        ),
+        "sync_required": lock is None or bool(pending) or not acknowledged,
     }
 
 

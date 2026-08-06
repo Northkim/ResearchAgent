@@ -60,7 +60,7 @@ class _ClientTransport:
             raise WorkspaceCLIError(error["code"], error["message"], workspace_cli.EXIT_CLOUD)
         return response.json()
 
-    def download(self, path):
+    def download(self, path, expected=None):
         self.downloads += 1
         response = self.client.get(path)
         if response.status_code != 200:
@@ -196,6 +196,24 @@ def test_sync_installs_atomically_retries_ack_and_then_is_noop(sync_fixture):
     assert output.read_text() == "preserve user output"
 
 
+def test_cli_returns_distinct_ack_pending_exit(sync_fixture, monkeypatch, capsys):
+    offline = _ClientTransport(sync_fixture["client"], fail_ack=True)
+    monkeypatch.setattr(
+        workspace_cli,
+        "HTTPWorkspaceSyncTransport",
+        lambda _url: offline,
+    )
+    result = workspace_cli.main([
+        "sync",
+        str(sync_fixture["workspace"]),
+        "--api-url",
+        "http://127.0.0.1:8000",
+        "--json",
+    ])
+    assert result == workspace_cli.EXIT_ACK_PENDING
+    assert json.loads(capsys.readouterr().out)["acknowledgement_status"] == "ACK_PENDING"
+
+
 def test_b3_registry_migrates_without_download_or_mutable_rewrite(sync_fixture):
     workspace = sync_fixture["workspace"]
     client = sync_fixture["client"]
@@ -325,6 +343,89 @@ def test_workspace_sync_lock_is_cross_process_and_crash_safe(sync_fixture):
         pass
 
 
+def test_published_before_lock_and_cloud_success_before_local_receipt_recover(
+    sync_fixture,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    workspace = sync_fixture["workspace"]
+    transport = _ClientTransport(sync_fixture["client"])
+    original_write = workspace_cli._atomic_write_json
+    failed = False
+
+    def fail_first_lock(path, value):
+        nonlocal failed
+        if path == workspace / workspace_cli.INSTALLED_LOCK and not failed:
+            failed = True
+            raise OSError("injected lock write failure")
+        original_write(path, value)
+
+    monkeypatch.setattr(workspace_cli, "_atomic_write_json", fail_first_lock)
+    with pytest.raises(OSError, match="injected lock"):
+        workspace_cli.sync_workspace(workspace_root=workspace, transport=transport)
+    assert not (workspace / workspace_cli.INSTALLED_LOCK).exists()
+    assert any((workspace / "capsules").rglob("package-manifest.json"))
+    monkeypatch.setattr(workspace_cli, "_atomic_write_json", original_write)
+    recovered = workspace_cli.sync_workspace(workspace_root=workspace, transport=transport)
+    assert recovered.acknowledgement_status == "ACKNOWLEDGED"
+
+    # Simulate Cloud accepting the exact acknowledgement before the local
+    # receipt replace. The pending envelope retains the original idempotency key.
+    ack_path = next((workspace / workspace_cli.ACKNOWLEDGEMENTS_ROOT).glob("*.json"))
+    value = json.loads(ack_path.read_text())
+    value["local_status"] = "ACK_PENDING"
+    value.pop("cloud_receipt", None)
+    original_store = workspace_cli._store_ack_receipt
+    calls = 0
+
+    def fail_local_receipt(path, envelope, receipt):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("injected local receipt failure")
+        original_store(path, envelope, receipt)
+
+    workspace_cli._atomic_write_json(ack_path, value)
+    monkeypatch.setattr(workspace_cli, "_store_ack_receipt", fail_local_receipt)
+    with pytest.raises(OSError, match="local receipt"):
+        workspace_cli.sync_workspace(workspace_root=workspace, transport=transport)
+    replayed = workspace_cli.sync_workspace(workspace_root=workspace, transport=transport)
+    assert replayed.status == "ACKNOWLEDGED"
+    assert json.loads(ack_path.read_text())["local_status"] == "ACKNOWLEDGED"
+
+
+def test_manifest_race_preserves_revision_n_install_then_syncs_n_plus_one(sync_fixture):
+    workspace = sync_fixture["workspace"]
+    client = sync_fixture["client"]
+
+    class RaceTransport(_ClientTransport):
+        def __init__(self, client):
+            super().__init__(client)
+            self.advanced = False
+
+        def acknowledge(self, project_id, payload):
+            if not self.advanced:
+                self.advanced = True
+                response = self.client.post(f"/projects/{project_id}/workflow-instances", json={
+                    "workflow_definition_id": LITERATURE_SEARCH_DEFINITION_ID,
+                    "workflow_version": "0.3.0",
+                    "capsule_id": LITERATURE_SEARCH_CAPSULE_ID,
+                    "capsule_version": "0.5.0",
+                    "base_revision": 1,
+                })
+                assert response.status_code == 201
+            return super().acknowledge(project_id, payload)
+
+    race = RaceTransport(client)
+    revision_n = workspace_cli.sync_workspace(workspace_root=workspace, transport=race)
+    assert revision_n.status == "ACK_PENDING"
+    assert revision_n.manifest_revision == 1
+    assert json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())["manifest_revision"] == 1
+    current = workspace_cli.sync_workspace(workspace_root=workspace, transport=race)
+    assert current.manifest_revision == 2
+    assert current.installed_capsules == 2
+    assert current.acknowledgement_status == "ACKNOWLEDGED"
+
+
 def test_archive_attack_and_install_failure_do_not_write_lock(sync_fixture, tmp_path):
     workspace = sync_fixture["workspace"]
     client_transport = _ClientTransport(sync_fixture["client"])
@@ -338,7 +439,7 @@ def test_archive_attack_and_install_failure_do_not_write_lock(sync_fixture, tmp_
     })
 
     class Malicious(_ClientTransport):
-        def download(self, path):
+        def download(self, path, expected=None):
             archive = tmp_path / "bad.zip"
             import zipfile
             with zipfile.ZipFile(archive, "w") as bundle:

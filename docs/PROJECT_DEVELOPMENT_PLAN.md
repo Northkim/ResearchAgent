@@ -60,10 +60,11 @@ this engineering order.
 | MVP-LS1 | Complete autonomous Literature Search round | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — one Package command runs one bounded local Codex round, normal OpenAlex-only or explicit fictional demo transport, four local outputs, one automatic idempotent report upload, verified projection, and guided UI; no Hosted/cloud research execution |
 | MVP-LS2 | Interactive Codex Literature Search experience | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — default Package command attaches Codex to the current terminal, gates search/final writing on owner checkpoints, validates a versioned completion artifact, cleans up interrupts, preserves explicit auto/recovery modes, and retains the LS1 cloud/local boundary |
 | MVP-LS2.1 | Fresh post-round upload authorization | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — ADR 0021 separates search and exact-report upload sessions, safely reconciles expiry/response loss without rerunning Codex or search, and makes no-report cloud uncertainty explicit; zero live OpenAlex use |
-| ARCH-D1 | Hybrid Project Workspace and Workflow Capsule design | **DESIGN COMPLETE; NIGHT-B3 BOOTSTRAP/ADOPTION FOUNDATION IMPLEMENTED** — ADR 0022 defines one logical Workspace per Project and isolated versioned Capsules; B1/B2 provide persistence and desired state, while ADR 0023/B3 promote canonical local identity, atomic bootstrap and non-destructive legacy Package adoption; sync/install and later slices remain owner-gated |
+| ARCH-D1 | Hybrid Project Workspace and Workflow Capsule design | **DESIGN COMPLETE; NIGHT-B4 PULL SYNC FOUNDATION IMPLEMENTED** — ADR 0022 defines one logical Workspace per Project and isolated versioned Capsules; B1/B2 provide persistence and desired state, ADR 0023/B3 provide identity/bootstrap/adoption, and ADR 0024/B4 add explicit pull sync, exact-instance acquisition, atomic installation, Installed Lock and acknowledgement recovery; later product slices remain owner-gated |
 | NIGHT-B1 | Project Workspace persistence foundation | **PASS — OWNER REVIEW REQUIRED** — additive migration `20260806_0008`, local Workflow Definition/version, Capsule version, Project Workflow Instance, deterministic legacy Literature Search mapping, repository/UoW, isolated PostgreSQL restart and full backend regression; no API, frontend, Workspace/sync, Progress or new Workflow implementation |
 | NIGHT-B2 | Workflow Catalog and Desired Project Manifest | **PASS — OWNER REVIEW REQUIRED** — additive migration `20260806_0009`, canonical Project/Manifest revision history, deterministic existing-Project backfill, repository-backed Catalog, multi-instance create/detail/list/retire APIs, PostgreSQL compare-and-swap revision safety, and an atomic Project-creation bridge; no Workspace files, sync/install, Progress aggregation, frontend or new Workflow execution |
 | NIGHT-B3 | Workspace bootstrap and legacy Literature Search adoption | **PASS — OWNER REVIEW REQUIRED** — repository-backed bootstrap descriptor, promoted checksum-bound `project.json`, atomic minimal Workspace creation, safe directory/ZIP Package adoption into the frozen Capsule path, source/mutable-state preservation and standalone/adopted launcher compatibility; no database migration, sync, generic installation, Installed Lock, acknowledgement, frontend or new Workflow execution |
+| NIGHT-B4 | Pull sync, Installed Lock and installation acknowledgement | **PASS — OWNER REVIEW REQUIRED** — additive migration `20260806_0010`, exact Workflow-Instance Capsule artifact binding, repository-driven sync plan/download/ack endpoints, explicit local `sync`, B3 registry migration, immutable-contract drift checks, atomic staging/publication, retained retired Capsules, OS write lock, checksummed Installed Lock, ACK_PENDING recovery and Manifest-race rejection; no Progress aggregation, frontend Workflow Board, Artifact handoff or new Workflow execution |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -111,9 +112,15 @@ CLI atomically creates the minimal Workspace and can copy a verified existing
 Literature Search Package without rewriting, moving, deleting or executing its
 source. Package mutable state and the accepted `run .` behavior are preserved.
 The Capsule registry records local adoption only and is explicitly not an
-Installed Lock or sync acknowledgement. NIGHT-B4 pull sync, generic Capsule
-download/installation, Manifest diff, Installed Lock and acknowledgement remain
-closed pending owner review.
+Installed Lock or sync acknowledgement. NIGHT-B4 now implements the explicit
+pull path: a repository-derived sync plan binds each available Literature
+Search instance to a unique artifact; the local CLI verifies/stages/publishes
+missing Capsules, promotes a verified B3 registry entry into the canonical
+Installed Lock without rewriting mutable state, and idempotently reports one
+Manifest-aligned installation record. Retired Capsules remain local and a
+stale acknowledgement never claims the newer revision. Progress aggregation,
+Artifact handoff, new executable Workflows and frontend Workflow management
+remain closed pending owner review.
 
 R2A now reconciles the v0.1 mismatch without rewriting history. Native v0.2
 uses deterministic non-cyclic report identity and exact context-before/context-

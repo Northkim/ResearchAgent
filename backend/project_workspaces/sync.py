@@ -145,6 +145,7 @@ class WorkspaceSyncApplicationService:
                 "capsule_id": installed["capsule_id"],
                 "capsule_version": installed["capsule_version"],
                 "capsule_definition_checksum": installed["capsule_definition_checksum"],
+                "trust_classification": CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value,
                 "destination_relative_path": installed["relative_path"],
                 "artifact": None,
             }))
@@ -567,8 +568,17 @@ def _ack_capsule_index(values) -> dict[str, Mapping[str, Any]]:
     if not isinstance(values, list) or len(values) > 100:
         raise ApplicationCodedValidationError("Acknowledged Capsule list is invalid", code="ACKNOWLEDGEMENT_REJECTED")
     result = {}
+    required = {
+        "workflow_instance_id", "workflow_definition_id",
+        "workflow_definition_version", "capsule_id", "capsule_version",
+        "capsule_definition_checksum",
+    }
     for item in values:
-        if not isinstance(item, dict) or not isinstance(item.get("workflow_instance_id"), str):
+        if (
+            not isinstance(item, dict)
+            or set(item) != required
+            or not isinstance(item.get("workflow_instance_id"), str)
+        ):
             raise ApplicationCodedValidationError("Acknowledged Capsule identity is invalid", code="ACKNOWLEDGEMENT_REJECTED")
         if item["workflow_instance_id"] in result:
             raise ApplicationCodedValidationError("Acknowledged Capsule identity is duplicated", code="ACKNOWLEDGEMENT_REJECTED")

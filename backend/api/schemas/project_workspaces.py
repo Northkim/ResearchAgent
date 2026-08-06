@@ -189,14 +189,14 @@ class WorkspaceBootstrapResponse(StrictDTO):
 
 
 class InstalledCapsuleObservation(StrictDTO):
-    workflow_instance_id: str
-    workflow_definition_id: str
-    workflow_definition_version: str
-    capsule_id: str
-    capsule_version: str
-    capsule_definition_checksum: str
-    package_checksum: str
-    relative_path: str
+    workflow_instance_id: str = Field(pattern=r"^wfi-[0-9a-f]{32}$")
+    workflow_definition_id: str = Field(min_length=2, max_length=128)
+    workflow_definition_version: str = Field(min_length=5, max_length=100)
+    capsule_id: str = Field(pattern=r"^capsule-[0-9a-f]{32}$")
+    capsule_version: str = Field(min_length=5, max_length=100)
+    capsule_definition_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    package_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    relative_path: str = Field(min_length=1, max_length=500)
 
 
 class WorkspaceSyncPlanRequest(StrictDTO):
@@ -229,16 +229,16 @@ class WorkspaceSyncPlanResponse(StrictDTO):
 
 
 class WorkspaceSyncAcknowledgementRequest(StrictDTO):
-    schema_version: str
-    installation_id: str
-    project_id: str
-    workspace_id: str
+    schema_version: str = Field(pattern=r"^reagent\.capsule-installation-ack/v0\.1$")
+    installation_id: str = Field(pattern=r"^install-[0-9a-f]{32}$")
+    project_id: str = Field(pattern=r"^project-[0-9a-f]{32}$")
+    workspace_id: str = Field(pattern=r"^workspace-[0-9a-f]{32}$")
     manifest_revision: int = Field(ge=1)
-    manifest_checksum: str
-    plan_checksum: str
-    installed_lock_schema: str
-    installed_lock_checksum: str
-    idempotency_key: str
+    manifest_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    plan_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    installed_lock_schema: str = Field(pattern=r"^reagent\.workspace-installed-lock/v0\.1$")
+    installed_lock_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=36, max_length=36)
     installed_capsules: list[dict[str, Any]] = Field(max_length=100)
     installed_at: str
 

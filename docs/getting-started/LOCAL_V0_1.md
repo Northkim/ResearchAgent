@@ -122,6 +122,7 @@ download the read-only bootstrap descriptor from
 ```bash
 python reagent_local.py bootstrap "$WORKSPACE_DIR" --descriptor workspace-bootstrap.json
 python reagent_local.py adopt "$LEGACY_PACKAGE" "$WORKSPACE_DIR"
+python reagent_local.py sync "$WORKSPACE_DIR"
 ```
 
 Adoption verifies immutable Package identity/checksums while preserving
@@ -129,10 +130,15 @@ declared mutable outputs, memory, Progress state and receipts. It copies through
 same-filesystem staging and leaves the source unchanged. Enter the Capsule path
 printed by the command and run the same `python reagent_local.py run .` launcher.
 
-This optional B3 path does not claim local/cloud synchronization. It creates no
-Installed Lock or acknowledgement, and it does not download or install general
-Capsules. Detailed layout, retry behavior, safe failure codes and ZIP/directory
-rules are in [Project Workspace Bootstrap and Legacy Package Adoption](PROJECT_WORKSPACE_BOOTSTRAP.md).
+Bootstrap alone does not claim local/cloud synchronization. The explicit B4
+`sync` command creates a checksum-bound Installed Lock only after verified
+atomic Capsule publication, preserves adopted/retired mutable research state,
+and retries a pending cloud acknowledgement without reinstalling. The
+acknowledgement is a client report for one Manifest revision, not cloud
+possession or backup of the Workspace. Sync is never triggered silently by
+`run` or the browser; current execution support remains Literature Search only.
+Detailed layout, retry behavior, safe failure codes and ZIP/directory rules are
+in [Project Workspace Bootstrap, Adoption, and Sync](PROJECT_WORKSPACE_BOOTSTRAP.md).
 
 Press `Ctrl+C` to interrupt safely. The launcher forwards the signal, reaps
 Codex, revokes the local session, preserves valid local files, and uploads
