@@ -3,10 +3,12 @@
 Target duration: approximately 10 minutes after PostgreSQL and repository
 dependencies are installed.
 
-Current state: **IMPLEMENTATION QUALIFIED — OWNER ACCEPTANCE PENDING**.
+Current state: **AUTONOMOUS WORKFLOW QUALIFIED — OWNER ACCEPTANCE PENDING**.
 
 Use only localhost and a fictional/public topic. Do not use the legacy Hosted
-pages as substitutes, and do not enable a live Provider for this checklist.
+pages as substitutes. A real OpenAlex run requires separate explicit owner
+authorization and server-side capability; the deterministic path below uses
+explicit demo mode.
 
 ## Ten-minute checklist
 
@@ -23,18 +25,21 @@ pages as substitutes, and do not enable a live Provider for this checklist.
 4. **Generate and download the Package.** Open Package, generate it, note the
    displayed Package ID and checksum, and download the ZIP outside Git.
 5. **Inspect the local instructions.** Extract the ZIP and read `AGENT.md`.
-   Confirm it tells Codex to treat the folder as authoritative task state,
-   write only declared paths, finalize one Progress Report, and upload only by
-   an explicit later action. Confirm no credential is included.
-6. **Validate the Package.** In the extracted folder run
-   `python validate_package.py --root .`; expect a passing result.
-7. **Create and upload one fictional Progress Report.** Follow the bundled
-   `progress_report.py` instructions, validate again, then run the explicit
-   upload command in `docs/getting-started/LOCAL_V0_1.md`. Do not rely on
-   automatic synchronization.
+   Confirm it identifies the folder as authoritative, names the four outputs,
+   limits evidence to metadata/abstracts, and includes no credential.
+6. **Run one deterministic round.** From the extracted folder run
+   `python reagent_local.py run . --mode demo`. Confirm the launcher validates
+   the Package, runs the Codex workflow once, labels all evidence fictional,
+   uploads one report automatically, verifies the projection, and revokes its
+   local session.
+7. **Inspect the local results.** Confirm the four declared output files, one
+   append-only Progress Report, and one verified receipt exist. Run the same
+   command again and confirm it reports the round already uploaded rather than
+   rerunning it.
 8. **View progress.** Refresh the project Progress page. Confirm project name,
-   Workflow, execution round, status, completed work, current state, next
-   action, outputs, warnings/errors, and the new report-history receipt.
+   Workflow, completed state, concise summary, query/candidate/selected counts,
+   evidence limitation, output names/checksums, warnings/errors, next action,
+   and immutable report receipt/history.
 9. **Restart application services.** Run `make stop`, confirm the application
    ports release, and run `make dev` again against the same PostgreSQL data.
 10. **Confirm continuity.** Reopen the project. Confirm Package metadata,
@@ -43,19 +48,19 @@ pages as substitutes, and do not enable a live Provider for this checklist.
 
 The owner does not need to inspect PostgreSQL manually.
 
-## Optional deterministic demonstration
+## Optional owner-authorized normal mode
 
-An operator may issue a short-lived fake-adapter capability outside Git and the
-Package, then use the provider-neutral client for one fictional
-`paper.search/v0.1` request and exact replay. This is optional and must make no
-external Provider call. Full Proxy operation detail is not required in the
-frontend.
+After separately authorizing real OpenAlex use, start the local product with the
+experimental OpenAlex adapter and server-side key, then run
+`python reagent_local.py run .`. Normal mode stops if the adapter is unavailable
+and never uses fictional fallback. Do not put the key or token in the Package.
 
 ## Known warnings
 
 - Claude Code is Experimental / Untested; Codex CLI is the supported Harness.
 - OpenAlex is experimental and disabled by default.
-- Progress Report upload is explicit and manual.
+- Progress Report upload is automatic only after the local round and remains
+  idempotent; it does not upload the complete research workspace.
 - Literature Search is the only Workflow.
 - V0.1 is local, single-user software and is not accepted for public or
   production deployment.
@@ -65,5 +70,5 @@ frontend.
 Production authentication, OAuth/SSO, multi-user authorization, HTTPS
 termination, proof of possession, production secret management, workers,
 queues, paid Provider activity, failover, more Providers or Workflows,
-automatic Progress synchronization, Hosted research execution, cloud LLM
-research, and production deployment are not part of V0.1.
+Hosted research execution, cloud LLM research, and production deployment are
+not part of V0.1.

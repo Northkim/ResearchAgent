@@ -22,6 +22,7 @@ from .contracts import (
     MAX_TIMESTAMP_SKEW_SECONDS,
     MAX_TIMEOUT_SECONDS,
     MAX_TOKEN_OPERATIONS,
+    ALLOWED_LOCAL_SESSION_CAPABILITIES,
     OPENALEX_ADAPTER_ID,
     OPENALEX_MAX_PROVIDER_CALLS,
     OPENALEX_MAX_PROVIDER_COST_MICROUSD,
@@ -112,6 +113,7 @@ class CloudAPIProxyService:
         lifetime_minutes: int = TOKEN_DEFAULT_MINUTES,
         maximum_operations: int | None = None,
         adapter_id: str = ADAPTER_ID,
+        local_session_capabilities: tuple[str, ...] = (),
     ) -> tuple[ProxyCapabilityToken, str]:
         if isinstance(lifetime_minutes, bool) or not isinstance(lifetime_minutes, int):
             raise ValueError("token lifetime must be an integer number of minutes")
@@ -125,6 +127,9 @@ class CloudAPIProxyService:
                 if adapter_id == OPENALEX_ADAPTER_ID
                 else MAX_TOKEN_OPERATIONS
             )
+        local_session_capabilities = tuple(local_session_capabilities)
+        if not set(local_session_capabilities) <= ALLOWED_LOCAL_SESSION_CAPABILITIES:
+            raise ValueError("local session capability is not allowlisted")
         if isinstance(maximum_operations, bool) or not isinstance(maximum_operations, int):
             raise ValueError("maximum operations must be an integer")
         maximum_allowed = (
@@ -132,8 +137,13 @@ class CloudAPIProxyService:
             if adapter_id == OPENALEX_ADAPTER_ID
             else MAX_TOKEN_OPERATIONS
         )
-        if not 1 <= maximum_operations <= maximum_allowed:
-            raise ValueError(f"maximum operations must be between 1 and {maximum_allowed}")
+        minimum_operations = 0 if local_session_capabilities else 1
+        if not minimum_operations <= maximum_operations <= maximum_allowed:
+            raise ValueError(
+                f"maximum operations must be between {minimum_operations} and {maximum_allowed}"
+            )
+        if maximum_operations == 0 and adapter_id != ADAPTER_ID:
+            raise ValueError("upload-only local sessions use the network-free fake adapter scope")
         plaintext = secrets.token_urlsafe(32)
         digest = token_digest(plaintext)
         now = self._now()
@@ -156,6 +166,7 @@ class CloudAPIProxyService:
                 if adapter_id == OPENALEX_ADAPTER_ID
                 else 0
             ),
+            local_session_capabilities=local_session_capabilities,
         )
         token = ProxyCapabilityToken(
             scope=scope,
@@ -167,6 +178,40 @@ class CloudAPIProxyService:
             uow.proxy.add_token(token)
             uow.commit()
         return token, plaintext
+
+    def authorize_local_session_capability(
+        self,
+        *,
+        bearer_token: str,
+        token_id: str,
+        project_id: str,
+        package_id: str,
+        package_checksum: str,
+        workflow_id: str,
+        workflow_version: str,
+        workflow_checksum: str,
+        capability: str,
+    ) -> ProxyCapabilityToken:
+        """Authorize one local-only non-Provider session capability."""
+
+        if capability not in ALLOWED_LOCAL_SESSION_CAPABILITIES:
+            raise forbidden("Local session capability is not allowlisted")
+        now = self._now()
+        with self.unit_of_work_factory() as uow:
+            token = self._authenticate(uow.proxy, bearer_token, now)
+            scope = token.scope
+            if (
+                scope.token_id != token_id
+                or scope.project_id != project_id
+                or scope.package_id != package_id
+                or scope.package_checksum != package_checksum
+                or scope.workflow_id != workflow_id
+                or scope.workflow_version != workflow_version
+                or scope.workflow_checksum != workflow_checksum
+                or capability not in scope.local_session_capabilities
+            ):
+                raise forbidden()
+            return token
 
     def revoke_token(self, token_id: str) -> ProxyCapabilityToken:
         with self.unit_of_work_factory() as uow:

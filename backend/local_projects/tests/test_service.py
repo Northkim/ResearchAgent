@@ -60,7 +60,13 @@ def test_package_generation_binds_topic_and_is_deterministic(tmp_path: Path) -> 
     assert first.current_package == second.current_package
     assert first.current_package is not None
 
-    package_root = tmp_path / "packages" / project.project_id / "package"
+    package_root = (
+        tmp_path
+        / "packages"
+        / project.project_id
+        / "literature-search-v0.3"
+        / "package"
+    )
     assert validate_package(package_root, pristine=True).valid
     import json
 

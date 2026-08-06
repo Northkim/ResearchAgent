@@ -12,12 +12,17 @@ afterEach(() => vi.restoreAllMocks());
 test("shows Package checksum, ZIP download, and local Codex instructions", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
   render(<Providers><PackageProductPanel projectId={localProjectFixture.project_id} /></Providers>);
-  expect(await screen.findByText(localProjectFixture.current_package!.package_checksum)).toBeVisible();
-  expect(screen.getByText(localProjectFixture.current_package!.zip_checksum)).toBeVisible();
+  expect(await screen.findByText(localProjectFixture.current_package!.package_checksum)).toBeInTheDocument();
+  expect(screen.getByText(localProjectFixture.current_package!.zip_checksum)).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Download Package ZIP" })).toHaveAttribute(
     "href",
     expect.stringContaining("/download"),
   );
   expect(screen.getByText(/Credentials are not included/)).toBeVisible();
-  expect(screen.getByText("AGENT.md")).toBeVisible();
+  expect(screen.getByText("python reagent_local.py run .")).toBeVisible();
+  expect(screen.getByText(/Four research artifacts/)).toBeVisible();
+  expect(screen.getByRole("link", { name: /Read full guide/ })).toHaveAttribute(
+    "href",
+    expect.stringContaining("/guide"),
+  );
 });

@@ -11,7 +11,14 @@ from uuid import uuid4
 import pytest
 
 from backend.cloud_api_proxy import CloudAPIProxyService, InMemoryProxyDatabase, InMemoryProxyUnitOfWork
-from backend.cloud_api_proxy.contracts import ADAPTER_ID, PaperSearchV01Request, ProxyOperationStatus, canonical_json, format_timestamp
+from backend.cloud_api_proxy.contracts import (
+    ADAPTER_ID,
+    LOCAL_PROGRESS_READ_CAPABILITY,
+    PaperSearchV01Request,
+    ProxyOperationStatus,
+    canonical_json,
+    format_timestamp,
+)
 from backend.cloud_api_proxy.errors import ProxyError
 from backend.cloud_api_proxy.fake_adapter import DeterministicFakePaperSearchAdapter
 
@@ -63,6 +70,37 @@ def test_token_generation_has_256_random_bits_and_enforces_ratified_bounds() -> 
     ):
         with pytest.raises(ValueError):
             service.issue_token(**common, **overrides)
+
+
+def test_zero_operation_local_session_cannot_admit_proxy_work() -> None:
+    database = InMemoryProxyDatabase()
+    adapter = DeterministicFakePaperSearchAdapter()
+    service = CloudAPIProxyService(
+        unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(database),
+        adapter=adapter,
+        clock=lambda: NOW,
+    )
+    token, plaintext = service.issue_token(
+        tenant_id="tenant",
+        subject_id="subject",
+        project_id="fictional-project",
+        package_id="fictional-package",
+        package_checksum=CHECKSUM_A,
+        workflow_id="literature-search",
+        workflow_version="1.0.0",
+        workflow_checksum=CHECKSUM_B,
+        maximum_operations=0,
+        local_session_capabilities=(LOCAL_PROGRESS_READ_CAPABILITY,),
+    )
+    with pytest.raises(ProxyError) as captured:
+        service.submit(
+            bearer_token=plaintext,
+            path_project_id="fictional-project",
+            request=make_request(),
+        )
+    assert captured.value.code == "OPERATION_LIMIT_EXHAUSTED"
+    assert adapter.invocation_count == 0
+    assert database.tokens[token.scope.token_id].admitted_operations == 0
 
 
 def test_submit_and_sequential_exact_replay_are_idempotent(proxy_setup) -> None:

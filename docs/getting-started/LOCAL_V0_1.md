@@ -1,9 +1,10 @@
 # ReAgent V0.1 Local Product Guide
 
 ReAgent V0.1 is a localhost-only, single-user Literature Search product. The
-server manages projects, Package delivery, explicit Progress Report uploads,
-progress views, and bounded Proxy metadata. Codex performs the research in the
-downloaded local folder; the server does not execute or resume the task.
+server manages projects, Package delivery, bounded Proxy transport, automatic
+Progress Report intake, and progress views. Codex performs planning, screening,
+and synthesis in the downloaded local folder; the server does not execute,
+rank, screen, synthesize, or resume the research task.
 
 ## Prerequisites
 
@@ -73,46 +74,67 @@ stop PostgreSQL, delete a database, or remove a downloaded Package.
    research topic. Literature Search is fixed; creation starts no execution.
 2. Open the project Package page, generate a Package, inspect its Package,
    Workflow, and checksum identities, then download the ZIP outside Git.
-3. Extract the ZIP, read `AGENT.md`, and run:
+3. Extract the ZIP outside Git and run one complete round:
 
    ```bash
-   python validate_package.py --root .
+   python reagent_local.py run .
    ```
 
-4. Open that extracted folder with Codex. Codex is the supported Harness. It
-   owns the local research task, outputs, context, and append-only Progress
-   Reports; the cloud does not perform the research.
-5. At a completion boundary, use the bundled `progress_report.py` helper to
-   finalize a report and validate the Package again.
-6. Explicitly upload the finalized report with the committed client:
+   The launcher validates the Package, starts a short-lived exact-Package
+   session, invokes Codex with fixed planning and synthesis boundaries, performs
+   at most three bounded searches, creates the four outputs, finalizes exactly
+   one report, uploads it idempotently, verifies history/projection, stores a
+   safe receipt, revokes the session, and stops.
+4. Refresh the project Progress page. It displays the round status, concise
+   result summary, query/candidate/selection counts, evidence limitation,
+   output names/checksums, warnings, next action, and immutable upload receipt.
 
-   ```bash
-   conda run --no-capture-output -n reagent-dev \
-     python -m backend.progress_reports.client upload \
-     --package-root /absolute/path/to/extracted-package \
-     --report-file memory/progress/reports/<report-file>.json \
-     --base-url http://127.0.0.1:8000
-   ```
+The four local research outputs are:
 
-7. Refresh the project Progress page to view the latest execution round,
-   status, completed work, current state, next action, outputs,
-   warnings/errors, and immutable report-history receipts.
+- `outputs/search_plan.md`;
+- `outputs/candidate_papers.json`;
+- `outputs/selected_papers.json`;
+- `outputs/literature_search_report.md`.
 
-Upload is always an explicit owner action. The server never generates a report
-or mutates the downloaded Package.
+The complete libraries, query text, full report, and context stay local. The
+cloud receives only the existing bounded Progress Report summary and artifact
+names/checksums. V0.1 uses metadata and available abstracts; it never claims
+that papers were read in full.
+
+If a valid report exists without its receipt, run the same command again. It
+opens an upload-only session, uploads the exact report idempotently, verifies
+the server receipt/history/projection, and does not rerun search or Codex. If
+partial outputs exist without a valid report, the command stops without
+overwriting them and prints recovery guidance. A completed round is not
+repeated automatically.
 
 ## Provider boundary
 
-OpenAlex is the only experimentally accepted live Provider, remains disabled
-by default, and is not needed for the basic local product flow. A deterministic
-fake Provider may be used for controlled demonstrations through the existing
-operator-issued capability and provider-neutral client. Credentials and token
-plaintext must stay outside Git and outside the Package.
+OpenAlex is the only experimentally accepted live Provider and remains disabled
+by default. Before `make dev`, an owner-authorized normal-mode session requires
+the server process to receive both
+`REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED=1` and
+`REAGENT_OPENALEX_API_KEY`. The key stays server-side; it is never passed to
+Codex or the Package. If that capability is absent, normal mode stops
+fail-closed and explains the required startup step.
+
+For a deterministic fictional demonstration, use:
+
+```bash
+python reagent_local.py run . --mode demo
+```
+
+Demo mode is explicit and every result is labelled fictional. Normal mode
+never falls back to demo. Local sessions use literal loopback, last 15 minutes,
+are scoped to the exact project/Package/Workflow, allow at most three
+five-result searches, and are revoked after the round. Token plaintext remains
+process-local and is removed from the Codex subprocess environment.
 
 ## Known limits
 
 Claude Code is Experimental / Untested. Only Literature Search exists. Public
 deployment, production authentication, OAuth/SSO, multi-user authorization,
 HTTPS termination, proof of possession, production secret management,
-automatic upload, Hosted/cloud research execution, and additional Providers or
-Workflows are outside V0.1.
+Hosted/cloud research execution and additional Providers or Workflows are
+outside V0.1. Automatic upload is limited to the single locally produced
+append-only report and never causes cloud research execution.

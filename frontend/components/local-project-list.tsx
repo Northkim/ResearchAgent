@@ -16,7 +16,7 @@ export function LocalProjectList() {
       <PageHeader
         eyebrow="ReAgent V0.1 · local workspace"
         title="Research stays in your folder."
-        description="Create a Literature Search project, download its credential-free Workflow Package, work locally with Codex, and explicitly upload Progress Reports when you choose."
+        description="Create a Literature Search project, download its credential-free Workflow Package, and run one complete local Codex round with automatic Progress upload."
         action={
           <Link href="/projects/new" className="button button-primary">
             Create project

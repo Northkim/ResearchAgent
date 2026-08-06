@@ -33,6 +33,11 @@ OPENALEX_MAX_PROVIDER_COST_MICROUSD = 50_000
 OPENALEX_RESERVED_SEARCH_COST_MICROUSD = 1_000
 MICROUSD_PER_USD = 1_000_000
 REQUEST_EVIDENCE_SCHEMA_VERSION = "proxy-request-evidence/v0.1"
+LOCAL_PROGRESS_UPLOAD_CAPABILITY = "progress.upload/v0.2"
+LOCAL_PROGRESS_READ_CAPABILITY = "progress.read/v0.1"
+ALLOWED_LOCAL_SESSION_CAPABILITIES = frozenset(
+    {LOCAL_PROGRESS_UPLOAD_CAPABILITY, LOCAL_PROGRESS_READ_CAPABILITY}
+)
 
 _SHA256 = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _TOKEN_ID = re.compile(r"proxytok-v1-[0-9a-f]{64}\Z")
@@ -407,6 +412,7 @@ class ProxyAuthorizationScope:
     maximum_operations: int
     maximum_provider_calls: int = 0
     maximum_provider_cost_microusd: int = 0
+    local_session_capabilities: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not _TOKEN_ID.fullmatch(self.token_id):
@@ -417,8 +423,17 @@ class ProxyAuthorizationScope:
         _checksum(self.workflow_checksum, "workflow_checksum")
         if self.capability != CAPABILITY or self.adapter_id not in ALLOWED_ADAPTER_IDS:
             raise ValueError("scope must bind a ratified capability and adapter")
-        if not 1 <= self.maximum_operations <= MAX_TOKEN_OPERATIONS:
-            raise ValueError("maximum_operations must be between 1 and 50")
+        object.__setattr__(
+            self,
+            "local_session_capabilities",
+            tuple(sorted(set(self.local_session_capabilities))),
+        )
+        if not set(self.local_session_capabilities) <= ALLOWED_LOCAL_SESSION_CAPABILITIES:
+            raise ValueError("local session capability is not allowlisted")
+        if not 0 <= self.maximum_operations <= MAX_TOKEN_OPERATIONS:
+            raise ValueError("maximum_operations must be between 0 and 50")
+        if self.maximum_operations == 0 and not self.local_session_capabilities:
+            raise ValueError("zero-operation tokens require a local session capability")
         if self.adapter_id == OPENALEX_ADAPTER_ID:
             if not 1 <= self.maximum_operations <= OPENALEX_MAX_PROVIDER_CALLS:
                 raise ValueError("OpenAlex maximum_operations must be between 1 and 20")
@@ -430,7 +445,7 @@ class ProxyAuthorizationScope:
             raise ValueError("fake adapter scope must retain zero Provider call and cost limits")
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "token_id": self.token_id, "tenant_id": self.tenant_id,
             "subject_id": self.subject_id, "project_id": self.project_id,
             "package_id": self.package_id, "package_checksum": self.package_checksum,
@@ -440,6 +455,13 @@ class ProxyAuthorizationScope:
             "maximum_provider_calls": self.maximum_provider_calls,
             "maximum_provider_cost_microusd": self.maximum_provider_cost_microusd,
         }
+        # Empty capabilities are omitted so the checksum of every historical
+        # R3B/R3C token scope and operation remains byte-for-byte stable.
+        if self.local_session_capabilities:
+            value["local_session_capabilities"] = list(
+                self.local_session_capabilities
+            )
+        return value
 
     @property
     def checksum(self) -> str:

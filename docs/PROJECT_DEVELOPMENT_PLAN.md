@@ -57,6 +57,7 @@ this engineering order.
 | MVP-A0 | Local V0.1 product readiness audit | **BLOCKED — GAPS PRESERVED** — component backends passed, but project, Package, Progress UI, startup, typecheck, and teacher-aligned E2E product gaps prevented owner acceptance |
 | MVP-I | Local V0.1 product integration | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — local project persistence/API, deterministic Package download, existing Progress projection/history UI, primary local navigation, safe startup, and full-stack tests are integrated; no Hosted/cloud research execution |
 | MVP-I1 | Persistent local dotenv startup | **PASS — OWNER ACCEPTANCE PENDING** — `make dev` safely resolves exported/custom/root dotenv database configuration without executing or printing values, while retaining loopback/ProjectDB safeguards and external PostgreSQL lifecycle |
+| MVP-LS1 | Complete autonomous Literature Search round | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — one Package command runs one bounded local Codex round, normal OpenAlex-only or explicit fictional demo transport, four local outputs, one automatic idempotent report upload, verified projection, and guided UI; no Hosted/cloud research execution |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -220,6 +221,39 @@ Dotenv text is never sourced or evaluated, values are not logged, and malformed
 input fails closed. Existing PostgreSQL-only, loopback-only and ProjectDB
 rejection remains mandatory. The owner creates the database once; neither
 startup nor shutdown creates, resets, deletes, starts, or stops PostgreSQL.
+
+MVP-LS1 completes the first user-facing Literature Search round without moving
+research execution into the cloud. Accepted ADR 0019 adds one Package command,
+`python reagent_local.py run .`, that validates immutable identities, opens a
+15-minute exact-Package loopback session, invokes Codex at fixed planning and
+synthesis boundaries, issues two or three bounded provider-neutral searches,
+writes four local output contracts, finalizes one native v0.2 Progress Report,
+uploads it idempotently, verifies history/projection, revokes the session, and
+stops after round 1.
+
+Normal mode binds only to the accepted default-disabled OpenAlex adapter and
+never falls back to fake results. Explicit demo mode binds only to the
+deterministic fake adapter and requires fictional labels. A valid pending
+report uses upload-only recovery with zero search allowance; a verified receipt
+prevents repetition; partial outputs without a valid report fail closed without
+overwrite. Token plaintext stays in launcher memory, is stripped from the Codex
+environment and never enters the Package. Migration `20260806_0007` records
+only local progress capability scope and permits zero-operation upload-only
+tokens; it adds no concrete task state or Progress schema change.
+
+The frontend is now task-oriented: project Start here/Quick Start, a dedicated
+guide, action-first Package page, and a completed-result Progress view. Full
+queries, candidates, selections, report and context remain local; cloud state
+receives only the unchanged bounded report summary and artifact checksums.
+
+Deterministic real-stack qualification used real PostgreSQL, Uvicorn, Next.js,
+browser HTTP, an external Package, and fake Codex-equivalent stages, then
+proved automatic upload, browser-visible completion, no repeat, and restart
+continuity. The phase made zero live OpenAlex calls. Prior R3C evidence remains
+authoritative for the adapter; a full real OpenAlex LS1 round requires separate
+owner authorization. `LITERATURE_SEARCH_AUTONOMOUS_WORKFLOW =
+READY_FOR_OWNER_ACCEPTANCE` and `V0_1_STATE = OWNER_ACCEPTANCE_PENDING`.
+R3D and public/production deployment remain closed.
 
 ### Preserved optional mode
 

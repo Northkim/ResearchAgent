@@ -150,15 +150,18 @@ def _pins(files: dict[str, FileSpec]) -> tuple[tuple[SkillPin, ...], tuple[Promp
             "write_declared_outputs",
             "update_local_context",
             "append_progress_report",
+            "paper.search/v0.1",
+            "progress.upload/v0.2",
+            "progress.read/v0.1",
         ),
     )
-    prompt_path = "workflow/prompts/search-planning.md"
+    prompt_path = "workflow/prompts/one-round.md"
     prompt = PromptPin(
         prompt_id=PROMPT_ID,
         version=PROMPT_VERSION,
         checksum=sha256_bytes(files[prompt_path].content),
         relative_path=prompt_path,
-        purpose="Plan and document bounded screening of the supplied fictional catalog.",
+        purpose="Drive one bounded local planning and synthesis round.",
     )
     return (skill,), (prompt,)
 
@@ -166,30 +169,22 @@ def _pins(files: dict[str, FileSpec]) -> tuple[tuple[SkillPin, ...], tuple[Promp
 def _inputs(files: dict[str, FileSpec]) -> tuple[PackageInputManifest, ...]:
     return (
         PackageInputManifest(
-            input_id="synthetic-research-request",
+            input_id="owner-research-request",
             relative_path="inputs/research_request.json",
             checksum=sha256_bytes(files["inputs/research_request.json"].content),
             read_only_required=True,
             content_type="application/json",
-            source_classification="SYNTHETIC_OFFLINE",
-        ),
-        PackageInputManifest(
-            input_id="fictional-source-catalog",
-            relative_path="inputs/fictional_source_catalog.json",
-            checksum=sha256_bytes(files["inputs/fictional_source_catalog.json"].content),
-            read_only_required=True,
-            content_type="application/json",
-            source_classification="SYNTHETIC_OFFLINE",
+            source_classification="OWNER_SUPPLIED",
         ),
     )
 
 
 def _outputs() -> tuple[PackageOutputContract, ...]:
     return (
-        PackageOutputContract("outputs/search_plan.md", "SEARCH_PLAN", "text/markdown", "search-plan/v0.1", "Agent Harness", "required Markdown with offline-scope disclosure"),
-        PackageOutputContract("outputs/candidate_papers.json", "CANDIDATE_SCREENING", "application/json", "candidate-papers/v0.1", "Agent Harness", "validate against bundled candidate schema"),
-        PackageOutputContract("outputs/selected_papers.json", "BOUNDED_SELECTION", "application/json", "selected-papers/v0.1", "Agent Harness", "validate against bundled selection schema"),
-        PackageOutputContract("outputs/literature_search_report.md", "LITERATURE_SEARCH_REPORT", "text/markdown", "literature-search-report/v0.1", "Agent Harness", "required Markdown; must not claim real provider search"),
+        PackageOutputContract("outputs/search_plan.md", "SEARCH_PLAN", "text/markdown", "search-plan/v0.2", "Codex Agent Harness", "required headings and bounded query disclosure"),
+        PackageOutputContract("outputs/candidate_papers.json", "CANDIDATE_LIBRARY", "application/json", "candidate-papers/v0.2", "Codex Agent Harness", "validate exact identities, provenance and deduplication"),
+        PackageOutputContract("outputs/selected_papers.json", "SELECTED_PAPER_LIBRARY", "application/json", "selected-papers/v0.2", "Codex Agent Harness", "validate relevance decisions and evidence availability"),
+        PackageOutputContract("outputs/literature_search_report.md", "LITERATURE_SEARCH_REPORT", "text/markdown", "literature-search-report/v0.2", "Codex Agent Harness", "metadata/abstract-only synthesis with required sections"),
     )
 
 
@@ -216,16 +211,18 @@ def _make_manifest(project_id: str, package_id: str, files: dict[str, FileSpec])
             "run_local_python_validator",
             "calculate_sha256",
             "follow_AGENT_md",
+            "launch_codex_cli",
+            "call_loopback_reagent_session",
         ),
-        content_scope_declaration="WHOLLY_FICTIONAL_OFFLINE_CATALOG; NO REAL SEARCH; NO FULL TEXT; NO PDF",
+        content_scope_declaration="OWNER PUBLIC OR FICTIONAL TOPIC; OPENALEX METADATA/ABSTRACT ONLY; NO FULL TEXT; NO PDF",
         generated_at=DETERMINISTIC_GENERATED_AT,
         generator_version=GENERATOR_VERSION,
         files=entries,
         file_manifest_checksum=file_manifest_checksum,
         manifest_checksum=_ZERO_HASH,
         package_checksum=_ZERO_HASH,
-        continuation_policy="FILES_ONLY; validate, read context and latest immutable Progress Report, preserve prior work",
-        proxy_capability_declaration="DISABLED_BY_DEFAULT_R3B_FAKE_PAPER_SEARCH_ONLY; NO CREDENTIAL; NO REAL PROVIDER",
+        continuation_policy="ONE ROUND; upload-only retry for a finalized report; partial output requires explicit recovery",
+        proxy_capability_declaration="SHORT_LIVED EXACT-PACKAGE LOCAL SESSION; NORMAL OPENALEX; EXPLICIT FICTIONAL DEMO; NO CREDENTIAL IN PACKAGE",
         experimental_status_declaration=EXPERIMENTAL_STATUS,
         harness_acceptance_status=CURRENT_HARNESS_ACCEPTANCE_STATUS,
         progress_report_schema_version=CURRENT_PROGRESS_SCHEMA_VERSION,
@@ -329,7 +326,7 @@ def build_literature_search_package(
         raise ValueError("output_root must not be a symbolic link")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
-    package_id = f"literature-search-{project_id}-v0.2"
+    package_id = f"literature-search-{project_id}-v0.3"
     files, manifest = _render(project_id, package_id, research_topic)
 
     with tempfile.TemporaryDirectory(prefix=".r1a-build-", dir=output.parent) as temporary:

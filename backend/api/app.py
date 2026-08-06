@@ -11,6 +11,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from backend.application.errors import (
+    ApplicationAuthenticationError,
+    ApplicationAuthorizationError,
     ApplicationConflictError,
     ApplicationError,
     ApplicationNotFoundError,
@@ -24,6 +26,7 @@ from .routers import (
     artifacts_router,
     health_router,
     local_projects_router,
+    local_sessions_router,
     progress_reports_router,
     runs_router,
     workflows_router,
@@ -35,6 +38,7 @@ def create_app(
     *,
     proxy_container: Any | None = None,
     enable_experimental_proxy: bool | None = None,
+    enable_local_workflow_sessions: bool | None = None,
 ) -> FastAPI:
     composition = container or ApplicationContainer.from_environment()
     if enable_experimental_proxy is None:
@@ -46,6 +50,12 @@ def create_app(
         from backend.cloud_api_proxy.composition import ProxyApplicationContainer
 
         proxy_composition = proxy_container or ProxyApplicationContainer.from_environment()
+    if enable_local_workflow_sessions is None:
+        import os
+
+        enable_local_workflow_sessions = (
+            os.environ.get("REAGENT_V0_1_LOCAL_MODE_ENABLED") == "1"
+        )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -68,6 +78,8 @@ def create_app(
     application.include_router(workflows_router)
     application.include_router(artifacts_router)
     application.include_router(progress_reports_router)
+    if enable_local_workflow_sessions:
+        application.include_router(local_sessions_router)
     if proxy_composition is not None:
         from backend.cloud_api_proxy.api import router as proxy_router
 
@@ -78,7 +90,11 @@ def create_app(
         _: Request,
         error: ApplicationError,
     ) -> JSONResponse:
-        if isinstance(error, ApplicationNotFoundError):
+        if isinstance(error, ApplicationAuthenticationError):
+            status_code = status.HTTP_401_UNAUTHORIZED
+        elif isinstance(error, ApplicationAuthorizationError):
+            status_code = status.HTTP_403_FORBIDDEN
+        elif isinstance(error, ApplicationNotFoundError):
             status_code = status.HTTP_404_NOT_FOUND
         elif isinstance(error, ApplicationConflictError):
             status_code = status.HTTP_409_CONFLICT

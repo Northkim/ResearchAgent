@@ -648,7 +648,7 @@ class ProxyCapabilityTokenORM(Base):
     __tablename__ = "proxy_capability_tokens"
     __table_args__ = (
         UniqueConstraint("token_digest_sha256", name="uq_proxy_capability_tokens_digest"),
-        CheckConstraint("maximum_operations BETWEEN 1 AND 50", name="proxy_token_maximum_operations_valid"),
+        CheckConstraint("maximum_operations BETWEEN 0 AND 50", name="proxy_token_maximum_operations_valid"),
         CheckConstraint("admitted_operations BETWEEN 0 AND maximum_operations", name="proxy_token_admitted_operations_valid"),
         CheckConstraint(
             "maximum_provider_calls BETWEEN 0 AND 20",
@@ -687,6 +687,9 @@ class ProxyCapabilityTokenORM(Base):
     workflow_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
     allowed_capability: Mapped[str] = mapped_column(String(100), nullable=False)
     allowed_adapter: Mapped[str] = mapped_column(String(255), nullable=False)
+    local_session_capabilities_json: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list
+    )
     maximum_operations: Mapped[int] = mapped_column(Integer, nullable=False)
     admitted_operations: Mapped[int] = mapped_column(Integer, nullable=False)
     maximum_provider_calls: Mapped[int] = mapped_column(Integer, nullable=False)

@@ -18,16 +18,15 @@ export default function LocalGuidePage() {
         <ol>
           <li>Create a Literature Search project using a fictional or public topic.</li>
           <li>Generate and download the Package ZIP, then extract it outside the repository.</li>
-          <li>Run the bundled validator and stop if integrity checks fail.</li>
-          <li>Open that folder with Codex CLI and ask Codex to follow <code>AGENT.md</code>.</li>
-          <li>Let Codex write only declared outputs, local context, and an append-only Progress Report.</li>
-          <li>Validate the Package again.</li>
-          <li>Use <code>python -m backend.progress_reports.client validate</code>, then the explicit <code>upload</code> command from the repository.</li>
-          <li>Return to the project Progress page to view projection and history.</li>
+          <li>From the extracted folder run <code>python reagent_local.py run .</code>.</li>
+          <li>The launcher validates the Package, starts a short-lived exact-Package session, and invokes Codex for one planning and synthesis round.</li>
+          <li>Normal mode searches real OpenAlex metadata only through the ReAgent Proxy; explicit <code>--mode demo</code> uses labelled fictional results.</li>
+          <li>The launcher validates the four outputs and one report, uploads it idempotently, verifies the projection, revokes the session, and stops.</li>
+          <li>Return to the project Progress page to view the bounded summary and immutable receipt history.</li>
         </ol>
         <div className="boundary-callout">
           <strong>Current limits</strong>
-          <p>OpenAlex is experimental and disabled by default. Fake Provider mode is suitable for deterministic demonstrations. Progress upload is manual. Claude Code is untested. Public deployment is unsupported.</p>
+          <p>OpenAlex is experimental and disabled by default. Fake Provider mode must be selected explicitly and is suitable only for fictional demonstrations. Progress upload is automatic after a successful round and supports upload-only retry. Claude Code is untested. Public deployment is unsupported.</p>
         </div>
       </section>
     </div>

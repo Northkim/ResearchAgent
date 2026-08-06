@@ -18,24 +18,23 @@ def test_required_package_files_and_pins(built_package: BuildResult, manifest: d
     root = built_package.package_root
     for relative in (
         "AGENT.md", "AGENTS.md", "CLAUDE.md", "README.md", "package-manifest.json",
-        "validate_package.py", "progress_report.py", "workflow/AGENT.md", "workflow/workflow.json",
-        "workflow/skills/literature-search/SKILL.md", "workflow/prompts/search-planning.md",
-        "inputs/research_request.json", "inputs/fictional_source_catalog.json",
+        "reagent_local.py", "validate_package.py", "progress_report.py",
+        "workflow/AGENT.md", "workflow/workflow.json", "workflow/search-policy.json",
+        "workflow/skills/literature-search/SKILL.md", "workflow/prompts/one-round.md",
+        "inputs/research_request.json",
         "outputs/README.md", "memory/context.md", "memory/progress/report-draft.json",
-        "memory/progress/reports/README.md",
-        "cloud/proxy.example.json",
+        "memory/progress/reports/README.md", "memory/progress/receipts/README.md",
+        "memory/search/query_plan.json", "memory/search/operations/README.md",
     ):
         assert (root / relative).is_file(), relative
     assert manifest["experimental_status_declaration"] == "EXPERIMENTAL_V0_1"
     assert manifest["harness_acceptance_status"] == "CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED"
     assert manifest["progress_report_schema_version"] == "progress-report/v0.2"
-    assert manifest["progress_upload_status"] == "UPLOAD_ACCEPTANCE_PENDING"
-    assert manifest["package_template_version"] == "0.3.0"
-    assert manifest["proxy_capability_declaration"] == (
-        "DISABLED_BY_DEFAULT_R3B_FAKE_PAPER_SEARCH_ONLY; NO CREDENTIAL; NO REAL PROVIDER"
-    )
-    assert manifest["skill_pins"][0]["semantic_version"] == "0.1.0"  # type: ignore[index]
-    assert manifest["prompt_pins"][0]["version"] == "0.1.0"  # type: ignore[index]
+    assert manifest["progress_upload_status"] == "AUTOMATIC_UPLOAD_SUPPORTED"
+    assert manifest["package_template_version"] == "0.4.0"
+    assert "NORMAL OPENALEX" in str(manifest["proxy_capability_declaration"])
+    assert manifest["skill_pins"][0]["semantic_version"] == "0.2.0"  # type: ignore[index]
+    assert manifest["prompt_pins"][0]["version"] == "0.2.0"  # type: ignore[index]
 
 
 def test_deterministic_folder_and_zip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -107,12 +106,39 @@ def test_instruction_boundaries(built_package: BuildResult) -> None:
         assert phrase.lower() in content
     workflow = json.loads((built_package.package_root / "workflow/workflow.json").read_text())
     assert workflow["hosted_agent_runtime_required"] is False
-    assert workflow["network_mode"] == "OFFLINE_SYNTHETIC_ONLY"
-    proxy = json.loads((built_package.package_root / "cloud/proxy.example.json").read_text())
-    assert proxy["enabled"] is False
-    assert proxy["allowed_capabilities"] == ["paper.search/v0.1"]
-    assert proxy["credential_present"] is False
-    assert not {"token", "token_value", "api_key", "authorization"} & set(proxy)
+    assert workflow["network_boundary"] == "LOCAL_LAUNCHER_TO_REAGENT_PROXY_ONLY"
+    assert workflow["normal_mode_provider"] == "OPENALEX_VIA_REAGENT_PROXY"
+    assert workflow["demo_mode_provider"] == "EXPLICIT_DETERMINISTIC_FAKE_ONLY"
+    assert "reagent_local.py run ." in content
+
+
+def test_normal_mode_has_no_bundled_fictional_provider_evidence(
+    built_package: BuildResult,
+) -> None:
+    inputs = built_package.package_root / "inputs"
+    assert [path.name for path in inputs.iterdir()] == ["research_request.json"]
+    request = json.loads((inputs / "research_request.json").read_text())
+    assert request["real_external_search_required_in_normal_mode"] is True
+    assert not any(
+        path.name == "fictional_source_catalog"
+        for path in built_package.package_root.rglob("*")
+    )
+
+
+def test_only_ds_store_is_ignored_as_bounded_macos_metadata(
+    built_package: BuildResult,
+) -> None:
+    (built_package.package_root / ".DS_Store").write_bytes(b"harmless metadata")
+    assert validate_package(built_package.package_root).valid
+    (built_package.package_root / ".DS_Store").write_bytes(
+        b"OPENAI_API_KEY=sk-proj-fictional-sensitive-marker"
+    )
+    with pytest.raises(PackageValidationError, match="sensitive"):
+        validate_package(built_package.package_root)
+    (built_package.package_root / ".DS_Store").write_bytes(b"harmless metadata")
+    (built_package.package_root / "Thumbs.db").write_bytes(b"metadata")
+    with pytest.raises(PackageValidationError, match="rejected"):
+        validate_package(built_package.package_root)
 
 
 def test_inputs_immutable_outputs_mutable_policy(manifest: dict[str, object]) -> None:

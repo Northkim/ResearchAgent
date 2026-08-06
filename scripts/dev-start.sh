@@ -5,6 +5,7 @@ task_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 task_runtime_dir="${REAGENT_LOCAL_RUNTIME_DIR:-/tmp/reagent-v0-1-${UID}}"
 task_backend_port="${REAGENT_BACKEND_PORT:-8000}"
 task_frontend_port="${REAGENT_FRONTEND_PORT:-3000}"
+task_openalex_enabled="${REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED:-0}"
 
 fail() {
   echo "ReAgent V0.1 startup failed: $1" >&2
@@ -15,6 +16,11 @@ fail() {
 [[ "${task_runtime_dir}" != "${task_repo_root}"* ]] || fail "runtime files must stay outside Git"
 [[ "${task_backend_port}" =~ ^[0-9]+$ ]] || fail "REAGENT_BACKEND_PORT must be numeric"
 [[ "${task_frontend_port}" =~ ^[0-9]+$ ]] || fail "REAGENT_FRONTEND_PORT must be numeric"
+[[ "${task_openalex_enabled}" == "0" || "${task_openalex_enabled}" == "1" ]] \
+  || fail "REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED must be 0 or 1"
+if [[ "${task_openalex_enabled}" == "1" && -z "${REAGENT_OPENALEX_API_KEY:-}" ]]; then
+  fail "normal Literature Search requires an exported server-side REAGENT_OPENALEX_API_KEY"
+fi
 
 for command_name in conda npm curl lsof; do
   command -v "${command_name}" >/dev/null 2>&1 || fail "${command_name} is required"
@@ -97,13 +103,14 @@ cleanup_on_error() {
 trap cleanup_on_error EXIT
 
 env \
-  -u REAGENT_OPENALEX_API_KEY \
   REAGENT_DATABASE_URL="${REAGENT_DATABASE_URL}" \
   REAGENT_ARTIFACT_ROOT="${task_runtime_dir}/artifacts" \
   REAGENT_LOCAL_PACKAGE_ROOT="${task_runtime_dir}/local-packages" \
   REAGENT_PAPER_SEARCH_PROVIDER=fake \
-  REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED=0 \
-  REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED=0 \
+  REAGENT_V0_1_LOCAL_MODE_ENABLED=1 \
+  REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED=1 \
+  REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED="${task_openalex_enabled}" \
+  REAGENT_OPENALEX_API_KEY="${REAGENT_OPENALEX_API_KEY:-}" \
   REAGENT_EXPERIMENTAL_OPENALEX_STRUCTURAL_DIAGNOSTICS_ENABLED=0 \
   nohup conda run --no-capture-output -n reagent-dev \
     uvicorn backend.api.app:app --host 127.0.0.1 --port "${task_backend_port}" \

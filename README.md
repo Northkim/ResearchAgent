@@ -1,8 +1,9 @@
 # ReAgent
 
 ReAgent V0.1 is a localhost-only, single-user research workspace. The cloud
-application manages project metadata, downloadable Workflow Packages, explicit
-Progress Report uploads, progress projections, and bounded API Proxy
+application manages project metadata, downloadable Workflow Packages, bounded
+API Proxy capabilities, automatic Progress Report uploads, and progress
+projections. A short-lived local session connects one exact Package to those
 capabilities. The downloaded folder remains authoritative for concrete
 research state, and Codex performs the Literature Search work locally.
 
@@ -41,16 +42,19 @@ parses assignments without executing shell syntax and never prints the URL.
 Tracked `.env.example` and `config/local-v0.1.example` contain no real
 credential. Do not put project-specific configuration in `~/.zshrc`.
 
-The complete owner flow and validation/upload commands are in
+The complete owner flow, one-round command, and recovery behavior are in
 [`docs/getting-started/LOCAL_V0_1.md`](docs/getting-started/LOCAL_V0_1.md).
 
 ## V0.1 boundary
 
 - Literature Search is the only selectable Workflow.
 - Codex CLI is the supported Harness; Claude Code remains untested.
-- Progress Report upload is explicit, never automatic.
+- From an extracted Package, `python reagent_local.py run .` performs exactly
+  one local round, uploads its one Progress Report, verifies the projection,
+  and stops. An interrupted upload is retried without rerunning research.
 - OpenAlex is experimental and disabled by default. The deterministic fake
-  Provider is available for controlled demonstrations.
+  Provider is available only through explicit `--mode demo`; normal mode never
+  silently falls back to fictional evidence.
 - Legacy Hosted pages are retained only as labelled internal history and are
   not linked from the V0.1 navigation.
 - Public deployment, production authentication, multi-user authorization,

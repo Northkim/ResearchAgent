@@ -76,3 +76,9 @@ def test_contract_is_frozen_and_canonical_json_is_deterministic() -> None:
     with pytest.raises(FrozenInstanceError):
         request.project_id = "changed"  # type: ignore[misc]
     assert canonical_json({"b": 1, "a": "é"}) == '{"a":"é","b":1}'
+
+
+def test_empty_local_session_capabilities_preserve_historical_scope_identity() -> None:
+    scope = _scope()
+    assert "local_session_capabilities" not in scope.to_dict()
+    assert scope.local_session_capabilities == ()

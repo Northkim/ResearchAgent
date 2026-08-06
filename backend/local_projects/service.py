@@ -81,7 +81,9 @@ class LocalProjectService:
         if project.selected_workflow != LITERATURE_SEARCH_WORKFLOW:
             raise ApplicationValidationError("Project Workflow is not supported")
         storage_root = self._resolved_storage_root()
-        output = storage_root / project.project_id
+        # Keep older immutable Package generations readable while allowing the
+        # current template identity to produce a new deterministic artifact.
+        output = storage_root / project.project_id / "literature-search-v0.3"
         try:
             built = build_literature_search_package(
                 project_id=project.project_id,
@@ -130,7 +132,10 @@ class LocalProjectService:
             raise ApplicationNotFoundError("Workflow Package not found")
         storage_root = self._resolved_storage_root()
         archive = (storage_root / package.archive_storage_key).resolve()
-        if archive.parent != (storage_root / project_id).resolve():
+        project_root = (storage_root / project_id).resolve()
+        try:
+            archive.relative_to(project_root)
+        except ValueError:
             raise ApplicationUnavailableError("Workflow Package storage identity is invalid")
         if not archive.is_file() or archive.is_symlink():
             raise ApplicationUnavailableError("Workflow Package archive is unavailable")

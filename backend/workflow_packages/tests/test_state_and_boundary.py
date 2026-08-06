@@ -35,6 +35,100 @@ def _updated_context(result: BuildResult) -> tuple[LocalContext, str]:
     return updated, write_context(result.package_root, updated)
 
 
+def _valid_outputs(result: BuildResult, *, mode: str = "DEMO") -> None:
+    root = result.package_root
+    (root / "outputs/search_plan.md").write_text(
+        """# Search plan
+
+## Interpreted topic
+Fictional public continuity topic.
+## Concepts and synonyms
+continuity; portable state
+## Query variants
+query-1 and query-2
+## Search bounds
+Two queries, five results each, fifteen retained maximum.
+## Screening rules
+Direct topical connection required.
+## Evidence limitations
+Metadata and available abstracts only; no full text.
+""",
+        encoding="utf-8",
+    )
+    candidates = {
+        "schema_version": "candidate-papers/v0.2",
+        "mode": mode,
+        "candidates": [
+            {
+                "candidate_id": f"candidate-{index:016x}",
+                "provider_id": f"fixture-record-{index}",
+                "openalex_id": None if mode == "DEMO" else f"W{index}",
+                "title": f"Fictional candidate {index}",
+                "authors": [f"Fictional Author {index}"],
+                "publication_year": 2026,
+                "doi": None,
+                "source": "Fictional venue",
+                "language": "en",
+                "abstract": "Fictional abstract-only evidence.",
+                "source_query_ids": ["query-1"],
+                "provenance_checksum": "sha256:" + f"{index:064x}",
+                "deduplication_status": "UNIQUE",
+            }
+            for index in range(1, 4)
+        ],
+    }
+    selected = {
+        "schema_version": "selected-papers/v0.2",
+        "mode": mode,
+        "selection_status": "SUFFICIENT",
+        "selected": [
+            {
+                "candidate_id": item["candidate_id"],
+                "relevance_decision": "INCLUDE",
+                "inclusion_reason": "Directly addresses the fictional topic.",
+                "evidence_availability": "METADATA_AND_ABSTRACT",
+            }
+            for item in candidates["candidates"]
+        ],
+        "exclusions": [],
+        "exclusion_summary": "No exclusions in this bounded fixture.",
+    }
+    (root / "outputs/candidate_papers.json").write_text(
+        json.dumps(candidates), encoding="utf-8"
+    )
+    (root / "outputs/selected_papers.json").write_text(
+        json.dumps(selected), encoding="utf-8"
+    )
+    label = "FICTIONAL DEMO EVIDENCE.\n" if mode == "DEMO" else ""
+    (root / "outputs/literature_search_report.md").write_text(
+        label
+        + """# Literature search report
+
+## Executive summary
+Bounded synthesis.
+## Search coverage
+Two queries.
+## Main research themes
+Portable state.
+## Common methods
+Metadata comparison.
+## Representative works
+Three candidates.
+## Trends
+Transparent continuity.
+## Limitations
+Metadata and abstract evidence only; full text was not read.
+## Potential research gaps
+Longitudinal evidence.
+## Recommended next research action
+Review the local report.
+## Selected-paper references
+Fictional candidates 1-3.
+""",
+        encoding="utf-8",
+    )
+
+
 def _report(result: BuildResult, context_file_checksum: str, *, report_id: str = "round-001", previous: str | None = None) -> ProgressReport:
     output = result.package_root / "outputs/search_plan.md"
     output.write_text("# Synthetic offline search plan\n")
@@ -103,16 +197,15 @@ def test_progress_report_previous_link_is_preserved(built_package: BuildResult) 
     assert report.verify_checksum()
 
 
-def test_fixture_is_wholly_fictional_and_offline(built_package: BuildResult) -> None:
-    catalog_text = (built_package.package_root / "inputs/fictional_source_catalog.json").read_text().lower()
-    catalog = json.loads(catalog_text)
-    assert catalog["contains_real_titles"] is False
-    assert catalog["contains_real_abstracts"] is False
-    assert catalog["contains_provider_identifiers"] is False
-    assert "doi" not in catalog_text
-    assert "openalex" not in catalog_text
+def test_demo_mode_is_explicit_and_bundles_no_fictional_evidence(
+    built_package: BuildResult,
+) -> None:
     request = json.loads((built_package.package_root / "inputs/research_request.json").read_text())
-    assert request["real_external_search_performed"] is False
+    assert request["real_external_search_required_in_normal_mode"] is True
+    instructions = (built_package.package_root / "AGENT.md").read_text()
+    assert "--mode demo" in instructions
+    assert "Normal mode never falls back" in instructions
+    assert not (built_package.package_root / "inputs/fictional_source_catalog.json").exists()
 
 
 @pytest.mark.parametrize(
@@ -179,13 +272,7 @@ def test_future_package_finalizes_and_self_validates_native_v2_report(
     root = built_package.package_root
     before = snapshot(root)["context_before_checksum"]
     _updated_context(built_package)
-    for path in (
-        "outputs/search_plan.md",
-        "outputs/candidate_papers.json",
-        "outputs/selected_papers.json",
-        "outputs/literature_search_report.md",
-    ):
-        (root / path).write_text("Fictional offline output.\n", encoding="utf-8")
+    _valid_outputs(built_package)
     draft_path = root / "memory/progress/report-draft.json"
     draft = json.loads(draft_path.read_text())
     draft.update(
@@ -195,9 +282,15 @@ def test_future_package_finalizes_and_self_validates_native_v2_report(
             "started_at": "2026-08-03T01:00:00Z",
             "completed_at": "2026-08-03T01:10:00Z",
             "status": "COMPLETED",
-            "completed_work": ["Wrote four wholly fictional offline outputs."],
-            "current_state": "Fictional offline task complete.",
-            "next_recommended_action": "Explicitly upload this immutable report in R2B.",
+            "completed_work": [
+                "Queries performed: 2",
+                "Candidates retained: 3",
+                "Papers selected: 3",
+                "Outputs generated: 4",
+            ],
+            "current_state": "Fictional demo round complete.",
+            "next_recommended_action": "Review local outputs.",
+            "warnings": ["Metadata and abstract evidence only; no full text."],
             "continuation_instructions": ["Validate package state before continuing."],
         }
     )
@@ -250,10 +343,7 @@ def test_self_validator_rejects_dynamic_v2_report_tampering(
     root = built_package.package_root
     before = snapshot(root)["context_before_checksum"]
     _updated_context(built_package)
-    for contract in json.loads((root / "package-manifest.json").read_text())[
-        "output_contracts"
-    ]:
-        (root / contract["required_output_path"]).write_text("Fictional.\n")
+    _valid_outputs(built_package)
     draft_path = root / "memory/progress/report-draft.json"
     draft = json.loads(draft_path.read_text())
     draft.update(

@@ -12,7 +12,11 @@ import pytest
 from sqlalchemy import inspect, text
 
 from backend.cloud_api_proxy import CloudAPIProxyService, DeterministicFakePaperSearchAdapter
-from backend.cloud_api_proxy.contracts import ADAPTER_ID
+from backend.cloud_api_proxy.contracts import (
+    ADAPTER_ID,
+    LOCAL_PROGRESS_READ_CAPABILITY,
+    LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+)
 from backend.cloud_api_proxy.errors import ProxyError
 from backend.cloud_api_proxy.sql import SQLProxyUnitOfWork
 from backend.database import create_postgres_engine, create_session_factory
@@ -30,9 +34,9 @@ def r3b_engine():
     engine = create_postgres_engine(database_url)
     with engine.connect() as connection:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-    if revision != "20260805_0006":
+    if revision != "20260806_0007":
         engine.dispose()
-        pytest.fail("Proxy PostgreSQL database must be at 20260805_0006")
+        pytest.fail("Proxy PostgreSQL database must be at 20260806_0007")
     yield engine
     engine.dispose()
 
@@ -63,11 +67,56 @@ def test_proxy_schema_is_independent_and_digest_only(r3b_engine) -> None:
     assert {"proxy_capability_tokens", "proxy_operations"} <= set(inspector.get_table_names())
     token_columns = {column["name"] for column in inspector.get_columns("proxy_capability_tokens")}
     assert "token_digest_sha256" in token_columns
+    assert "local_session_capabilities_json" in token_columns
     assert not {"token", "plaintext_token", "authorization_header"} & token_columns
     operation_fks = inspector.get_foreign_keys("proxy_operations")
     assert {fk["referred_table"] for fk in operation_fks} == {"proxy_capability_tokens"}
     unique_names = {item["name"] for item in inspector.get_unique_constraints("proxy_operations")}
     assert "uq_proxy_operations_scoped_idempotency" in unique_names
+
+
+def test_local_session_scope_persists_and_authorizes_after_reload(
+    sql_proxy_setup,
+) -> None:
+    service, adapter, _, _, session_factory = sql_proxy_setup
+    token, plaintext = service.issue_token(
+        tenant_id="local-v0-1",
+        subject_id="fictional-owner",
+        project_id="fictional-project",
+        package_id="fictional-package",
+        package_checksum=CHECKSUM_A,
+        workflow_id="literature-search",
+        workflow_version="1.0.0",
+        workflow_checksum=CHECKSUM_B,
+        maximum_operations=0,
+        local_session_capabilities=(
+            LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+            LOCAL_PROGRESS_READ_CAPABILITY,
+        ),
+    )
+    reloaded = CloudAPIProxyService(
+        unit_of_work_factory=lambda: SQLProxyUnitOfWork(session_factory),
+        adapter=adapter,
+        clock=lambda: NOW,
+    )
+    authorized = reloaded.authorize_local_session_capability(
+        bearer_token=plaintext,
+        token_id=token.scope.token_id,
+        project_id="fictional-project",
+        package_id="fictional-package",
+        package_checksum=CHECKSUM_A,
+        workflow_id="literature-search",
+        workflow_version="1.0.0",
+        workflow_checksum=CHECKSUM_B,
+        capability=LOCAL_PROGRESS_READ_CAPABILITY,
+    )
+    assert authorized.scope.maximum_operations == 0
+    assert authorized.scope.local_session_capabilities == (
+        LOCAL_PROGRESS_READ_CAPABILITY,
+        LOCAL_PROGRESS_UPLOAD_CAPABILITY,
+    )
+    with session_factory() as session:
+        assert session.scalar(text("SELECT count(*) FROM proxy_operations")) == 0
 
 
 def test_sql_roundtrip_reload_and_exact_replay(sql_proxy_setup) -> None:

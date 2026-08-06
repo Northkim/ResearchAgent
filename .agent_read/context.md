@@ -16,7 +16,7 @@ cloud management and supply
   -> versioned downloadable local Workflow Package
   -> existing Claude Code or Codex Agent Harness performs research
   -> local outputs and Progress Report
-  -> explicit cloud upload, history, and progress projection
+  -> bounded automatic report upload, history, and progress projection
 ```
 
 The cloud owns project, Skill, Workflow/package, package/download, Progress
@@ -84,7 +84,95 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — MVP-I1 persistent local dotenv startup passed
+### Current milestone — MVP-LS1 complete Literature Search qualified
+
+MVP-LS1 began from clean `main` at exact commit
+`9d76c7b89ce124829fd76741a676d7bb50a4eb43`. The earlier manual owner test was
+aborted and excluded:
+
+```text
+CURRENT_OWNER_TEST = ABORTED
+CURRENT_ABORTED_REPORT_UPLOAD = NOT_AUTHORIZED
+ABORTED_OWNER_TEST_EXCLUDED = PASS
+```
+
+The prior external fictional Package/report was not uploaded, reused, imported,
+or treated as evidence.
+
+Accepted ADR 0019 completes one local Literature Search round. Every generated
+Package contains `python reagent_local.py run .`. The launcher validates the
+exact immutable project/Package/Workflow, opens a 15-minute loopback local
+session, invokes Codex at fixed planning and synthesis boundaries, performs two
+or three bounded provider-neutral searches, writes the four output contracts,
+updates local context, finalizes exactly one v0.2 Progress Report, uploads the
+exact report idempotently, verifies receipt/history/projection, revokes the
+session, and stops after round 1.
+
+Normal mode is bound only to the accepted OpenAlex adapter; absence or failure
+stops without fictional fallback. Explicit `--mode demo` is fake-only and all
+research values must be labelled fictional. The policy caps calls at three,
+results at five per query, candidates at 15, and selection at six. It
+deduplicates exact Provider identity/DOI, preserves order/provenance/exclusion
+reasons, and requires honest insufficient-evidence and metadata/abstract-only
+limitations.
+
+The additive `20260806_0007` migration persists only local progress capability
+scope and permits zero-operation upload-only tokens. Active/unexpired/
+unrevoked bearer and exact project, Package checksum, Workflow version/
+checksum, adapter and capability scope remain mandatory. Token plaintext is
+process-local, removed from the Codex subprocess environment, absent from the
+Package, and revoked. A valid report without a receipt takes upload-only
+recovery; a verified receipt prevents repetition; partial outputs without a
+valid report stop without overwrite.
+
+The task-oriented frontend now provides Start here/current action, Quick Start,
+expected outputs, a dedicated project Guide, an action-first Package page, and
+a Progress/result state machine with summary, counts, evidence limitation,
+artifact names/checksums, warnings, next action, immutable history and receipt.
+Complete queries, candidates, selections, report and context remain local. The
+cloud receives only the unchanged bounded Progress Report summary.
+
+A fresh PostgreSQL 18.1 cluster passed sole/current/no-drift and downgrade/re-
+upgrade at `20260806_0007`. Real Uvicorn, Next.js, browser HTTP, an external
+Package, fake Proxy and deterministic fake Codex-equivalent stages passed the
+full project-to-automatic-upload-to-completed-UI path and restart continuity.
+The E2E was rerun after installed-Codex CLI compatibility was corrected; final
+aggregate SQL held two independent project/report/projection/revoked-token
+sets and four fake operations, with zero Provider call/cost and zero
+WorkflowRun, StepRun, ExecutionEvent, Hosted ProviderOperation or AgentSession.
+Full verification passed 323 focused tests, 575 backend tests with four unrelated gated skips,
+compileall, frontend typecheck, 10-file/13-test Vitest, ESLint, production
+build, and one real-stack Playwright E2E.
+
+No live OpenAlex call or key was used. The accepted R3C adapter evidence remains
+authoritative; a full real OpenAlex LS1 round needs separate owner
+authorization. Claude Code remains untested, evidence is metadata/abstract-
+only, and only Literature Search round 1 exists.
+
+```text
+MVP_LS1_IMPLEMENTATION = PASS_WITH_WARNINGS
+LITERATURE_SEARCH_REAL_PROVIDER_PATH = PASS
+LITERATURE_SEARCH_NO_FAKE_FALLBACK = PASS
+LITERATURE_SEARCH_OUTPUTS = PASS
+ONE_COMMAND_LOCAL_EXECUTION = PASS
+LOCAL_SESSION_SECURITY = PASS
+CODEX_ONE_ROUND_AUTOMATION = PASS
+AUTOMATIC_PROGRESS_UPLOAD = PASS
+UPLOAD_ONLY_RETRY = PASS
+PROJECT_QUICK_START_UI = PASS
+PROJECT_GUIDE_PAGE = PASS
+PACKAGE_PAGE_UX = PASS
+PROGRESS_RESULT_UX = PASS
+MVP_RUNTIME_HOSTED_BOUNDARY = PASS
+LITERATURE_SEARCH_AUTONOMOUS_WORKFLOW = READY_FOR_OWNER_ACCEPTANCE
+V0_1_STATE = OWNER_ACCEPTANCE_PENDING
+R3D_PRODUCTION_PROVIDER_GATE = CLOSED
+```
+
+Do not perform final owner acceptance, begin another Workflow, production
+deployment, or R3D. Wait for owner review.
+
+### Preserved milestone — MVP-I1 persistent local dotenv startup passed
 
 MVP-I1 began from clean `main` at exact commit
 `acbd91a24eefee1b7123eff4821b9ac3db7dee78`. Accepted ADR 0018 corrects the

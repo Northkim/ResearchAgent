@@ -23,3 +23,11 @@ class ApplicationConflictError(ApplicationError):
 
 class ApplicationUnavailableError(ApplicationError):
     code = "SERVICE_UNAVAILABLE"
+
+
+class ApplicationAuthenticationError(ApplicationError):
+    code = "UNAUTHORIZED"
+
+
+class ApplicationAuthorizationError(ApplicationError):
+    code = "AUTHORIZATION_SCOPE_MISMATCH"

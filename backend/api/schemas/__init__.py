@@ -28,6 +28,10 @@ from .local_projects import (
     LocalPackageResponse,
     LocalProjectResponse,
 )
+from .local_sessions import (
+    CreateLocalWorkflowSessionRequest,
+    LocalWorkflowSessionResponse,
+)
 
 __all__ = [
     "ApprovalDecisionResponse",
@@ -37,6 +41,7 @@ __all__ = [
     "CreateRunRequest",
     "CreateCatalogRunRequest",
     "CreateLocalProjectRequest",
+    "CreateLocalWorkflowSessionRequest",
     "ArtifactResponse",
     "ProviderOperationResponse",
     "ProgressReportUploadRequest",
@@ -47,6 +52,7 @@ __all__ = [
     "HealthResponse",
     "LocalPackageResponse",
     "LocalProjectResponse",
+    "LocalWorkflowSessionResponse",
     "RejectRequest",
     "WorkflowDefinitionResponse",
     "WorkflowRunPageResponse",

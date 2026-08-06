@@ -20,5 +20,9 @@ test("renders projection, outputs, warnings, errors, and report history", async 
   expect(screen.getByText("Fictional warning for owner review.")).toBeVisible();
   expect(screen.getByText("Fictional recoverable report error.")).toBeVisible();
   expect(screen.getByText(progressReportFixture.report_id)).toBeVisible();
+  expect(screen.getByText(progressReportFixture.receipt_id)).toBeVisible();
+  expect(screen.getByText("Round completed")).toHaveClass("active");
+  expect(screen.getByText("8")).toBeVisible();
+  expect(screen.getByText(/complete artifact contents remain/)).toBeVisible();
   expect(screen.getByRole("heading", { name: "Progress Report receipts" })).toBeVisible();
 });

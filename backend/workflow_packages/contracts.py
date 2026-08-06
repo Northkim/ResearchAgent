@@ -17,7 +17,7 @@ HARNESS_ACCEPTANCE_STATUS = "HARNESS_ACCEPTANCE_PENDING"
 CURRENT_HARNESS_ACCEPTANCE_STATUS = (
     "CODEX_LOCAL_FOLDER_BOUNDARY_PROVEN_CLAUDE_UNTESTED"
 )
-PROGRESS_UPLOAD_STATUS = "UPLOAD_ACCEPTANCE_PENDING"
+PROGRESS_UPLOAD_STATUS = "AUTOMATIC_UPLOAD_SUPPORTED"
 
 _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
@@ -209,7 +209,7 @@ class WorkflowPackageManifest(SerializableContract):
         if self.progress_report_schema_version != CURRENT_PROGRESS_SCHEMA_VERSION:
             raise ValueError("future packages must use Progress Report v0.2")
         if self.progress_upload_status != PROGRESS_UPLOAD_STATUS:
-            raise ValueError("R2 upload acceptance must remain pending")
+            raise ValueError("Package must declare automatic upload support")
 
 
 @dataclass(frozen=True, slots=True)

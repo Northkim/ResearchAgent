@@ -14,8 +14,8 @@ test("renders local projects and their uploaded progress summary", async () => {
   vi.spyOn(apiClient, "listProjects").mockResolvedValue([localProjectFixture]);
   render(<Providers><LocalProjectList /></Providers>);
   expect(await screen.findByRole("heading", { name: localProjectFixture.name })).toBeVisible();
-  expect(screen.getByText("IN_PROGRESS")).toBeVisible();
-  expect(screen.getByText("2")).toBeVisible();
+  expect(screen.getByText("COMPLETED")).toBeVisible();
+  expect(screen.getByText("1")).toBeVisible();
   expect(screen.getByRole("link", { name: "Open project →" })).toHaveAttribute(
     "href",
     `/projects/${localProjectFixture.project_id}`,
