@@ -32,6 +32,13 @@ class ApplicationUnavailableError(ApplicationError):
     code = "SERVICE_UNAVAILABLE"
 
 
+class ApplicationCodedUnavailableError(ApplicationUnavailableError):
+    def __init__(self, message: str, *, code: str, details: dict | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.details = details
+
+
 class ApplicationAuthenticationError(ApplicationError):
     code = "UNAUTHORIZED"
 

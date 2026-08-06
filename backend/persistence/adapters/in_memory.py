@@ -42,6 +42,8 @@ from backend.project_workspaces.contracts import (
     WorkflowCapsuleVersion,
     WorkflowDefinition,
     WorkflowDefinitionVersion,
+    WorkflowCapsuleArtifact,
+    WorkspaceInstallationAcknowledgement,
 )
 from backend.project_workspaces.errors import (
     ManifestRevisionConflictError,
@@ -50,6 +52,7 @@ from backend.project_workspaces.errors import (
 from backend.project_workspaces.ports import (
     ProjectManifestRepository,
     WorkflowFoundationRepository,
+    WorkspaceSyncRepository,
 )
 
 
@@ -90,6 +93,10 @@ class InMemoryDatabase:
         default_factory=dict
     )
     manifest_entries: dict[str, ProjectManifestEntry] = field(default_factory=dict)
+    capsule_artifacts: dict[str, WorkflowCapsuleArtifact] = field(default_factory=dict)
+    installation_acknowledgements: dict[
+        str, WorkspaceInstallationAcknowledgement
+    ] = field(default_factory=dict)
 
 
 class InMemoryWorkflowFoundationRepository(WorkflowFoundationRepository):
@@ -320,6 +327,59 @@ class InMemoryProjectManifestRepository(ProjectManifestRepository):
         )
         self._uow._dirty_projects.add(project_id)
         return base_revision + 1
+
+
+class InMemoryWorkspaceSyncRepository(WorkspaceSyncRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def add_capsule_artifact(self, artifact: WorkflowCapsuleArtifact) -> None:
+        existing = self.get_capsule_artifact_by_id(artifact.capsule_artifact_id)
+        if existing is not None and existing != artifact:
+            raise DuplicateEntityError("Workflow Capsule artifact immutable-content conflict")
+        if existing is None:
+            self._uow._capsule_artifacts[artifact.capsule_artifact_id] = artifact
+            self._uow._dirty_capsule_artifacts.add(artifact.capsule_artifact_id)
+
+    def get_capsule_artifact(
+        self, project_id: str, workflow_instance_id: str
+    ) -> WorkflowCapsuleArtifact | None:
+        return next((item for item in self._uow._capsule_artifacts.values()
+                     if item.project_id == project_id and item.workflow_instance_id == workflow_instance_id), None)
+
+    def get_capsule_artifact_by_id(
+        self, capsule_artifact_id: str
+    ) -> WorkflowCapsuleArtifact | None:
+        return self._uow._capsule_artifacts.get(capsule_artifact_id)
+
+    def list_capsule_artifacts(
+        self, project_id: str
+    ) -> tuple[WorkflowCapsuleArtifact, ...]:
+        return tuple(sorted(
+            (item for item in self._uow._capsule_artifacts.values() if item.project_id == project_id),
+            key=lambda item: item.workflow_instance_id,
+        ))
+
+    def add_acknowledgement(
+        self, acknowledgement: WorkspaceInstallationAcknowledgement
+    ) -> None:
+        existing = self.get_acknowledgement(acknowledgement.installation_id)
+        if existing is not None and existing != acknowledgement:
+            raise DuplicateEntityError("Installation acknowledgement immutable-content conflict")
+        if existing is None:
+            self._uow._installation_acknowledgements[acknowledgement.installation_id] = acknowledgement
+            self._uow._dirty_installation_acknowledgements.add(acknowledgement.installation_id)
+
+    def get_acknowledgement_by_idempotency(
+        self, workspace_id: str, idempotency_key: str
+    ) -> WorkspaceInstallationAcknowledgement | None:
+        return next((item for item in self._uow._installation_acknowledgements.values()
+                     if item.workspace_id == workspace_id and item.idempotency_key == idempotency_key), None)
+
+    def get_acknowledgement(
+        self, installation_id: str
+    ) -> WorkspaceInstallationAcknowledgement | None:
+        return self._uow._installation_acknowledgements.get(installation_id)
 
 
 class InMemoryLocalProjectRepository(LocalProjectRepository):
@@ -1050,6 +1110,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._local_project_repository = InMemoryLocalProjectRepository(self)
         self._workflow_foundation_repository = InMemoryWorkflowFoundationRepository(self)
         self._project_manifest_repository = InMemoryProjectManifestRepository(self)
+        self._workspace_sync_repository = InMemoryWorkspaceSyncRepository(self)
         self._refresh()
 
     @property
@@ -1096,6 +1157,10 @@ class InMemoryUnitOfWork(UnitOfWork):
     def project_manifests(self) -> ProjectManifestRepository:
         return self._project_manifest_repository
 
+    @property
+    def workspace_sync(self) -> WorkspaceSyncRepository:
+        return self._workspace_sync_repository
+
     def commit(self) -> None:
         self._validate_concurrency()
         for run_id in self._dirty_workflows:
@@ -1137,6 +1202,12 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.desired_manifests[key] = self._desired_manifests[key]
         for entry_id in self._dirty_manifest_entries:
             self.database.manifest_entries[entry_id] = self._manifest_entries[entry_id]
+        for artifact_id in self._dirty_capsule_artifacts:
+            self.database.capsule_artifacts[artifact_id] = self._capsule_artifacts[artifact_id]
+        for installation_id in self._dirty_installation_acknowledgements:
+            self.database.installation_acknowledgements[installation_id] = (
+                self._installation_acknowledgements[installation_id]
+            )
         self._refresh()
 
     def rollback(self) -> None:
@@ -1296,6 +1367,10 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._projects = dict(self.database.projects)
         self._desired_manifests = dict(self.database.desired_manifests)
         self._manifest_entries = dict(self.database.manifest_entries)
+        self._capsule_artifacts = dict(self.database.capsule_artifacts)
+        self._installation_acknowledgements = dict(
+            self.database.installation_acknowledgements
+        )
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -1327,4 +1402,6 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_projects: set[str] = set()
         self._dirty_manifests: set[tuple[str, int]] = set()
         self._dirty_manifest_entries: set[str] = set()
+        self._dirty_capsule_artifacts: set[str] = set()
+        self._dirty_installation_acknowledgements: set[str] = set()
         self._manifest_revision_expected: dict[str, int] = {}

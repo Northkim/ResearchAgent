@@ -10,6 +10,7 @@ from backend.local_projects.ports import LocalProjectRepository
 from backend.project_workspaces.ports import (
     ProjectManifestRepository,
     WorkflowFoundationRepository,
+    WorkspaceSyncRepository,
 )
 
 from .approval_repository import ApprovalRepository
@@ -68,6 +69,12 @@ class UnitOfWork(ABC):
         """Optional canonical Project/Desired Manifest repository."""
 
         raise NotImplementedError("Project Manifest persistence is unavailable")
+
+    @property
+    def workspace_sync(self) -> WorkspaceSyncRepository:
+        """Optional Capsule acquisition/installation observation repository."""
+
+        raise NotImplementedError("Workspace sync persistence is unavailable")
 
     @abstractmethod
     def commit(self) -> None:

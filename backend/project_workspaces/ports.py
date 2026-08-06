@@ -13,6 +13,8 @@ from .contracts import (
     WorkflowCapsuleVersion,
     WorkflowDefinition,
     WorkflowDefinitionVersion,
+    WorkflowCapsuleArtifact,
+    WorkspaceInstallationAcknowledgement,
 )
 
 
@@ -108,3 +110,38 @@ class ProjectManifestRepository(ABC):
         base_revision: int,
         updated_at: datetime,
     ) -> int: ...
+
+
+class WorkspaceSyncRepository(ABC):
+    @abstractmethod
+    def add_capsule_artifact(self, artifact: WorkflowCapsuleArtifact) -> None: ...
+
+    @abstractmethod
+    def get_capsule_artifact(
+        self, project_id: str, workflow_instance_id: str
+    ) -> WorkflowCapsuleArtifact | None: ...
+
+    @abstractmethod
+    def get_capsule_artifact_by_id(
+        self, capsule_artifact_id: str
+    ) -> WorkflowCapsuleArtifact | None: ...
+
+    @abstractmethod
+    def list_capsule_artifacts(
+        self, project_id: str
+    ) -> tuple[WorkflowCapsuleArtifact, ...]: ...
+
+    @abstractmethod
+    def add_acknowledgement(
+        self, acknowledgement: WorkspaceInstallationAcknowledgement
+    ) -> None: ...
+
+    @abstractmethod
+    def get_acknowledgement_by_idempotency(
+        self, workspace_id: str, idempotency_key: str
+    ) -> WorkspaceInstallationAcknowledgement | None: ...
+
+    @abstractmethod
+    def get_acknowledgement(
+        self, installation_id: str
+    ) -> WorkspaceInstallationAcknowledgement | None: ...

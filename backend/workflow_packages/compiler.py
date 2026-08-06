@@ -73,6 +73,16 @@ def _project_id(value: str) -> str:
     return value
 
 
+def _package_id(value: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ValueError("package identity must be non-empty")
+    if len(value) > 255 or not value[0].isalnum():
+        raise ValueError("package identity is invalid")
+    if any(character not in "abcdefghijklmnopqrstuvwxyz0123456789._-" for character in value):
+        raise ValueError("package identity must be a lowercase portable identifier")
+    return value
+
+
 def _research_topic(value: str) -> str:
     if not isinstance(value, str):
         raise ValueError("research topic must be text")
@@ -340,6 +350,7 @@ def build_literature_search_package(
     project_name: str = "Local Literature Search",
     research_topic: str = DEFAULT_RESEARCH_TOPIC,
     allow_absolute_output_root: bool = False,
+    package_id: str | None = None,
 ) -> BuildResult:
     project_id = _project_id(project_id)
     project_name = _project_name(project_name)
@@ -351,7 +362,9 @@ def build_literature_search_package(
         raise ValueError("output_root must not be a symbolic link")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
-    package_id = f"literature-search-{project_id}-v0.5"
+    package_id = _package_id(
+        package_id or f"literature-search-{project_id}-v0.5"
+    )
     files, manifest = _render(project_id, project_name, package_id, research_topic)
 
     with tempfile.TemporaryDirectory(prefix=".r1a-build-", dir=output.parent) as temporary:

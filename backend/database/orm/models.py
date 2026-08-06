@@ -354,6 +354,131 @@ class ProjectManifestEntryORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class WorkflowCapsuleArtifactORM(Base):
+    """Project/Workflow-Instance-bound downloadable Capsule archive metadata."""
+
+    __tablename__ = "local_workflow_capsule_artifacts"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_local_workflow_capsule_artifacts_instance",
+        ),
+        ForeignKeyConstraint(
+            ["capsule_id", "capsule_version"],
+            [
+                "local_workflow_capsule_versions.capsule_id",
+                "local_workflow_capsule_versions.capsule_version",
+            ],
+            name="fk_local_workflow_capsule_artifacts_capsule_version",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "workflow_instance_id",
+            name="uq_local_workflow_capsule_artifacts_instance",
+        ),
+        UniqueConstraint(
+            "project_id", "package_id", name="uq_local_workflow_capsule_artifacts_package"
+        ),
+        CheckConstraint(
+            "status IN ('AVAILABLE','UNAVAILABLE')",
+            name="local_workflow_capsule_artifact_status",
+        ),
+        CheckConstraint(
+            "archive_size_bytes BETWEEN 0 AND 536870912",
+            name="local_workflow_capsule_artifact_archive_size",
+        ),
+        CheckConstraint("file_count > 0", name="local_workflow_capsule_artifact_file_count"),
+        Index(
+            "ix_local_workflow_capsule_artifacts_project_status",
+            "project_id",
+            "status",
+        ),
+    )
+
+    capsule_artifact_id: Mapped[str] = mapped_column(String(49), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    capsule_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    capsule_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    package_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    package_schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    package_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    manifest_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    archive_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    archive_size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    file_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    archive_storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkspaceInstallationAcknowledgementORM(Base):
+    """Cloud-retained report of a locally verified Workspace installation."""
+
+    __tablename__ = "workspace_installation_acknowledgements"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["projects.project_id", "projects.workspace_id"],
+            name="fk_workspace_installation_acknowledgements_project_workspace",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "manifest_revision"],
+            [
+                "project_desired_manifests.project_id",
+                "project_desired_manifests.manifest_revision",
+            ],
+            name="fk_workspace_installation_acknowledgements_manifest",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "idempotency_key",
+            name="uq_workspace_installation_acknowledgements_idempotency",
+        ),
+        UniqueConstraint(
+            "workspace_id",
+            "manifest_revision",
+            "installed_lock_checksum",
+            name="uq_workspace_installation_acknowledgements_lock",
+        ),
+        CheckConstraint(
+            "status = 'ACKNOWLEDGED'",
+            name="workspace_installation_acknowledgement_status",
+        ),
+        CheckConstraint(
+            "manifest_revision > 0",
+            name="workspace_installation_acknowledgement_revision",
+        ),
+        Index(
+            "ix_workspace_install_ack_project_revision",
+            "project_id",
+            "manifest_revision",
+            "status",
+        ),
+    )
+
+    installation_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(42), nullable=False)
+    manifest_revision: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    manifest_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    installed_lock_schema: Mapped[str] = mapped_column(String(100), nullable=False)
+    installed_lock_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    plan_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    installed_capsules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    installed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acknowledged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class WorkflowRunORM(Base):
     __tablename__ = "workflow_runs"
     __table_args__ = (

@@ -26,6 +26,8 @@ from backend.database.orm import (
     ProjectManifestEntryORM,
     ProjectORM,
     ProjectWorkflowInstanceORM,
+    WorkflowCapsuleArtifactORM,
+    WorkspaceInstallationAcknowledgementORM,
     StepRunORM,
     UploadedProgressReportORM,
     WorkflowDefinitionORM,
@@ -48,6 +50,7 @@ from backend.local_projects.ports import LocalProjectRepository
 from backend.project_workspaces.ports import (
     ProjectManifestRepository,
     WorkflowFoundationRepository,
+    WorkspaceSyncRepository,
 )
 
 from .repositories import (
@@ -62,6 +65,7 @@ from .repositories import (
     SQLAlchemyWorkflowRepository,
     SQLAlchemyWorkflowFoundationRepository,
     SQLAlchemyProjectManifestRepository,
+    SQLAlchemyWorkspaceSyncRepository,
 )
 
 
@@ -94,6 +98,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._local_projects = SQLAlchemyLocalProjectRepository(self.session)
         self._workflow_foundation = SQLAlchemyWorkflowFoundationRepository(self.session)
         self._project_manifests = SQLAlchemyProjectManifestRepository(self.session)
+        self._workspace_sync = SQLAlchemyWorkspaceSyncRepository(self.session)
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -138,6 +143,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     @property
     def project_manifests(self) -> ProjectManifestRepository:
         return self._project_manifests
+
+    @property
+    def workspace_sync(self) -> WorkspaceSyncRepository:
+        return self._workspace_sync
 
     def commit(self) -> None:
         try:
@@ -190,6 +199,8 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(ProjectWorkflowInstanceORM)
         self._flush_type(ProjectDesiredManifestORM)
         self._flush_type(ProjectManifestEntryORM)
+        self._flush_type(WorkflowCapsuleArtifactORM)
+        self._flush_type(WorkspaceInstallationAcknowledgementORM)
         self._flush_type(WorkflowRunORM)
         self._flush_type(AgentSessionORM)
         self._flush_type(StepRunORM)

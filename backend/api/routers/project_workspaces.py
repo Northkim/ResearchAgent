@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Response, status
 
 from backend.project_workspaces.contracts import (
     WorkflowDefinitionLifecycle,
@@ -22,6 +22,10 @@ from ..schemas.project_workspaces import (
     WorkflowInstanceResponse,
     WorkflowVersionCatalogResponse,
     WorkspaceBootstrapResponse,
+    WorkspaceSyncAcknowledgementRequest,
+    WorkspaceSyncAcknowledgementResponse,
+    WorkspaceSyncPlanRequest,
+    WorkspaceSyncPlanResponse,
 )
 
 router = APIRouter(tags=["project-workspaces"])
@@ -198,3 +202,71 @@ async def get_workspace_bootstrap(
     return WorkspaceBootstrapResponse.from_contract(
         services.project_workspaces.workspace_bootstrap(project_id)
     )
+
+
+@router.post(
+    "/projects/{project_id}/workspace/sync-plan",
+    response_model=WorkspaceSyncPlanResponse,
+)
+async def create_workspace_sync_plan(
+    project_id: str,
+    request: WorkspaceSyncPlanRequest,
+    services: LocalProductServicesDependency,
+) -> WorkspaceSyncPlanResponse:
+    plan = services.workspace_sync.create_plan(
+        project_id=project_id,
+        workspace_id=request.workspace_id,
+        installed_manifest_revision=request.installed_manifest_revision,
+        installed_lock_checksum=request.installed_lock_checksum,
+        installed_capsules=tuple(item.model_dump() for item in request.installed_capsules),
+        idempotency_key=request.idempotency_key,
+        dry_run=request.dry_run,
+    )
+    return WorkspaceSyncPlanResponse.from_contract(plan)
+
+
+@router.get(
+    "/projects/{project_id}/workflow-instances/{instance_id}/capsule-artifacts/"
+    "{capsule_artifact_id}/download"
+)
+async def download_workspace_capsule_artifact(
+    project_id: str,
+    instance_id: str,
+    capsule_artifact_id: str,
+    services: LocalProductServicesDependency,
+) -> Response:
+    content, artifact = services.workspace_sync.read_artifact(
+        project_id=project_id,
+        workflow_instance_id=instance_id,
+        capsule_artifact_id=capsule_artifact_id,
+    )
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{artifact.package_id}.zip"',
+            "X-Content-Type-Options": "nosniff",
+            "ETag": f'"{artifact.archive_checksum}"',
+            "X-ReAgent-Project-ID": artifact.project_id,
+            "X-ReAgent-Workflow-Instance-ID": artifact.workflow_instance_id,
+            "X-ReAgent-Capsule-ID": artifact.capsule_id,
+            "X-ReAgent-Capsule-Version": artifact.capsule_version,
+        },
+    )
+
+
+@router.post(
+    "/projects/{project_id}/workspace/sync-ack",
+    response_model=WorkspaceSyncAcknowledgementResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def acknowledge_workspace_sync(
+    project_id: str,
+    request: WorkspaceSyncAcknowledgementRequest,
+    services: LocalProductServicesDependency,
+) -> WorkspaceSyncAcknowledgementResponse:
+    acknowledgement = services.workspace_sync.acknowledge(
+        project_id=project_id,
+        document=request.model_dump(),
+    )
+    return WorkspaceSyncAcknowledgementResponse.from_contract(acknowledgement)

@@ -38,6 +38,7 @@ from backend.persistence.ports import UnitOfWork
 from backend.progress_reports import ProgressReportService
 from backend.local_projects.service import LocalProjectService
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
+from backend.project_workspaces.sync import WorkspaceSyncApplicationService
 from backend.skill_system.registry import SkillRegistry
 from backend.skill_system.models import SkillCapabilities
 from backend.skill_system.runtime import SkillExecutor, register_fake_skills
@@ -106,6 +107,7 @@ class LocalProductApplicationServices:
     local_projects: LocalProjectService
     progress_reports: ProgressReportService
     project_workspaces: ProjectWorkspaceApplicationService
+    workspace_sync: WorkspaceSyncApplicationService
 
 
 class ApplicationContainer:
@@ -289,6 +291,11 @@ class ApplicationContainer:
             ),
             progress_reports=self._progress_report_service(unit_of_work),
             project_workspaces=project_workspaces,
+            workspace_sync=WorkspaceSyncApplicationService(
+                unit_of_work=unit_of_work,
+                package_root=self.local_package_root,
+                clock=self.clock,
+            ),
         )
 
     def _progress_report_service(

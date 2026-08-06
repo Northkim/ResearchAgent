@@ -17,6 +17,8 @@ _WORKFLOW_INSTANCE_ID = re.compile(r"^wfi-[0-9a-f]{32}$")
 _PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
 _WORKSPACE_ID = re.compile(r"^workspace-[0-9a-f]{32}$")
 _ENTRY_ID = re.compile(r"^entry-[0-9a-f]{32}$")
+_CAPSULE_ARTIFACT_ID = re.compile(r"^capsule-artifact-[0-9a-f]{32}$")
+_INSTALLATION_ID = re.compile(r"^install-[0-9a-f]{32}$")
 _SEMVER = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$"
 )
@@ -55,6 +57,15 @@ class ManifestEntryKind(str, Enum):
 class ManifestDesiredAction(str, Enum):
     ENSURE_PRESENT = "ENSURE_PRESENT"
     RETIRE = "RETIRE"
+
+
+class CapsuleArtifactStatus(str, Enum):
+    AVAILABLE = "AVAILABLE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class InstallationAcknowledgementStatus(str, Enum):
+    ACKNOWLEDGED = "ACKNOWLEDGED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,6 +380,101 @@ class ProjectWorkflowInstance:
             raise ValueError("active instance cannot have retired_manifest_revision")
         if self.legacy_package_id is not None:
             _require_bounded(self.legacy_package_id, 1, 255, "legacy_package_id")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowCapsuleArtifact:
+    capsule_artifact_id: str
+    project_id: str
+    workflow_instance_id: str
+    capsule_id: str
+    capsule_version: str
+    package_id: str
+    package_schema_version: str
+    package_checksum: str
+    manifest_checksum: str
+    archive_checksum: str
+    archive_size_bytes: int
+    file_count: int
+    archive_storage_key: str
+    status: CapsuleArtifactStatus
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(self.capsule_artifact_id, _CAPSULE_ARTIFACT_ID, "capsule_artifact_id")
+        _require_match(self.project_id, _PROJECT_ID, "project_id")
+        _require_match(self.workflow_instance_id, _WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        _require_match(self.capsule_id, _CAPSULE_ID, "capsule_id")
+        _require_match(self.capsule_version, _SEMVER, "capsule_version")
+        _require_bounded(self.package_id, 1, 255, "package_id")
+        _require_bounded(self.package_schema_version, 1, 100, "package_schema_version")
+        require_sha256(self.package_checksum, "package_checksum")
+        require_sha256(self.manifest_checksum, "manifest_checksum")
+        require_sha256(self.archive_checksum, "archive_checksum")
+        if not 0 <= self.archive_size_bytes <= 536_870_912:
+            raise ValueError("archive_size_bytes must be between 0 and 536870912")
+        if not 1 <= self.file_count <= 10_000:
+            raise ValueError("file_count must be between 1 and 10000")
+        if (
+            not self.archive_storage_key
+            or self.archive_storage_key.startswith("/")
+            or ".." in self.archive_storage_key.split("/")
+            or "\\" in self.archive_storage_key
+        ):
+            raise ValueError("archive_storage_key must be a safe relative path")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceInstallationAcknowledgement:
+    installation_id: str
+    project_id: str
+    workspace_id: str
+    manifest_revision: int
+    manifest_checksum: str
+    installed_lock_schema: str
+    installed_lock_checksum: str
+    plan_checksum: str
+    idempotency_key: str
+    status: InstallationAcknowledgementStatus
+    installed_capsules: tuple[Mapping[str, Any], ...]
+    installed_at: datetime
+    acknowledged_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(self.installation_id, _INSTALLATION_ID, "installation_id")
+        _require_match(self.project_id, _PROJECT_ID, "project_id")
+        _require_match(self.workspace_id, _WORKSPACE_ID, "workspace_id")
+        if self.manifest_revision < 1:
+            raise ValueError("manifest_revision must be positive")
+        require_sha256(self.manifest_checksum, "manifest_checksum")
+        if self.installed_lock_schema != "reagent.workspace-installed-lock/v0.1":
+            raise ValueError("unsupported Installed Workspace Lock schema")
+        require_sha256(self.installed_lock_checksum, "installed_lock_checksum")
+        require_sha256(self.plan_checksum, "plan_checksum")
+        try:
+            from uuid import UUID
+
+            parsed = UUID(self.idempotency_key)
+        except (ValueError, AttributeError) as error:
+            raise ValueError("idempotency_key must be a UUID") from error
+        if str(parsed) != self.idempotency_key:
+            raise ValueError("idempotency_key must use canonical UUID text")
+        if not isinstance(self.installed_capsules, tuple) or len(self.installed_capsules) > 100:
+            raise ValueError("installed_capsules must be a bounded immutable tuple")
+        object.__setattr__(
+            self,
+            "installed_capsules",
+            tuple(_freeze_json(item) for item in self.installed_capsules),
+        )
+        _require_aware(self.installed_at, "installed_at")
+        _require_aware(self.acknowledged_at, "acknowledged_at")
         _require_aware(self.created_at, "created_at")
         _require_aware(self.updated_at, "updated_at")
 

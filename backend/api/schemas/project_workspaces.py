@@ -16,6 +16,11 @@ from backend.project_workspaces.contracts import (
 )
 from backend.workflow_packages.serialization import to_json_value
 from backend.project_workspaces.bootstrap import workspace_bootstrap_document
+from backend.project_workspaces.sync import (
+    WorkspaceSyncPlan,
+    acknowledgement_document,
+    sync_plan_document,
+)
 
 from .common import StrictDTO
 
@@ -181,3 +186,74 @@ class WorkspaceBootstrapResponse(StrictDTO):
     @classmethod
     def from_contract(cls, value: WorkspaceBootstrapDescriptor):
         return cls.model_validate(workspace_bootstrap_document(value))
+
+
+class InstalledCapsuleObservation(StrictDTO):
+    workflow_instance_id: str
+    workflow_definition_id: str
+    workflow_definition_version: str
+    capsule_id: str
+    capsule_version: str
+    capsule_definition_checksum: str
+    package_checksum: str
+    relative_path: str
+
+
+class WorkspaceSyncPlanRequest(StrictDTO):
+    workspace_id: str = Field(min_length=42, max_length=42)
+    installed_manifest_revision: int = Field(ge=0)
+    installed_lock_checksum: str | None = Field(default=None, min_length=71, max_length=71)
+    installed_capsules: list[InstalledCapsuleObservation] = Field(default_factory=list, max_length=100)
+    idempotency_key: str = Field(min_length=36, max_length=36)
+    dry_run: bool = False
+
+
+class WorkspaceSyncPlanResponse(StrictDTO):
+    schema_version: str
+    installation_id: str
+    project_id: str
+    workspace_id: str
+    base_manifest_revision: int
+    target_manifest_revision: int
+    target_manifest_checksum: str
+    installed_lock_checksum: str | None
+    plan_checksum: str
+    state: str
+    actions: list[dict[str, Any]]
+    created_at: str
+    expires_at: str
+
+    @classmethod
+    def from_contract(cls, value: WorkspaceSyncPlan):
+        return cls.model_validate(sync_plan_document(value))
+
+
+class WorkspaceSyncAcknowledgementRequest(StrictDTO):
+    schema_version: str
+    installation_id: str
+    project_id: str
+    workspace_id: str
+    manifest_revision: int = Field(ge=1)
+    manifest_checksum: str
+    plan_checksum: str
+    installed_lock_schema: str
+    installed_lock_checksum: str
+    idempotency_key: str
+    installed_capsules: list[dict[str, Any]] = Field(max_length=100)
+    installed_at: str
+
+
+class WorkspaceSyncAcknowledgementResponse(StrictDTO):
+    schema_version: str
+    installation_id: str
+    project_id: str
+    workspace_id: str
+    manifest_revision: int
+    installed_lock_checksum: str
+    status: str
+    idempotency_key: str
+    acknowledged_at: str
+
+    @classmethod
+    def from_contract(cls, value):
+        return cls.model_validate(acknowledgement_document(value))
