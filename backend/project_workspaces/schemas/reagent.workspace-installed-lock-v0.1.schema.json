@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:runtime-schema:reagent.workspace-installed-lock:v0.1",
+  "title": "reagent.workspace-installed-lock/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "workspace_id", "manifest_revision", "manifest_checksum", "lock_checksum", "installed_capsules", "installed_skills", "materialized_artifacts", "resolved_resources", "written_at"],
+  "properties": {
+    "schema_version": {"const": "reagent.workspace-installed-lock/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "manifest_revision": {"type": "integer", "minimum": 1},
+    "manifest_checksum": {"$ref": "#/$defs/checksum"},
+    "lock_checksum": {"$ref": "#/$defs/checksum"},
+    "installed_capsules": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/capsule"}},
+    "installed_skills": {"type": "array", "maxItems": 0},
+    "materialized_artifacts": {"type": "array", "maxItems": 0},
+    "resolved_resources": {"type": "array", "maxItems": 0},
+    "written_at": {"type": "string", "format": "date-time", "maxLength": 35}
+  },
+  "$defs": {
+    "checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "capsule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workflow_instance_id", "workflow_definition_id", "workflow_definition_version", "capsule_id", "capsule_version", "capsule_definition_checksum", "package_id", "package_checksum", "manifest_checksum", "immutable_contract_checksum", "relative_path", "lifecycle", "installation_source", "verification_status"],
+      "properties": {
+        "workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+        "workflow_definition_id": {"type": "string", "minLength": 2, "maxLength": 128},
+        "workflow_definition_version": {"type": "string", "minLength": 5, "maxLength": 100},
+        "capsule_id": {"type": "string", "pattern": "^capsule-[0-9a-f]{32}$"},
+        "capsule_version": {"type": "string", "minLength": 5, "maxLength": 100},
+        "capsule_definition_checksum": {"$ref": "#/$defs/checksum"},
+        "package_id": {"type": "string", "minLength": 1, "maxLength": 255},
+        "package_checksum": {"$ref": "#/$defs/checksum"},
+        "manifest_checksum": {"$ref": "#/$defs/checksum"},
+        "immutable_contract_checksum": {"$ref": "#/$defs/checksum"},
+        "relative_path": {"type": "string", "minLength": 1, "maxLength": 500},
+        "lifecycle": {"enum": ["ACTIVE", "RETAINED_NOT_DESIRED"]},
+        "installation_source": {"enum": ["B3_LEGACY_ADOPTION", "CLOUD_ACQUISITION"]},
+        "verification_status": {"const": "VERIFIED"}
+      }
+    }
+  }
+}

@@ -463,7 +463,7 @@ def test_existing_different_capsule_and_registry_recovery_are_explicit(
 
 def test_runtime_schema_documents_parse_and_reject_unknown_major(tmp_path: Path, workspace_fixture) -> None:
     schema_root = Path(workspace_cli.__file__).with_name("schemas")
-    assert len(list(schema_root.glob("*.schema.json"))) == 3
+    assert len(list(schema_root.glob("*.schema.json"))) == 6
     for path in schema_root.glob("*.schema.json"):
         assert json.loads(path.read_text())["$schema"].endswith("2020-12/schema")
     unsupported = dict(workspace_fixture["descriptor"])

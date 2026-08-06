@@ -2,10 +2,9 @@
 """Self-contained Project Workspace bootstrap and legacy Package adoption CLI.
 
 This module intentionally uses only the Python standard library. Bootstrap
-copies the same reviewed source to the Workspace root as ``reagent_local.py``;
-the resulting Workspace therefore retains its identity/adoption commands
-without depending on a checkout path. It does not implement sync, installation,
-an Installed Lock, or acknowledgement.
+copies the same reviewed source to the Workspace root as ``reagent_local.py``.
+Explicit ``sync`` performs reviewed pull-only Capsule installation; it never
+executes downloaded content or rewrites existing Capsule research state.
 """
 
 from __future__ import annotations
@@ -20,15 +19,27 @@ import stat
 import sys
 import tempfile
 import uuid
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, Iterable
 
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - supported V0.1 platform provides it
+    fcntl = None
+
 BOOTSTRAP_SCHEMA = "reagent.workspace-bootstrap/v0.1"
 WORKSPACE_SCHEMA = "reagent.project-workspace/v0.1"
 REGISTRY_SCHEMA = "reagent.workspace-capsule-registry/v0.1"
+INSTALLED_LOCK_SCHEMA = "reagent.workspace-installed-lock/v0.1"
+SYNC_PLAN_SCHEMA = "reagent.workspace-sync-plan/v0.1"
+SYNC_ACK_SCHEMA = "reagent.capsule-installation-ack/v0.1"
+SYNC_ACK_RECEIPT_SCHEMA = "reagent.workspace-sync-ack-receipt/v0.1"
 PACKAGE_SCHEMA = "workflow-package/v0.1"
 DESIRED_MANIFEST_SCHEMA = "reagent.project-desired-manifest/v0.1"
 WORKFLOW_ID = "literature-search-local-experimental"
@@ -42,11 +53,17 @@ WORKSPACE_DESCRIPTOR = "project.json"
 BOOTSTRAP_CACHE = ".reagent/bootstrap.json"
 DESIRED_MANIFEST_CACHE = ".reagent/desired-manifest.json"
 CAPSULE_REGISTRY = ".reagent/capsule-registry.json"
+INSTALLED_LOCK = ".reagent/installed-lock.json"
+SYNC_JOURNAL = ".reagent/sync/current.json"
+SYNC_LOCK = ".reagent/runtime/sync.lock"
+ACKNOWLEDGEMENTS_ROOT = ".reagent/acknowledgements"
+INSTALL_RECEIPTS_ROOT = ".reagent/receipts/installations"
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 2
 EXIT_IDENTITY = 10
 EXIT_CLOUD = 20
+EXIT_CONCURRENCY = 40
 EXIT_VALIDATION = 50
 EXIT_FILESYSTEM = 60
 EXIT_INTERNAL = 70
@@ -163,6 +180,31 @@ class WorkspaceOperationResult:
         if self.capsule_relative_path is not None:
             value["capsule_relative_path"] = self.capsule_relative_path
         return value
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceSyncResult:
+    status: str
+    project_id: str
+    workspace_id: str
+    manifest_revision: int
+    installed_capsules: int
+    retained_capsules: int
+    acknowledgement_status: str
+    lock_checksum: str | None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reagent.workspace-sync-result/v0.1",
+            "status": self.status,
+            "project_id": self.project_id,
+            "workspace_id": self.workspace_id,
+            "manifest_revision": self.manifest_revision,
+            "installed_capsules": self.installed_capsules,
+            "retained_capsules": self.retained_capsules,
+            "acknowledgement_status": self.acknowledgement_status,
+            "lock_checksum": self.lock_checksum,
+        }
 
 
 def canonical_json(value: Any) -> str:
@@ -643,6 +685,8 @@ def adopt_legacy_package(
 def _validate_legacy_package(
     root: Path,
     bootstrap: dict[str, Any],
+    *,
+    expected_instance_id: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     if root.is_symlink() or not root.is_dir():
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package root must be a real directory")
@@ -699,7 +743,11 @@ def _validate_legacy_package(
     if manifest.get("package_checksum") != canonical_hash(package_payload):
         raise _package_error("LEGACY_PACKAGE_CHECKSUM_MISMATCH", "Package checksum is invalid")
 
-    capsule = _select_capsule(bootstrap, manifest)
+    capsule = _select_capsule(
+        bootstrap,
+        manifest,
+        expected_instance_id=expected_instance_id,
+    )
     package_reference = capsule.get("legacy_package")
     if package_reference is None:
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Bootstrap descriptor does not authorize a legacy Package")
@@ -771,10 +819,15 @@ def _validate_legacy_package(
     return manifest, _tree_checksum(root)
 
 
-def _select_capsule(bootstrap: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+def _select_capsule(
+    bootstrap: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    expected_instance_id: str | None = None,
+) -> dict[str, Any]:
     project_id = manifest.get("experimental_project_identity")
     expected_workspace = "workspace-" + str(project_id).removeprefix("project-")
-    expected_instance = _legacy_instance_id(str(project_id))
+    expected_instance = expected_instance_id or _legacy_instance_id(str(project_id))
     if project_id != bootstrap["project_id"] or expected_workspace != bootstrap["workspace_id"]:
         raise _package_error("LEGACY_PACKAGE_IDENTITY_MISMATCH", "Legacy Package belongs to another Project Workspace")
     matches = [
@@ -972,6 +1025,32 @@ def _tree_checksum(root: Path) -> str:
                 }
             )
     return canonical_hash(entries)
+
+
+def _immutable_contract_checksum(root: Path, manifest: dict[str, Any]) -> str:
+    """Bind protected Package content while excluding declared mutable state."""
+
+    entries: list[dict[str, Any]] = []
+    for raw in manifest["files"]:
+        if raw["mutable_by_harness"]:
+            continue
+        relative = _safe_package_path(raw["relative_path"])
+        path = root / relative
+        _assert_within(root, path)
+        if path.is_symlink() or not path.is_file():
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Immutable Capsule file is unavailable")
+        content = path.read_bytes()
+        entries.append({
+            "relative_path": relative,
+            "sha256": sha256_bytes(content),
+            "byte_size": len(content),
+        })
+    entries.sort(key=lambda item: item["relative_path"])
+    return canonical_hash({
+        "package_id": manifest["package_id"],
+        "package_checksum": manifest["package_checksum"],
+        "immutable_files": entries,
+    })
 
 
 def _existing_workspace_result(
@@ -1291,6 +1370,770 @@ def _filesystem(code: str, message: str) -> WorkspaceCLIError:
     return WorkspaceCLIError(code, message, EXIT_FILESYSTEM)
 
 
+class HTTPWorkspaceSyncTransport:
+    """Loopback-only JSON/ZIP transport with no persisted credential."""
+
+    def __init__(self, base_url: str = "http://127.0.0.1:8000") -> None:
+        parsed = urllib.parse.urlsplit(base_url)
+        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+            raise WorkspaceCLIError(
+                "WORKSPACE_SYNC_NOT_AVAILABLE",
+                "Workspace sync requires a loopback ReAgent API URL",
+                EXIT_CLOUD,
+            )
+        if parsed.username or parsed.password or parsed.query or parsed.fragment:
+            raise WorkspaceCLIError(
+                "WORKSPACE_SYNC_NOT_AVAILABLE",
+                "Workspace sync API URL must not contain credentials or query data",
+                EXIT_CLOUD,
+            )
+        self._base_url = base_url.rstrip("/")
+
+    def create_plan(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._json_request(
+            "POST", f"/projects/{project_id}/workspace/sync-plan", payload
+        )
+
+    def download(self, path: str) -> bytes:
+        if not path.startswith("/projects/") or not path.endswith("/download"):
+            raise WorkspaceCLIError(
+                "CAPSULE_DOWNLOAD_FAILED", "Capsule acquisition path is invalid", EXIT_CLOUD
+            )
+        request = urllib.request.Request(self._base_url + path, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                if response.status != 200:
+                    raise OSError("unexpected response status")
+                content = response.read(MAX_PACKAGE_BYTES + 1)
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError) as error:
+            raise WorkspaceCLIError(
+                "CAPSULE_DOWNLOAD_FAILED", "Capsule download did not complete", EXIT_CLOUD
+            ) from error
+        if len(content) > MAX_PACKAGE_BYTES:
+            raise _package_error("UNSAFE_CAPSULE_ARCHIVE", "Capsule archive exceeds size limits")
+        return content
+
+    def acknowledge(self, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return self._json_request(
+            "POST", f"/projects/{project_id}/workspace/sync-ack", payload
+        )
+
+    def _json_request(
+        self, method: str, path: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        data = (canonical_json(payload) + "\n").encode("utf-8")
+        if len(data) > 1_048_576:
+            raise WorkspaceCLIError(
+                "WORKSPACE_SYNC_NOT_AVAILABLE", "Workspace sync request is too large", EXIT_CLOUD
+            )
+        request = urllib.request.Request(
+            self._base_url + path,
+            data=data,
+            method=method,
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                content = response.read(1_048_577)
+        except urllib.error.HTTPError as error:
+            try:
+                body = json.loads(error.read(65_536).decode("utf-8"))
+                code = body.get("error", {}).get("code", "WORKSPACE_SYNC_NOT_AVAILABLE")
+            except Exception:
+                code = "WORKSPACE_SYNC_NOT_AVAILABLE"
+            exit_code = EXIT_CONCURRENCY if error.code == 409 else EXIT_CLOUD
+            raise WorkspaceCLIError(code, "Cloud rejected the Workspace sync operation", exit_code) from error
+        except (OSError, urllib.error.URLError) as error:
+            raise WorkspaceCLIError(
+                "WORKSPACE_SYNC_NOT_AVAILABLE", "Local ReAgent API is unavailable", EXIT_CLOUD
+            ) from error
+        if len(content) > 1_048_576:
+            raise WorkspaceCLIError(
+                "WORKSPACE_SYNC_NOT_AVAILABLE", "Workspace sync response is too large", EXIT_CLOUD
+            )
+        try:
+            value = json.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise WorkspaceCLIError(
+                "WORKSPACE_SYNC_NOT_AVAILABLE", "Workspace sync response is invalid", EXIT_CLOUD
+            ) from error
+        return _object(value, "Workspace sync response")
+
+
+class _WorkspaceWriteLock:
+    def __init__(self, workspace: Path) -> None:
+        self.path = workspace / SYNC_LOCK
+        self.handle = None
+
+    def __enter__(self):
+        if fcntl is None:
+            raise _filesystem("WORKSPACE_BUSY", "OS Workspace locking is unavailable")
+        _reject_symlink_chain(self.path.parent)
+        self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if self.path.is_symlink():
+            raise _filesystem("WORKSPACE_BUSY", "Workspace sync lock path is unsafe")
+        self.handle = self.path.open("a+", encoding="utf-8")
+        try:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            self.handle.close()
+            raise WorkspaceCLIError(
+                "WORKSPACE_BUSY", "Another Workspace sync owns the write lock", EXIT_CONCURRENCY
+            ) from error
+        self.handle.seek(0)
+        self.handle.truncate()
+        self.handle.write(canonical_json({"schema_version": "reagent.workspace-write-lock/v0.1", "pid": os.getpid()}))
+        self.handle.flush()
+        os.fsync(self.handle.fileno())
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        assert self.handle is not None
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        self.handle.close()
+
+
+def sync_workspace(
+    *,
+    workspace_root: str | Path,
+    transport: Any,
+    dry_run: bool = False,
+    now: datetime | None = None,
+) -> WorkspaceSyncResult:
+    workspace, descriptor, cached_bootstrap = load_workspace(workspace_root)
+    with _WorkspaceWriteLock(workspace):
+        pending = _pending_acknowledgements(workspace, descriptor)
+        if pending:
+            lock = validate_installed_lock(_read_json(workspace / INSTALLED_LOCK), descriptor)
+            try:
+                receipt = _retry_pending_ack(workspace, descriptor, pending[0], transport)
+            except WorkspaceCLIError as error:
+                if error.code != "ACKNOWLEDGEMENT_STALE":
+                    return _sync_result("ACK_PENDING", lock, "ACK_PENDING")
+                path, envelope = pending[0]
+                _atomic_write_json(path, {**envelope, "local_status": "ACKNOWLEDGED_STALE"})
+            else:
+                return _sync_result("ACKNOWLEDGED", lock, receipt["status"])
+
+        lock = _load_or_migrate_lock(
+            workspace, descriptor, cached_bootstrap, now=now or datetime.now(timezone.utc)
+        )
+        installed = [] if lock is None else [
+            _installed_observation(item) for item in lock["installed_capsules"]
+            if item["lifecycle"] == "ACTIVE"
+        ]
+        idempotency_key = str(uuid.uuid5(
+            LEGACY_NAMESPACE,
+            "workspace-sync/v1|"
+            f"workspace={descriptor['workspace_id']}|"
+            f"base={0 if lock is None else lock['manifest_revision']}|"
+            f"lock={None if lock is None else lock['lock_checksum']}",
+        ))
+        plan = transport.create_plan(descriptor["project_id"], {
+            "workspace_id": descriptor["workspace_id"],
+            "installed_manifest_revision": 0 if lock is None else lock["manifest_revision"],
+            "installed_lock_checksum": None if lock is None else lock["lock_checksum"],
+            "installed_capsules": installed,
+            "idempotency_key": idempotency_key,
+            "dry_run": dry_run,
+        })
+        plan = validate_sync_plan(plan, descriptor)
+        if dry_run:
+            return WorkspaceSyncResult(
+                status="PLAN_CREATED",
+                project_id=descriptor["project_id"],
+                workspace_id=descriptor["workspace_id"],
+                manifest_revision=plan["target_manifest_revision"],
+                installed_capsules=0 if lock is None else len(lock["installed_capsules"]),
+                retained_capsules=0 if lock is None else sum(item["lifecycle"] == "RETAINED_NOT_DESIRED" for item in lock["installed_capsules"]),
+                acknowledgement_status="NOT_SENT",
+                lock_checksum=None if lock is None else lock["lock_checksum"],
+            )
+        return _execute_sync_plan(
+            workspace=workspace,
+            descriptor=descriptor,
+            cached_bootstrap=cached_bootstrap,
+            plan=plan,
+            prior_lock=lock,
+            transport=transport,
+            now=now or datetime.now(timezone.utc),
+        )
+
+
+def validate_sync_plan(document: Any, workspace: dict[str, Any]) -> dict[str, Any]:
+    value = _object(document, "Workspace sync plan")
+    fields = {
+        "schema_version", "installation_id", "project_id", "workspace_id",
+        "base_manifest_revision", "target_manifest_revision", "target_manifest_checksum",
+        "installed_lock_checksum", "plan_checksum", "state", "actions",
+        "created_at", "expires_at",
+    }
+    _exact_fields(value, fields, "Workspace sync plan")
+    if value["schema_version"] != SYNC_PLAN_SCHEMA:
+        raise _identity("WORKSPACE_SCHEMA_UNSUPPORTED", "Workspace sync plan schema is unsupported")
+    if value["project_id"] != workspace["project_id"] or value["workspace_id"] != workspace["workspace_id"]:
+        raise _identity("WORKSPACE_IDENTITY_CONFLICT", "Workspace sync plan identity mismatch")
+    _checksum(value["target_manifest_checksum"], "target_manifest_checksum")
+    if value["installed_lock_checksum"] is not None:
+        _checksum(value["installed_lock_checksum"], "installed_lock_checksum")
+    payload = dict(value)
+    checksum = payload.pop("plan_checksum")
+    _checksum(checksum, "plan_checksum")
+    if canonical_hash(payload) != checksum:
+        raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync plan checksum is invalid")
+    actions = value["actions"]
+    if not isinstance(actions, list) or len(actions) > 100:
+        raise _identity("WORKSPACE_DESCRIPTOR_INVALID", "Workspace sync actions are invalid")
+    previous = ""
+    for expected_sequence, action in enumerate(actions, 1):
+        item = _object(action, "Workspace sync action")
+        if item.get("sequence") != expected_sequence:
+            raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync action ordering is invalid")
+        instance_id = item.get("workflow_instance_id")
+        _match(instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        if instance_id < previous:
+            raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync actions are not deterministic")
+        previous = instance_id
+        if item.get("action_type") not in {
+            "NOOP", "INSTALL_CAPSULE", "CONFLICT", "UNAVAILABLE", "RETAINED_NOT_DESIRED"
+        }:
+            raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync action type is invalid")
+        _safe_package_path(item.get("destination_relative_path"))
+        _checksum(item.get("capsule_definition_checksum"), "capsule_definition_checksum")
+        if item.get("action_type") == "INSTALL_CAPSULE":
+            _validate_acquisition(item.get("artifact"), value, item)
+    return value
+
+
+def validate_installed_lock(document: Any, workspace: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return _validate_installed_lock(document, workspace)
+    except WorkspaceCLIError as error:
+        if error.code in {"INSTALLED_LOCK_INVALID", "INSTALLED_LOCK_CONFLICT"}:
+            raise
+        raise _identity("INSTALLED_LOCK_INVALID", "Installed Workspace Lock is invalid") from error
+
+
+def _validate_installed_lock(document: Any, workspace: dict[str, Any]) -> dict[str, Any]:
+    value = _object(document, "Installed Workspace Lock")
+    fields = {
+        "schema_version", "project_id", "workspace_id", "manifest_revision",
+        "manifest_checksum", "lock_checksum", "installed_capsules",
+        "installed_skills", "materialized_artifacts", "resolved_resources", "written_at",
+    }
+    _exact_fields(value, fields, "Installed Workspace Lock")
+    if value["schema_version"] != INSTALLED_LOCK_SCHEMA:
+        raise _identity("INSTALLED_LOCK_INVALID", "Installed Workspace Lock schema is unsupported")
+    if value["project_id"] != workspace["project_id"] or value["workspace_id"] != workspace["workspace_id"]:
+        raise _identity("INSTALLED_LOCK_CONFLICT", "Installed Workspace Lock identity mismatch")
+    _positive_int(value["manifest_revision"], "manifest_revision")
+    _checksum(value["manifest_checksum"], "manifest_checksum")
+    if any(value[field] != [] for field in ("installed_skills", "materialized_artifacts", "resolved_resources")):
+        raise _identity("INSTALLED_LOCK_INVALID", "Unsupported Installed Lock content is present")
+    entries = value["installed_capsules"]
+    if not isinstance(entries, list) or len(entries) > 100:
+        raise _identity("INSTALLED_LOCK_INVALID", "Installed Capsule list is invalid")
+    ids = []
+    for entry in entries:
+        item = _object(entry, "Installed Capsule")
+        required = {
+            "workflow_instance_id", "workflow_definition_id", "workflow_definition_version",
+            "capsule_id", "capsule_version", "capsule_definition_checksum",
+            "package_id", "package_checksum", "manifest_checksum", "immutable_contract_checksum",
+            "relative_path", "lifecycle", "installation_source", "verification_status",
+        }
+        _exact_fields(item, required, "Installed Capsule")
+        _match(item["workflow_instance_id"], WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        _safe_package_path(item["relative_path"])
+        for field in ("capsule_definition_checksum", "package_checksum", "manifest_checksum", "immutable_contract_checksum"):
+            _checksum(item[field], field)
+        if item["lifecycle"] not in {"ACTIVE", "RETAINED_NOT_DESIRED"}:
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Capsule lifecycle is invalid")
+        if item["verification_status"] != "VERIFIED":
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Capsule verification status is invalid")
+        ids.append(item["workflow_instance_id"])
+    if ids != sorted(set(ids)):
+        raise _identity("INSTALLED_LOCK_INVALID", "Installed Capsule ordering is invalid")
+    _timestamp(value["written_at"], "written_at")
+    payload = dict(value)
+    checksum = payload.pop("lock_checksum")
+    _checksum(checksum, "lock_checksum")
+    if canonical_hash(payload) != checksum:
+        raise _identity("INSTALLED_LOCK_INVALID", "Installed Workspace Lock checksum is invalid")
+    return value
+
+
+def _load_or_migrate_lock(workspace, descriptor, bootstrap, *, now):
+    path = workspace / INSTALLED_LOCK
+    if path.exists() or path.is_symlink():
+        if path.is_symlink():
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Workspace Lock path is unsafe")
+        lock = validate_installed_lock(_read_json(path), descriptor)
+        _verify_locked_capsules(workspace, lock, bootstrap)
+        return lock
+    registry = validate_registry(_read_json(workspace / CAPSULE_REGISTRY), descriptor)
+    if not registry["entries"]:
+        return None
+    entries = []
+    for item in registry["entries"]:
+        destination = workspace / item["capsule_relative_path"]
+        _assert_within(workspace, destination)
+        migration_bootstrap = _bootstrap_for_registry_entry(bootstrap, item)
+        manifest, _ = _validate_legacy_package(
+            destination,
+            migration_bootstrap,
+            expected_instance_id=item["workflow_instance_id"],
+        )
+        immutable_checksum = _immutable_contract_checksum(destination, manifest)
+        if (
+            manifest["package_id"] != item["package_id"]
+            or manifest["package_checksum"] != item["package_checksum"]
+            or manifest["manifest_checksum"] != item["manifest_checksum"]
+        ):
+            raise _identity("LOCAL_CAPSULE_DRIFT", "B3 Capsule registry conflicts with local content")
+        entries.append(_lock_entry_from_registry(item, immutable_checksum))
+    lock = _build_lock(
+        descriptor=descriptor,
+        manifest_revision=bootstrap["bootstrap_manifest_revision"],
+        manifest_checksum=bootstrap["desired_manifest_checksum"],
+        entries=entries,
+        written_at=_utc_text(now),
+    )
+    _atomic_write_json(path, lock)
+    validate_installed_lock(_read_json(path), descriptor)
+    return lock
+
+
+def _bootstrap_for_registry_entry(bootstrap, item):
+    return {
+        **bootstrap,
+        "workflow_capsules": [{
+            "workflow_instance_id": item["workflow_instance_id"],
+            "workflow_definition_id": item["workflow_definition_id"],
+            "workflow_definition_version": item["workflow_definition_version"],
+            "capsule_id": item["capsule_id"],
+            "capsule_version": item["capsule_version"],
+            "capsule_definition_checksum": item["capsule_definition_checksum"],
+            "desired_state": "ACTIVE",
+            "legacy_package_compatible": True,
+            "package_schema_version": PACKAGE_SCHEMA,
+            "package_template_id": PACKAGE_TEMPLATE_ID,
+            "trust_classification": TRUST_CLASSIFICATION,
+            "legacy_package": {
+                "package_id": item["package_id"],
+                "package_schema_version": PACKAGE_SCHEMA,
+                "package_checksum": item["package_checksum"],
+                "manifest_checksum": item["manifest_checksum"],
+                "zip_checksum": "sha256:" + "0" * 64,
+                "download_path": (
+                    f"/projects/{bootstrap['project_id']}/packages/"
+                    f"{item['package_id']}/download"
+                ),
+            },
+        }],
+    }
+
+
+def _execute_sync_plan(*, workspace, descriptor, cached_bootstrap, plan, prior_lock, transport, now):
+    if (
+        plan["state"] == "NO_CHANGE"
+        and prior_lock is not None
+        and _has_acknowledged_lock(workspace, descriptor, prior_lock)
+    ):
+        return _sync_result("NO_CHANGE", prior_lock, "ACKNOWLEDGED")
+    journal = {
+        "schema_version": "reagent.workspace-sync-transaction/v0.1",
+        "installation_id": plan["installation_id"],
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "manifest_revision": plan["target_manifest_revision"],
+        "manifest_checksum": plan["target_manifest_checksum"],
+        "plan_checksum": plan["plan_checksum"],
+        "state": "PLAN_CREATED",
+        "completed_instances": [],
+    }
+    _write_journal(workspace, journal)
+    entries = {
+        item["workflow_instance_id"]: dict(item)
+        for item in ([] if prior_lock is None else prior_lock["installed_capsules"])
+    }
+    for action in plan["actions"]:
+        action_type = action["action_type"]
+        instance_id = action["workflow_instance_id"]
+        if action_type == "CONFLICT":
+            raise _filesystem("CAPSULE_INSTALLATION_CONFLICT", "Installed Capsule pin conflicts with Desired Manifest")
+        if action_type == "UNAVAILABLE":
+            raise WorkspaceCLIError("CAPSULE_ARTIFACT_UNAVAILABLE", "Desired Capsule artifact is unavailable", EXIT_CLOUD)
+        if action_type == "RETAINED_NOT_DESIRED":
+            if instance_id in entries:
+                entries[instance_id]["lifecycle"] = "RETAINED_NOT_DESIRED"
+            continue
+        if action_type == "NOOP":
+            if instance_id in entries:
+                entries[instance_id]["lifecycle"] = "ACTIVE"
+            continue
+        entry = _install_action(workspace, descriptor, plan, action, transport)
+        entries[instance_id] = entry
+        journal["state"] = "INSTALLED"
+        journal["completed_instances"] = sorted(set(journal["completed_instances"] + [instance_id]))
+        _write_journal(workspace, journal)
+    for instance_id, entry in entries.items():
+        if not any(action["workflow_instance_id"] == instance_id and action["action_type"] in {"NOOP", "INSTALL_CAPSULE"} for action in plan["actions"]):
+            entry["lifecycle"] = "RETAINED_NOT_DESIRED"
+    lock = _build_lock(
+        descriptor=descriptor,
+        manifest_revision=plan["target_manifest_revision"],
+        manifest_checksum=plan["target_manifest_checksum"],
+        entries=list(entries.values()),
+        written_at=_utc_text(now),
+    )
+    _atomic_write_json(workspace / INSTALLED_LOCK, lock)
+    lock = validate_installed_lock(_read_json(workspace / INSTALLED_LOCK), descriptor)
+    journal["state"] = "LOCK_WRITTEN"
+    _write_journal(workspace, journal)
+    ack = _ack_envelope(plan, lock, descriptor, now)
+    ack_path = workspace / ACKNOWLEDGEMENTS_ROOT / f"{plan['installation_id']}.json"
+    _atomic_write_json(ack_path, {**ack, "local_status": "ACK_PENDING"})
+    _write_install_receipt(workspace, plan, lock, now)
+    try:
+        receipt = transport.acknowledge(descriptor["project_id"], ack)
+    except WorkspaceCLIError:
+        journal["state"] = "ACK_PENDING"
+        _write_journal(workspace, journal)
+        return _sync_result("ACK_PENDING", lock, "ACK_PENDING")
+    _store_ack_receipt(ack_path, ack, receipt)
+    journal["state"] = "ACKNOWLEDGED"
+    _write_journal(workspace, journal)
+    return _sync_result("NO_CHANGE" if plan["state"] == "NO_CHANGE" else "SYNCED", lock, "ACKNOWLEDGED")
+
+
+def _install_action(workspace, descriptor, plan, action, transport):
+    artifact = action["artifact"]
+    content = transport.download(artifact["download_path"])
+    if sha256_bytes(content) != artifact["archive_checksum"]:
+        raise _package_error("CAPSULE_CHECKSUM_MISMATCH", "Downloaded Capsule archive checksum mismatch")
+    destination = workspace / action["destination_relative_path"]
+    _ensure_destination_parents(workspace, destination.parent)
+    if destination.exists() or destination.is_symlink():
+        if destination.is_symlink() or not destination.is_dir():
+            raise _filesystem("CAPSULE_INSTALLATION_CONFLICT", "Capsule destination has an unsafe type")
+        bootstrap = _bootstrap_for_action(descriptor, plan, action)
+        manifest, _ = _validate_legacy_package(
+            destination, bootstrap, expected_instance_id=action["workflow_instance_id"]
+        )
+        return _lock_entry(
+            action,
+            artifact,
+            manifest,
+            _immutable_contract_checksum(destination, manifest),
+            "CLOUD_ACQUISITION",
+        )
+    parent_identity = _directory_identity(destination.parent)
+    staging = Path(tempfile.mkdtemp(prefix=".reagent-sync-", dir=destination.parent))
+    archive = staging.parent / f".{plan['installation_id']}.{action['workflow_instance_id']}.zip"
+    published = False
+    try:
+        _atomic_write_bytes(archive, content, mode=0o600)
+        extracted_root = _extract_archive_safely(archive, staging)
+        bootstrap = _bootstrap_for_action(descriptor, plan, action)
+        manifest, _ = _validate_legacy_package(
+            extracted_root, bootstrap, expected_instance_id=action["workflow_instance_id"]
+        )
+        immutable_checksum = _immutable_contract_checksum(extracted_root, manifest)
+        if extracted_root != staging:
+            replacement = staging.parent / f".{staging.name}.content"
+            os.replace(extracted_root, replacement)
+            shutil.rmtree(staging, ignore_errors=True)
+            staging = replacement
+        _fsync_tree(staging)
+        _reject_symlink_chain(destination.parent)
+        if _directory_identity(destination.parent) != parent_identity:
+            raise _filesystem("UNSAFE_CAPSULE_ARCHIVE", "Capsule target changed during installation")
+        os.replace(staging, destination)
+        published = True
+        _fsync_directory(destination.parent)
+        verified_manifest, _ = _validate_legacy_package(
+            destination, bootstrap, expected_instance_id=action["workflow_instance_id"]
+        )
+        if (
+            _immutable_contract_checksum(destination, verified_manifest) != immutable_checksum
+            or verified_manifest["package_checksum"] != manifest["package_checksum"]
+        ):
+            raise _filesystem("CAPSULE_INSTALLATION_FAILED", "Published Capsule failed verification")
+        return _lock_entry(action, artifact, manifest, immutable_checksum, "CLOUD_ACQUISITION")
+    finally:
+        archive.unlink(missing_ok=True)
+        if not published and staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+def _validate_acquisition(raw, plan, action):
+    artifact = _object(raw, "Capsule acquisition")
+    required = {
+        "capsule_artifact_id", "package_id", "package_schema_version", "package_checksum",
+        "manifest_checksum", "archive_checksum", "archive_size_bytes", "file_count",
+        "media_type", "download_path",
+    }
+    _exact_fields(artifact, required, "Capsule acquisition")
+    for field in ("package_checksum", "manifest_checksum", "archive_checksum"):
+        _checksum(artifact[field], field)
+    if artifact["media_type"] != "application/zip":
+        raise _identity("CAPSULE_ARTIFACT_UNAVAILABLE", "Capsule media type is unsupported")
+    prefix = (
+        f"/projects/{plan['project_id']}/workflow-instances/"
+        f"{action['workflow_instance_id']}/capsule-artifacts/"
+    )
+    if not artifact["download_path"].startswith(prefix) or not artifact["download_path"].endswith("/download"):
+        raise _identity("CAPSULE_IDENTITY_MISMATCH", "Capsule download identity is invalid")
+
+
+def _bootstrap_for_action(descriptor, plan, action):
+    artifact = action["artifact"]
+    capsule = {
+        "workflow_instance_id": action["workflow_instance_id"],
+        "workflow_definition_id": action["workflow_definition_id"],
+        "workflow_definition_version": action["workflow_definition_version"],
+        "capsule_id": action["capsule_id"],
+        "capsule_version": action["capsule_version"],
+        "capsule_definition_checksum": action["capsule_definition_checksum"],
+        "desired_state": "ACTIVE",
+        "legacy_package_compatible": True,
+        "package_schema_version": artifact["package_schema_version"],
+        "package_template_id": PACKAGE_TEMPLATE_ID,
+        "trust_classification": action["trust_classification"],
+        "legacy_package": {
+            "package_id": artifact["package_id"],
+            "package_schema_version": artifact["package_schema_version"],
+            "package_checksum": artifact["package_checksum"],
+            "manifest_checksum": artifact["manifest_checksum"],
+            "zip_checksum": artifact["archive_checksum"],
+            "download_path": artifact["download_path"],
+        },
+    }
+    return {
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "bootstrap_manifest_revision": plan["target_manifest_revision"],
+        "desired_manifest_checksum": plan["target_manifest_checksum"],
+        "workflow_capsules": [capsule],
+    }
+
+
+def _build_lock(*, descriptor, manifest_revision, manifest_checksum, entries, written_at):
+    ordered = sorted(entries, key=lambda item: item["workflow_instance_id"])
+    payload = {
+        "schema_version": INSTALLED_LOCK_SCHEMA,
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "manifest_revision": manifest_revision,
+        "manifest_checksum": manifest_checksum,
+        "installed_capsules": ordered,
+        "installed_skills": [],
+        "materialized_artifacts": [],
+        "resolved_resources": [],
+        "written_at": written_at,
+    }
+    return {**payload, "lock_checksum": canonical_hash(payload)}
+
+
+def _lock_entry_from_registry(item, immutable_checksum):
+    return {
+        "workflow_instance_id": item["workflow_instance_id"],
+        "workflow_definition_id": item["workflow_definition_id"],
+        "workflow_definition_version": item["workflow_definition_version"],
+        "capsule_id": item["capsule_id"],
+        "capsule_version": item["capsule_version"],
+        "capsule_definition_checksum": item["capsule_definition_checksum"],
+        "package_id": item["package_id"],
+        "package_checksum": item["package_checksum"],
+        "manifest_checksum": item["manifest_checksum"],
+        "immutable_contract_checksum": immutable_checksum,
+        "relative_path": item["capsule_relative_path"],
+        "lifecycle": "ACTIVE",
+        "installation_source": "B3_LEGACY_ADOPTION",
+        "verification_status": "VERIFIED",
+    }
+
+
+def _lock_entry(action, artifact, manifest, immutable_checksum, source):
+    return {
+        "workflow_instance_id": action["workflow_instance_id"],
+        "workflow_definition_id": action["workflow_definition_id"],
+        "workflow_definition_version": action["workflow_definition_version"],
+        "capsule_id": action["capsule_id"],
+        "capsule_version": action["capsule_version"],
+        "capsule_definition_checksum": action["capsule_definition_checksum"],
+        "package_id": manifest["package_id"],
+        "package_checksum": artifact["package_checksum"],
+        "manifest_checksum": artifact["manifest_checksum"],
+        "immutable_contract_checksum": immutable_checksum,
+        "relative_path": action["destination_relative_path"],
+        "lifecycle": "ACTIVE",
+        "installation_source": source,
+        "verification_status": "VERIFIED",
+    }
+
+
+def _installed_observation(item):
+    return {key: item[key] for key in (
+        "workflow_instance_id", "workflow_definition_id", "workflow_definition_version",
+        "capsule_id", "capsule_version", "capsule_definition_checksum",
+        "package_checksum", "relative_path",
+    )}
+
+
+def _verify_locked_capsules(workspace, lock, bootstrap):
+    for item in lock["installed_capsules"]:
+        destination = workspace / item["relative_path"]
+        _assert_within(workspace, destination)
+        synthetic = {
+            **bootstrap,
+            "workflow_capsules": [{
+                "workflow_instance_id": item["workflow_instance_id"],
+                "workflow_definition_id": item["workflow_definition_id"],
+                "workflow_definition_version": item["workflow_definition_version"],
+                "capsule_id": item["capsule_id"],
+                "capsule_version": item["capsule_version"],
+                "capsule_definition_checksum": item["capsule_definition_checksum"],
+                "desired_state": "ACTIVE",
+                "legacy_package_compatible": True,
+                "package_schema_version": PACKAGE_SCHEMA,
+                "package_template_id": PACKAGE_TEMPLATE_ID,
+                "trust_classification": TRUST_CLASSIFICATION,
+                "legacy_package": {
+                    "package_id": item["package_id"],
+                    "package_schema_version": PACKAGE_SCHEMA,
+                    "package_checksum": item["package_checksum"],
+                    "manifest_checksum": item["manifest_checksum"],
+                    "zip_checksum": "sha256:" + "0" * 64,
+                    "download_path": f"/projects/{lock['project_id']}/packages/{item['package_id']}/download",
+                },
+            }],
+        }
+        manifest, _ = _validate_legacy_package(
+            destination, synthetic, expected_instance_id=item["workflow_instance_id"]
+        )
+        if (
+            manifest["package_checksum"] != item["package_checksum"]
+            or _immutable_contract_checksum(destination, manifest)
+            != item["immutable_contract_checksum"]
+        ):
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Capsule immutable or local state drift was detected")
+
+
+def _ack_envelope(plan, lock, descriptor, now):
+    active = [
+        {key: item[key] for key in (
+            "workflow_instance_id", "workflow_definition_id", "workflow_definition_version",
+            "capsule_id", "capsule_version", "capsule_definition_checksum",
+        )}
+        for item in lock["installed_capsules"] if item["lifecycle"] == "ACTIVE"
+    ]
+    return {
+        "schema_version": SYNC_ACK_SCHEMA,
+        "installation_id": plan["installation_id"],
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "manifest_revision": lock["manifest_revision"],
+        "manifest_checksum": lock["manifest_checksum"],
+        "plan_checksum": plan["plan_checksum"],
+        "installed_lock_schema": INSTALLED_LOCK_SCHEMA,
+        "installed_lock_checksum": lock["lock_checksum"],
+        "idempotency_key": str(uuid.uuid5(LEGACY_NAMESPACE, f"workspace-sync-ack/v1|installation={plan['installation_id']}")),
+        "installed_capsules": active,
+        "installed_at": _utc_text(now),
+    }
+
+
+def _pending_acknowledgements(workspace, descriptor):
+    root = workspace / ACKNOWLEDGEMENTS_ROOT
+    if not root.exists():
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise _identity("INSTALLED_LOCK_INVALID", "Acknowledgement path is unsafe")
+    pending = []
+    for path in sorted(root.glob("*.json")):
+        if path.is_symlink():
+            raise _identity("INSTALLED_LOCK_INVALID", "Acknowledgement receipt path is unsafe")
+        value = _read_json(path)
+        if value.get("local_status") == "ACK_PENDING":
+            if value.get("project_id") != descriptor["project_id"] or value.get("workspace_id") != descriptor["workspace_id"]:
+                raise _identity("INSTALLED_LOCK_CONFLICT", "Acknowledgement identity mismatch")
+            pending.append((path, value))
+    return pending
+
+
+def _has_acknowledged_lock(workspace, descriptor, lock):
+    root = workspace / ACKNOWLEDGEMENTS_ROOT
+    if not root.exists():
+        return False
+    if root.is_symlink() or not root.is_dir():
+        raise _identity("INSTALLED_LOCK_INVALID", "Acknowledgement path is unsafe")
+    for path in sorted(root.glob("*.json")):
+        if path.is_symlink():
+            raise _identity("INSTALLED_LOCK_INVALID", "Acknowledgement receipt path is unsafe")
+        value = _read_json(path)
+        if (
+            value.get("local_status") == "ACKNOWLEDGED"
+            and value.get("project_id") == descriptor["project_id"]
+            and value.get("workspace_id") == descriptor["workspace_id"]
+            and value.get("manifest_revision") == lock["manifest_revision"]
+            and value.get("installed_lock_checksum") == lock["lock_checksum"]
+        ):
+            return True
+    return False
+
+
+def _retry_pending_ack(workspace, descriptor, pending, transport):
+    path, value = pending
+    payload = dict(value)
+    payload.pop("local_status", None)
+    receipt = transport.acknowledge(descriptor["project_id"], payload)
+    _store_ack_receipt(path, payload, receipt)
+    return receipt
+
+
+def _store_ack_receipt(path, envelope, receipt):
+    if receipt.get("schema_version") != SYNC_ACK_RECEIPT_SCHEMA or receipt.get("installation_id") != envelope["installation_id"]:
+        raise WorkspaceCLIError("ACKNOWLEDGEMENT_REJECTED", "Cloud acknowledgement receipt is invalid", EXIT_CLOUD)
+    _atomic_write_json(path, {**envelope, "local_status": "ACKNOWLEDGED", "cloud_receipt": receipt})
+
+
+def _write_journal(workspace, journal):
+    payload = dict(journal)
+    payload["journal_checksum"] = canonical_hash(payload)
+    _atomic_write_json(workspace / SYNC_JOURNAL, payload)
+
+
+def _write_install_receipt(workspace, plan, lock, now):
+    payload = {
+        "schema_version": "reagent.workspace-installation-receipt/v0.1",
+        "installation_id": plan["installation_id"],
+        "project_id": lock["project_id"],
+        "workspace_id": lock["workspace_id"],
+        "manifest_revision": lock["manifest_revision"],
+        "manifest_checksum": lock["manifest_checksum"],
+        "plan_checksum": plan["plan_checksum"],
+        "installed_lock_checksum": lock["lock_checksum"],
+        "installed_at": _utc_text(now),
+    }
+    payload["receipt_checksum"] = canonical_hash(payload)
+    _atomic_write_json(workspace / INSTALL_RECEIPTS_ROOT / f"{plan['installation_id']}.json", payload)
+
+
+def _sync_result(status, lock, ack_status):
+    return WorkspaceSyncResult(
+        status=status,
+        project_id=lock["project_id"],
+        workspace_id=lock["workspace_id"],
+        manifest_revision=lock["manifest_revision"],
+        installed_capsules=sum(item["lifecycle"] == "ACTIVE" for item in lock["installed_capsules"]),
+        retained_capsules=sum(item["lifecycle"] == "RETAINED_NOT_DESIRED" for item in lock["installed_capsules"]),
+        acknowledgement_status=ack_status,
+        lock_checksum=lock["lock_checksum"],
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python reagent_local.py",
@@ -1311,6 +2154,11 @@ def build_parser() -> argparse.ArgumentParser:
     status_command = status_commands.add_parser("status")
     status_command.add_argument("workspace", type=Path)
     status_command.add_argument("--json", action="store_true")
+    sync = commands.add_parser("sync", help="explicitly pull and install desired Workflow Capsules")
+    sync.add_argument("workspace", type=Path)
+    sync.add_argument("--api-url", default="http://127.0.0.1:8000")
+    sync.add_argument("--dry-run", action="store_true")
+    sync.add_argument("--json", action="store_true")
     return parser
 
 
@@ -1335,14 +2183,15 @@ def main(argv: list[str] | None = None) -> int:
                 bootstrap_descriptor=external,
             )
             json_output = args.json
-        else:
-            _, workspace, _ = load_workspace(args.workspace)
-            result = WorkspaceOperationResult(
-                status="VALID",
-                project_id=workspace["project_id"],
-                workspace_id=workspace["workspace_id"],
-                manifest_revision=workspace["bootstrap_manifest_revision"],
+        elif args.command == "sync":
+            result = sync_workspace(
+                workspace_root=args.workspace,
+                transport=HTTPWorkspaceSyncTransport(args.api_url),
+                dry_run=args.dry_run,
             )
+            json_output = args.json
+        else:
+            result = workspace_status(args.workspace)
             json_output = args.json
         _print_result(result, json_output=json_output)
         return EXIT_SUCCESS
@@ -1375,17 +2224,56 @@ def _read_external_descriptor(path: Path) -> Any:
         raise _identity("WORKSPACE_DESCRIPTOR_INVALID", "Bootstrap descriptor file is invalid") from error
 
 
-def _print_result(result: WorkspaceOperationResult, *, json_output: bool) -> None:
+def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    lock_path = workspace / INSTALLED_LOCK
+    lock = None
+    if lock_path.exists() or lock_path.is_symlink():
+        lock = validate_installed_lock(_read_json(lock_path), descriptor)
+    pending = _pending_acknowledgements(workspace, descriptor)
+    active = 0 if lock is None else sum(
+        item["lifecycle"] == "ACTIVE" for item in lock["installed_capsules"]
+    )
+    retained = 0 if lock is None else sum(
+        item["lifecycle"] == "RETAINED_NOT_DESIRED"
+        for item in lock["installed_capsules"]
+    )
+    if lock is None:
+        state = "BOOTSTRAPPED_NO_LOCK"
+    elif pending:
+        state = "ACK_PENDING"
+    else:
+        state = "INSTALLED_LOCK_CURRENT"
+    return {
+        "schema_version": "reagent.workspace-status/v0.1",
+        "status": state,
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "bootstrap_manifest_revision": descriptor["bootstrap_manifest_revision"],
+        "installed_manifest_revision": None if lock is None else lock["manifest_revision"],
+        "installed_lock_checksum": None if lock is None else lock["lock_checksum"],
+        "active_capsules": active,
+        "retained_capsules": retained,
+        "acknowledgement_status": "ACK_PENDING" if pending else "NONE",
+        "sync_required": lock is None or bool(pending),
+    }
+
+
+def _print_result(result: WorkspaceOperationResult | WorkspaceSyncResult | dict[str, Any], *, json_output: bool) -> None:
+    value = result if isinstance(result, dict) else result.as_dict()
     if json_output:
-        print(canonical_json(result.as_dict()))
+        print(canonical_json(value))
         return
-    print(f"Workspace operation: {result.status}")
-    print(f"Project: {result.project_id}")
-    print(f"Workspace: {result.workspace_id}")
-    print(f"Bootstrap manifest revision: {result.manifest_revision}")
-    if result.workflow_instance_id is not None:
-        print(f"Workflow Instance: {result.workflow_instance_id}")
-        print(f"Capsule: {result.capsule_relative_path}")
+    print(f"Workspace operation: {value['status']}")
+    print(f"Project: {value['project_id']}")
+    print(f"Workspace: {value['workspace_id']}")
+    revision = value.get("manifest_revision", value.get("installed_manifest_revision"))
+    print(f"Manifest revision: {revision if revision is not None else 'not installed'}")
+    if value.get("workflow_instance_id") is not None:
+        print(f"Workflow Instance: {value['workflow_instance_id']}")
+        print(f"Capsule: {value['capsule_relative_path']}")
+    if "acknowledgement_status" in value:
+        print(f"Acknowledgement: {value['acknowledgement_status']}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:runtime-schema:reagent.capsule-installation-ack:v0.1",
+  "title": "reagent.capsule-installation-ack/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "installation_id", "project_id", "workspace_id", "manifest_revision", "manifest_checksum", "plan_checksum", "installed_lock_schema", "installed_lock_checksum", "idempotency_key", "installed_capsules", "installed_at"],
+  "properties": {
+    "schema_version": {"const": "reagent.capsule-installation-ack/v0.1"},
+    "installation_id": {"type": "string", "pattern": "^install-[0-9a-f]{32}$"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "manifest_revision": {"type": "integer", "minimum": 1},
+    "manifest_checksum": {"$ref": "#/$defs/checksum"},
+    "plan_checksum": {"$ref": "#/$defs/checksum"},
+    "installed_lock_schema": {"const": "reagent.workspace-installed-lock/v0.1"},
+    "installed_lock_checksum": {"$ref": "#/$defs/checksum"},
+    "idempotency_key": {"type": "string", "format": "uuid"},
+    "installed_capsules": {"type": "array", "maxItems": 100, "items": {"type": "object"}},
+    "installed_at": {"type": "string", "format": "date-time", "maxLength": 35}
+  },
+  "$defs": {"checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+}
