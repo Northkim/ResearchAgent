@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:design-schema:reagent.project-desired-manifest:v0.1",
+  "title": "reagent.project-desired-manifest/v0.1 (design only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "workspace_id", "manifest_revision", "base_revision", "manifest_checksum", "workflow_instances", "skill_pins", "artifact_requirements", "resource_bindings", "compatibility_requirements", "created_at"],
+  "properties": {
+    "schema_version": {"const": "reagent.project-desired-manifest/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "manifest_revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+    "base_revision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775806},
+    "manifest_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "workflow_instances": {"type": "array", "maxItems": 100, "uniqueItems": true, "items": {"$ref": "#/$defs/capsule"}},
+    "skill_pins": {"type": "array", "maxItems": 200, "uniqueItems": true, "items": {"$ref": "#/$defs/skillPin"}},
+    "artifact_requirements": {"type": "array", "maxItems": 500, "uniqueItems": true, "items": {"$ref": "#/$defs/artifactRequirement"}},
+    "resource_bindings": {"type": "array", "maxItems": 200, "uniqueItems": true, "items": {"$ref": "#/$defs/resourceRef"}},
+    "compatibility_requirements": {"type": "object", "additionalProperties": false, "required": ["workspace_schema", "minimum_cli_version"], "properties": {"workspace_schema": {"const": "reagent.project-workspace/v0.1"}, "minimum_cli_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 32}}},
+    "created_at": {"type": "string", "format": "date-time", "maxLength": 35}
+  },
+  "$defs": {
+    "capsule": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workflow_instance_id", "workflow_definition_id", "workflow_definition_version", "capsule_id", "capsule_version", "capsule_definition_checksum", "desired_state"],
+      "properties": {
+        "workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+        "workflow_definition_id": {"type": "string", "pattern": "^[a-z][a-z0-9.-]{1,127}$"},
+        "workflow_definition_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 32},
+        "capsule_id": {"type": "string", "pattern": "^capsule-[0-9a-f]{32}$"},
+        "capsule_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 32},
+        "capsule_definition_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "desired_state": {"enum": ["ACTIVE", "RETIRED"]}
+      }
+    },
+    "skillPin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["pin_id", "workflow_instance_id", "skill_id", "skill_version", "skill_checksum", "trust_tier"],
+      "properties": {
+        "pin_id": {"type": "string", "pattern": "^pin-[0-9a-f]{32}$"},
+        "workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+        "skill_id": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,127}$"},
+        "skill_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "maxLength": 32},
+        "skill_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "trust_tier": {"const": "BUILT_IN_REVIEWED"}
+      }
+    },
+    "artifactRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["requirement_id", "consumer_workflow_instance_id", "artifact_type", "compatibility_mode", "schema_constraint", "required"],
+      "properties": {
+        "requirement_id": {"type": "string", "pattern": "^requirement-[0-9a-f]{32}$"},
+        "consumer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+        "artifact_type": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,159}$"},
+        "compatibility_mode": {"enum": ["EXACT", "COMPATIBLE_RANGE", "CONVERTER_REQUIRED"]},
+        "schema_constraint": {"type": "string", "minLength": 1, "maxLength": 200},
+        "required": {"type": "boolean"}
+      }
+    },
+    "resourceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["resource_binding_id", "binding_checksum", "desired_state"],
+      "properties": {
+        "resource_binding_id": {"type": "string", "pattern": "^resource-[0-9a-f]{32}$"},
+        "binding_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "desired_state": {"enum": ["ACTIVE", "RETIRED"]}
+      }
+    }
+  }
+}

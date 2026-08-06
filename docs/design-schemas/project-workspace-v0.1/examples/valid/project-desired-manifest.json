@@ -1,0 +1,27 @@
+{
+  "schema_version": "reagent.project-desired-manifest/v0.1",
+  "project_id": "project-11111111111111111111111111111111",
+  "workspace_id": "workspace-22222222222222222222222222222222",
+  "manifest_revision": 1,
+  "base_revision": 0,
+  "manifest_checksum": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "workflow_instances": [
+    {
+      "workflow_instance_id": "wfi-33333333333333333333333333333333",
+      "workflow_definition_id": "literature-search-local-experimental",
+      "workflow_definition_version": "0.3.0",
+      "capsule_id": "capsule-44444444444444444444444444444444",
+      "capsule_version": "0.5.0",
+      "capsule_definition_checksum": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "desired_state": "ACTIVE"
+    }
+  ],
+  "skill_pins": [],
+  "artifact_requirements": [],
+  "resource_bindings": [],
+  "compatibility_requirements": {
+    "workspace_schema": "reagent.project-workspace/v0.1",
+    "minimum_cli_version": "0.1.0"
+  },
+  "created_at": "2026-08-06T12:00:00Z"
+}

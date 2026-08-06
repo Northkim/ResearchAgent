@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:design-schema:reagent.project-workspace:v0.1",
+  "title": "reagent.project-workspace/v0.1 (design only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "workspace_id", "created_at", "desired_manifest_path", "installed_lock_path", "secret_policy"],
+  "properties": {
+    "schema_version": {"const": "reagent.project-workspace/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "created_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "desired_manifest_path": {"const": ".reagent/desired-manifest.json"},
+    "installed_lock_path": {"const": ".reagent/installed-lock.json"},
+    "capsules_root": {"const": "capsules"},
+    "artifact_materialization_root": {"const": "artifacts/materialized"},
+    "resource_root": {"const": "resources"},
+    "secret_policy": {"const": "PROHIBITED"}
+  }
+}

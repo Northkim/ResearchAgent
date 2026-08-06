@@ -1,0 +1,21 @@
+{
+  "schema_version": "reagent.workspace-installed-lock/v0.1",
+  "project_id": "project-11111111111111111111111111111111",
+  "workspace_id": "workspace-22222222222222222222222222222222",
+  "manifest_revision": 1,
+  "manifest_checksum": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "lock_checksum": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "installed_capsules": [
+    {
+      "workflow_instance_id": "wfi-33333333333333333333333333333333",
+      "capsule_id": "capsule-44444444444444444444444444444444",
+      "capsule_version": "0.5.0",
+      "definition_checksum": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "relative_path": "capsules/literature-search-local-experimental/wfi-33333333333333333333333333333333/0.5.0"
+    }
+  ],
+  "installed_skills": [],
+  "materialized_artifacts": [],
+  "resolved_resources": [],
+  "written_at": "2026-08-06T12:15:00Z"
+}

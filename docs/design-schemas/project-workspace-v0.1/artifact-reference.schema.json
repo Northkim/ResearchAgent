@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:design-schema:reagent.artifact-reference:v0.1",
+  "title": "reagent.artifact-reference/v0.1 (design only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "artifact_id", "project_id", "producer_workflow_instance_id", "producer_round_id", "artifact_type", "artifact_schema_version", "media_type", "state", "cloud_metadata_available", "produced_at", "consumer_bindings"],
+  "properties": {
+    "schema_version": {"const": "reagent.artifact-reference/v0.1"},
+    "artifact_id": {"type": "string", "pattern": "^artifact-[0-9a-f]{32}$"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "producer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+    "producer_round_id": {"type": "string", "pattern": "^round-[0-9a-f]{32}$"},
+    "artifact_type": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,159}$"},
+    "artifact_schema_version": {"type": "string", "pattern": "^reagent\\.artifact\\.[a-z][a-z0-9._-]*/v[0-9]+\\.[0-9]+$", "maxLength": 200},
+    "media_type": {"type": "string", "pattern": "^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$", "maxLength": 100},
+    "state": {"enum": ["DECLARED", "LOCAL_AVAILABLE", "EXTERNAL_AVAILABLE", "METADATA_ONLY", "MISSING", "STALE", "INCOMPATIBLE", "RETIRED"]},
+    "relative_path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).{1,1024}$"},
+    "content_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "size_bytes": {"type": "integer", "minimum": 0, "maximum": 1099511627776},
+    "external_resource_binding_id": {"type": "string", "pattern": "^resource-[0-9a-f]{32}$"},
+    "cloud_metadata_available": {"type": "boolean"},
+    "produced_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "consumer_bindings": {
+      "type": "array", "maxItems": 100, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["workflow_instance_id", "compatibility_mode", "schema_constraint"],
+        "properties": {
+          "workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+          "compatibility_mode": {"enum": ["EXACT", "COMPATIBLE_RANGE", "CONVERTER_REQUIRED"]},
+          "schema_constraint": {"type": "string", "minLength": 1, "maxLength": 200}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"state": {"enum": ["LOCAL_AVAILABLE", "EXTERNAL_AVAILABLE"]}}}, "then": {"required": ["content_checksum", "size_bytes"]}},
+    {"if": {"properties": {"state": {"const": "LOCAL_AVAILABLE"}}}, "then": {"required": ["relative_path"]}},
+    {"if": {"properties": {"state": {"const": "EXTERNAL_AVAILABLE"}}}, "then": {"required": ["external_resource_binding_id"]}}
+  ]
+}

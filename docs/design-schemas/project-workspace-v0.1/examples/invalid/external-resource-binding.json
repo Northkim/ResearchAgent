@@ -1,0 +1,13 @@
+{
+  "schema_version": "reagent.external-resource-binding/v0.1",
+  "resource_binding_id": "resource-77777777777777777777777777777777",
+  "project_id": "project-11111111111111111111111111111111",
+  "provider": "GITHUB",
+  "resource_type": "git-repository",
+  "locator": "https://owner:secret@example.invalid/repository.git",
+  "immutable_revision": "0123456789abcdef0123456789abcdef01234567",
+  "workspace_relative_path": "resources/resource-77777777777777777777777777777777",
+  "access_mode": "READ_ONLY",
+  "sync_policy": "MANUAL",
+  "availability": "UNRESOLVED"
+}

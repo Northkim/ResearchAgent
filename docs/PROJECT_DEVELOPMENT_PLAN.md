@@ -60,6 +60,7 @@ this engineering order.
 | MVP-LS1 | Complete autonomous Literature Search round | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — one Package command runs one bounded local Codex round, normal OpenAlex-only or explicit fictional demo transport, four local outputs, one automatic idempotent report upload, verified projection, and guided UI; no Hosted/cloud research execution |
 | MVP-LS2 | Interactive Codex Literature Search experience | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — default Package command attaches Codex to the current terminal, gates search/final writing on owner checkpoints, validates a versioned completion artifact, cleans up interrupts, preserves explicit auto/recovery modes, and retains the LS1 cloud/local boundary |
 | MVP-LS2.1 | Fresh post-round upload authorization | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — ADR 0021 separates search and exact-report upload sessions, safely reconciles expiry/response loss without rerunning Codex or search, and makes no-report cloud uncertainty explicit; zero live OpenAlex use |
+| ARCH-D1 | Hybrid Project Workspace and Workflow Capsule design | **DESIGN COMPLETE — IMPLEMENTATION NOT AUTHORIZED** — ADR 0022 defines one logical Workspace per Project, isolated versioned Capsules per Workflow Instance, desired-manifest versus installed-lock state, typed immutable Artifact references, built-in reviewed Skill pins, local-resolved Resource metadata, pull sync, additive compatibility, and the bounded implementation sequence |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -77,6 +78,21 @@ independently verified. Claude Code remains untested, the tree remains
 experimental, and no API-proxy capability is proved.
 The acceptance record is
 `docs/acceptance/R1B_CODEX_HARNESS_ACCEPTANCE_REPORT.md`.
+
+ARCH-D1 ratifies the post-V0.1 design direction without implementation. The
+future stable abstractions are Project, one logical Project Workspace,
+Workflow Definition, project-owned Workflow Instance, and isolated versioned
+Workflow Capsule. Cloud desired configuration is revisioned separately from a
+local Installed Lock; pull-based sync stages and atomically installs only new
+content. Existing Literature Search Packages, checksums, reports, projections,
+sessions, and launch commands remain unchanged through V0.x compatibility.
+Artifacts cross instances only by typed immutable reference and explicit
+verified materialization. Initial Skills remain built-in/reviewed; external
+Resources are metadata resolved with local credentials. Device tracking,
+automatic cross-device sync/backup, general Artifact upload, imported Skill
+execution, deep external connectors, and every new Workflow remain deferred.
+The first reviewable implementation slice is additive identity/catalog/
+instance persistence only; `IMPLEMENTATION_AUTHORIZED = false`.
 
 R2A now reconciles the v0.1 mismatch without rewriting history. Native v0.2
 uses deterministic non-cyclic report identity and exact context-before/context-

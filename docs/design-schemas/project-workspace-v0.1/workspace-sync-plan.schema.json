@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:design-schema:reagent.workspace-sync-plan:v0.1",
+  "title": "reagent.workspace-sync-plan/v0.1 (design only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "installation_id", "project_id", "workspace_id", "base_manifest_revision", "target_manifest_revision", "target_manifest_checksum", "installed_lock_checksum", "plan_checksum", "state", "actions", "created_at", "expires_at"],
+  "properties": {
+    "schema_version": {"const": "reagent.workspace-sync-plan/v0.1"},
+    "installation_id": {"type": "string", "pattern": "^install-[0-9a-f]{32}$"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "base_manifest_revision": {"type": "integer", "minimum": 0, "maximum": 9223372036854775806},
+    "target_manifest_revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+    "target_manifest_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "installed_lock_checksum": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"},
+    "plan_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "state": {"enum": ["NO_CHANGE", "PLAN_CREATED"]},
+    "actions": {"type": "array", "maxItems": 500, "items": {"$ref": "#/$defs/action"}},
+    "created_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "expires_at": {"type": "string", "format": "date-time", "maxLength": 35}
+  },
+  "$defs": {
+    "action": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sequence", "action_type", "subject_id", "expected_checksum"],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1, "maximum": 500},
+        "action_type": {"enum": ["INSTALL_CAPSULE", "VERIFY_SKILL", "MATERIALIZE_ARTIFACT", "RESOLVE_RESOURCE", "RETIRE_DESIRED_INSTANCE"]},
+        "subject_id": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,159}$"},
+        "expected_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "archive_size_bytes": {"type": "integer", "minimum": 0, "maximum": 536870912},
+        "destination_relative_path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).{1,1024}$"}
+      }
+    }
+  }
+}

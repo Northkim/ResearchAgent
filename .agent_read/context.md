@@ -84,6 +84,71 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
+### Current milestone — ARCH-D1 hybrid Workspace/Capsule design complete
+
+ARCH-D1 began from clean `main` at exact commit
+`864c0a1c342f0646fe5b186307683d704bd5b37c` and remained documentation-only.
+Accepted ADR 0022 applies the owner-ratified
+`HYBRID_WORKSPACE_AND_CAPSULES` direction: one long-lived logical Workspace per
+cloud Project, with an isolated, immutable-versioned Capsule for each
+project-owned Workflow Instance. Multiple instances of one Workflow Definition
+are valid in the domain; the initial UI will permit one active instance/type.
+Rounds belong to instances.
+
+Cloud desired configuration is a revisioned Manifest and cannot claim local
+installation or file availability. A local Installed Lock, transaction receipt,
+and acknowledgement represent verified installation observations. Sync is
+pull-based, optimistic-concurrency-controlled, staged, independently validated,
+and atomically installs only new side-by-side content. Drift, dependency,
+revision, destination, and acknowledgement states fail safe. Retirement never
+deletes local files or history.
+
+Existing Literature Search Packages remain runnable unchanged through V0.x and
+become legacy-compatible Capsules by deterministic metadata mapping plus an
+explicit owner adoption operation. Package/report checksums, historical report
+bytes, Progress projections, launcher behavior, and old capability scopes are
+not reinterpreted. New local-product physical tables are separate from Hosted
+`workflow_definitions`, `artifacts`, WorkflowRun, and StepRun provenance.
+
+Typed immutable Artifact references use explicit verified materialization—no
+symlinks or shared writable files. Cloud is metadata-only by default. Skills
+reserve trust/provenance/permission fields but initial execution is
+`BUILT_IN_REVIEWED_ONLY`. Git/GitHub/Hugging Face/local/external Resource
+bindings are revision-pinned metadata resolved with local credentials; no cloud
+token or automatic push is designed.
+
+Initial frontend design exposes Overview, Workflows, Progress, and Help only.
+Idea Discovery is the next extensibility Workflow but is not implemented or
+authorized. Device tracking, automatic cross-device sync/merge, encrypted
+Workspace backup, general Artifact byte upload, imported executable Skills,
+deep Resource connectors, public deployment, R3D, and all production changes
+remain deferred.
+
+```text
+ARCH_D1_DESIGN = PASS_WITH_WARNINGS
+ARCHITECTURE = HYBRID_WORKSPACE_AND_CAPSULES
+LEGACY_LITERATURE_SEARCH_COMPATIBILITY = PASS
+IDENTITY_MODEL_COMPLETE = PASS
+DATA_MODEL_COMPLETE = PASS
+LOCAL_SCHEMA_DESIGN_COMPLETE = PASS
+SYNC_STATE_MACHINE_COMPLETE = PASS
+ATOMIC_INSTALLATION_CONTRACT = PASS
+ARTIFACT_REFERENCE_CONTRACT = PASS
+SKILL_FUTURE_MODEL = PASS
+EXTERNAL_RESOURCE_FUTURE_MODEL = PASS
+API_DESIGN_COMPLETE = PASS
+FRONTEND_INFORMATION_ARCHITECTURE = PASS
+DESIGN_CONSISTENCY_AUDIT = PASS
+OVERNIGHT_IMPLEMENTATION_READY = READY_FOR_OWNER_REVIEW
+IMPLEMENTATION_AUTHORIZED = false
+```
+
+The only recommended overnight-sized future slice is additive canonical
+Project/catalog/Capsule-version/Workflow-instance persistence plus deterministic
+legacy mapping and tests. No implementation prompt was generated. Wait for
+owner review before any source, migration, API, frontend, Package, sync, or Idea
+Discovery change.
+
 ### Current milestone — MVP-LS2.1 fresh post-round upload qualified
 
 MVP-LS2.1 began from clean `main` at exact commit

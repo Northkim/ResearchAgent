@@ -1,0 +1,17 @@
+{
+  "schema_version": "reagent.project-desired-manifest/v0.1",
+  "project_id": "project-11111111111111111111111111111111",
+  "workspace_id": "workspace-22222222222222222222222222222222",
+  "manifest_revision": 0,
+  "base_revision": 0,
+  "manifest_checksum": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "workflow_instances": [],
+  "skill_pins": [],
+  "artifact_requirements": [],
+  "resource_bindings": [],
+  "compatibility_requirements": {
+    "workspace_schema": "reagent.project-workspace/v0.1",
+    "minimum_cli_version": "0.1.0"
+  },
+  "created_at": "2026-08-06T12:00:00Z"
+}

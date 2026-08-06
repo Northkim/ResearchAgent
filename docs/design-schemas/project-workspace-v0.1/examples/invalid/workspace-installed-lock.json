@@ -1,0 +1,13 @@
+{
+  "schema_version": "reagent.workspace-installed-lock/v0.1",
+  "project_id": "project-11111111111111111111111111111111",
+  "workspace_id": "workspace-22222222222222222222222222222222",
+  "manifest_revision": 1,
+  "manifest_checksum": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "lock_checksum": "not-a-checksum",
+  "installed_capsules": [],
+  "installed_skills": [],
+  "materialized_artifacts": [],
+  "resolved_resources": [],
+  "written_at": "2026-08-06T12:15:00Z"
+}

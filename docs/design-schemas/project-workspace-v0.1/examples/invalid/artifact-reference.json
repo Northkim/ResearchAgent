@@ -1,0 +1,14 @@
+{
+  "schema_version": "reagent.artifact-reference/v0.1",
+  "artifact_id": "artifact-55555555555555555555555555555555",
+  "project_id": "project-11111111111111111111111111111111",
+  "producer_workflow_instance_id": "wfi-33333333333333333333333333333333",
+  "producer_round_id": "round-66666666666666666666666666666666",
+  "artifact_type": "literature.selected-paper-library",
+  "artifact_schema_version": "reagent.artifact.selected-papers/v0.1",
+  "media_type": "application/json",
+  "state": "LOCAL_AVAILABLE",
+  "cloud_metadata_available": true,
+  "produced_at": "2026-08-06T12:10:00Z",
+  "consumer_bindings": []
+}

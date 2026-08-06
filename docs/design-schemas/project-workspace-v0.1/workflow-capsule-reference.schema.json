@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:design-schema:reagent.workflow-capsule-reference:v0.1",
+  "title": "reagent.workflow-capsule-reference/v0.1 (design only)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workflow_instance_id", "workflow_definition_id", "workflow_definition_version", "capsule_id", "capsule_version", "capsule_definition_checksum", "installation_mode", "desired_state"],
+  "properties": {
+    "schema_version": {"const": "reagent.workflow-capsule-reference/v0.1"},
+    "workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+    "workflow_definition_id": {"type": "string", "pattern": "^[a-z][a-z0-9.-]{1,127}$"},
+    "workflow_definition_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$", "maxLength": 64},
+    "capsule_id": {"type": "string", "pattern": "^capsule-[0-9a-f]{32}$"},
+    "capsule_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?$", "maxLength": 64},
+    "capsule_definition_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "installation_mode": {"enum": ["WORKSPACE_INSTALLED", "LEGACY_EXTERNAL_REFERENCE"]},
+    "relative_path": {"type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).{1,1024}$"},
+    "legacy_package_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{1,127}$"},
+    "desired_state": {"enum": ["ACTIVE", "RETIRED"]}
+  },
+  "allOf": [
+    {"if": {"properties": {"installation_mode": {"const": "WORKSPACE_INSTALLED"}}}, "then": {"required": ["relative_path"], "not": {"required": ["legacy_package_id"]}}},
+    {"if": {"properties": {"installation_mode": {"const": "LEGACY_EXTERNAL_REFERENCE"}}}, "then": {"required": ["legacy_package_id"], "not": {"required": ["relative_path"]}}}
+  ]
+}
