@@ -168,6 +168,18 @@ def downgrade() -> None:
         "project_workflow_instances",
         type_="foreignkey",
     )
+    # Restore the exact B1 representation for pre-Package legacy instances.
+    op.execute(sa.text("""
+        UPDATE project_workflow_instances
+        SET capsule_id = NULL, capsule_version = NULL
+        WHERE workflow_definition_id = :definition_id
+          AND workflow_version = :workflow_version
+          AND created_manifest_revision = 0
+          AND legacy_package_id IS NULL
+    """).bindparams(
+        definition_id=_DEFINITION_ID,
+        workflow_version=_WORKFLOW_VERSION,
+    ))
     op.drop_index(
         "ix_project_manifest_entries_project_revision",
         table_name="project_manifest_entries",

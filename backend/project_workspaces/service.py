@@ -16,6 +16,8 @@ from backend.workflow_packages.template import (
 
 from .contracts import (
     CapsuleTrustClassification,
+    CloudProject,
+    CloudProjectStatus,
     ProjectWorkflowInstance,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
@@ -25,7 +27,12 @@ from .contracts import (
     WorkflowReviewStatus,
 )
 from .errors import WorkflowFoundationConflictError
-from .legacy import legacy_workflow_instance_id
+from .legacy import (
+    initial_manifest_idempotency_key,
+    legacy_workflow_instance_id,
+    workspace_id_for_project,
+)
+from .manifest import build_desired_manifest
 from .literature_search import (
     LITERATURE_SEARCH_CAPSULE_ID,
     literature_search_capsule_definition_checksum,
@@ -87,6 +94,34 @@ def reconcile_legacy_workflow_foundation(
             updated_at=_parse_time(project.updated_at),
         )
         repository.add_workflow_instance(instance)
+        canonical = uow.project_manifests.get_project(project.project_id)
+        if canonical is None:
+            canonical = CloudProject(
+                project_id=project.project_id,
+                workspace_id=workspace_id_for_project(project.project_id),
+                name=project.name,
+                research_topic=project.research_topic,
+                status=CloudProjectStatus.ACTIVE,
+                current_manifest_revision=1,
+                legacy_local_project_id=project.project_id,
+                created_at=_parse_time(project.created_at),
+                updated_at=_parse_time(project.updated_at),
+            )
+            manifest, entries = build_desired_manifest(
+                project=canonical,
+                instances=(instance,),
+                capsules={
+                    (LITERATURE_SEARCH_CAPSULE_ID, TEMPLATE_VERSION):
+                    _capsule_version(timestamp)
+                },
+                revision=1,
+                base_revision=0,
+                idempotency_key=initial_manifest_idempotency_key(project.project_id),
+                now=_parse_time(project.created_at),
+            )
+            uow.project_manifests.add_project(canonical)
+            uow.project_manifests.add_manifest(manifest)
+            uow.project_manifests.add_manifest_entries(entries)
         instances.append(instance)
     return tuple(instances)
 

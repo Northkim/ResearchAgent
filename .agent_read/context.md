@@ -84,7 +84,47 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-B1 Workspace persistence foundation qualified
+### Current milestone — NIGHT-B2 cloud Desired Project state qualified
+
+NIGHT-B2 continued directly on clean `main` from B1 anchor
+`6a7578b6d6d1da6cb1b97ef0bebf0b599a1ce349`. Migration `20260806_0009`
+directly follows `20260806_0008` and adds canonical `projects`, append-only
+`project_desired_manifests`, and typed `project_manifest_entries`. Existing
+Projects backfill deterministically to revision 1 and their frozen B1
+Literature Search Workflow Instance; missing B1 identity aborts the
+transaction. Downgrade removes only B2 structures and restores the exact B1
+pre-Package nullable Capsule representation.
+
+The repository-backed Workflow Catalog exposes only persisted Definitions,
+versions and Capsules in stable order. Literature Search `0.3.0` / Capsule
+`0.5.0` remains available and reviewed; the model represents planned/non-
+creatable catalog entries without inventing unratified IDs or executable
+Capsules. Project APIs list, create, read and retire Workflow Instances and
+read the current Desired Manifest. Same-definition multiple instances remain
+valid. Retire is historical state, never deletion.
+
+Every desired-state mutation supplies `base_revision`. A PostgreSQL
+conditional update advances the Project revision exactly once; two independent
+transactions using the same base yielded one success and one
+`MANIFEST_REVISION_CONFLICT`, with no lost update, duplicate revision or
+orphan entry. New Project creation atomically stages LocalProject, deterministic
+Literature Search Instance, canonical Project, revision-1 Manifest and entry;
+injected instance/manifest/entry failures rolled the complete transaction back.
+
+A dedicated loopback PostgreSQL 18.1 cluster qualified empty/populated upgrade,
+idempotent backfill, failure rollback, `0009 -> 0008 -> 0009`, restart/reload,
+sole head and no drift. Full backend result is `616 passed, 4 skipped`; all B1
+and B2 destructive migrations and general PostgreSQL tests ran. The four skips
+remain the pre-existing separately gated integration/live-provider cases. No
+`.env`, credential, owner database, ProjectDB, external network, Provider,
+frontend, Hosted execution, Workspace filesystem or sync path was used.
+
+NIGHT-B2 does not authorize B3 or any later slice. Workspace bootstrap, legacy
+Package adoption, Workspace identity files, local sync/install, Installed Lock,
+Progress aggregation, Artifact handoff, Idea Discovery, Skills/Resources,
+frontend changes, production and R3D remain unimplemented pending owner review.
+
+### Prior milestone — NIGHT-B1 Workspace persistence foundation qualified
 
 NIGHT-B1 began from clean `main` at exact commit
 `e880d40ec73f07198f7b064afd898982a3357e16`. Migration `20260806_0008`

@@ -93,6 +93,12 @@ def test_b2_empty_populated_idempotent_downgrade_reupgrade_and_rollback() -> Non
         assert _legacy_projects(engine) == legacy_before
         assert "projects" not in inspect(engine).get_table_names()
         assert _instance_ids(engine) == instance_ids
+        with engine.connect() as connection:
+            restored_capsule = connection.execute(text("""
+                SELECT capsule_id,capsule_version FROM project_workflow_instances
+                WHERE project_id='project-ffffffffffffffffffffffffffffffff'
+            """)).one()
+        assert restored_capsule == (None, None)
         command.upgrade(config, "20260806_0009")
         assert _instance_ids(engine) == instance_ids
         assert _count(engine, "project_desired_manifests") == 2
