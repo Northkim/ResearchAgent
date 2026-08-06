@@ -56,6 +56,7 @@ this engineering order.
 | R3C-C | Composite experimental OpenAlex acceptance closure | **PASS_WITH_WARNINGS — LIVE_OPENALEX_ACCEPTED** — ADR 0016 composes immutable R3C-A-R4 live evidence with R3C-R1 diagnosis and owner-accepted R3C-R2 restart qualification; no historical blocked result changes |
 | MVP-A0 | Local V0.1 product readiness audit | **BLOCKED — GAPS PRESERVED** — component backends passed, but project, Package, Progress UI, startup, typecheck, and teacher-aligned E2E product gaps prevented owner acceptance |
 | MVP-I | Local V0.1 product integration | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — local project persistence/API, deterministic Package download, existing Progress projection/history UI, primary local navigation, safe startup, and full-stack tests are integrated; no Hosted/cloud research execution |
+| MVP-I1 | Persistent local dotenv startup | **PASS — OWNER ACCEPTANCE PENDING** — `make dev` safely resolves exported/custom/root dotenv database configuration without executing or printing values, while retaining loopback/ProjectDB safeguards and external PostgreSQL lifecycle |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -211,6 +212,14 @@ AgentRuntime, Hosted ProviderOperation, Provider/LLM call, server research
 output, automatic resume, or automatic Progress Report. V0.1 remains
 `OWNER_ACCEPTANCE_PENDING`; only the owner can accept it. R3D and public/
 production deployment remain closed.
+
+MVP-I1 corrects only persistent startup configuration. If the invoking process
+does not already export `REAGENT_DATABASE_URL`, `make dev` safely parses the
+file selected by `REAGENT_ENV_FILE` or the ignored repository-root `.env`.
+Dotenv text is never sourced or evaluated, values are not logged, and malformed
+input fails closed. Existing PostgreSQL-only, loopback-only and ProjectDB
+rejection remains mandatory. The owner creates the database once; neither
+startup nor shutdown creates, resets, deletes, starts, or stops PostgreSQL.
 
 ### Preserved optional mode
 

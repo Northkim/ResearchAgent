@@ -10,9 +10,10 @@ pages as substitutes, and do not enable a live Provider for this checklist.
 
 ## Ten-minute checklist
 
-1. **Start V0.1 locally.** Export a loopback `REAGENT_DATABASE_URL` for a
-   dedicated database other than ProjectDB, run `make dev`, and confirm that
-   the printed FastAPI and Next.js readiness checks pass.
+1. **Start V0.1 locally.** After the one-time creation of a dedicated loopback
+   database and ignored root `.env`, run `make dev` with no repeated export.
+   Confirm that the printed FastAPI and Next.js readiness checks pass without
+   displaying the database URL.
 2. **Open the browser.** Visit `http://127.0.0.1:3000/projects`. Confirm that
    the primary navigation is Projects, New project, and Local guide, with no
    Hosted run/resume action.

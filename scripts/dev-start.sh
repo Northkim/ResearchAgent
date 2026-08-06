@@ -11,7 +11,6 @@ fail() {
   exit 1
 }
 
-[[ -n "${REAGENT_DATABASE_URL:-}" ]] || fail "export REAGENT_DATABASE_URL for a local PostgreSQL database"
 [[ "${task_runtime_dir}" == /* ]] || fail "REAGENT_LOCAL_RUNTIME_DIR must be absolute"
 [[ "${task_runtime_dir}" != "${task_repo_root}"* ]] || fail "runtime files must stay outside Git"
 [[ "${task_backend_port}" =~ ^[0-9]+$ ]] || fail "REAGENT_BACKEND_PORT must be numeric"
@@ -24,17 +23,36 @@ done
 conda run -n reagent-dev python -c "import fastapi, psycopg, sqlalchemy, uvicorn" \
   >/dev/null 2>&1 || fail "Conda environment reagent-dev is unavailable or incomplete"
 
-conda run -n reagent-dev python -c '
-import os
-from sqlalchemy.engine import make_url
-url = make_url(os.environ["REAGENT_DATABASE_URL"])
-if url.get_backend_name() != "postgresql":
-    raise SystemExit("database must use PostgreSQL")
-if url.host not in {"127.0.0.1", "localhost", "::1"}:
-    raise SystemExit("database must be loopback-only")
-if (url.database or "").lower() == "projectdb":
-    raise SystemExit("ProjectDB is not the V0.1 local product database")
-' >/dev/null || fail "REAGENT_DATABASE_URL must select a loopback PostgreSQL database other than ProjectDB"
+if [[ -z "${REAGENT_DATABASE_URL+x}" ]]; then
+  task_resolved_configuration="$(
+    conda run --no-capture-output -n reagent-dev python \
+      "${task_repo_root}/scripts/local_startup_config.py" resolve \
+      --repo-root "${task_repo_root}"
+  )" || fail "local database configuration could not be loaded; create the ignored repository .env or export REAGENT_DATABASE_URL"
+  [[ "${task_resolved_configuration}" == *$'\n'* ]] \
+    || fail "local database configuration resolver returned an invalid result"
+  task_database_origin="${task_resolved_configuration%%$'\n'*}"
+  REAGENT_DATABASE_URL="${task_resolved_configuration#*$'\n'}"
+  export REAGENT_DATABASE_URL
+  unset task_resolved_configuration
+  case "${task_database_origin}" in
+    REPOSITORY_DOTENV)
+      echo "Local database configuration loaded from repository .env"
+      ;;
+    CUSTOM_DOTENV)
+      echo "Local database configuration loaded from REAGENT_ENV_FILE"
+      ;;
+    *)
+      fail "local database configuration resolver returned an unknown origin"
+      ;;
+  esac
+fi
+[[ -n "${REAGENT_DATABASE_URL:-}" ]] \
+  || fail "REAGENT_DATABASE_URL is empty; set it in the ignored repository .env or export it"
+
+conda run --no-capture-output -n reagent-dev python \
+  "${task_repo_root}/scripts/local_startup_config.py" validate \
+  >/dev/null || fail "REAGENT_DATABASE_URL must select a loopback PostgreSQL database other than ProjectDB"
 
 for task_port in "${task_backend_port}" "${task_frontend_port}"; do
   if lsof -nP -iTCP:"${task_port}" -sTCP:LISTEN >/dev/null 2>&1; then
@@ -53,7 +71,6 @@ for task_process_file in \
 done
 
 cd "${task_repo_root}"
-conda run --no-capture-output -n reagent-dev alembic upgrade head
 conda run --no-capture-output -n reagent-dev python -c '
 import os
 from sqlalchemy import text
@@ -63,9 +80,13 @@ try:
     with engine.connect() as connection:
         if connection.scalar(text("SELECT 1")) != 1:
             raise SystemExit("database readiness failed")
+except Exception:
+    raise SystemExit(1)
 finally:
     engine.dispose()
-' >/dev/null
+' >/dev/null 2>&1 \
+  || fail "database configuration loaded, but the local PostgreSQL database is unavailable or does not exist"
+conda run --no-capture-output -n reagent-dev alembic upgrade head
 
 task_cleanup_needed=1
 cleanup_on_error() {

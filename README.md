@@ -9,12 +9,20 @@ research state, and Codex performs the Literature Search work locally.
 ## Start the local V0.1 product
 
 Prerequisites are Conda environment `reagent-dev`, Node/npm, and a running
-loopback PostgreSQL database that is not ProjectDB. Export a SQLAlchemy URL;
-the startup script never reads `.env`:
+loopback PostgreSQL database that is not ProjectDB. One time only, create that
+database and copy the credential-free local template to the ignored root
+`.env`:
 
 ```bash
-export REAGENT_DATABASE_URL='postgresql+psycopg://127.0.0.1:5432/reagent_local_v01'
+cp config/local-v0.1.example .env
+# Edit .env and set REAGENT_DATABASE_URL for the persistent local database.
+```
+
+Normal startup and shutdown then require only:
+
+```bash
 make dev
+make stop
 ```
 
 Open <http://127.0.0.1:3000/projects>. The script verifies dependencies and
@@ -22,15 +30,16 @@ the loopback database, applies Alembic migrations, and starts FastAPI and
 Next.js. Logs, generated Package artifacts, and PID files stay under
 `/tmp/reagent-v0-1-$UID` by default.
 
-Stop only the application processes started by that runtime directory:
+`make dev` reuses the database and applies migrations; it never creates,
+deletes, resets, or recreates the database. `make stop` stops only the
+application processes recorded in the runtime directory and never stops or
+deletes PostgreSQL.
 
-```bash
-make stop
-```
-
-PostgreSQL is a documented prerequisite and is never stopped or deleted by
-these commands. Override ports or the runtime directory by exporting the
-credential-free values shown in `config/local-v0.1.example`.
+An already exported `REAGENT_DATABASE_URL` overrides `.env`. Set
+`REAGENT_ENV_FILE` to select a different local dotenv file instead. The loader
+parses assignments without executing shell syntax and never prints the URL.
+Tracked `.env.example` and `config/local-v0.1.example` contain no real
+credential. Do not put project-specific configuration in `~/.zshrc`.
 
 The complete owner flow and validation/upload commands are in
 [`docs/getting-started/LOCAL_V0_1.md`](docs/getting-started/LOCAL_V0_1.md).

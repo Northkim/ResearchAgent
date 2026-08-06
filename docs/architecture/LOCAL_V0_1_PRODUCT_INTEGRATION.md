@@ -45,6 +45,8 @@ path from project creation.
 
 `make dev` and `make stop` manage only FastAPI and Next.js. PostgreSQL is a
 manual loopback prerequisite so the scripts cannot stop or delete unrelated
-database services. Runtime files live outside Git. OpenAlex and fake Proxy
-routes are explicitly disabled by the startup script; an operator must enable
-a bounded capability separately.
+database services. When no database URL is already exported, startup safely
+parses `REAGENT_ENV_FILE` or the ignored repository-root `.env` without
+executing it; exported configuration has precedence. Runtime files live outside
+Git. OpenAlex and fake Proxy routes are explicitly disabled by the startup
+script; an operator must enable a bounded capability separately.

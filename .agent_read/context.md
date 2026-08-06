@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-05
+Last updated: 2026-08-06
 
 ## Current governing route — Phase R0 teacher-aligned boundary freeze
 
@@ -84,7 +84,53 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — MVP-I local V0.1 product integration qualified
+### Current milestone — MVP-I1 persistent local dotenv startup passed
+
+MVP-I1 began from clean `main` at exact commit
+`acbd91a24eefee1b7123eff4821b9ac3db7dee78`. Accepted ADR 0018 corrects the
+only targeted usability defect: `make dev` previously required
+`REAGENT_DATABASE_URL` to be exported in every invoking shell even when the
+ignored repository-root `.env` already contained persistent local database
+configuration.
+
+Startup now resolves an existing exported value first, then the file selected
+by `REAGENT_ENV_FILE`, then repository `.env`. The strict Python parser accepts
+normal unquoted/single-quoted/double-quoted assignments, ignores blank/comment
+lines, rejects malformed/duplicate/control-bearing input, treats command syntax
+as literal data, and never sources or evaluates dotenv content. Only
+`REAGENT_DATABASE_URL` enters the startup environment; values are not logged.
+PostgreSQL-only, loopback-only and ProjectDB rejection remains unchanged.
+
+Fourteen focused tests cover precedence, custom/root/missing/malformed files,
+quotes/comments, value redaction, command-substitution/backtick canaries,
+database safety and Git ignore behavior. Bash syntax, Python compile and diff
+checks passed. ShellCheck was not installed. A real `make dev` smoke explicitly
+removed process-exported database and custom-file variables, loaded the ignored
+root `.env`, migrated the already-created owner database, and reached FastAPI/
+Next.js readiness on loopback. `make stop` released only application ports and
+left PostgreSQL untouched. The owner value was never printed or recorded.
+
+```text
+MVP_I1_IMPLEMENTATION = PASS
+REPOSITORY_DOTENV_LOADING = PASS
+EXPORTED_ENV_PRECEDENCE = PASS
+CUSTOM_ENV_FILE_SUPPORT = PASS
+DOTENV_COMMAND_EXECUTION_SAFETY = PASS
+DATABASE_SAFETY_CHECKS = PASS
+MAKE_DEV_WITHOUT_MANUAL_EXPORT = PASS
+DOTENV_GIT_EXCLUSION = PASS
+V0_1_STATE = OWNER_ACCEPTANCE_PENDING
+R3D_PRODUCTION_PROVIDER_GATE = CLOSED
+```
+
+The product does not create, reset, delete, start, or stop PostgreSQL. No
+backend/frontend product behavior, migration, Package/Progress contract,
+Provider/Proxy, Hosted Runtime, public deployment, production security, or R3D
+change occurred. Detailed evidence is in
+`.agent_read/progress/v0_1_persistent_local_dotenv_startup.md`. Wait for owner
+review.
+
+### Preserved milestone — MVP-I local V0.1 product integration qualified
 
 MVP-I began from clean `main` at exact commit
 `97c8df4ca6c4d13c1c737721af12303b5a1e9e29`, preserving the blocked MVP-A0
@@ -110,8 +156,10 @@ production build, and a real-browser local-product E2E all pass.
 requires a loopback PostgreSQL URL other than ProjectDB, verifies Conda and
 dependencies, migrates, binds FastAPI/Next.js to literal loopback, waits for
 readiness, and keeps runtime files outside Git. Shutdown stops only the
-application process trees and leaves PostgreSQL untouched. Neither script reads
-`.env`; experimental OpenAlex and Proxy routes are explicitly disabled.
+application process trees and leaves PostgreSQL untouched. At the MVP-I
+baseline neither script read `.env`; MVP-I1/ADR 0018 supersedes that startup
+detail with safe parsing. Experimental OpenAlex and Proxy routes remain
+explicitly disabled.
 
 A fresh isolated PostgreSQL 18.x cluster with separate local and test databases
 passed sole-head/current/no-drift checks at `20260805_0006`, downgrade/re-

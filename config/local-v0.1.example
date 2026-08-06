@@ -1,5 +1,8 @@
-# Safe, credential-free example. Export these values in your shell; scripts do not read .env.
+# Safe, credential-free example for the ignored repository-root .env.
+# Copy this file once, set the local database URL, and keep the result untracked.
 REAGENT_DATABASE_URL=postgresql://127.0.0.1:5432/reagent_local_v01
+# The dotenv startup loader reads only REAGENT_DATABASE_URL. Export these
+# optional overrides when a different application port/runtime root is needed.
 REAGENT_BACKEND_PORT=8000
 REAGENT_FRONTEND_PORT=3000
 REAGENT_LOCAL_RUNTIME_DIR=/tmp/reagent-v0-1-local

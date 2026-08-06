@@ -12,15 +12,35 @@ downloaded local folder; the server does not execute or resume the task.
 - a running PostgreSQL database reachable only through loopback;
 - the current repository checkout.
 
-Create a dedicated local database using your normal PostgreSQL tooling. Do not
-use ProjectDB. Then export its SQLAlchemy URL. The product scripts deliberately
-do not read `.env`:
+## One-time database configuration
+
+Create a persistent dedicated local database using your normal PostgreSQL
+tooling. Do not use ProjectDB. The application never creates, deletes, resets,
+or recreates this database.
+
+Copy the credential-free local template to the ignored repository-root `.env`
+and set its database URL once:
 
 ```bash
-export REAGENT_DATABASE_URL='postgresql+psycopg://127.0.0.1:5432/reagent_local_v01'
+cp config/local-v0.1.example .env
+# Edit .env:
+# REAGENT_DATABASE_URL=postgresql+psycopg://user@127.0.0.1:5432/reagent_local_v01
 ```
 
-Optional non-secret overrides are documented in `config/local-v0.1.example`.
+The root `.env` is ignored and must remain local. The tracked examples contain
+no real credential. Do not put this project-specific setting in `~/.zshrc`.
+
+Configuration precedence is:
+
+1. an already exported `REAGENT_DATABASE_URL`;
+2. the file selected by `REAGENT_ENV_FILE`;
+3. the repository-root `.env`.
+
+The dotenv parser accepts unquoted, single-quoted, and double-quoted values,
+ignores blank/comment-only lines, and never sources or executes file contents.
+It does not print the database URL. An explicit exported URL overrides any file
+value. `REAGENT_ENV_FILE` is useful for selecting a separate local
+configuration file without changing global shell startup files.
 
 ## Start and stop
 
@@ -43,8 +63,9 @@ Stop only those application processes:
 make stop
 ```
 
-The stop command does not stop PostgreSQL, delete a database, or remove a
-downloaded Package.
+Normal use is simply `make dev` and `make stop`. Startup reuses the same
+persistent database and applies pending migrations. The stop command does not
+stop PostgreSQL, delete a database, or remove a downloaded Package.
 
 ## Product workflow
 
