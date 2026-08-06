@@ -12,8 +12,10 @@ from backend.project_workspaces.contracts import (
     WorkflowCapsuleVersion,
     WorkflowDefinition,
     WorkflowDefinitionVersion,
+    WorkspaceBootstrapDescriptor,
 )
 from backend.workflow_packages.serialization import to_json_value
+from backend.project_workspaces.bootstrap import workspace_bootstrap_document
 
 from .common import StrictDTO
 
@@ -159,3 +161,23 @@ class DesiredProjectManifestResponse(StrictDTO):
             manifest=document,
             created_at=value.created_at.isoformat(),
         )
+
+
+class WorkspaceBootstrapResponse(StrictDTO):
+    schema_version: str
+    workspace_schema_version: str
+    project_id: str
+    workspace_id: str
+    cloud_origin_id: str
+    project_api_path: str
+    workspace_lifecycle: str
+    bootstrap_manifest_revision: int
+    desired_manifest_checksum: str
+    desired_manifest: dict[str, Any]
+    workflow_capsules: list[dict[str, Any]]
+    created_at: str
+    descriptor_checksum: str
+
+    @classmethod
+    def from_contract(cls, value: WorkspaceBootstrapDescriptor):
+        return cls.model_validate(workspace_bootstrap_document(value))

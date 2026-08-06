@@ -58,6 +58,109 @@ class ManifestDesiredAction(str, Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class LegacyPackageBootstrapReference:
+    package_id: str
+    package_schema_version: str
+    package_checksum: str
+    manifest_checksum: str
+    zip_checksum: str
+    download_path: str
+
+    def __post_init__(self) -> None:
+        _require_bounded(self.package_id, 1, 255, "package_id")
+        _require_bounded(
+            self.package_schema_version, 1, 100, "package_schema_version"
+        )
+        require_sha256(self.package_checksum, "package_checksum")
+        require_sha256(self.manifest_checksum, "manifest_checksum")
+        require_sha256(self.zip_checksum, "zip_checksum")
+        if not self.download_path.startswith("/projects/"):
+            raise ValueError("download_path must be a Project-scoped API path")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceCapsuleBootstrap:
+    workflow_instance_id: str
+    workflow_definition_id: str
+    workflow_definition_version: str
+    capsule_id: str
+    capsule_version: str
+    capsule_definition_checksum: str
+    desired_state: WorkflowInstanceDesiredState
+    legacy_package_compatible: bool
+    package_schema_version: str
+    package_template_id: str
+    trust_classification: CapsuleTrustClassification
+    legacy_package: LegacyPackageBootstrapReference | None
+
+    def __post_init__(self) -> None:
+        _require_match(
+            self.workflow_instance_id,
+            _WORKFLOW_INSTANCE_ID,
+            "workflow_instance_id",
+        )
+        _require_match(
+            self.workflow_definition_id,
+            _STABLE_ID,
+            "workflow_definition_id",
+        )
+        _require_match(
+            self.workflow_definition_version,
+            _SEMVER,
+            "workflow_definition_version",
+        )
+        _require_match(self.capsule_id, _CAPSULE_ID, "capsule_id")
+        _require_match(self.capsule_version, _SEMVER, "capsule_version")
+        require_sha256(
+            self.capsule_definition_checksum, "capsule_definition_checksum"
+        )
+        _require_bounded(
+            self.package_schema_version, 1, 100, "package_schema_version"
+        )
+        _require_match(self.package_template_id, _STABLE_ID, "package_template_id")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkspaceBootstrapDescriptor:
+    schema_version: str
+    workspace_schema_version: str
+    project_id: str
+    workspace_id: str
+    cloud_origin_id: str
+    project_api_path: str
+    workspace_lifecycle: str
+    bootstrap_manifest_revision: int
+    desired_manifest_checksum: str
+    desired_manifest: Mapping[str, Any]
+    workflow_capsules: tuple[WorkspaceCapsuleBootstrap, ...]
+    created_at: datetime
+    descriptor_checksum: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "reagent.workspace-bootstrap/v0.1":
+            raise ValueError("unsupported Workspace bootstrap schema")
+        if self.workspace_schema_version != "reagent.project-workspace/v0.1":
+            raise ValueError("unsupported Project Workspace schema")
+        _require_match(self.project_id, _PROJECT_ID, "project_id")
+        _require_match(self.workspace_id, _WORKSPACE_ID, "workspace_id")
+        _require_match(self.cloud_origin_id, _STABLE_ID, "cloud_origin_id")
+        if self.project_api_path != f"/projects/{self.project_id}":
+            raise ValueError("project_api_path must bind the canonical Project")
+        if self.workspace_lifecycle != "ACTIVE":
+            raise ValueError("unsupported Workspace lifecycle")
+        if self.bootstrap_manifest_revision < 1:
+            raise ValueError("bootstrap_manifest_revision must be positive")
+        require_sha256(self.desired_manifest_checksum, "desired_manifest_checksum")
+        object.__setattr__(
+            self, "desired_manifest", _freeze_json(self.desired_manifest)
+        )
+        if not isinstance(self.workflow_capsules, tuple):
+            raise ValueError("workflow_capsules must be an immutable tuple")
+        _require_aware(self.created_at, "created_at")
+        require_sha256(self.descriptor_checksum, "descriptor_checksum")
+
+
+@dataclass(frozen=True, slots=True)
 class CloudProject:
     project_id: str
     workspace_id: str

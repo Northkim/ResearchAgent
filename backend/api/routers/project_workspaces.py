@@ -21,6 +21,7 @@ from ..schemas.project_workspaces import (
     WorkflowInstancePageResponse,
     WorkflowInstanceResponse,
     WorkflowVersionCatalogResponse,
+    WorkspaceBootstrapResponse,
 )
 
 router = APIRouter(tags=["project-workspaces"])
@@ -183,4 +184,17 @@ async def get_project_manifest(
 ) -> DesiredProjectManifestResponse:
     return DesiredProjectManifestResponse.from_contract(
         services.project_workspaces.current_manifest(project_id)
+    )
+
+
+@router.get(
+    "/projects/{project_id}/workspace-bootstrap",
+    response_model=WorkspaceBootstrapResponse,
+)
+async def get_workspace_bootstrap(
+    project_id: str,
+    services: LocalProductServicesDependency,
+) -> WorkspaceBootstrapResponse:
+    return WorkspaceBootstrapResponse.from_contract(
+        services.project_workspaces.workspace_bootstrap(project_id)
     )

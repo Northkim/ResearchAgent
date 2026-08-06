@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:runtime-schema:reagent.project-workspace:v0.1",
+  "title": "reagent.project-workspace/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "project_id", "workspace_id", "created_at",
+    "desired_manifest_path", "installed_lock_path", "capsules_root",
+    "artifact_materialization_root", "resource_root", "secret_policy",
+    "cloud_origin_id", "bootstrap_manifest_revision",
+    "bootstrap_manifest_checksum", "workspace_lifecycle", "descriptor_checksum"
+  ],
+  "properties": {
+    "schema_version": {"const": "reagent.project-workspace/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "created_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "desired_manifest_path": {"const": ".reagent/desired-manifest.json"},
+    "installed_lock_path": {"const": ".reagent/installed-lock.json"},
+    "capsules_root": {"const": "capsules"},
+    "artifact_materialization_root": {"const": "artifacts/materialized"},
+    "resource_root": {"const": "resources"},
+    "secret_policy": {"const": "PROHIBITED"},
+    "cloud_origin_id": {"const": "reagent-local-api"},
+    "bootstrap_manifest_revision": {"type": "integer", "minimum": 1},
+    "bootstrap_manifest_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "workspace_lifecycle": {"const": "ACTIVE"},
+    "descriptor_checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

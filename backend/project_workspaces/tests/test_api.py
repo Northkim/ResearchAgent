@@ -12,6 +12,7 @@ from backend.project_workspaces import (
     WorkflowDefinition,
     WorkflowDefinitionLifecycle,
 )
+from backend.workflow_packages.serialization import canonical_hash
 
 
 def _client(tmp_path):
@@ -177,3 +178,107 @@ def test_scope_version_capsule_and_planned_fail_closed_without_manifest_change(t
     final = client.get(f"/projects/{first}/workflow-instances").json()
     assert final["total"] == 1
     assert final["manifest_revision"] == 1
+
+
+def test_workspace_bootstrap_descriptor_is_repository_backed_and_deterministic(tmp_path):
+    client, _ = _client(tmp_path)
+    project_id = _create_project(client)
+
+    without_package = client.get(f"/projects/{project_id}/workspace-bootstrap")
+    assert without_package.status_code == 200
+    first = without_package.json()
+    assert first["schema_version"] == "reagent.workspace-bootstrap/v0.1"
+    assert first["workspace_schema_version"] == "reagent.project-workspace/v0.1"
+    assert first["project_id"] == project_id
+    assert first["workspace_id"] == "workspace-" + project_id.removeprefix("project-")
+    assert first["bootstrap_manifest_revision"] == 1
+    assert first["desired_manifest"]["canonical_checksum"] == first["desired_manifest_checksum"]
+    assert len(first["workflow_capsules"]) == 1
+    capsule = first["workflow_capsules"][0]
+    assert capsule["workflow_instance_id"] == (
+        client.get(f"/projects/{project_id}/workflow-instances").json()["items"][0][
+            "workflow_instance_id"
+        ]
+    )
+    assert capsule["capsule_version"] == "0.5.0"
+    assert capsule["legacy_package"] is None
+    checksum_payload = dict(first)
+    checksum = checksum_payload.pop("descriptor_checksum")
+    assert canonical_hash(checksum_payload) == checksum
+    assert client.get(f"/projects/{project_id}/workspace-bootstrap").json() == first
+
+    generated = client.post(f"/projects/{project_id}/packages")
+    assert generated.status_code == 201
+    with_package = client.get(f"/projects/{project_id}/workspace-bootstrap")
+    assert with_package.status_code == 200
+    package = with_package.json()["workflow_capsules"][0]["legacy_package"]
+    assert package["package_id"] == generated.json()["package_id"]
+    assert package["package_checksum"] == generated.json()["package_checksum"]
+    assert package["download_path"].startswith(f"/projects/{project_id}/packages/")
+
+
+def test_workspace_bootstrap_fails_closed_for_missing_or_incomplete_cloud_state(tmp_path):
+    client, database = _client(tmp_path)
+    project_id = _create_project(client)
+    unknown = client.get(
+        "/projects/project-ffffffffffffffffffffffffffffffff/workspace-bootstrap"
+    )
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "PROJECT_NOT_FOUND"
+
+    database.desired_manifests.clear()
+    missing = client.get(f"/projects/{project_id}/workspace-bootstrap")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "PROJECT_MANIFEST_NOT_FOUND"
+
+
+def test_workspace_bootstrap_is_project_scoped_and_fails_for_damaged_relations(tmp_path):
+    client, database = _client(tmp_path)
+    first = _create_project(client, "First")
+    second = _create_project(client, "Second")
+    first_instance = client.get(
+        f"/projects/{first}/workflow-instances"
+    ).json()["items"][0]["workflow_instance_id"]
+    second_instance = client.get(
+        f"/projects/{second}/workflow-instances"
+    ).json()["items"][0]["workflow_instance_id"]
+
+    descriptor = client.get(f"/projects/{first}/workspace-bootstrap")
+    assert descriptor.status_code == 200
+    instance_ids = {
+        item["workflow_instance_id"]
+        for item in descriptor.json()["workflow_capsules"]
+    }
+    assert instance_ids == {first_instance}
+    assert second_instance not in instance_ids
+
+    database.manifest_entries = {
+        key: value
+        for key, value in database.manifest_entries.items()
+        if value.project_id != first
+    }
+    damaged = client.get(f"/projects/{first}/workspace-bootstrap")
+    assert damaged.status_code == 409
+    assert damaged.json()["error"]["code"] == "WORKSPACE_BOOTSTRAP_NOT_AVAILABLE"
+
+
+def test_workspace_bootstrap_orders_multiple_capsules_and_authorizes_only_legacy_package(tmp_path):
+    client, _ = _client(tmp_path)
+    project_id = _create_project(client)
+    generated = client.post(f"/projects/{project_id}/packages")
+    assert generated.status_code == 201
+    created = client.post(
+        f"/projects/{project_id}/workflow-instances",
+        json=_create_request(1),
+    )
+    assert created.status_code == 201
+    descriptor = client.get(f"/projects/{project_id}/workspace-bootstrap")
+    assert descriptor.status_code == 200
+    capsules = descriptor.json()["workflow_capsules"]
+    assert [item["workflow_instance_id"] for item in capsules] == sorted(
+        item["workflow_instance_id"] for item in capsules
+    )
+    assert sum(item["legacy_package"] is not None for item in capsules) == 1
+    assert next(
+        item for item in capsules if item["legacy_package"] is not None
+    )["legacy_package"]["package_id"] == generated.json()["package_id"]

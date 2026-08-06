@@ -40,6 +40,7 @@ from .project_workspaces import (
     WorkflowCatalogPageResponse,
     WorkflowInstancePageResponse,
     WorkflowInstanceResponse,
+    WorkspaceBootstrapResponse,
 )
 
 __all__ = [
@@ -75,4 +76,5 @@ __all__ = [
     "WorkflowCatalogPageResponse",
     "WorkflowInstancePageResponse",
     "WorkflowInstanceResponse",
+    "WorkspaceBootstrapResponse",
 ]

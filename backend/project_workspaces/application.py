@@ -28,6 +28,7 @@ from .contracts import (
     WorkflowDefinitionVersion,
     WorkflowInstanceDesiredState,
     WorkflowReviewStatus,
+    WorkspaceBootstrapDescriptor,
 )
 from .errors import ManifestRevisionConflictError
 from .legacy import (
@@ -36,6 +37,7 @@ from .legacy import (
     workspace_id_for_project,
 )
 from .manifest import build_desired_manifest, mutation_idempotency_key
+from .bootstrap import build_workspace_bootstrap_descriptor
 from .service import ensure_literature_search_foundation
 
 
@@ -157,6 +159,37 @@ class ProjectWorkspaceApplicationService:
                 "Desired Project Manifest not found", code="PROJECT_MANIFEST_NOT_FOUND"
             )
         return manifest
+
+    def workspace_bootstrap(self, project_id: str) -> WorkspaceBootstrapDescriptor:
+        project = self._require_project(project_id)
+        manifest = self.current_manifest(project_id)
+        local_project = self._uow.local_projects.get(project_id)
+        if local_project is None:
+            raise ApplicationCodedConflictError(
+                "Workspace bootstrap requires the compatible local Project record",
+                code="WORKSPACE_BOOTSTRAP_NOT_AVAILABLE",
+            )
+        entries = self._uow.project_manifests.list_manifest_entries(
+            project_id, manifest.manifest_revision
+        )
+        instances = self._uow.workflow_foundation.list_workflow_instances(project_id)
+        capsules: dict[tuple[str, str], WorkflowCapsuleVersion] = {}
+        for instance in instances:
+            if instance.capsule_id is None or instance.capsule_version is None:
+                continue
+            capsule = self._uow.workflow_foundation.get_capsule_version(
+                instance.capsule_id, instance.capsule_version
+            )
+            if capsule is not None:
+                capsules[(capsule.capsule_id, capsule.capsule_version)] = capsule
+        return build_workspace_bootstrap_descriptor(
+            project=project,
+            local_project=local_project,
+            manifest=manifest,
+            entries=entries,
+            instances=instances,
+            capsules=capsules,
+        )
 
     def create_instance(
         self,

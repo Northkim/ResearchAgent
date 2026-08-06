@@ -15,6 +15,9 @@ from .contracts import (
     WorkflowInstanceDesiredState,
     WorkflowReviewStatus,
     WorkflowCapsuleVersion,
+    LegacyPackageBootstrapReference,
+    WorkspaceBootstrapDescriptor,
+    WorkspaceCapsuleBootstrap,
 )
 from .legacy import (
     LEGACY_WORKFLOW_INSTANCE_NAMESPACE,
@@ -57,6 +60,9 @@ __all__ = [
     "ManifestEntryKind",
     "ManifestRevisionConflictError",
     "WorkflowCapsuleVersion",
+    "LegacyPackageBootstrapReference",
+    "WorkspaceBootstrapDescriptor",
+    "WorkspaceCapsuleBootstrap",
     "WorkflowDefinition",
     "WorkflowDefinitionLifecycle",
     "WorkflowDefinitionVersion",
