@@ -513,6 +513,16 @@ def adopt_legacy_package(
             source_file_checksum = _hash_file(source_path)
             extracted = tempfile.TemporaryDirectory(prefix="reagent-legacy-package-")
             source_root = _extract_archive_safely(source_path, Path(extracted.name))
+            expected_archives = {
+                item["legacy_package"]["zip_checksum"]
+                for item in bootstrap["workflow_capsules"]
+                if item.get("legacy_package") is not None
+            }
+            if source_file_checksum not in expected_archives:
+                raise _package_error(
+                    "LEGACY_PACKAGE_CHECKSUM_MISMATCH",
+                    "Legacy Package archive does not match Cloud bootstrap metadata",
+                )
         elif not source_path.is_dir():
             raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package source type is unsupported")
 
@@ -1073,6 +1083,13 @@ def _reject_symlink_chain(path: Path) -> None:
         current = current.parent
     for candidate in reversed(existing):
         if candidate.is_symlink():
+            system_aliases = {
+                "/tmp": "/private/tmp",
+                "/var": "/private/var",
+            }
+            expected = system_aliases.get(candidate.as_posix())
+            if expected is not None and candidate.resolve().as_posix() == expected:
+                continue
             raise _filesystem("UNSAFE_PACKAGE_PATH", "Symbolic-link path components are forbidden")
 
 

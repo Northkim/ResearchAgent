@@ -45,6 +45,29 @@ credential. Do not put project-specific configuration in `~/.zshrc`.
 The complete owner flow, one-round command, and recovery behavior are in
 [`docs/getting-started/LOCAL_V0_1.md`](docs/getting-started/LOCAL_V0_1.md).
 
+## Optional long-lived Project Workspace
+
+The existing downloaded Literature Search Package remains directly runnable.
+NIGHT-B3 also permits a Project to initialize its canonical long-lived local
+Workspace and non-destructively copy the same verified Package into its frozen
+Workflow Capsule path:
+
+```bash
+python reagent_local.py bootstrap "$WORKSPACE_DIR" --descriptor workspace-bootstrap.json
+python reagent_local.py adopt "$LEGACY_PACKAGE" "$WORKSPACE_DIR"
+```
+
+Obtain `workspace-bootstrap.json` from the repository-backed
+`GET /projects/{project_id}/workspace-bootstrap` endpoint after generating the
+Package. The source Package is not moved, rewritten, deleted, or executed during
+adoption; declared outputs, memory, Progress and receipts are preserved. The
+adopted Capsule retains the original `python reagent_local.py run .` command.
+
+See the [Workspace bootstrap and adoption guide](docs/getting-started/PROJECT_WORKSPACE_BOOTSTRAP.md)
+for layout, integrity checks, recovery and exit codes. This is bootstrap and
+legacy adoption only: pull sync, generic Capsule installation, Installed Lock,
+acknowledgement and cross-device file restoration are not implemented.
+
 ## V0.1 boundary
 
 - Literature Search is the only selectable Workflow.

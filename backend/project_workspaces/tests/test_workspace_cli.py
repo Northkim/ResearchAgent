@@ -219,6 +219,20 @@ def test_archive_adoption_and_identity_checksum_conflicts(
     )
     assert adopted.status == "ADOPTED"
 
+    repacked = tmp_path / "repacked.zip"
+    repacked.write_bytes(workspace_fixture["archive"].read_bytes() + b"different archive")
+    fresh_archive_workspace = tmp_path / "fresh-archive"
+    workspace_cli.bootstrap_workspace(
+        target=fresh_archive_workspace,
+        descriptor=workspace_fixture["descriptor"],
+    )
+    with pytest.raises(WorkspaceCLIError) as error:
+        workspace_cli.adopt_legacy_package(
+            source=repacked,
+            workspace_root=fresh_archive_workspace,
+        )
+    assert error.value.code == "LEGACY_PACKAGE_CHECKSUM_MISMATCH"
+
     other_project = workspace_fixture["client"].post(
         "/projects",
         json={

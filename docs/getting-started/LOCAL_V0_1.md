@@ -112,6 +112,28 @@ cloud receives only the existing bounded Progress Report summary and artifact
 names/checksums. V0.1 uses metadata and available abstracts; it never claims
 that papers were read in full.
 
+### Optional Project Workspace adoption
+
+The extracted Package remains fully supported in standalone mode. To retain it
+inside the Project's canonical long-lived Workspace, generate the Package,
+download the read-only bootstrap descriptor from
+`GET /projects/{project_id}/workspace-bootstrap`, then run from the repository:
+
+```bash
+python reagent_local.py bootstrap "$WORKSPACE_DIR" --descriptor workspace-bootstrap.json
+python reagent_local.py adopt "$LEGACY_PACKAGE" "$WORKSPACE_DIR"
+```
+
+Adoption verifies immutable Package identity/checksums while preserving
+declared mutable outputs, memory, Progress state and receipts. It copies through
+same-filesystem staging and leaves the source unchanged. Enter the Capsule path
+printed by the command and run the same `python reagent_local.py run .` launcher.
+
+This optional B3 path does not claim local/cloud synchronization. It creates no
+Installed Lock or acknowledgement, and it does not download or install general
+Capsules. Detailed layout, retry behavior, safe failure codes and ZIP/directory
+rules are in [Project Workspace Bootstrap and Legacy Package Adoption](PROJECT_WORKSPACE_BOOTSTRAP.md).
+
 Press `Ctrl+C` to interrupt safely. The launcher forwards the signal, reaps
 Codex, revokes the local session, preserves valid local files, and uploads
 nothing incomplete. Run `python reagent_local.py run . --resume` to continue

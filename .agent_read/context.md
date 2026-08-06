@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-06
+Last updated: 2026-08-07
 
 ## Current governing route — Phase R0 teacher-aligned boundary freeze
 
@@ -84,7 +84,56 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-B2 cloud Desired Project state qualified
+### Current milestone — NIGHT-B3 Workspace bootstrap and legacy adoption qualified
+
+NIGHT-B3 continued directly on clean `main` from accepted B2 final commit
+`d46633a752abc6050b5905eabeac1ba4cdd15c3b`. It reuses the canonical B2
+`workspace_id`; no second identity, database table, or migration was added.
+Repository head remains the sole `20260806_0009` migration.
+
+`GET /projects/{project_id}/workspace-bootstrap` now reconstructs a
+checksum-bound `reagent.workspace-bootstrap/v0.1` descriptor from persisted
+Project, current Desired Manifest, entries, Workflow Instances, Capsule pins,
+and current legacy Package metadata. Damaged/cross-Project relations fail
+closed. Package adoption metadata is exposed only for the deterministic legacy
+Literature Search instance, never another same-definition instance.
+
+The standard-library root `reagent_local.py` bootstraps a minimal movable
+Workspace with checksum-bound `project.json`, cached descriptor/Desired
+Manifest, Capsule registry, root policy/CLI and `capsules/`. Same-filesystem
+staging, fsync and atomic rename publish the Workspace. Repeating an identical
+bootstrap is idempotent; corrupt, partial or different identity fails without
+overwrite. The design-reserved Installed Lock path is declared but no lock,
+sync state or acknowledgement is created.
+
+Legacy extracted directories or ZIPs can be copied into
+`capsules/<workflow_definition_id>/<workflow_instance_id>/<capsule_version>/`.
+Adoption validates Project/Package/Workflow identity, frozen UUIDv5 instance,
+exact Capsule pin, manifest checksums, every immutable file, required helpers,
+and mutable policy. It rejects traversal, absolute/portable-colliding paths,
+symlinks, hardlinks, special files, archive bombs, credentials, immutable
+drift, and target conflict. It preserves source, outputs, memory, Progress and
+receipts and does not execute Package code. The accepted standalone/adopted
+Package launcher is unchanged.
+
+Qualification used an isolated loopback PostgreSQL 18.1 cluster and fictional
+temporary files only. B1/B2 destructive migration gates passed separately;
+current `0009` restart/reload and Alembic no-drift passed. Targeted legacy and
+Workspace regressions passed, full backend passed with only the four existing
+external integration/live gates, and frontend typecheck/Vitest/ESLint/build
+passed. Three manual drills passed bootstrap/idempotency, adoption/source hash,
+and injected descriptor/copy failure recovery. No `.env`, owner database,
+ProjectDB, external Provider, network research, frontend source, Hosted
+execution, or push was used.
+
+ADR 0023 freezes the one bootstrap route, promoted local descriptor, minimal
+registry, CLI commands and copy-preserving adoption boundary. NIGHT-B4 remains
+owner-gated: pull sync, Manifest diff, general Capsule delivery/installation,
+Installed Lock, acknowledgement and recovery are still unimplemented, as are
+Progress aggregation, Artifact handoff, Idea Discovery, Skills/Resources and
+frontend Workflow management.
+
+### Prior milestone — NIGHT-B2 cloud Desired Project state qualified
 
 NIGHT-B2 continued directly on clean `main` from B1 anchor
 `6a7578b6d6d1da6cb1b97ef0bebf0b599a1ce349`. Migration `20260806_0009`
@@ -119,10 +168,11 @@ remain the pre-existing separately gated integration/live-provider cases. No
 `.env`, credential, owner database, ProjectDB, external network, Provider,
 frontend, Hosted execution, Workspace filesystem or sync path was used.
 
-NIGHT-B2 does not authorize B3 or any later slice. Workspace bootstrap, legacy
-Package adoption, Workspace identity files, local sync/install, Installed Lock,
-Progress aggregation, Artifact handoff, Idea Discovery, Skills/Resources,
-frontend changes, production and R3D remain unimplemented pending owner review.
+NIGHT-B2 did not itself authorize later slices. The owner subsequently accepted
+B2 and authorized the bounded B3 bootstrap/adoption work described above.
+Local sync/install, Installed Lock, Progress aggregation, Artifact handoff,
+Idea Discovery, Skills/Resources, frontend changes, production and R3D remain
+unimplemented pending separate owner review.
 
 ### Prior milestone — NIGHT-B1 Workspace persistence foundation qualified
 
