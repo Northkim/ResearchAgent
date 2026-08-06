@@ -60,7 +60,8 @@ this engineering order.
 | MVP-LS1 | Complete autonomous Literature Search round | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — one Package command runs one bounded local Codex round, normal OpenAlex-only or explicit fictional demo transport, four local outputs, one automatic idempotent report upload, verified projection, and guided UI; no Hosted/cloud research execution |
 | MVP-LS2 | Interactive Codex Literature Search experience | **PASS_WITH_WARNINGS — READY FOR OWNER ACCEPTANCE** — default Package command attaches Codex to the current terminal, gates search/final writing on owner checkpoints, validates a versioned completion artifact, cleans up interrupts, preserves explicit auto/recovery modes, and retains the LS1 cloud/local boundary |
 | MVP-LS2.1 | Fresh post-round upload authorization | **PASS_WITH_WARNINGS — OWNER ACCEPTANCE PENDING** — ADR 0021 separates search and exact-report upload sessions, safely reconciles expiry/response loss without rerunning Codex or search, and makes no-report cloud uncertainty explicit; zero live OpenAlex use |
-| ARCH-D1 | Hybrid Project Workspace and Workflow Capsule design | **DESIGN COMPLETE — IMPLEMENTATION NOT AUTHORIZED** — ADR 0022 defines one logical Workspace per Project, isolated versioned Capsules per Workflow Instance, desired-manifest versus installed-lock state, typed immutable Artifact references, built-in reviewed Skill pins, local-resolved Resource metadata, pull sync, additive compatibility, and the bounded implementation sequence |
+| ARCH-D1 | Hybrid Project Workspace and Workflow Capsule design | **DESIGN COMPLETE; NIGHT-B1 FOUNDATION IMPLEMENTED** — ADR 0022 defines one logical Workspace per Project, isolated versioned Capsules per Workflow Instance, desired-manifest versus installed-lock state, typed immutable Artifact references, built-in reviewed Skill pins, local-resolved Resource metadata, pull sync, additive compatibility, and the bounded implementation sequence; all later slices remain owner-gated |
+| NIGHT-B1 | Project Workspace persistence foundation | **PASS — OWNER REVIEW REQUIRED** — additive migration `20260806_0008`, local Workflow Definition/version, Capsule version, Project Workflow Instance, deterministic legacy Literature Search mapping, repository/UoW, isolated PostgreSQL restart and full backend regression; no API, frontend, Workspace/sync, Progress or new Workflow implementation |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -91,8 +92,13 @@ verified materialization. Initial Skills remain built-in/reviewed; external
 Resources are metadata resolved with local credentials. Device tracking,
 automatic cross-device sync/backup, general Artifact upload, imported Skill
 execution, deep external connectors, and every new Workflow remain deferred.
-The first reviewable implementation slice is additive identity/catalog/
-instance persistence only; `IMPLEMENTATION_AUTHORIZED = false`.
+The first reviewable implementation slice is now qualified as NIGHT-B1:
+additive identity/catalog/Capsule/instance persistence with deterministic
+legacy mapping. This does not authorize any later ARCH-D1 phase; APIs,
+Manifest mutation, Workspace bootstrap/sync, Progress aggregation, frontend
+framework, Idea Discovery, Artifact handoff, Resources and Skills remain
+closed pending owner review. `IMPLEMENTATION_AUTHORIZED_FOR_LATER_PHASES =
+false`.
 
 R2A now reconciles the v0.1 mismatch without rewriting history. Native v0.2
 uses deterministic non-cyclic report identity and exact context-before/context-

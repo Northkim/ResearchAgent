@@ -84,7 +84,48 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — ARCH-D1 hybrid Workspace/Capsule design complete
+### Current milestone — NIGHT-B1 Workspace persistence foundation qualified
+
+NIGHT-B1 began from clean `main` at exact commit
+`e880d40ec73f07198f7b064afd898982a3357e16`. Migration `20260806_0008`
+additively introduces `local_workflow_definitions`,
+`local_workflow_definition_versions`, `local_workflow_capsule_versions`, and
+`project_workflow_instances` as a distinct local-product namespace. No Hosted
+WorkflowRun, StepRun, or Artifact provenance is reused.
+
+The accepted Literature Search compatibility seed binds Workflow version
+`0.3.0` and Package/Capsule compatibility version `0.5.0` to exact canonical
+checksums derived by the existing Workflow Package serializer. Capsule trust is
+`TRUSTED_BUILT_IN_UNSIGNED`; no signatures, third-party Capsules, or execution
+were added. Legacy Projects map through UUIDv5 namespace
+`85a011a0-88cd-54b9-a649-7ccc9ed2d966` and canonical name
+`legacy-workflow-instance/v1|project=<project_id>|workflow=LITERATURE_SEARCH`.
+Package identity, checksums, time, project name, and topic do not affect that
+instance identity.
+
+The migration backfills exactly one local Workflow Instance per supported
+legacy Project without rewriting LocalProject or Progress values. A Project
+without a Package remains a valid uninstalled instance; a current Package adds
+only compatibility metadata. The additive SQLAlchemy repository/UoW supports
+exact definition/version/Capsule lookup, stable-key lookup, project instance
+listing, multiple same-type instances, idempotent reconciliation, immutable
+conflict detection, and rollback. Existing LocalProject services do not dual
+write or switch to these repositories.
+
+An isolated loopback PostgreSQL 18.1 cluster qualified empty and populated
+upgrade, downgrade/re-upgrade, repeated seed/backfill, rollback, physical
+restart/reload, sole head, and no drift. Full backend result was `608 passed,
+4 skipped`; all Phase 1 and PostgreSQL tests ran. The four skips were unchanged
+integration cases requiring separate destructive E2E or live-provider
+authorization. No `.env`, credential, ProjectDB, owner database, external
+network, or Provider was accessed.
+
+NIGHT-B1 implements persistence foundations only. APIs, Manifest mutation,
+Workspace files/bootstrap, sync/install, Progress changes, frontend, Idea
+Discovery, Artifact handoff/bytes, Resource resolvers, Skill upload/execution,
+production, and R3D remain unimplemented and unauthorized pending owner review.
+
+### Prior milestone — ARCH-D1 hybrid Workspace/Capsule design complete
 
 ARCH-D1 began from clean `main` at exact commit
 `864c0a1c342f0646fe5b186307683d704bd5b37c` and remained documentation-only.
