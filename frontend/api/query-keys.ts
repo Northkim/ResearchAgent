@@ -8,6 +8,10 @@ export const queryKeys = {
   workflowDefinitions: ["workflow-definitions"] as const,
   projectWorkflowInstances: (projectId: string) =>
     ["projects", projectId, "workflow-instances"] as const,
+  projectArtifactReferences: (projectId: string, artifactType: string) =>
+    ["projects", projectId, "artifact-references", artifactType] as const,
+  artifactDependencies: (projectId: string, workflowInstanceId: string) =>
+    ["projects", projectId, "workflow-instances", workflowInstanceId, "artifact-dependencies"] as const,
   workflows: ["workflows"] as const,
   runs: ["runs"] as const,
   run: (runId: string) => ["runs", runId] as const,

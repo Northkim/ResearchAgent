@@ -121,6 +121,48 @@ export function useRetireProjectWorkflowInstance(projectId: string) {
   });
 }
 
+export function useProjectArtifactReferences(projectId: string, artifactType: string) {
+  return useQuery({
+    queryKey: queryKeys.projectArtifactReferences(projectId, artifactType),
+    queryFn: () => apiClient.listProjectArtifactReferences(projectId, { artifactType }),
+    retry: false,
+  });
+}
+
+export function useArtifactDependencies(projectId: string, workflowInstanceId: string) {
+  return useQuery({
+    queryKey: queryKeys.artifactDependencies(projectId, workflowInstanceId),
+    queryFn: () => apiClient.listArtifactDependencies(projectId, workflowInstanceId),
+    retry: false,
+  });
+}
+
+export function useBindArtifactDependency(projectId: string, workflowInstanceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      artifactId: string;
+      replaceBindingId?: string;
+      idempotencyKey: string;
+    }) => apiClient.bindArtifactDependency(projectId, workflowInstanceId, {
+      requirement_key: "paper_library",
+      artifact_id: payload.artifactId,
+      idempotency_key: payload.idempotencyKey,
+      replace_binding_id: payload.replaceBindingId,
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.artifactDependencies(projectId, workflowInstanceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", projectId, "progress"],
+        }),
+      ]);
+    },
+  });
+}
+
 export function useProgressReports(projectId: string) {
   return useQuery({
     queryKey: queryKeys.projectProgressReports(projectId),

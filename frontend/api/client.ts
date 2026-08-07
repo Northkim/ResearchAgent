@@ -20,6 +20,9 @@ import type {
   WorkflowCatalogPage,
   ProjectWorkflowInstance,
   ProjectWorkflowInstancePage,
+  CanonicalArtifactPage,
+  ArtifactDependencyBinding,
+  ArtifactDependencyPage,
 } from "@/types/api";
 
 const API_BASE = "/backend";
@@ -156,6 +159,45 @@ export const apiClient = {
     return request(
       `/projects/${encodeURIComponent(projectId)}/workflow-instances/${encodeURIComponent(instanceId)}/retire`,
       { method: "POST", body: JSON.stringify({ base_revision: baseRevision }) },
+    );
+  },
+
+  listProjectArtifactReferences(
+    projectId: string,
+    options: { artifactType?: string; workflowInstanceId?: string } = {},
+  ): Promise<CanonicalArtifactPage> {
+    return request(`/projects/${encodeURIComponent(projectId)}/artifacts${queryString({
+      artifact_type: options.artifactType,
+      workflow_instance_id: options.workflowInstanceId,
+      state: "AVAILABLE",
+      limit: 100,
+    })}`);
+  },
+
+  listArtifactDependencies(
+    projectId: string,
+    workflowInstanceId: string,
+  ): Promise<ArtifactDependencyPage> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/artifact-dependencies`,
+    );
+  },
+
+  bindArtifactDependency(
+    projectId: string,
+    workflowInstanceId: string,
+    payload: {
+      requirement_key: string;
+      artifact_id: string;
+      idempotency_key: string;
+      replace_binding_id?: string;
+    },
+  ): Promise<ArtifactDependencyBinding> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/artifact-dependencies`,
+      { method: "POST", body: JSON.stringify(payload) },
     );
   },
 

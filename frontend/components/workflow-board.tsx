@@ -19,6 +19,9 @@ import { PageHeader } from "./page-header";
 import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
+import { IdeaDiscoverySetup } from "./idea-discovery-setup";
+
+const IDEA_DISCOVERY_WORKFLOW_ID = "idea-discovery-local-experimental";
 
 function shortIdentity(value: string): string {
   return value.slice(-8);
@@ -134,6 +137,17 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                     <div><dt>Reports</dt><dd>{state?.report_count ?? 0}</dd></div>
                     <div><dt>Latest activity</dt><dd>{state?.latest_activity_at ? formatDateTime(state.latest_activity_at) : "None"}</dd></div>
                   </dl>
+                  {instance.workflow_definition_id === IDEA_DISCOVERY_WORKFLOW_ID ? (
+                    <IdeaDiscoverySetup
+                      projectId={projectId}
+                      instance={instance}
+                      instances={instances.data.items}
+                      installationState={state?.installation_state ?? "UNKNOWN"}
+                      dependencies={progress.data.dependency_edges.filter(
+                        (item) => item.consumer_workflow_instance_id === instance.workflow_instance_id,
+                      )}
+                    />
+                  ) : null}
                   <div className="button-row">
                     <Link href={`/projects/${projectId}/progress?workflow_instance_id=${encodeURIComponent(instance.workflow_instance_id)}`} className="button button-secondary">View progress</Link>
                     {instance.desired_state === "ACTIVE" ? (

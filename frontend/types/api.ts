@@ -436,7 +436,7 @@ export interface ProjectProgress {
   history_limit: number;
   history_total: number;
   has_more_history: boolean;
-  dependency_edges: Record<string, unknown>[];
+  dependency_edges: ArtifactDependencyEdge[];
   latest_status: string | null;
   latest_execution_round: number | null;
   current_state_summary: string | null;
@@ -445,4 +445,78 @@ export interface ProjectProgress {
   output_artifacts: ProgressOutputArtifact[];
   warning_count: number;
   error_count: number;
+}
+
+export interface ArtifactDependencyEdge {
+  binding_id: string;
+  consumer_workflow_instance_id: string;
+  requirement_key: string;
+  artifact_id: string;
+  expected_checksum: string;
+  state: string;
+  producer_workflow_instance_id: string;
+  artifact_type: string;
+  artifact_schema_version: string;
+  produced_at: string;
+}
+
+export interface CanonicalArtifactReference {
+  schema_version: string;
+  artifact_id: string;
+  project_id: string;
+  producer_workflow_instance_id: string;
+  producer_progress_receipt_id: string;
+  producer_progress_report_id: string;
+  producer_execution_round: number;
+  producer_capsule_id: string;
+  producer_capsule_version: string;
+  artifact_type: string;
+  artifact_schema_version: string;
+  media_type: string;
+  state: string;
+  relative_path: string;
+  content_checksum: string;
+  size_bytes: number;
+  cloud_metadata_available: boolean;
+  produced_at: string;
+  retired_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CanonicalArtifactPage {
+  schema_version: string;
+  project_id: string;
+  artifacts: CanonicalArtifactReference[];
+  offset: number;
+  limit: number;
+  total: number;
+  has_more: boolean;
+}
+
+export interface ArtifactDependencyBinding {
+  binding_id: string;
+  project_id: string;
+  consumer_workflow_instance_id: string;
+  consumer_workflow_definition_id: string;
+  consumer_workflow_version: string;
+  requirement_key: string;
+  artifact_id: string;
+  expected_checksum: string;
+  state: string;
+  idempotency_key: string;
+  created_at: string;
+  updated_at: string;
+  retired_at: string | null;
+}
+
+export interface ArtifactDependencyPage {
+  schema_version: string;
+  project_id: string;
+  consumer_workflow_instance_id: string;
+  dependencies: ArtifactDependencyBinding[];
+  offset: number;
+  limit: number;
+  total: number;
+  has_more: boolean;
 }
