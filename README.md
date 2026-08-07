@@ -46,12 +46,57 @@ credential. Do not put project-specific configuration in `~/.zshrc`.
 The complete owner flow, one-round command, and recovery behavior are in
 [`docs/getting-started/LOCAL_V0_1.md`](docs/getting-started/LOCAL_V0_1.md).
 
-## Optional long-lived Project Workspace
+## Product quick start: Literature Search to Idea Discovery
+
+This is the normal long-lived Project flow. It needs no manual editing of
+`project.json`, locks, indexes, receipts, or Progress JSON.
+
+1. Open <http://127.0.0.1:3000/projects>, create a Project, and open its Help
+   page.
+2. Download **Workspace setup**, keep the filename
+   `workspace-bootstrap.json`, and run the copyable command shown in Help:
+
+   ```bash
+   python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json
+   cd ./reagent-workspace
+   python reagent_local.py sync .
+   python reagent_local.py workflow list .
+   ```
+
+3. Use the Literature Search run command printed by `workflow list`. Review
+   the search plan and paper selection interactively, then type `finish` only
+   when the selected set is ready. A successful finish creates the reusable
+   selected paper library and uploads bounded Progress metadata.
+4. In the Workflow Board, add **Idea Discovery**. The browser changes Cloud
+   configuration only. Back in the Local Workspace, run:
+
+   ```bash
+   python reagent_local.py sync .
+   ```
+
+5. On the Idea Discovery card, explicitly confirm one Literature Search result.
+   Then run its copyable local commands:
+
+   ```bash
+   python reagent_local.py artifact refresh .
+   python reagent_local.py artifact materialize . --workflow idea-discovery-local-experimental
+   python reagent_local.py run . --workflow idea-discovery-local-experimental
+   ```
+
+6. To continue on another day, open the same Local Workspace and run
+   `python reagent_local.py workflow list .`. Local memory and Progress—not
+   chat history—identify the next step.
+
+The friendly `--workflow` selector is accepted only when exactly one active
+local instance of that Workflow exists. If a Project deliberately has multiple
+instances of the same type, `workflow list` fails closed to exact
+`--workflow-instance` commands. Existing exact-ID commands remain supported.
+
+## Legacy Package compatibility
 
 The existing downloaded Literature Search Package remains directly runnable.
-NIGHT-B3 also permits a Project to initialize its canonical long-lived local
-Workspace and non-destructively copy the same verified Package into its frozen
-Workflow Capsule path:
+A Project can also non-destructively copy the same verified Package into its
+long-lived Workspace:
 
 ```bash
 python reagent_local.py bootstrap "$WORKSPACE_DIR" --descriptor workspace-bootstrap.json
@@ -59,9 +104,9 @@ python reagent_local.py adopt "$LEGACY_PACKAGE" "$WORKSPACE_DIR"
 python reagent_local.py sync "$WORKSPACE_DIR"
 ```
 
-Obtain `workspace-bootstrap.json` from the repository-backed
-`GET /projects/{project_id}/workspace-bootstrap` endpoint after generating the
-Package. The source Package is not moved, rewritten, deleted, or executed during
+Download `workspace-bootstrap.json` from the Project Overview or Help page.
+The underlying API remains `GET /projects/{project_id}/workspace-bootstrap`.
+The source Package is not moved, rewritten, deleted, or executed during
 adoption; declared outputs, memory, Progress and receipts are preserved. The
 adopted Capsule retains the original `python reagent_local.py run .` command.
 

@@ -30,7 +30,7 @@ test("creates metadata-only Literature Search project from the form", async () =
     localProjectFixture.research_topic,
   );
   expect(screen.getByRole("combobox", { name: /^Workflow/ })).toHaveValue("LITERATURE_SEARCH");
-  await user.click(screen.getByRole("button", { name: "Create local project" }));
+  await user.click(screen.getByRole("button", { name: "Create project" }));
   expect(create).toHaveBeenCalledWith({
     name: localProjectFixture.name,
     research_topic: localProjectFixture.research_topic,

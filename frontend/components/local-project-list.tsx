@@ -14,9 +14,9 @@ export function LocalProjectList() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="ReAgent V0.1 · local workspace"
+        eyebrow="ReAgent · local workspace"
         title="Research stays in your folder."
-        description="Create a Literature Search project, download its credential-free Workflow Package, and run one complete local Codex round with automatic Progress upload."
+        description="Create a Project, run Literature Search locally, and add Idea Discovery when a selected paper library is ready. Cloud keeps bounded continuity; your complete research stays local."
         action={
           <Link href="/projects/new" className="button button-primary">
             Create project
@@ -34,7 +34,7 @@ export function LocalProjectList() {
       {projects.data?.length === 0 ? (
         <EmptyState
           title="No local projects yet"
-          message="Create a Literature Search project to generate your first portable Workflow Package."
+          message="Create a Project to start Literature Search and set up a Local Workspace."
         />
       ) : null}
       {projects.data && projects.data.length > 0 ? (
@@ -42,7 +42,7 @@ export function LocalProjectList() {
           {projects.data.map((project) => (
             <article className="project-card" key={project.project_id}>
               <div className="project-card-topline">
-                <span>Literature Search</span>
+                <span>Research Project</span>
                 <span className={`local-status ${project.progress ? "local-status-active" : ""}`}>
                   {project.progress?.latest_status ?? (project.current_package ? "PACKAGE READY" : "NOT STARTED")}
                 </span>

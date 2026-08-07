@@ -27,8 +27,8 @@ test("renders Registry-driven Workflow cards and keeps planned definitions disab
   arrange();
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
 
-  expect(await screen.findByRole("heading", { name: "Cloud-managed research configuration" })).toBeVisible();
-  expect(screen.getByText(`Instance ${workflowInstanceId.slice(-8)}`)).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Your Project workflows" })).toBeVisible();
+  expect(screen.getByText("Next: Review the latest result")).toBeVisible();
   expect(screen.getByText("Completed")).toBeVisible();
   expect(screen.getByText("Cloud desired")).toBeVisible();
   expect(screen.getByText("Installed · current")).toBeVisible();
@@ -64,8 +64,7 @@ test("distinguishes two Instances of the same Workflow Definition", async () => 
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
 
   expect(await screen.findByText("Literature Search B")).toBeVisible();
-  expect(screen.getByText(`Instance ${workflowInstanceId.slice(-8)}`)).toBeVisible();
-  expect(screen.getByText(`Instance ${secondId.slice(-8)}`)).toBeVisible();
+  expect(screen.getAllByText("Technical details")).toHaveLength(2);
 });
 
 test("refreshes on Manifest revision conflict and never attempts a browser-local write", async () => {
@@ -92,7 +91,7 @@ test("refreshes on Manifest revision conflict and never attempts a browser-local
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
 
   await userEvent.click(await screen.findByRole("button", { name: "Add workflow" }));
-  expect(await screen.findByText(/Manifest changed elsewhere/)).toBeVisible();
+  expect(await screen.findByText(/Project changed elsewhere/)).toBeVisible();
   expect(create).toHaveBeenCalledWith(
     localProjectFixture.project_id,
     expect.objectContaining({ base_revision: 1 }),

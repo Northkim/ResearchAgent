@@ -9,14 +9,18 @@ import { localProjectFixture } from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
-test("states the Cloud/local boundary and only current executable scope", async () => {
+test("guides setup, multi-Workflow work, continuation, and Cloud/local boundaries", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
   render(<Providers><ProjectHelp projectId={localProjectFixture.project_id} /></Providers>);
 
-  expect(await screen.findByRole("heading", { name: "Configuration and continuity" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Complete research state" })).toBeVisible();
-  expect(screen.getAllByText("python reagent_local.py sync .")).toHaveLength(2);
-  expect(screen.getByText(/browser cannot write to your computer/i)).toBeVisible();
-  expect(screen.getByText(/does not upload, verify, or back up the complete Workspace/)).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Projects and continuity" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Your complete research files" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Download Workspace setup" })).toHaveAttribute(
+    "href", `/backend/projects/${localProjectFixture.project_id}/workspace-bootstrap`,
+  );
+  expect(screen.getByText(/browser never runs sync/i)).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Cloud continuity is not backup" })).toBeVisible();
+  expect(screen.getByText(/Literature Search 0.3.0/)).toBeVisible();
+  expect(screen.getAllByText("python reagent_local.py workflow list .")).toHaveLength(2);
   expect(screen.getByRole("link", { name: "Help" })).toHaveAttribute("aria-current", "page");
 });

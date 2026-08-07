@@ -26,14 +26,15 @@ Progress Report bytes, not the complete Workspace.
 
 ## Download a bootstrap descriptor
 
-Use the canonical Project ID from the product. The read-only endpoint is:
+Open the Project **Overview** or **Help** page and choose **Download Workspace
+setup**. Save the response as `workspace-bootstrap.json`. The underlying
+read-only endpoint, useful for automation, is:
 
 ```text
 GET /projects/{project_id}/workspace-bootstrap
 ```
 
-For example, save the JSON response as `workspace-bootstrap.json` using an HTTP
-client. Generate the Package first when the descriptor should authorize that
+Generate the Package first when the descriptor should authorize that
 exact Package for adoption. A descriptor downloaded before Package generation
 can still bootstrap identity; download a fresh descriptor and pass it to
 `adopt --descriptor` when adopting later.
@@ -78,6 +79,13 @@ python reagent_local.py workspace status "$WORKSPACE_DIR"
 ```
 
 Add `--json` to any command for one stable machine-readable result on stdout.
+
+Discover installed Workflows and their local next action without copying IDs
+from JSON:
+
+```bash
+python reagent_local.py workflow list "$WORKSPACE_DIR"
+```
 
 ## Explicitly synchronize desired Capsules
 
@@ -179,8 +187,17 @@ name or current working directory.
 
 ## Run an exact Workspace Workflow
 
-For a synchronized Workspace, preflight or run an installed instance without
-inferring identity from its directory:
+For a synchronized Workspace, use the stable Workflow key when exactly one
+active local instance matches:
+
+```bash
+python reagent_local.py run "$WORKSPACE_DIR" \
+  --workflow literature-search-local-experimental --preflight-only
+```
+
+If multiple active instances of the same Workflow exist, the friendly selector
+fails closed. `workflow list` then prints exact commands. Existing exact-ID
+commands remain accepted:
 
 ```bash
 python reagent_local.py run "$WORKSPACE_DIR" \
@@ -214,8 +231,9 @@ Stable exit classes are:
 - `60`: filesystem conflict, unsafe path, or recoverable partial state;
 - `70`: unexpected internal failure.
 
-Errors print a safe stage and application code. They do not print credentials,
-database URLs, tokens, or complete sensitive request URLs.
+Errors explain what happened, why the operation stopped, the next safe action,
+and a stable application code. They do not print credentials, database URLs,
+tokens, or complete sensitive request URLs.
 
 Sync additionally uses `.reagent/sync/current.json` as a checksummed recovery
 journal and an OS advisory lock at `.reagent/runtime/sync.lock`. Staging is not

@@ -60,19 +60,24 @@ target is `inputs/selected-paper-library.json`, copied and checksum verified.
 
    ```bash
    python reagent_local.py artifact materialize . \
-     --workflow-instance <idea-instance-id> --dry-run
+     --workflow idea-discovery-local-experimental --dry-run
    python reagent_local.py artifact materialize . \
-     --workflow-instance <idea-instance-id>
+     --workflow idea-discovery-local-experimental
    ```
 
 8. Preflight and run the exact local Capsule:
 
    ```bash
    python reagent_local.py run . \
-     --workflow-instance <idea-instance-id> --preflight-only
+     --workflow idea-discovery-local-experimental --preflight-only
    python reagent_local.py run . \
-     --workflow-instance <idea-instance-id>
+     --workflow idea-discovery-local-experimental
    ```
+
+The stable key is a convenience, not a relaxed identity check: it resolves
+only when exactly one active local Idea Discovery instance exists. With
+multiple same-type instances, `python reagent_local.py workflow list .` prints
+the exact `--workflow-instance` commands and ambiguous selection fails closed.
 
 The browser never performs sync, materialization or Codex execution.
 

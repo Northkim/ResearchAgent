@@ -2,9 +2,12 @@
 
 import Link from "next/link";
 
+import { apiClient } from "@/api/client";
 import { useProject, useProjectProgress } from "@/api/hooks";
 import { formatDateTime } from "@/lib/format";
+import { deriveWorkflowNextAction } from "@/lib/workflow-next-action";
 
+import { CopyCommand } from "./copy-command";
 import { PageHeader } from "./page-header";
 import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
@@ -25,7 +28,22 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
     .filter((item) => item.latest_activity_at)
     .sort((left, right) => (right.latest_activity_at ?? "").localeCompare(left.latest_activity_at ?? ""))
     .slice(0, 3);
-  const firstRunnable = projection.instances.find((item) => item.lifecycle === "ACTIVE");
+  const actions = projection.instances
+    .filter((item) => item.lifecycle === "ACTIVE")
+    .map((item) => ({
+      instance: item,
+      action: deriveWorkflowNextAction({
+        instance: { desired_state: item.lifecycle },
+        progress: item,
+        requiresInput: item.workflow_definition_id === "idea-discovery-local-experimental",
+        dependencies: projection.dependency_edges.filter(
+          (edge) => edge.consumer_workflow_instance_id === item.workflow_instance_id,
+        ),
+      }),
+    }))
+    .sort((left, right) => left.action.priority - right.action.priority);
+  const recommended = actions[0];
+  const bootstrapCommand = "python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json";
 
   return (
     <div className="page-stack">
@@ -41,7 +59,7 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
         <div>
           <p className="eyebrow">Overview</p>
           <h2 id="project-state-title">Your research workflows at a glance</h2>
-          <p>Research progress is reported by each Workflow Instance. Local installation is shown separately and never counts as research completion.</p>
+          <p>Research progress is reported by each Workflow. Local installation is shown separately and never counts as research completion.</p>
         </div>
         <dl className="overview-counts">
           <div><dt>Active</dt><dd>{projection.active_workflow_count}</dd></div>
@@ -55,17 +73,27 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
       <section className="overview-grid">
         <article>
           <p className="eyebrow">Recommended next action</p>
-          <h2>{firstRunnable?.next_recommended_action ?? (data.current_package ? "Run or review Literature Search" : "Prepare Literature Search locally")}</h2>
-          <p>{firstRunnable?.latest_summary ?? "No Workflow Progress has been uploaded yet. Cloud cannot inspect the local Workspace."}</p>
+          <h2>{recommended?.action.title ?? "Set up your Local Workspace"}</h2>
+          <p>{recommended?.action.description ?? "Download the Workspace setup file, then bootstrap it locally. Cloud cannot inspect local files."}</p>
           <div className="button-row">
             <Link href={`/projects/${projectId}/workflows`} className="button button-primary">Open workflows</Link>
             <Link href={`/projects/${projectId}/help`} className="button button-ghost">Local workflow help</Link>
           </div>
         </article>
         <article>
-          <p className="eyebrow">Cloud desired state</p>
-          <h2>Manifest revision {projection.manifest_revision}</h2>
-          <p>The browser records desired Workflow configuration. Run <code>python reagent_local.py sync .</code> in the Workspace to reconcile local Capsules.</p>
+          <p className="eyebrow">First local setup</p>
+          <h2>Create your Local Workspace</h2>
+          <p>Download this Project&apos;s setup file once. The command creates a separate local folder; it does not upload research files.</p>
+          <div className="button-row">
+            <a
+              href={apiClient.workspaceBootstrapDownloadUrl(projectId)}
+              download="workspace-bootstrap.json"
+              className="button button-secondary"
+            >
+              Download setup file
+            </a>
+          </div>
+          <CopyCommand command={bootstrapCommand} label="Workspace bootstrap command" />
         </article>
         <article>
           <p className="eyebrow">Latest project activity</p>
@@ -77,7 +105,7 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
 
       <section className="recent-workflows" aria-labelledby="recent-workflows-title">
         <div className="section-heading">
-          <div><p className="eyebrow">Recent workflow progress</p><h2 id="recent-workflows-title">Independent instance state</h2></div>
+          <div><p className="eyebrow">Recent workflow progress</p><h2 id="recent-workflows-title">Independent Workflow status</h2></div>
           <Link href={`/projects/${projectId}/workflows`} className="text-link">View all workflows →</Link>
         </div>
         {recent.length ? (
@@ -85,11 +113,15 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
             {recent.map((item) => (
               <article className="workflow-card" key={item.workflow_instance_id}>
                 <div className="workflow-card-heading">
-                  <div><h3>{item.instance_display_name}</h3><code>{item.workflow_instance_id.slice(-8)}</code></div>
+                  <div><h3>{item.instance_display_name}</h3></div>
                   <WorkflowStatusBadge value={item.research_status} dimension="research" />
                 </div>
                 <p>{item.latest_summary ?? "No summary reported."}</p>
                 <time>{item.latest_activity_at ? formatDateTime(item.latest_activity_at) : "No activity"}</time>
+                <details className="technical-details compact-technical-details">
+                  <summary>Technical identity</summary>
+                  <code>{item.workflow_instance_id}</code>
+                </details>
               </article>
             ))}
           </div>

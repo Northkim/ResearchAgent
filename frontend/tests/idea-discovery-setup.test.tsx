@@ -34,7 +34,7 @@ function artifact(id: string, producer: string, checksumCharacter: string): Cano
     artifact_type: "selected-paper-library/v1",
     artifact_schema_version: "selected-paper-library/v1",
     media_type: "application/json",
-    state: "AVAILABLE",
+    state: "LOCAL_AVAILABLE",
     relative_path: `outputs/artifacts/selected-paper-library/sha256-${checksumCharacter.repeat(64)}.json`,
     content_checksum: `sha256:${checksumCharacter.repeat(64)}`,
     size_bytes: 1234,
@@ -84,8 +84,9 @@ test("explains the production prerequisite when no compatible Artifact exists", 
       />
     </Providers>,
   );
-  expect(await screen.findByText(/requires a completed compatible Literature Search 0.4.0 Artifact/)).toBeVisible();
-  expect(screen.queryByRole("button", { name: /Bind selected/ })).not.toBeInTheDocument();
+  expect(await screen.findByText(/needs a completed paper library from Literature Search 0.4.0/)).toBeVisible();
+  expect(screen.getByText(/legacy Literature Search 0.3.0/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: /Confirm selected/ })).not.toBeInTheDocument();
 });
 
 test("requires an explicit choice when two compatible Artifacts exist", async () => {
@@ -128,7 +129,7 @@ test("requires an explicit choice when two compatible Artifacts exist", async ()
 
   const radios = await screen.findAllByRole("radio");
   expect(radios).toHaveLength(2);
-  const button = screen.getByRole("button", { name: "Bind selected Artifact" });
+  const button = screen.getByRole("button", { name: "Confirm selected input" });
   expect(button).toBeDisabled();
   await userEvent.click(radios[1]);
   await userEvent.click(button);
@@ -140,8 +141,8 @@ test("requires an explicit choice when two compatible Artifacts exist", async ()
       artifact_id: choices[1].artifact_id,
     }),
   );
-  expect(await screen.findByText(/specific Artifact and checksum bound/i)).toBeVisible();
-  expect(screen.getByText(/Materialization remains an explicit local step/i)).toBeVisible();
+  expect(await screen.findByText(/Input selected/)).toBeVisible();
+  expect(screen.getByText(/prepare the verified copy/i)).toBeVisible();
 });
 
 test("shows a bounded error instead of selecting an Artifact implicitly", async () => {
@@ -160,8 +161,65 @@ test("shows a bounded error instead of selecting an Artifact implicitly", async 
     </Providers>,
   );
   await userEvent.click(await screen.findByRole("radio"));
-  await userEvent.click(screen.getByRole("button", { name: "Bind selected Artifact" }));
-  expect(await screen.findByText(/could not be bound/)).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Confirm selected input" }));
+  expect(await screen.findByText(/could not be saved/)).toBeVisible();
+});
+
+test("recommends the sole compatible result but still requires confirmation", async () => {
+  const choice = artifact(`artifact-${"e".repeat(32)}`, workflowInstancesFixture.items[0].workflow_instance_id, "e");
+  arrange([choice]);
+  const bind = vi.spyOn(apiClient, "bindArtifactDependency");
+  render(
+    <Providers>
+      <IdeaDiscoverySetup
+        projectId={localProjectFixture.project_id}
+        instance={ideaInstance}
+        instances={[...workflowInstancesFixture.items, ideaInstance]}
+        installationState="ACKNOWLEDGED_CURRENT"
+        dependencies={[]}
+      />
+    </Providers>,
+  );
+  expect(await screen.findByText(/Recommended: this is the only compatible result/)).toBeVisible();
+  expect(screen.getByRole("radio")).toBeChecked();
+  expect(screen.getByRole("button", { name: "Confirm selected input" })).toBeEnabled();
+  expect(bind).not.toHaveBeenCalled();
+});
+
+test("shows stable-key local commands for the normal single-instance path", async () => {
+  const choice = artifact(`artifact-${"f".repeat(32)}`, workflowInstancesFixture.items[0].workflow_instance_id, "f");
+  arrange([choice]);
+  render(
+    <Providers>
+      <IdeaDiscoverySetup
+        projectId={localProjectFixture.project_id}
+        instance={ideaInstance}
+        instances={[...workflowInstancesFixture.items, ideaInstance]}
+        installationState="ACKNOWLEDGED_CURRENT"
+        dependencies={[{
+          binding_id: `artifact-binding-${"c".repeat(32)}`,
+          consumer_workflow_instance_id: ideaInstance.workflow_instance_id,
+          requirement_key: "paper_library",
+          artifact_id: choice.artifact_id,
+          expected_checksum: choice.content_checksum,
+          state: "ACTIVE",
+          producer_workflow_instance_id: choice.producer_workflow_instance_id,
+          artifact_type: choice.artifact_type,
+          artifact_schema_version: choice.artifact_schema_version,
+          produced_at: choice.produced_at,
+        }]}
+      />
+    </Providers>,
+  );
+  expect(await screen.findByText(
+    "python reagent_local.py artifact materialize . --workflow idea-discovery-local-experimental",
+  )).toBeVisible();
+  expect(screen.getByText(
+    "python reagent_local.py run . --workflow idea-discovery-local-experimental",
+  )).toBeVisible();
+  expect(screen.getByText(
+    `python reagent_local.py run . --workflow-instance ${ideaInstance.workflow_instance_id}`,
+  )).not.toBeVisible();
 });
 
 test("shares one bounded Artifact query across multiple Idea cards", async () => {

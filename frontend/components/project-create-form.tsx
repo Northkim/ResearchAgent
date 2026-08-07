@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useCreateProject } from "@/api/hooks";
@@ -13,6 +13,11 @@ export function ProjectCreateForm() {
   const [name, setName] = useState("");
   const [topic, setTopic] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const errorRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (message) errorRef.current?.focus();
+  }, [message]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,9 +37,9 @@ export function ProjectCreateForm() {
   return (
     <div className="page-stack page-narrow">
       <PageHeader
-        eyebrow="New local project"
-        title="Define the research handoff."
-        description="Use a fictional or public topic. Creating a project records metadata only—it does not call OpenAlex, start a Workflow, or invoke a cloud model."
+        eyebrow="New research project"
+        title="Choose the topic to investigate."
+        description="Creating a Project records metadata and prepares Literature Search. It does not search OpenAlex, write local files, or start a cloud model."
       />
       <form className="product-form" onSubmit={submit} aria-busy={createProject.isPending}>
         <label>
@@ -45,6 +50,8 @@ export function ProjectCreateForm() {
             value={name}
             maxLength={160}
             onChange={(event) => setName(event.target.value)}
+            aria-describedby={message ? "project-create-error" : undefined}
+            aria-invalid={Boolean(message)}
             required
           />
         </label>
@@ -57,6 +64,8 @@ export function ProjectCreateForm() {
             maxLength={500}
             rows={5}
             onChange={(event) => setTopic(event.target.value)}
+            aria-describedby={message ? "project-create-error" : undefined}
+            aria-invalid={Boolean(message)}
             required
           />
         </label>
@@ -65,12 +74,12 @@ export function ProjectCreateForm() {
           <select name="selected_workflow" value="LITERATURE_SEARCH" disabled>
             <option value="LITERATURE_SEARCH">Literature Search</option>
           </select>
-          <small>Literature Search is the only V0.1 Workflow.</small>
+          <small>Every new Project starts with Literature Search. You can explicitly add Idea Discovery later from the Workflow Board.</small>
         </label>
-        {message ? <p className="form-error" role="alert">{message}</p> : null}
+        {message ? <p id="project-create-error" className="form-error" role="alert" tabIndex={-1} ref={errorRef}>{message}</p> : null}
         <div className="form-actions">
           <button className="button button-primary" disabled={createProject.isPending}>
-            {createProject.isPending ? "Creating…" : "Create local project"}
+            {createProject.isPending ? "Creating…" : "Create project"}
           </button>
           <button className="button button-ghost" type="button" onClick={() => router.push("/projects")}>
             Cancel

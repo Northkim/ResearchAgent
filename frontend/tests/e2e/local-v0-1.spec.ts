@@ -20,12 +20,12 @@ async function createDownloadedPackage(page: Page, work: string, label: string) 
     await page.getByRole("textbox", { name: /^Fictional or public research topic/ }).fill(
       "A fictional public topic about transparent local research continuation",
     );
-    await page.getByRole("button", { name: "Create local project" }).click();
+    await page.getByRole("button", { name: "Create project" }).click();
     await expect(page).toHaveURL(/\/projects\/project-[0-9a-f]{32}$/);
     const projectId = page.url().split("/").at(-1)!;
-    await expect(page.getByRole("heading", { name: "Eight guided steps" })).toBeVisible();
-
-    await page.getByRole("link", { name: "Generate Package" }).first().click();
+    // The current Project IA keeps the supported standalone Package route for
+    // compatibility while the primary onboarding path uses a Local Workspace.
+    await page.goto(`/projects/${projectId}/package`);
     await page.getByRole("button", { name: "Generate Package" }).click();
     await expect(page.getByText("Package ready")).toBeVisible();
     const downloadPromise = page.waitForEvent("download");
@@ -90,13 +90,13 @@ test("runs the default interactive demo through all checkpoints and displays its
     expect(resultFrom(replay).status).toBe("ROUND_ALREADY_UPLOADED");
 
     await page.goto(`/projects/${projectId}/progress`);
-    await expect(page.getByText("Round completed")).toHaveClass(/active/);
+    const activity = page.getByRole("region", { name: "Progress Report activity" });
+    await expect(activity.getByText("Completed", { exact: true })).toBeVisible();
     await expect(page.getByText("FICTIONAL DEMO EVIDENCE: three representative records selected.")).toBeVisible();
-    await expect(page.getByText("2", { exact: true })).toBeVisible();
-    await expect(page.getByText("5", { exact: true })).toBeVisible();
-    await expect(page.getByText("3", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Progress Report receipts" })).toBeVisible();
-    await expect(page.getByText(/complete artifact contents remain/)).toBeVisible();
+    await expect(activity.getByText("outputs/search_plan.md", { exact: true })).toBeVisible();
+    await expect(activity.getByText("outputs/selected_papers.json", { exact: true })).toBeVisible();
+    await expect(activity.getByText(/selected-paper-library\/v1/)).toBeVisible();
+    await expect(page.getByText(/these files remain local/)).toBeVisible();
 
     const navigation = page.getByRole("navigation", { name: "Primary navigation" });
     await expect(navigation).not.toContainText(/run|resume|approval|hosted/i);
@@ -119,7 +119,9 @@ test("preserves the explicit unattended demo path", async ({ page }) => {
     expect(first).toContain("[4/6] Launching Codex in auto mode");
     expect(resultFrom(first).status).toBe("ROUND_COMPLETED");
     await page.goto(`/projects/${projectId}/progress`);
-    await expect(page.getByText("Round completed")).toHaveClass(/active/);
+    await expect(
+      page.getByRole("region", { name: "Progress Report activity" }).getByText("Completed", { exact: true }),
+    ).toBeVisible();
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

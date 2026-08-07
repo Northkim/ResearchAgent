@@ -118,6 +118,10 @@ export const apiClient = {
     return `${API_BASE}/projects/${encodeURIComponent(projectId)}/packages/${encodeURIComponent(packageId)}/download`;
   },
 
+  workspaceBootstrapDownloadUrl(projectId: string): string {
+    return `${API_BASE}/projects/${encodeURIComponent(projectId)}/workspace-bootstrap`;
+  },
+
   getProjectProgress(
     projectId: string,
     options: { workflowInstanceId?: string; offset?: number; limit?: number } = {},
@@ -169,7 +173,6 @@ export const apiClient = {
     return request(`/projects/${encodeURIComponent(projectId)}/artifacts${queryString({
       artifact_type: options.artifactType,
       workflow_instance_id: options.workflowInstanceId,
-      state: "AVAILABLE",
       limit: 100,
     })}`);
   },

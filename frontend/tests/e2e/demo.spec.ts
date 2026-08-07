@@ -105,7 +105,7 @@ test("completes and reloads the supervised literature demo", async ({ page }, te
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Keep every research run legible." }),
+    page.getByRole("heading", { name: "Research stays in your folder." }),
   ).toBeVisible();
   expect(
     await page.evaluate(

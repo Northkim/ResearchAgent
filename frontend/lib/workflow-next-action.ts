@@ -1,0 +1,87 @@
+import type {
+  ArtifactDependencyEdge,
+  ProjectWorkflowInstance,
+  WorkflowInstanceProgress,
+} from "@/types/api";
+
+export type WorkflowNextActionCode =
+  | "SYNC"
+  | "SELECT_INPUT"
+  | "MATERIALIZE"
+  | "RUN"
+  | "CONTINUE"
+  | "REVIEW_RESULT";
+
+export interface WorkflowNextAction {
+  code: WorkflowNextActionCode;
+  title: string;
+  description: string;
+  priority: number;
+}
+
+export function deriveWorkflowNextAction({
+  instance,
+  progress,
+  requiresInput,
+  dependencies,
+}: {
+  instance: Pick<ProjectWorkflowInstance, "desired_state">;
+  progress: WorkflowInstanceProgress | undefined;
+  requiresInput: boolean;
+  dependencies: ArtifactDependencyEdge[];
+}): WorkflowNextAction {
+  if (instance.desired_state === "RETIRED") {
+    return {
+      code: "REVIEW_RESULT",
+      title: "Review retained results",
+      description: "This Workflow is retired, but its Progress and local research files remain available.",
+      priority: 60,
+    };
+  }
+  if (progress?.installation_state !== "ACKNOWLEDGED_CURRENT") {
+    return {
+      code: "SYNC",
+      title: "Set up or sync your Local Workspace",
+      description: "Download the setup file if this is your first visit; otherwise run local sync. Cloud has not confirmed the current local installation.",
+      priority: 10,
+    };
+  }
+  if (requiresInput && !dependencies.some((item) => item.state === "ACTIVE")) {
+    return {
+      code: "SELECT_INPUT",
+      title: "Select a literature input",
+      description: "Choose one specific completed Literature Search result before preparing Idea Discovery locally.",
+      priority: 20,
+    };
+  }
+  if (progress?.research_status === "COMPLETED") {
+    return {
+      code: "REVIEW_RESULT",
+      title: "Review the latest result",
+      description: "Research completion is separate from local installation and can be continued with a new explicit round.",
+      priority: 60,
+    };
+  }
+  if (progress && progress.report_count > 0) {
+    return {
+      code: "CONTINUE",
+      title: "Continue this Workflow",
+      description: progress.latest_summary ?? "Open the Local Workspace and continue from its saved memory.",
+      priority: 40,
+    };
+  }
+  if (requiresInput) {
+    return {
+      code: "MATERIALIZE",
+      title: "Prepare the selected input locally",
+      description: "Materialize the bound input explicitly, then run the Workflow. The browser cannot verify local files.",
+      priority: 30,
+    };
+  }
+  return {
+    code: "RUN",
+    title: "Run this Workflow locally",
+    description: "Open the Local Workspace with Codex or Claude Code to start the next research round.",
+    priority: 50,
+  };
+}
