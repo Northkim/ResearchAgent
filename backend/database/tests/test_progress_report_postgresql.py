@@ -124,7 +124,10 @@ def test_postgresql_concurrent_same_report_id_different_payload_fails_closed(
         rows = scope.progress_reports.list_for_project(report.project_id)
     finally:
         scope.close()
-    assert sorted(item[0] for item in outcomes) == ["accepted", "conflict"]
+    assert sorted(item[0] for item in outcomes) == ["accepted", "conflict"], [
+        (row.validation_status.value, row.validation_errors, row.chain_state.value)
+        for row in rows
+    ]
     assert len(rows) == 2
     assert {row.report_id for row in rows} == {report.report_id}
     assert sum(row.accepted_for_projection for row in rows) == 1

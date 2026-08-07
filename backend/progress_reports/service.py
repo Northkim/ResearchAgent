@@ -104,6 +104,12 @@ class ProgressReportService:
 
         identity_errors: list[str] = []
         for existing in self._repository.list_by_report_id(envelope.report_id):
+            # Rejected audit evidence is retained, but cannot claim a
+            # content-addressed identity and block the later canonical report.
+            # Only an accepted immutable report is authoritative for collision
+            # checks. Exact rejected retries were already handled above.
+            if not existing.accepted_for_projection:
+                continue
             if existing.report_checksum != envelope.report_checksum:
                 identity_errors.append("report ID already exists with another checksum")
             elif existing.original_report_checksum != envelope.original_report_checksum:
@@ -116,6 +122,8 @@ class ProgressReportService:
         for existing in self._repository.list_by_original_checksum(
             envelope.original_report_checksum
         ):
+            if not existing.accepted_for_projection:
+                continue
             if (
                 existing.project_id != envelope.project_id
                 or existing.package_id != envelope.package_id

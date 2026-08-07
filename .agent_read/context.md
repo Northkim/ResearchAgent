@@ -84,7 +84,55 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-B5 multi-Workflow Progress and Project navigation qualified
+### Current milestone — NIGHT-B6 typed Artifact handoff qualified
+
+NIGHT-B6 continued directly on clean `main` from accepted B5 final commit
+`d5629c21f38bb96e2c8644395b9ce22054f4b038`. Additive migration
+`20260806_0012` is the sole head. The local-product tables
+`local_artifact_references`, `workflow_artifact_requirements`, and
+`project_artifact_dependency_bindings` provide Project/producer Instance/
+Progress/Capsule-bound immutable metadata and exact consumer input bindings.
+Composite foreign keys block cross-Project/Instance spoofing. Existing
+Progress Artifact metadata is preserved but not guessed into typed records.
+
+Progress promotion is atomic and idempotent. The exact producer Capsule must
+declare a reviewed `artifact_outputs` contract and the uploaded declaration
+must match immutable Progress path/media/size/checksum metadata. Changed retry
+fails closed. Cloud stores metadata and provenance only, never Workspace bytes.
+The accepted Literature Search Capsule has no ratified production Artifact
+type declaration, so B6 seeds no production type and no production consumer.
+
+Consumer requirements belong to exact Workflow Definition Versions. A binding
+selects one Artifact ID and checksum for one Project/consumer Instance/input
+slot; there is no automatic latest selection or cross-Project sharing.
+Repository/service-backed paginated Artifact/dependency reads and a
+checksum-bound materialization plan expose the provenance chain without local
+absolute paths or bytes.
+
+The local CLI adds `artifact status`, `artifact refresh`, and explicit
+`artifact materialize`. `.reagent/artifact-index.json` is an independently
+checksummed record of locally re-read producer bytes, separate from Installed
+Lock. Materialization reuses the B4 OS advisory lock, reads the source with
+no-follow semantics, copies into same-filesystem staging, fsyncs, verifies,
+publishes without overwrite, then atomically records a checksummed receipt.
+Symlink/hardlink/special-file/path escape, source/Index/Cloud drift and target
+conflicts fail closed. Publish-before-receipt recovery is exact and producer
+bytes are never modified.
+
+A dedicated loopback PostgreSQL 18.1 cluster qualified migration, rollback,
+downgrade/re-upgrade, restart, concurrency, no drift and a 1,000-Artifact
+bounded query. Full backend is `674 passed, 8 skipped`; all skips are existing
+external/migration-variable gates and no B6 test skipped. Frontend Vitest,
+typecheck, ESLint/build, compileall and Alembic checks passed. No `.env`,
+credential, ProjectDB, owner database, live Provider, network, frontend source,
+worktree, branch or push was used.
+
+ADR 0026 records exact typed metadata, no-auto-latest dependency binding, a
+separate local Index and explicit verified copy. NIGHT-B7 remains owner-gated:
+Idea Discovery and the first production Artifact type/dependency are not
+implemented.
+
+### Prior milestone — NIGHT-B5 multi-Workflow Progress and Project navigation qualified
 
 NIGHT-B5 continued directly on clean `main` from accepted B4 final commit
 `63f19b80310108c0d0dc1f4e6e5ea8ba3a3a56f6`. Additive migration
