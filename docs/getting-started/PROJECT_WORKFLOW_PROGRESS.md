@@ -19,9 +19,9 @@ Every Project has four product routes:
 - **Help** explains the current cloud/local workflow and recovery boundary.
 
 The navigation intentionally does not expose empty Artifacts, Resources,
-Skills, Activity, or Settings sections. Literature Search is currently the only
-production Registry entry and executable Workflow. No unratified IDs or fake
-Capsules are presented for later Workflows.
+Skills, Activity, or Settings sections. The production Registry contains the
+reviewed Literature Search and Idea Discovery contracts. Writing, Review and
+Experiment remain absent; the UI does not invent their IDs or Capsules.
 
 ## Progress identity
 
@@ -77,10 +77,18 @@ and Literature Search result links remain supported. The legacy Project-level
 result route remains available while the multi-Workflow Progress page provides
 the general history view.
 
+Literature Search and Idea Discovery reports use the same Progress service and
+remain isolated by exact Workflow Instance. Installation, dependency binding,
+local materialization and research progress are separate dimensions. A bound
+Artifact or installed Capsule is not evidence that Idea Discovery has run.
+
 ## Current boundary
 
 Progress Reports provide bounded cognitive and Project continuity. They do not
 contain the complete Workspace, code, datasets, memory, or output bytes.
-NIGHT-B5 does not implement typed Artifact handoff/materialization, an Artifact
-index, Idea Discovery, another executable Workflow, background sync, or
-cross-device Workspace backup.
+Cloud stores bounded Progress, typed Artifact metadata and provenance, not
+Artifact bytes or full Workspace memory. Artifact selection and
+materialization are explicit; there is no automatic latest policy. See
+[Idea Discovery](IDEA_DISCOVERY.md) for the current two-Workflow flow.
+Writing/Review/Experiment, background sync and cross-device Workspace backup
+remain unimplemented.

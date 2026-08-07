@@ -177,6 +177,23 @@ Progress identity, and OpenAlex boundary are unchanged. The Package launcher
 continues to validate its own manifest and never infers identity from a folder
 name or current working directory.
 
+## Run an exact Workspace Workflow
+
+For a synchronized Workspace, preflight or run an installed instance without
+inferring identity from its directory:
+
+```bash
+python reagent_local.py run "$WORKSPACE_DIR" \
+  --workflow-instance <workflow-instance-id> --preflight-only
+python reagent_local.py run "$WORKSPACE_DIR" \
+  --workflow-instance <workflow-instance-id>
+```
+
+Idea Discovery preflight additionally requires a specific Cloud Artifact
+binding, a current local Artifact Index, a materialization receipt, and exact
+input bytes. It never materializes automatically. See
+[Idea Discovery and Artifact handoff](IDEA_DISCOVERY.md).
+
 ## Recovery and exit codes
 
 Bootstrap never writes a success descriptor into a partial target. Adoption
@@ -208,8 +225,7 @@ without overwrite. Damaged Lock/receipt files and immutable drift fail closed.
 
 ## Not implemented
 
-NIGHT-B4 does not implement multi-Workflow Progress aggregation, Artifact
-handoff/materialization, Idea Discovery or another executable Workflow,
-Skills/Resources products, Workspace snapshots, automatic/background sync,
-cross-device recovery, in-place Capsule upgrade/deletion, or frontend Workflow
-management. Literature Search remains the only executable Workflow.
+Writing, Review and Experiment Workflows, Skills/Resources products, Workspace
+snapshots, automatic/background sync, cross-device recovery, in-place Capsule
+upgrade/deletion and browser-local execution remain unimplemented. Retired
+Capsules and their outputs are never automatically removed.

@@ -5,7 +5,8 @@ application manages project metadata, downloadable Workflow Packages, bounded
 API Proxy capabilities, automatic Progress Report uploads, and progress
 projections. A short-lived local session connects one exact Package to those
 capabilities. The downloaded folder remains authoritative for concrete
-research state, and Codex performs the Literature Search work locally.
+research state, and Codex performs Literature Search or Idea Discovery work
+locally.
 
 ## Start the local V0.1 product
 
@@ -67,15 +68,20 @@ adopted Capsule retains the original `python reagent_local.py run .` command.
 See the [Workspace bootstrap, adoption, and sync guide](docs/getting-started/PROJECT_WORKSPACE_BOOTSTRAP.md)
 for layout, integrity checks, recovery and exit codes. Sync is always an
 explicit local command: the web service never writes the Workspace. It installs
-only exact, available Literature Search Capsule pins, preserves retired and
-mutable research state, and reports checksum-bound installation metadata. The
-acknowledgement is not a cloud backup. Artifact handoff, other executable
-Workflows, background sync, and cross-device file restoration are not
-implemented.
+only exact available Capsule pins, preserves retired and mutable research
+state, and reports checksum-bound installation metadata. The acknowledgement
+is not a cloud backup. The [Idea Discovery and Artifact handoff guide](docs/getting-started/IDEA_DISCOVERY.md)
+documents explicit typed input selection, local materialization, and execution.
 
 ## V0.1 boundary
 
-- Literature Search is the only selectable Workflow.
+- New Projects start with Literature Search 0.4.0 / Capsule 0.6.0. Its explicit
+  successful finish creates the production `selected-paper-library/v1`
+  Artifact. Idea Discovery 0.1.0 is the second available Workflow and consumes
+  one explicitly selected, checksum-bound library.
+- Existing Literature Search 0.3.0 / Capsule 0.5.0 remains byte-stable and
+  supported. It is never silently upgraded or promoted to the new Artifact
+  contract.
 - Codex CLI is the supported Harness; Claude Code remains untested.
 - From an extracted Package, `python reagent_local.py run .` opens Codex in the
   current terminal. The owner reviews the search plan and candidate screening,

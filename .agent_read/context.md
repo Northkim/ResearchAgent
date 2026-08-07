@@ -84,7 +84,45 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-B6 typed Artifact handoff qualified
+### Current milestone — NIGHT-B7 multi-Workflow architecture qualified
+
+NIGHT-B7 continued on clean `main` from accepted B6 final commit
+`95acc28896b150b7559dd477c48dd650b9fa5e79`. Additive data migration
+`20260806_0013` is the sole head. It deterministically seeds reviewed
+Literature Search 0.4.0 / Capsule 0.6.0 with the owner-ratified
+`selected-paper-library/v1` output contract, plus available Idea Discovery
+0.1.0 / Capsule 0.1.0 and its exact `paper_library` requirement. Published
+0.3.0/0.5.0 identities and content remain unchanged; existing Projects are not
+upgraded or promoted.
+
+Only explicit successful Literature Search finish publishes a self-contained
+content-addressed library. It preserves exact validated candidate and selection
+records and selected order, records source checksums, atomically publishes the
+canonical bytes and declares exact metadata through the existing B6 Progress
+promotion. Intermediate and mismatched outputs fail closed.
+
+Idea Discovery is the first real second Workflow. Its reviewed Capsule has a
+separate AGENT/prompt/memory/input/output/Progress contract, consumes one
+explicitly selected Artifact by verified copy, never reads sibling outputs,
+and records evidence-grounded candidate directions without claiming global
+novelty. The generic Workspace `run` preflight requires Installed Lock, exact
+binding, receipt and checksum-current materialized input. The browser only
+configures Cloud state and shows explicit local commands.
+
+The end-to-end chain now covers producer finish → typed Artifact/provenance →
+Idea add/Manifest increment → incremental sync/Lock/ack → explicit Artifact
+choice → Artifact Index/materialization → separate Idea execution/Progress →
+Registry-driven Board and Project projection. Multiple Literature producers
+remain explicit choices, source/target drift fails closed, retired producer
+history/bytes are retained, and local memory supports a fresh Harness session.
+Cloud stores metadata, not Artifact bytes or Workspace state.
+
+ADR 0027 records the production type, immutable version strategy, Idea identity
+and no-auto-latest local execution boundary. Writing, Review, Experiment,
+external novelty search, cross-Project Artifact sharing, cloud Artifact bytes,
+backup and background sync remain deferred pending a new owner phase.
+
+### Prior milestone — NIGHT-B6 typed Artifact handoff qualified
 
 NIGHT-B6 continued directly on clean `main` from accepted B5 final commit
 `d5629c21f38bb96e2c8644395b9ce22054f4b038`. Additive migration
