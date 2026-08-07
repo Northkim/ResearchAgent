@@ -187,4 +187,3 @@ The next evidence-supported action is a small 3-10 person test using one
 isolated instance per tester. In parallel or before any shared deployment, the
 owner must choose an application identity/Project ownership/session model. A
 separate authorization is required before Provider-backed controlled testing.
-

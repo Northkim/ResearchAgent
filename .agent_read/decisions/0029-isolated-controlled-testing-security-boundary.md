@@ -77,4 +77,3 @@ introduced by H2.
   rejected as unnecessary infrastructure for the isolated 3-10 tester scope.
 - Enabling live OpenAlex was rejected because H2 explicitly prohibits live
   Provider calls and credentials.
-
