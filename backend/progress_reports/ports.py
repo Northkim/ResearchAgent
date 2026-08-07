@@ -9,6 +9,9 @@ from .contracts import ProjectProgressProjection, UploadedProgressReport
 
 class ProgressReportRepository(ABC):
     @abstractmethod
+    def lock_report_identity(self, report_id: str) -> None: ...
+
+    @abstractmethod
     def append(self, report: UploadedProgressReport) -> None: ...
 
     @abstractmethod
@@ -19,6 +22,7 @@ class ProgressReportRepository(ABC):
         self,
         *,
         project_id: str,
+        workflow_instance_id: str,
         package_id: str,
         package_checksum: str,
         report_id: str,
@@ -32,6 +36,7 @@ class ProgressReportRepository(ABC):
         project_id: str,
         *,
         package_id: str | None = None,
+        workflow_instance_id: str | None = None,
     ) -> tuple[UploadedProgressReport, ...]: ...
 
     @abstractmethod

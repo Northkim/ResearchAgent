@@ -34,11 +34,16 @@ class ProgressReportService:
         repository: ProgressReportRepository,
         content_storage: ArtifactContentStorage,
         commit_callback: Callable[[], None],
+        workflow_identity_resolver: Callable[
+            [ProgressReportUploadEnvelope, NormalizedProgressRecord | None, str | None],
+            str,
+        ],
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._storage = content_storage
         self._commit = commit_callback
+        self._resolve_workflow_identity = workflow_identity_resolver
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._normalizer = ProgressReportNormalizer()
         self._chain = ProgressReportChainValidator()
@@ -51,10 +56,35 @@ class ProgressReportService:
     def upload(
         self,
         envelope: ProgressReportUploadEnvelope,
+        *,
+        workflow_instance_id: str | None = None,
     ) -> ProgressUploadReceipt:
         content = envelope.original_report_bytes()
+        self._repository.lock_report_identity(envelope.report_id)
+        # Historical Packages may no longer be the Project's current Package.
+        # An exact immutable replay can still be proven from the retained row,
+        # and must remain retryable without guessing a new binding.
+        exact_historical = tuple(
+            item
+            for item in self._repository.list_by_report_id(envelope.report_id)
+            if item.project_id == envelope.project_id
+            and item.package_id == envelope.package_id
+            and item.package_checksum == envelope.package_checksum
+            and item.report_checksum == envelope.report_checksum
+            and item.original_report_checksum == envelope.original_report_checksum
+        )
+        if len(exact_historical) == 1:
+            return self._receipt(exact_historical[0], idempotent=True)
+        if len(exact_historical) > 1:
+            raise ValueError("immutable Progress Report identity is ambiguous")
+        resolved_instance_id = self._resolve_workflow_identity(
+            envelope,
+            None,
+            workflow_instance_id,
+        )
         replay = self._repository.find_exact(
             project_id=envelope.project_id,
+            workflow_instance_id=resolved_instance_id,
             package_id=envelope.package_id,
             package_checksum=envelope.package_checksum,
             report_id=envelope.report_id,
@@ -86,12 +116,18 @@ class ProgressReportService:
                 identity_errors.append(
                     "original report checksum is already bound to an incompatible identity"
                 )
-
         normalized = None
         validation_errors: list[str] = []
         validation_warnings: list[str] = []
         try:
             normalized = self._normalizer.normalize(content)
+            verified_instance_id = self._resolve_workflow_identity(
+                envelope,
+                normalized,
+                workflow_instance_id,
+            )
+            if verified_instance_id != resolved_instance_id:
+                raise ValueError("Progress Workflow Instance resolution changed")
             if normalized.source_schema_version != envelope.report_schema_version:
                 validation_errors.append("envelope report schema does not match report")
             if normalized.project_id != envelope.project_id:
@@ -128,7 +164,10 @@ class ProgressReportService:
         )
         accepted = False
         if normalized is not None and not validation_errors and not identity_errors:
-            history = self._repository.list_for_project(envelope.project_id)
+            history = self._repository.list_for_project(
+                envelope.project_id,
+                workflow_instance_id=resolved_instance_id,
+            )
             chain = self._chain.validate(normalized, history)
             chain_state = chain.state
             accepted = chain.accepted_for_projection
@@ -148,6 +187,7 @@ class ProgressReportService:
         uploaded = UploadedProgressReport(
             receipt_id=receipt_id,
             project_id=envelope.project_id,
+            workflow_instance_id=resolved_instance_id,
             package_id=envelope.package_id,
             package_checksum=envelope.package_checksum,
             report_id=envelope.report_id,
@@ -177,6 +217,7 @@ class ProgressReportService:
                 for item in self._repository.list_for_project(
                     envelope.project_id,
                     package_id=envelope.package_id,
+                    workflow_instance_id=resolved_instance_id,
                 )
                 if item.normalized_record is not None
                 and item.normalized_record.workflow_id == normalized.workflow_id
@@ -225,8 +266,13 @@ class ProgressReportService:
         *,
         project_id: str,
         package_id: str | None = None,
+        workflow_instance_id: str | None = None,
     ) -> tuple[UploadedProgressReport, ...]:
-        return self._repository.list_for_project(project_id, package_id=package_id)
+        return self._repository.list_for_project(
+            project_id,
+            package_id=package_id,
+            workflow_instance_id=workflow_instance_id,
+        )
 
     def get_projection(
         self,
@@ -320,6 +366,7 @@ class ProgressReportService:
         receipt = ProgressUploadReceipt(
             receipt_id=report.receipt_id,
             project_id=report.project_id,
+            workflow_instance_id=report.workflow_instance_id,
             package_id=report.package_id,
             report_id=report.report_id,
             report_checksum=report.report_checksum,

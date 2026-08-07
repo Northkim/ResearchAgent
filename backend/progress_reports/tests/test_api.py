@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,10 @@ from fastapi.testclient import TestClient
 from backend.api import ApplicationContainer, create_app
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.research.adapters import LocalFilesystemArtifactStorage
+from backend.local_projects.contracts import LocalPackageMetadata, LocalProject
+from backend.project_workspaces.application import ProjectWorkspaceApplicationService
+from backend.progress_reports.tests.factories import HASH_A, HASH_B, HASH_C, PROJECT_ID, PACKAGE_ID
+from backend.workflow_packages.template import WORKFLOW_ID, WORKFLOW_VERSION
 
 from .factories import native_report, upload_envelope, with_same_id_and_changed_content
 
@@ -19,6 +24,35 @@ def progress_client(tmp_path) -> Iterator[tuple[TestClient, InMemoryDatabase]]:
             raise AssertionError(f"progress upload touched provider capability {name}")
 
     database = InMemoryDatabase()
+    seed_uow = InMemoryUnitOfWork(database)
+    project = LocalProject(
+        project_id=PROJECT_ID,
+        name="Fictional progress project",
+        research_topic="Fictional public progress topic",
+        selected_workflow="LITERATURE_SEARCH",
+        created_at="2026-08-03T08:00:00Z",
+        updated_at="2026-08-03T08:00:00Z",
+        current_package=LocalPackageMetadata(
+            package_id=PACKAGE_ID,
+            package_schema_version="workflow-package/v0.1",
+            package_checksum=HASH_C,
+            manifest_checksum=HASH_A,
+            zip_checksum=HASH_B,
+            workflow_id=WORKFLOW_ID,
+            workflow_version=WORKFLOW_VERSION,
+            workflow_checksum=HASH_A,
+            archive_storage_key="fictional/package.zip",
+            file_count=1,
+            package_size_bytes=1,
+            generated_at="2026-08-03T08:00:00Z",
+        ),
+    )
+    seed_uow.local_projects.add(project)
+    ProjectWorkspaceApplicationService(
+        unit_of_work=seed_uow,
+        clock=lambda: datetime(2026, 8, 3, 8, 0, tzinfo=UTC),
+    ).initialize_project(project)
+    seed_uow.commit()
     container = ApplicationContainer(
         unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
         artifact_storage=LocalFilesystemArtifactStorage(tmp_path / "artifacts"),

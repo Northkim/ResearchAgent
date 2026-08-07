@@ -23,6 +23,10 @@ PROGRESS_REPORT_SCHEMA_V2 = "progress-report/v0.2"
 UPLOAD_SCHEMA_VERSION = "progress-report-upload/v0.1"
 NORMALIZED_SCHEMA_VERSION = "normalized-progress-record/v0.2"
 PROJECTION_SCHEMA_VERSION = "project-progress-projection/v0.1"
+WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION = (
+    "reagent.workflow-instance-progress/v0.1"
+)
+PROJECT_WORKFLOW_PROGRESS_SCHEMA_VERSION = "reagent.project-progress/v0.1"
 NORMALIZER_VERSION = "reagent-progress-normalizer/0.2.0"
 EXPERIMENTAL_DECLARATION = "EXPERIMENTAL_PROGRESS_REPORT_V0_2"
 ACCEPTED_REPORT_MEDIA_TYPE = "application/json"
@@ -520,6 +524,7 @@ class NormalizedProgressRecord(SerializableContract):
 class UploadedProgressReport(SerializableContract):
     receipt_id: str
     project_id: str
+    workflow_instance_id: str
     package_id: str
     package_checksum: str
     report_id: str
@@ -551,6 +556,7 @@ class UploadedProgressReport(SerializableContract):
 class ProgressUploadReceipt(SerializableContract):
     receipt_id: str
     project_id: str
+    workflow_instance_id: str
     package_id: str
     report_id: str
     report_checksum: str
@@ -621,6 +627,89 @@ class ProjectProgressProjection(SerializableContract):
 
     def verify_checksum(self) -> bool:
         return self.projection_checksum == self.with_computed_checksum().projection_checksum
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowInstanceProgressProjection(SerializableContract):
+    """Cloud-known research projection for exactly one Workflow Instance."""
+
+    schema_version: str
+    project_id: str
+    workflow_instance_id: str
+    workflow_definition_id: str
+    workflow_definition_version: str
+    workflow_display_name: str
+    instance_display_name: str
+    lifecycle: str
+    desired_state: str
+    capsule_id: str | None
+    capsule_version: str | None
+    research_status: str
+    latest_report_id: str | None
+    latest_report_checksum: str | None
+    latest_execution_round: int | None
+    latest_summary: str | None
+    next_recommended_action: str | None
+    artifact_metadata: tuple[OutputArtifactReference, ...]
+    report_count: int
+    first_activity_at: str | None
+    latest_activity_at: str | None
+    installation_state: str
+    installation_manifest_revision: int | None
+    sync_uncertainty: str
+
+    def __post_init__(self) -> None:
+        if self.schema_version != WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION:
+            raise ValueError("invalid Workflow Instance Progress schema")
+        if self.report_count < 0:
+            raise ValueError("report_count must be non-negative")
+        object.__setattr__(self, "artifact_metadata", tuple(self.artifact_metadata))
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectWorkflowProgressProjection(SerializableContract):
+    """Non-linear Project aggregation plus a bounded immutable history page."""
+
+    schema_version: str
+    project_id: str
+    project_name: str
+    research_topic: str
+    manifest_revision: int
+    cloud_observed_at: str
+    active_workflow_count: int
+    retired_workflow_count: int
+    total_progress_report_count: int
+    latest_project_activity_at: str | None
+    status_counts: Mapping[str, int]
+    instances: tuple[WorkflowInstanceProgressProjection, ...]
+    history: tuple[UploadedProgressReport, ...]
+    history_offset: int
+    history_limit: int
+    history_total: int
+    has_more_history: bool
+    dependency_edges: tuple[Mapping[str, Any], ...]
+
+    def __post_init__(self) -> None:
+        if self.schema_version != PROJECT_WORKFLOW_PROGRESS_SCHEMA_VERSION:
+            raise ValueError("invalid Project Progress schema")
+        for name in (
+            "active_workflow_count",
+            "retired_workflow_count",
+            "total_progress_report_count",
+            "history_offset",
+            "history_limit",
+            "history_total",
+        ):
+            if getattr(self, name) < 0:
+                raise ValueError(f"{name} must be non-negative")
+        object.__setattr__(self, "status_counts", _freeze_json(self.status_counts, path="status_counts"))
+        object.__setattr__(self, "instances", tuple(self.instances))
+        object.__setattr__(self, "history", tuple(self.history))
+        object.__setattr__(
+            self,
+            "dependency_edges",
+            tuple(_freeze_json(item, path="dependency_edges") for item in self.dependency_edges),
+        )
 
 
 def immutable_metadata(value: Mapping[str, Any] | None) -> Mapping[str, Any] | None:

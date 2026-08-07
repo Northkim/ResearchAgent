@@ -999,12 +999,28 @@ class UploadedProgressReportORM(Base):
             "package_id",
             "received_at",
         ),
+        ForeignKeyConstraint(
+            ["project_id", "workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_uploaded_progress_reports_project_workflow_instance",
+        ),
+        Index(
+            "ix_progress_reports_project_instance_received",
+            "project_id",
+            "workflow_instance_id",
+            "received_at",
+            "receipt_id",
+        ),
         Index("ix_progress_reports_report_id", "report_id"),
         Index("ix_progress_reports_original_checksum", "original_report_checksum"),
     )
 
     receipt_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
     package_id: Mapped[str] = mapped_column(String(255), nullable=False)
     package_checksum: Mapped[str] = mapped_column(String(255), nullable=False)
     report_id: Mapped[str] = mapped_column(String(255), nullable=False)

@@ -127,6 +127,24 @@ class SQLAlchemyWorkspaceSyncRepository(WorkspaceSyncRepository):
         row = row or self.session.get(WorkspaceInstallationAcknowledgementORM, installation_id)
         return _ack(row) if row is not None else None
 
+    def list_acknowledgements(
+        self, project_id: str
+    ) -> tuple[WorkspaceInstallationAcknowledgement, ...]:
+        rows = list(self.session.scalars(
+            select(WorkspaceInstallationAcknowledgementORM).where(
+                WorkspaceInstallationAcknowledgementORM.project_id == project_id
+            )
+        ))
+        rows.extend(
+            item
+            for item in pending_instances(
+                self.session, WorkspaceInstallationAcknowledgementORM
+            )
+            if item.project_id == project_id and item not in rows
+        )
+        rows.sort(key=lambda item: (item.manifest_revision, item.acknowledged_at, item.installation_id))
+        return tuple(_ack(row) for row in rows)
+
 
 def _artifact(row: WorkflowCapsuleArtifactORM) -> WorkflowCapsuleArtifact:
     return WorkflowCapsuleArtifact(

@@ -19,6 +19,7 @@ def _accepted(report):
     return UploadedProgressReport(
         receipt_id="fictional-receipt-" + report.report_id,
         project_id=report.project_id,
+        workflow_instance_id="wfi-00000000000000000000000000000001",
         package_id=report.package_id,
         package_checksum=report.package_checksum,
         report_id=report.report_id,

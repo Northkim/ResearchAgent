@@ -10,7 +10,9 @@ from .contracts import (
     ProgressStatus,
     ProgressUploadReceipt,
     ProjectProgressProjection,
+    ProjectWorkflowProgressProjection,
     UploadedProgressReport,
+    WorkflowInstanceProgressProjection,
     ValidationStatus,
 )
 from .normalization import ProgressReportNormalizer
@@ -28,6 +30,8 @@ __all__ = [
     "ProgressStatus",
     "ProgressUploadReceipt",
     "ProjectProgressProjection",
+    "ProjectWorkflowProgressProjection",
     "UploadedProgressReport",
+    "WorkflowInstanceProgressProjection",
     "ValidationStatus",
 ]

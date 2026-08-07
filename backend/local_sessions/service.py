@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from collections.abc import Callable
 
 from backend.application.errors import (
     ApplicationUnavailableError,
@@ -58,9 +59,13 @@ class LocalWorkflowSessionService:
         *,
         local_projects: LocalProjectService,
         proxy: CloudAPIProxyService,
+        package_identity_resolver: Callable[
+            [str, str], tuple[str, str, str, str, str] | None
+        ] | None = None,
     ) -> None:
         self._projects = local_projects
         self._proxy = proxy
+        self._package_identity_resolver = package_identity_resolver
 
     def open(
         self,
@@ -77,11 +82,6 @@ class LocalWorkflowSessionService:
         report_content_checksum: str | None = None,
     ) -> LocalWorkflowSession:
         project = self._projects.get(project_id)
-        package = project.current_package
-        if package is None:
-            raise ApplicationValidationError(
-                "Generate the current Workflow Package before starting a local session"
-            )
         supplied = (
             package_id,
             package_checksum,
@@ -89,13 +89,22 @@ class LocalWorkflowSessionService:
             workflow_version,
             workflow_checksum,
         )
-        expected = (
-            package.package_id,
-            package.package_checksum,
-            package.workflow_id,
-            package.workflow_version,
-            package.workflow_checksum,
-        )
+        package = project.current_package
+        expected = None
+        if package is not None and package.package_id == package_id:
+            expected = (
+                package.package_id,
+                package.package_checksum,
+                package.workflow_id,
+                package.workflow_version,
+                package.workflow_checksum,
+            )
+        elif self._package_identity_resolver is not None:
+            expected = self._package_identity_resolver(project_id, package_id)
+        if expected is None:
+            raise ApplicationValidationError(
+                "Workflow Package or Capsule artifact is not registered for this Project"
+            )
         if supplied != expected:
             raise ApplicationValidationError(
                 "Local session identity does not match the project's current Package"

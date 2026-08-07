@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import Field
 
 from backend.progress_reports.contracts import (
+    ProjectWorkflowProgressProjection,
     ProgressReportUploadEnvelope,
     ProgressUploadReceipt,
     ProjectProgressProjection,
@@ -17,6 +18,10 @@ from .common import StrictDTO
 
 
 class ProgressReportUploadRequest(StrictDTO):
+    workflow_instance_id: str | None = Field(
+        default=None,
+        pattern=r"^wfi-[0-9a-f]{32}$",
+    )
     upload_schema_version: str
     project_id: str
     package_id: str
@@ -36,12 +41,15 @@ class ProgressReportUploadRequest(StrictDTO):
     envelope_checksum: str
 
     def to_contract(self) -> ProgressReportUploadEnvelope:
-        return ProgressReportUploadEnvelope.from_dict(self.model_dump())
+        payload = self.model_dump()
+        payload.pop("workflow_instance_id")
+        return ProgressReportUploadEnvelope.from_dict(payload)
 
 
 class ProgressUploadReceiptResponse(StrictDTO):
     receipt_id: str
     project_id: str
+    workflow_instance_id: str
     package_id: str
     report_id: str
     report_checksum: str
@@ -67,6 +75,7 @@ class ProgressUploadReceiptResponse(StrictDTO):
 class UploadedProgressReportResponse(StrictDTO):
     receipt_id: str
     project_id: str
+    workflow_instance_id: str
     package_id: str
     package_checksum: str
     report_id: str
@@ -130,3 +139,151 @@ class ProjectProgressResponse(StrictDTO):
         projection: ProjectProgressProjection,
     ) -> ProjectProgressResponse:
         return cls.model_validate(projection.to_dict())
+
+
+class WorkflowInstanceProgressResponse(StrictDTO):
+    schema_version: str
+    project_id: str
+    workflow_instance_id: str
+    workflow_definition_id: str
+    workflow_definition_version: str
+    workflow_display_name: str
+    instance_display_name: str
+    lifecycle: str
+    desired_state: str
+    capsule_id: str | None
+    capsule_version: str | None
+    research_status: str
+    latest_report_id: str | None
+    latest_report_checksum: str | None
+    latest_execution_round: int | None
+    latest_summary: str | None
+    next_recommended_action: str | None
+    artifact_metadata: list[dict[str, Any]]
+    report_count: int
+    first_activity_at: str | None
+    latest_activity_at: str | None
+    installation_state: str
+    installation_manifest_revision: int | None
+    sync_uncertainty: str
+
+
+class ProjectWorkflowProgressResponse(StrictDTO):
+    schema_version: str
+    project_id: str
+    project_name: str
+    research_topic: str
+    manifest_revision: int
+    cloud_observed_at: str
+    active_workflow_count: int
+    retired_workflow_count: int
+    total_progress_report_count: int
+    latest_project_activity_at: str | None
+    status_counts: dict[str, int]
+    instances: list[WorkflowInstanceProgressResponse]
+    history: list[UploadedProgressReportResponse]
+    history_offset: int
+    history_limit: int
+    history_total: int
+    has_more_history: bool
+    dependency_edges: list[dict[str, Any]]
+    # V0.x Literature Search compatibility projection. New clients use
+    # ``instances``; these additive fields keep the accepted result view alive.
+    package_id: str | None = None
+    package_schema_version: str | None = None
+    package_checksum: str | None = None
+    workflow_id: str | None = None
+    workflow_version: str | None = None
+    latest_accepted_report_id: str | None = None
+    latest_accepted_report_checksum: str | None = None
+    latest_execution_round: int | None = None
+    latest_status: str | None = None
+    completed_work_summary: list[str] = Field(default_factory=list)
+    current_state_summary: str | None = None
+    next_recommended_action: str | None = None
+    output_artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    warning_count: int = 0
+    error_count: int = 0
+    unresolved_question_count: int = 0
+    harness_type: str | None = None
+    latest_local_execution_timestamp: str | None = None
+    latest_upload_timestamp: str | None = None
+    chain_state: str | None = None
+    legacy_warning_state: bool = False
+    projection_checksum: str | None = None
+
+    @classmethod
+    def from_contract(
+        cls,
+        projection: ProjectWorkflowProgressProjection,
+        legacy_projection: ProjectProgressProjection | None = None,
+    ) -> ProjectWorkflowProgressResponse:
+        legacy = legacy_projection.to_dict() if legacy_projection is not None else {}
+        legacy.pop("schema_version", None)
+        legacy.pop("project_id", None)
+        return cls(
+            schema_version=projection.schema_version,
+            project_id=projection.project_id,
+            project_name=projection.project_name,
+            research_topic=projection.research_topic,
+            manifest_revision=projection.manifest_revision,
+            cloud_observed_at=projection.cloud_observed_at,
+            active_workflow_count=projection.active_workflow_count,
+            retired_workflow_count=projection.retired_workflow_count,
+            total_progress_report_count=projection.total_progress_report_count,
+            latest_project_activity_at=projection.latest_project_activity_at,
+            status_counts=dict(projection.status_counts),
+            instances=[
+                WorkflowInstanceProgressResponse.model_validate(item.to_dict())
+                for item in projection.instances
+            ],
+            history=[
+                UploadedProgressReportResponse.from_contract(item)
+                for item in projection.history
+            ],
+            history_offset=projection.history_offset,
+            history_limit=projection.history_limit,
+            history_total=projection.history_total,
+            has_more_history=projection.has_more_history,
+            dependency_edges=[dict(item) for item in projection.dependency_edges],
+            **legacy,
+        )
+
+
+class WorkflowInstanceProgressPageResponse(StrictDTO):
+    schema_version: str = "reagent.workflow-instance-progress/v0.1"
+    project_id: str
+    workflow_instance_id: str
+    projection: WorkflowInstanceProgressResponse
+    history: list[UploadedProgressReportResponse]
+    history_offset: int
+    history_limit: int
+    history_total: int
+    has_more_history: bool
+
+    @classmethod
+    def from_contract(
+        cls,
+        projection: ProjectWorkflowProgressProjection,
+        workflow_instance_id: str,
+    ) -> WorkflowInstanceProgressPageResponse:
+        instance = next(
+            item
+            for item in projection.instances
+            if item.workflow_instance_id == workflow_instance_id
+        )
+        return cls(
+            project_id=projection.project_id,
+            workflow_instance_id=workflow_instance_id,
+            projection=WorkflowInstanceProgressResponse.model_validate(
+                instance.to_dict()
+            ),
+            history=[
+                UploadedProgressReportResponse.from_contract(item)
+                for item in projection.history
+            ],
+            history_offset=projection.history_offset,
+            history_limit=projection.history_limit,
+            history_total=projection.history_total,
+            has_more_history=projection.has_more_history,
+        )

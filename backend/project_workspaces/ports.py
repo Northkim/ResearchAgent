@@ -145,3 +145,8 @@ class WorkspaceSyncRepository(ABC):
     def get_acknowledgement(
         self, installation_id: str
     ) -> WorkspaceInstallationAcknowledgement | None: ...
+
+    @abstractmethod
+    def list_acknowledgements(
+        self, project_id: str
+    ) -> tuple[WorkspaceInstallationAcknowledgement, ...]: ...

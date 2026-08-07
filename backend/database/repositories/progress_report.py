@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from backend.database.orm import ProjectProgressProjectionORM, UploadedProgressReportORM
@@ -25,6 +25,12 @@ from ._helpers import pending_instances
 class SQLAlchemyProgressReportRepository(ProgressReportRepository):
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def lock_report_identity(self, report_id: str) -> None:
+        self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:report_id, 0))"),
+            {"report_id": report_id},
+        )
 
     def append(self, report: UploadedProgressReport) -> None:
         row = next(
@@ -47,6 +53,7 @@ class SQLAlchemyProgressReportRepository(ProgressReportRepository):
             UploadedProgressReportORM(
                 receipt_id=report.receipt_id,
                 project_id=report.project_id,
+                workflow_instance_id=report.workflow_instance_id,
                 package_id=report.package_id,
                 package_checksum=report.package_checksum,
                 report_id=report.report_id,
@@ -92,22 +99,35 @@ class SQLAlchemyProgressReportRepository(ProgressReportRepository):
         self,
         *,
         project_id: str,
+        workflow_instance_id: str,
         package_id: str,
         package_checksum: str,
         report_id: str,
         report_checksum: str,
         original_report_checksum: str,
     ) -> UploadedProgressReport | None:
-        matches = [
-            row
-            for row in self._all_rows()
+        statement = select(UploadedProgressReportORM).where(
+            UploadedProgressReportORM.project_id == project_id,
+            UploadedProgressReportORM.workflow_instance_id == workflow_instance_id,
+            UploadedProgressReportORM.package_id == package_id,
+            UploadedProgressReportORM.package_checksum == package_checksum,
+            UploadedProgressReportORM.report_id == report_id,
+            UploadedProgressReportORM.report_checksum == report_checksum,
+            UploadedProgressReportORM.original_report_checksum
+            == original_report_checksum,
+        )
+        matches = list(self.session.scalars(statement))
+        matches.extend(
+            row for row in pending_instances(self.session, UploadedProgressReportORM)
             if row.project_id == project_id
+            and row.workflow_instance_id == workflow_instance_id
             and row.package_id == package_id
             and row.package_checksum == package_checksum
             and row.report_id == report_id
             and row.report_checksum == report_checksum
             and row.original_report_checksum == original_report_checksum
-        ]
+            and row not in matches
+        )
         return self._to_domain(min(matches, key=lambda row: row.receipt_id)) if matches else None
 
     def list_for_project(
@@ -115,18 +135,41 @@ class SQLAlchemyProgressReportRepository(ProgressReportRepository):
         project_id: str,
         *,
         package_id: str | None = None,
+        workflow_instance_id: str | None = None,
     ) -> tuple[UploadedProgressReport, ...]:
-        rows = [
-            row
-            for row in self._all_rows()
+        statement = select(UploadedProgressReportORM).where(
+            UploadedProgressReportORM.project_id == project_id
+        )
+        if package_id is not None:
+            statement = statement.where(UploadedProgressReportORM.package_id == package_id)
+        if workflow_instance_id is not None:
+            statement = statement.where(
+                UploadedProgressReportORM.workflow_instance_id == workflow_instance_id
+            )
+        rows = list(self.session.scalars(statement))
+        rows.extend(
+            row for row in pending_instances(self.session, UploadedProgressReportORM)
             if row.project_id == project_id
             and (package_id is None or row.package_id == package_id)
-        ]
+            and (
+                workflow_instance_id is None
+                or row.workflow_instance_id == workflow_instance_id
+            )
+            and row not in rows
+        )
         rows.sort(key=lambda row: (row.received_at, row.receipt_id))
         return tuple(self._to_domain(row) for row in rows)
 
     def list_by_report_id(self, report_id: str) -> tuple[UploadedProgressReport, ...]:
-        rows = [row for row in self._all_rows() if row.report_id == report_id]
+        rows = list(self.session.scalars(
+            select(UploadedProgressReportORM).where(
+                UploadedProgressReportORM.report_id == report_id
+            )
+        ))
+        rows.extend(
+            row for row in pending_instances(self.session, UploadedProgressReportORM)
+            if row.report_id == report_id and row not in rows
+        )
         rows.sort(key=lambda row: (row.received_at, row.receipt_id))
         return tuple(self._to_domain(row) for row in rows)
 
@@ -134,11 +177,17 @@ class SQLAlchemyProgressReportRepository(ProgressReportRepository):
         self,
         original_report_checksum: str,
     ) -> tuple[UploadedProgressReport, ...]:
-        rows = [
-            row
-            for row in self._all_rows()
+        rows = list(self.session.scalars(
+            select(UploadedProgressReportORM).where(
+                UploadedProgressReportORM.original_report_checksum
+                == original_report_checksum
+            )
+        ))
+        rows.extend(
+            row for row in pending_instances(self.session, UploadedProgressReportORM)
             if row.original_report_checksum == original_report_checksum
-        ]
+            and row not in rows
+        )
         rows.sort(key=lambda row: (row.received_at, row.receipt_id))
         return tuple(self._to_domain(row) for row in rows)
 
@@ -240,6 +289,7 @@ class SQLAlchemyProgressReportRepository(ProgressReportRepository):
         return UploadedProgressReport(
             receipt_id=row.receipt_id,
             project_id=row.project_id,
+            workflow_instance_id=row.workflow_instance_id,
             package_id=row.package_id,
             package_checksum=row.package_checksum,
             report_id=row.report_id,

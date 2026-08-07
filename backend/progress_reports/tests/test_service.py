@@ -14,6 +14,7 @@ from backend.progress_reports.contracts import (
 )
 from backend.progress_reports.service import ProgressReportService
 from backend.progress_reports.security import UnsafeProgressReportError
+from backend.project_workspaces.legacy import legacy_workflow_instance_id
 from backend.research.adapters import LocalFilesystemArtifactStorage
 
 from .factories import (
@@ -32,6 +33,9 @@ def _service(database, storage):
         repository=unit_of_work.progress_reports,
         content_storage=storage,
         commit_callback=unit_of_work.commit,
+        workflow_identity_resolver=lambda envelope, normalized, requested: (
+            requested or legacy_workflow_instance_id(envelope.project_id)
+        ),
         clock=lambda: datetime(2026, 8, 3, 10, 0, tzinfo=UTC),
     )
 

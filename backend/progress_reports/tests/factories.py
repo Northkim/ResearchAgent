@@ -20,9 +20,9 @@ HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
 HASH_C = "sha256:" + "c" * 64
 PACKAGE_ID = "fictional-literature-package-v0.2"
-PROJECT_ID = "fictional-progress-project"
-WORKFLOW_ID = "fictional-literature-search"
-WORKFLOW_VERSION = "0.2.0"
+PROJECT_ID = "project-11111111111111111111111111111111"
+WORKFLOW_ID = "literature-search-local-experimental"
+WORKFLOW_VERSION = "0.3.0"
 
 
 def native_report(

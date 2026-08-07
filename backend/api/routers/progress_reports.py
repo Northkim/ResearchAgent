@@ -5,18 +5,21 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, Response, status
 
 from backend.application.errors import (
+    ApplicationCodedConflictError,
     ApplicationConflictError,
     ApplicationNotFoundError,
     ApplicationValidationError,
 )
+from backend.persistence.ports import DuplicateEntityError
 from backend.progress_reports import ChainState, ValidationStatus
 
 from ..dependencies import ProgressServicesDependency
 from ..schemas import (
     ProgressReportUploadRequest,
     ProgressUploadReceiptResponse,
-    ProjectProgressResponse,
+    ProjectWorkflowProgressResponse,
     UploadedProgressReportResponse,
+    WorkflowInstanceProgressPageResponse,
 )
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["local-progress-reports"])
@@ -40,7 +43,15 @@ async def upload_progress_report(
     if envelope.project_id != project_id:
         raise ApplicationValidationError("path project does not match upload envelope")
     try:
-        receipt = services.progress_reports.upload(envelope)
+        receipt = services.progress_reports.upload(
+            envelope,
+            workflow_instance_id=request.workflow_instance_id,
+        )
+    except DuplicateEntityError as error:
+        raise ApplicationCodedConflictError(
+            "Progress Report identity already exists with different content",
+            code="PROGRESS_IDEMPOTENCY_CONFLICT",
+        ) from error
     except ValueError as error:
         raise ApplicationValidationError(str(error)) from error
     if receipt.validation_status is ValidationStatus.REJECTED:
@@ -124,16 +135,45 @@ async def read_original_progress_report(
     )
 
 
-@router.get("/progress", response_model=ProjectProgressResponse)
+@router.get("/progress", response_model=ProjectWorkflowProgressResponse)
 async def get_project_progress(
     project_id: str,
     services: ProgressServicesDependency,
-    package_id: str | None = Query(default=None),
-) -> ProjectProgressResponse:
-    projection = services.progress_reports.get_projection(
+    workflow_instance_id: str | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> ProjectWorkflowProgressResponse:
+    projection = services.project_progress.project_progress(
         project_id=project_id,
-        package_id=package_id,
+        workflow_instance_id=workflow_instance_id,
+        history_offset=offset,
+        history_limit=limit,
     )
-    if projection is None:
-        raise ApplicationNotFoundError("Accepted local progress is not available")
-    return ProjectProgressResponse.from_contract(projection)
+    legacy = services.progress_reports.get_projection(project_id=project_id)
+    return ProjectWorkflowProgressResponse.from_contract(
+        projection,
+        legacy_projection=legacy,
+    )
+
+
+@router.get(
+    "/workflow-instances/{instance_id}/progress",
+    response_model=WorkflowInstanceProgressPageResponse,
+)
+async def get_workflow_instance_progress(
+    project_id: str,
+    instance_id: str,
+    services: ProgressServicesDependency,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> WorkflowInstanceProgressPageResponse:
+    projection = services.project_progress.instance_progress(
+        project_id=project_id,
+        workflow_instance_id=instance_id,
+        history_offset=offset,
+        history_limit=limit,
+    )
+    return WorkflowInstanceProgressPageResponse.from_contract(
+        projection,
+        instance_id,
+    )

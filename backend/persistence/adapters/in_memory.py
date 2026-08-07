@@ -381,6 +381,22 @@ class InMemoryWorkspaceSyncRepository(WorkspaceSyncRepository):
     ) -> WorkspaceInstallationAcknowledgement | None:
         return self._uow._installation_acknowledgements.get(installation_id)
 
+    def list_acknowledgements(
+        self, project_id: str
+    ) -> tuple[WorkspaceInstallationAcknowledgement, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._installation_acknowledgements.values()
+                if item.project_id == project_id
+            ),
+            key=lambda item: (
+                item.manifest_revision,
+                item.acknowledged_at,
+                item.installation_id,
+            ),
+        ))
+
 
 class InMemoryLocalProjectRepository(LocalProjectRepository):
     def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
@@ -417,6 +433,9 @@ class InMemoryProgressReportRepository(ProgressReportRepository):
     def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
         self._uow = unit_of_work
 
+    def lock_report_identity(self, report_id: str) -> None:
+        return None
+
     def append(self, report: UploadedProgressReport) -> None:
         existing = self._uow._progress_reports.get(report.receipt_id)
         if existing is not None:
@@ -435,6 +454,7 @@ class InMemoryProgressReportRepository(ProgressReportRepository):
         self,
         *,
         project_id: str,
+        workflow_instance_id: str,
         package_id: str,
         package_checksum: str,
         report_id: str,
@@ -446,6 +466,7 @@ class InMemoryProgressReportRepository(ProgressReportRepository):
                 item
                 for item in self._uow._progress_reports.values()
                 if item.project_id == project_id
+                and item.workflow_instance_id == workflow_instance_id
                 and item.package_id == package_id
                 and item.package_checksum == package_checksum
                 and item.report_id == report_id
@@ -460,6 +481,7 @@ class InMemoryProgressReportRepository(ProgressReportRepository):
         project_id: str,
         *,
         package_id: str | None = None,
+        workflow_instance_id: str | None = None,
     ) -> tuple[UploadedProgressReport, ...]:
         return tuple(
             sorted(
@@ -468,6 +490,10 @@ class InMemoryProgressReportRepository(ProgressReportRepository):
                     for item in self._uow._progress_reports.values()
                     if item.project_id == project_id
                     and (package_id is None or item.package_id == package_id)
+                    and (
+                        workflow_instance_id is None
+                        or item.workflow_instance_id == workflow_instance_id
+                    )
                 ),
                 key=lambda item: (item.received_at, item.receipt_id),
             )

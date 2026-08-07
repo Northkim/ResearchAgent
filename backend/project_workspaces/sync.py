@@ -425,6 +425,39 @@ class WorkspaceSyncApplicationService:
         root.mkdir(parents=True, exist_ok=True)
         return root
 
+    def local_session_package_identity(
+        self, project_id: str, package_id: str
+    ) -> tuple[str, str, str, str, str] | None:
+        """Return a trusted B4 artifact identity for local-session issuance."""
+
+        matches = tuple(
+            artifact
+            for artifact in self._uow.workspace_sync.list_capsule_artifacts(project_id)
+            if artifact.package_id == package_id
+            and artifact.status is CapsuleArtifactStatus.AVAILABLE
+        )
+        if len(matches) != 1:
+            return None
+        artifact = matches[0]
+        instance = self._uow.workflow_foundation.get_workflow_instance(
+            artifact.workflow_instance_id
+        )
+        if instance is None or instance.project_id != project_id:
+            return None
+        version = self._uow.workflow_foundation.get_definition_version(
+            instance.workflow_definition_id,
+            instance.workflow_version,
+        )
+        if version is None:
+            return None
+        return (
+            artifact.package_id,
+            artifact.package_checksum,
+            instance.workflow_definition_id,
+            instance.workflow_version,
+            version.contract_checksum,
+        )
+
     def _artifact_path(self, storage_key: str, project_id: str) -> Path:
         root = self._resolved_package_root()
         path = (root / storage_key).resolve()

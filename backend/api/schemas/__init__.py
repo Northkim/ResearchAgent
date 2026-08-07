@@ -18,7 +18,9 @@ from .progress import (
     ProgressReportUploadRequest,
     ProgressUploadReceiptResponse,
     ProjectProgressResponse,
+    ProjectWorkflowProgressResponse,
     UploadedProgressReportResponse,
+    WorkflowInstanceProgressPageResponse,
 )
 from .runs import CreateRunRequest, WorkflowRunResponse
 from .research import ArtifactResponse, ProviderOperationResponse
@@ -61,6 +63,7 @@ __all__ = [
     "ProgressReportUploadRequest",
     "ProgressUploadReceiptResponse",
     "ProjectProgressResponse",
+    "ProjectWorkflowProgressResponse",
     "ErrorResponse",
     "ExecutionEventResponse",
     "HealthResponse",
@@ -73,6 +76,7 @@ __all__ = [
     "WorkflowRunResponse",
     "WorkflowRunSummaryResponse",
     "UploadedProgressReportResponse",
+    "WorkflowInstanceProgressPageResponse",
     "CreateWorkflowInstanceRequest",
     "DesiredProjectManifestResponse",
     "RetireWorkflowInstanceRequest",

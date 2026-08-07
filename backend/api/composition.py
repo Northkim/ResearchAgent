@@ -36,6 +36,8 @@ from backend.domain.services import ExecutionCoordinator
 from backend.domain.models._utils import utc_now
 from backend.persistence.ports import UnitOfWork
 from backend.progress_reports import ProgressReportService
+from backend.progress_reports.identity import ProgressWorkflowIdentityResolver
+from backend.progress_reports.aggregation import ProjectProgressAggregationService
 from backend.local_projects.service import LocalProjectService
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces.sync import WorkspaceSyncApplicationService
@@ -98,6 +100,7 @@ class ProgressApplicationServices:
     """Cloud progress services with no research-execution dependency."""
 
     progress_reports: ProgressReportService
+    project_progress: ProjectProgressAggregationService
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +111,7 @@ class LocalProductApplicationServices:
     progress_reports: ProgressReportService
     project_workspaces: ProjectWorkspaceApplicationService
     workspace_sync: WorkspaceSyncApplicationService
+    project_progress: ProjectProgressAggregationService
 
 
 class ApplicationContainer:
@@ -268,7 +272,11 @@ class ApplicationContainer:
         unit_of_work: UnitOfWork,
     ) -> ProgressApplicationServices:
         return ProgressApplicationServices(
-            progress_reports=self._progress_report_service(unit_of_work)
+            progress_reports=self._progress_report_service(unit_of_work),
+            project_progress=ProjectProgressAggregationService(
+                unit_of_work=unit_of_work,
+                clock=self.clock,
+            ),
         )
 
     def build_local_product_services(
@@ -296,6 +304,10 @@ class ApplicationContainer:
                 package_root=self.local_package_root,
                 clock=self.clock,
             ),
+            project_progress=ProjectProgressAggregationService(
+                unit_of_work=unit_of_work,
+                clock=self.clock,
+            ),
         )
 
     def _progress_report_service(
@@ -306,6 +318,9 @@ class ApplicationContainer:
             repository=unit_of_work.progress_reports,
             content_storage=self.artifact_storage,
             commit_callback=unit_of_work.commit,
+            workflow_identity_resolver=ProgressWorkflowIdentityResolver(
+                unit_of_work
+            ).resolve,
             clock=self.clock,
         )
 

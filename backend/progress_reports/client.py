@@ -26,6 +26,7 @@ DEFAULT_TIMEOUT_SECONDS = 15.0
 _SAFE_RECEIPT_FIELDS = {
     "receipt_id",
     "project_id",
+    "workflow_instance_id",
     "package_id",
     "report_id",
     "report_checksum",

@@ -82,6 +82,7 @@ def _service(request: Request, services) -> LocalWorkflowSessionService:
     return LocalWorkflowSessionService(
         local_projects=services.local_projects,
         proxy=_proxy(request),
+        package_identity_resolver=services.workspace_sync.local_session_package_identity,
     )
 
 
@@ -268,7 +269,10 @@ async def upload_session_progress_report(
         raise ApplicationAuthorizationError(
             "Progress Report is outside the local session scope"
         )
-    receipt = services.progress_reports.upload(envelope)
+    receipt = services.progress_reports.upload(
+        envelope,
+        workflow_instance_id=request_body.workflow_instance_id,
+    )
     if receipt.validation_status is ValidationStatus.REJECTED:
         message = "Progress Report retained but rejected"
         if receipt.chain_state in {
