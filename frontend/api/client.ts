@@ -17,6 +17,9 @@ import type {
   LocalProject,
   ProjectProgress,
   UploadedProgressReport,
+  WorkflowCatalogPage,
+  ProjectWorkflowInstance,
+  ProjectWorkflowInstancePage,
 } from "@/types/api";
 
 const API_BASE = "/backend";
@@ -112,8 +115,48 @@ export const apiClient = {
     return `${API_BASE}/projects/${encodeURIComponent(projectId)}/packages/${encodeURIComponent(packageId)}/download`;
   },
 
-  getProjectProgress(projectId: string): Promise<ProjectProgress> {
-    return request(`/projects/${encodeURIComponent(projectId)}/progress`);
+  getProjectProgress(
+    projectId: string,
+    options: { workflowInstanceId?: string; offset?: number; limit?: number } = {},
+  ): Promise<ProjectProgress> {
+    return request(`/projects/${encodeURIComponent(projectId)}/progress${queryString({
+      workflow_instance_id: options.workflowInstanceId,
+      offset: options.offset,
+      limit: options.limit,
+    })}`);
+  },
+
+  listWorkflowDefinitions(): Promise<WorkflowCatalogPage> {
+    return request("/workflow-definitions");
+  },
+
+  listProjectWorkflowInstances(projectId: string): Promise<ProjectWorkflowInstancePage> {
+    return request(`/projects/${encodeURIComponent(projectId)}/workflow-instances`);
+  },
+
+  createProjectWorkflowInstance(projectId: string, payload: {
+    workflow_definition_id: string;
+    workflow_version: string;
+    capsule_id: string;
+    capsule_version: string;
+    display_name?: string;
+    base_revision: number;
+  }): Promise<ProjectWorkflowInstance> {
+    return request(`/projects/${encodeURIComponent(projectId)}/workflow-instances`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  retireProjectWorkflowInstance(
+    projectId: string,
+    instanceId: string,
+    baseRevision: number,
+  ): Promise<ProjectWorkflowInstance> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/${encodeURIComponent(instanceId)}/retire`,
+      { method: "POST", body: JSON.stringify({ base_revision: baseRevision }) },
+    );
   },
 
   listProgressReports(projectId: string): Promise<UploadedProgressReport[]> {

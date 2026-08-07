@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useProject } from "@/api/hooks";
 
 import { PageHeader } from "./page-header";
+import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
 
 export function ProjectGuide({ projectId }: { projectId: string }) {
@@ -20,6 +21,7 @@ export function ProjectGuide({ projectId }: { projectId: string }) {
         description="Literature Search turns one public topic into a bounded, transparent metadata-and-abstract synthesis. Codex performs the research in your Package; ReAgent transports metadata and displays a compact uploaded summary."
         action={<Link href={`/projects/${projectId}`} className="button button-ghost">Project overview</Link>}
       />
+      <ProjectNavigation projectId={projectId} active="Help" />
 
       <section><h2>Prerequisites</h2><ul><li>ReAgent is running on localhost with <code>make dev</code>.</li><li>Codex CLI is installed and available as <code>codex</code>.</li><li>Generate and extract the current Package outside this repository.</li><li>For normal mode, explicitly enable the experimental OpenAlex Proxy and provide the credential only to the backend process.</li></ul></section>
       <section><p className="eyebrow">Exact command</p><h2>Start one interactive round</h2><pre><code>python reagent_local.py run .</code></pre><p>Codex opens in the current terminal—no graphical window is expected. ReAgent prints six launcher stages, closes the search session after Codex exits, validates the completed artifacts, then opens a fresh report-bound upload-only session to upload and verify the Progress summary.</p></section>

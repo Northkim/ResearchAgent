@@ -250,7 +250,7 @@ export interface ProgressOutputArtifact {
   size: number | null;
 }
 
-export interface ProjectProgress {
+export interface LegacyProjectProgress {
   schema_version: string;
   project_id: string;
   package_id: string;
@@ -285,7 +285,7 @@ export interface LocalProject {
   created_at: string;
   updated_at: string;
   current_package: LocalPackage | null;
-  progress: ProjectProgress | null;
+  progress: LegacyProjectProgress | null;
 }
 
 export interface CreateLocalProjectRequest {
@@ -310,6 +310,7 @@ export interface NormalizedProgressRecord {
 export interface UploadedProgressReport {
   receipt_id: string;
   project_id: string;
+  workflow_instance_id: string;
   package_id: string;
   package_checksum: string;
   report_id: string;
@@ -330,4 +331,118 @@ export interface UploadedProgressReport {
   chain_state: string;
   accepted_for_projection: boolean;
   normalized_record: NormalizedProgressRecord | null;
+}
+
+export interface WorkflowVersionCatalog {
+  version: string;
+  contract_checksum: string;
+  input_schema_id: string;
+  output_schema_id: string;
+  review_status: string;
+  published_at: string | null;
+}
+
+export interface CapsuleVersionCatalog {
+  capsule_id: string;
+  capsule_version: string;
+  workflow_version: string;
+  definition_checksum: string;
+  review_status: string;
+  trust_classification: string | null;
+  legacy_package_compatible: boolean;
+}
+
+export interface WorkflowCatalogItem {
+  workflow_definition_id: string;
+  stable_workflow_key: string;
+  display_name: string;
+  description: string;
+  lifecycle: "AVAILABLE" | "PLANNED" | "RETIRED";
+  creatable: boolean;
+  allows_multiple_instances: boolean;
+  recommended_version: WorkflowVersionCatalog | null;
+  recommended_capsule: CapsuleVersionCatalog | null;
+}
+
+export interface WorkflowCatalogPage {
+  items: WorkflowCatalogItem[];
+  total: number;
+}
+
+export interface ProjectWorkflowInstance {
+  workflow_instance_id: string;
+  project_id: string;
+  workflow_definition_id: string;
+  workflow_version: string;
+  capsule_id: string | null;
+  capsule_version: string | null;
+  desired_state: "ACTIVE" | "RETIRED";
+  display_name: string;
+  created_manifest_revision: number;
+  retired_manifest_revision: number | null;
+  in_current_manifest: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectWorkflowInstancePage {
+  items: ProjectWorkflowInstance[];
+  total: number;
+  manifest_revision: number;
+}
+
+export interface WorkflowInstanceProgress {
+  schema_version: string;
+  project_id: string;
+  workflow_instance_id: string;
+  workflow_definition_id: string;
+  workflow_definition_version: string;
+  workflow_display_name: string;
+  instance_display_name: string;
+  lifecycle: "ACTIVE" | "RETIRED";
+  desired_state: "DESIRED" | "NOT_DESIRED";
+  capsule_id: string | null;
+  capsule_version: string | null;
+  research_status: string;
+  latest_report_id: string | null;
+  latest_report_checksum: string | null;
+  latest_execution_round: number | null;
+  latest_summary: string | null;
+  next_recommended_action: string | null;
+  artifact_metadata: ProgressOutputArtifact[];
+  report_count: number;
+  first_activity_at: string | null;
+  latest_activity_at: string | null;
+  installation_state: string;
+  installation_manifest_revision: number | null;
+  sync_uncertainty: string;
+}
+
+export interface ProjectProgress {
+  schema_version: "reagent.project-progress/v0.1";
+  project_id: string;
+  project_name: string;
+  research_topic: string;
+  manifest_revision: number;
+  cloud_observed_at: string;
+  active_workflow_count: number;
+  retired_workflow_count: number;
+  total_progress_report_count: number;
+  latest_project_activity_at: string | null;
+  status_counts: Record<string, number>;
+  instances: WorkflowInstanceProgress[];
+  history: UploadedProgressReport[];
+  history_offset: number;
+  history_limit: number;
+  history_total: number;
+  has_more_history: boolean;
+  dependency_edges: Record<string, unknown>[];
+  latest_status: string | null;
+  latest_execution_round: number | null;
+  current_state_summary: string | null;
+  next_recommended_action: string | null;
+  completed_work_summary: string[];
+  output_artifacts: ProgressOutputArtifact[];
+  warning_count: number;
+  error_count: number;
 }

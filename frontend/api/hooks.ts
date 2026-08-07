@@ -8,6 +8,7 @@ import type {
   ApprovalStatus,
   CreateCatalogRunRequest,
   CreateLocalProjectRequest,
+  ProjectWorkflowInstance,
   WorkflowRunStatus,
 } from "@/types/api";
 
@@ -50,12 +51,73 @@ export function useGeneratePackage(projectId: string) {
   });
 }
 
-export function useProjectProgress(projectId: string, enabled = true) {
+export function useProjectProgress(
+  projectId: string,
+  options: { workflowInstanceId?: string; offset?: number; limit?: number; enabled?: boolean } = {},
+) {
   return useQuery({
-    queryKey: queryKeys.projectProgress(projectId),
-    queryFn: () => apiClient.getProjectProgress(projectId),
-    enabled,
+    queryKey: queryKeys.projectProgress(
+      projectId,
+      options.workflowInstanceId,
+      options.offset ?? 0,
+    ),
+    queryFn: () => apiClient.getProjectProgress(projectId, options),
+    enabled: options.enabled ?? true,
     retry: false,
+  });
+}
+
+export function useWorkflowDefinitions() {
+  return useQuery({
+    queryKey: queryKeys.workflowDefinitions,
+    queryFn: apiClient.listWorkflowDefinitions,
+  });
+}
+
+export function useProjectWorkflowInstances(projectId: string) {
+  return useQuery({
+    queryKey: queryKeys.projectWorkflowInstances(projectId),
+    queryFn: () => apiClient.listProjectWorkflowInstances(projectId),
+  });
+}
+
+export function useCreateProjectWorkflowInstance(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      workflow_definition_id: string;
+      workflow_version: string;
+      capsule_id: string;
+      capsule_version: string;
+      display_name?: string;
+      base_revision: number;
+    }) => apiClient.createProjectWorkflowInstance(projectId, payload),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projectWorkflowInstances(projectId) }),
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "progress"] }),
+      ]);
+    },
+  });
+}
+
+export function useRetireProjectWorkflowInstance(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ instance, baseRevision }: {
+      instance: ProjectWorkflowInstance;
+      baseRevision: number;
+    }) => apiClient.retireProjectWorkflowInstance(
+      projectId,
+      instance.workflow_instance_id,
+      baseRevision,
+    ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.projectWorkflowInstances(projectId) }),
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "progress"] }),
+      ]);
+    },
   });
 }
 

@@ -1,40 +1,62 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, test, vi } from "vitest";
 
 import { apiClient } from "@/api/client";
 import { ProgressProductPanel } from "@/components/progress-product-panel";
 import { Providers } from "@/lib/providers";
 
-import { localProjectFixture, progressReportFixture } from "./fixtures";
+import {
+  localProjectFixture,
+  projectProgressFixture,
+  progressReportFixture,
+  workflowInstanceId,
+} from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
-test("renders projection, outputs, warnings, errors, and report history", async () => {
+test("renders instance-bound progress and local-only artifact metadata", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
-  vi.spyOn(apiClient, "listProgressReports").mockResolvedValue([progressReportFixture]);
-  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(localProjectFixture.progress!);
+  const progress = vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
   render(<Providers><ProgressProductPanel projectId={localProjectFixture.project_id} /></Providers>);
-  expect(await screen.findByText("Selection rationale is ready for review.")).toBeVisible();
-  expect(screen.getByText("Review the local report.")).toBeVisible();
+
+  expect(await screen.findByRole("heading", { name: "Progress Report activity" })).toBeVisible();
+  expect(screen.getByText("Selection rationale is ready for review.")).toBeVisible();
   expect(screen.getByText("outputs/search_plan.md")).toBeVisible();
-  expect(screen.getByText("Fictional warning for owner review.")).toBeVisible();
-  expect(screen.getByText("Fictional recoverable report error.")).toBeVisible();
   expect(screen.getByText(progressReportFixture.report_id)).toBeVisible();
   expect(screen.getByText(progressReportFixture.receipt_id)).toBeVisible();
-  expect(screen.getByText("Round completed")).toHaveClass("active");
-  expect(screen.getByText("8")).toBeVisible();
-  expect(screen.getByText(/complete artifact contents remain/)).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Progress Report receipts" })).toBeVisible();
+  expect(screen.getByText(`Instance ${workflowInstanceId.slice(-8)}`)).toBeVisible();
+  expect(screen.getByText(/Cloud retains names and checksums only/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "Progress" })).toHaveAttribute("aria-current", "page");
+
+  fireEvent.change(screen.getByLabelText("Workflow Instance"), { target: { value: workflowInstanceId } });
+  expect(await screen.findByText(workflowInstanceId)).toBeVisible();
+  expect(progress).toHaveBeenLastCalledWith(localProjectFixture.project_id, expect.objectContaining({ workflowInstanceId }));
 });
 
-test("describes cloud uncertainty and same-Package upload recovery", async () => {
+test("describes Cloud uncertainty when no report exists", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue({ ...localProjectFixture, progress: null });
-  vi.spyOn(apiClient, "listProgressReports").mockResolvedValue([]);
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue({
+    ...projectProgressFixture,
+    total_progress_report_count: 0,
+    latest_project_activity_at: null,
+    status_counts: { NOT_STARTED: 1 },
+    history: [],
+    history_total: 0,
+    instances: [{
+      ...projectProgressFixture.instances[0],
+      research_status: "NOT_STARTED",
+      latest_report_id: null,
+      latest_report_checksum: null,
+      latest_execution_round: null,
+      latest_summary: null,
+      next_recommended_action: null,
+      report_count: 0,
+      first_activity_at: null,
+      latest_activity_at: null,
+    }],
+  });
   render(<Providers><ProgressProductPanel projectId={localProjectFixture.project_id} /></Providers>);
   expect(await screen.findByRole("heading", { name: "No Progress Report received" })).toBeVisible();
-  expect(screen.getByText(/may not have been run yet/)).toBeVisible();
-  expect(screen.getByText(/cannot inspect the local workspace/)).toBeVisible();
-  expect(screen.getByText(/Retry from the same local Package/)).toBeVisible();
-  expect(screen.getByText(/Do not download a new Package/)).toBeVisible();
-  expect(screen.getByRole("link", { name: "Read run guide" })).toBeVisible();
+  expect(screen.getByText(/cannot inspect the Local Workspace/)).toBeVisible();
+  expect(screen.getByText(/same Package for upload recovery/)).toBeVisible();
 });

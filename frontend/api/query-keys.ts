@@ -2,8 +2,12 @@ export const queryKeys = {
   projects: ["projects"] as const,
   project: (projectId: string) => ["projects", projectId] as const,
   projectPackage: (projectId: string) => ["projects", projectId, "package"] as const,
-  projectProgress: (projectId: string) => ["projects", projectId, "progress"] as const,
+  projectProgress: (projectId: string, workflowInstanceId?: string, offset = 0) =>
+    ["projects", projectId, "progress", workflowInstanceId ?? "ALL", offset] as const,
   projectProgressReports: (projectId: string) => ["projects", projectId, "progress-reports"] as const,
+  workflowDefinitions: ["workflow-definitions"] as const,
+  projectWorkflowInstances: (projectId: string) =>
+    ["projects", projectId, "workflow-instances"] as const,
   workflows: ["workflows"] as const,
   runs: ["runs"] as const,
   run: (runId: string) => ["runs", runId] as const,
