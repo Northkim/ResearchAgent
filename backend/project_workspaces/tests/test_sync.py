@@ -12,8 +12,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import ApplicationContainer, create_app
+from backend.local_projects.contracts import LocalProject
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import LITERATURE_SEARCH_CAPSULE_ID, LITERATURE_SEARCH_DEFINITION_ID
+from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces import workspace_cli
 from backend.project_workspaces.workspace_cli import WorkspaceCLIError
 
@@ -215,12 +217,28 @@ def test_cli_returns_distinct_ack_pending_exit(sync_fixture, monkeypatch, capsys
 
 
 def test_b3_registry_migrates_without_download_or_mutable_rewrite(sync_fixture):
-    workspace = sync_fixture["workspace"]
     client = sync_fixture["client"]
-    project_id = sync_fixture["project_id"]
+    project_id = "project-" + "c" * 32
+    legacy = LocalProject(
+        project_id=project_id,
+        name="B3 retained fictional project",
+        research_topic="Fictional retained adoption state",
+        selected_workflow="LITERATURE_SEARCH",
+        created_at="2026-08-06T00:00:00Z",
+        updated_at="2026-08-06T00:00:00Z",
+    )
+    seed = InMemoryUnitOfWork(sync_fixture["database"])
+    seed.local_projects.add(legacy)
+    ProjectWorkspaceApplicationService(
+        unit_of_work=seed,
+        clock=lambda: datetime(2026, 8, 6, tzinfo=timezone.utc),
+    ).initialize_project(legacy)
+    seed.commit()
     generated = client.post(f"/projects/{project_id}/packages")
     assert generated.status_code == 201
     updated_bootstrap = client.get(f"/projects/{project_id}/workspace-bootstrap").json()
+    workspace = sync_fixture["workspace"].parent / "legacy-workspace"
+    workspace_cli.bootstrap_workspace(target=workspace, descriptor=updated_bootstrap)
     source = (
         sync_fixture["package_root"] / project_id / "literature-search-v0.5" / "package"
     )

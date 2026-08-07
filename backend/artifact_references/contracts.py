@@ -20,8 +20,11 @@ _PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
 _INSTANCE_ID = re.compile(r"^wfi-[0-9a-f]{32}$")
 _CAPSULE_ID = re.compile(r"^capsule-[0-9a-f]{32}$")
 _BINDING_ID = re.compile(r"^artifact-binding-[0-9a-f]{32}$")
-_TYPE = re.compile(r"^[a-z][a-z0-9._-]{1,159}$")
-_SCHEMA = re.compile(r"^reagent\.artifact\.[a-z][a-z0-9._-]*/v[0-9]+\.[0-9]+$")
+_TYPE = re.compile(r"^[a-z][a-z0-9._-]{1,139}(?:/v[0-9]+(?:\.[0-9]+)?)?$")
+_SCHEMA = re.compile(
+    r"^(?:reagent\.artifact\.[a-z][a-z0-9._-]*/v[0-9]+\.[0-9]+|"
+    r"[a-z][a-z0-9._-]{1,139}/v[0-9]+(?:\.[0-9]+)?)$"
+)
 _MEDIA = re.compile(r"^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$")
 _KEY = re.compile(r"^[a-z][a-z0-9._-]{1,127}$")
 _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")

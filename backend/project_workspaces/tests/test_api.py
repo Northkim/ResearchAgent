@@ -65,16 +65,19 @@ def test_catalog_is_repository_backed_ordered_and_planned_is_not_creatable(tmp_p
     assert response.status_code == 200
     items = response.json()["items"]
     assert [item["workflow_definition_id"] for item in items] == [
+        "idea-discovery-local-experimental",
         "idea-discovery-planned",
         LITERATURE_SEARCH_DEFINITION_ID,
     ]
-    assert items[0]["lifecycle"] == "PLANNED"
-    assert items[0]["creatable"] is False
-    assert items[1]["creatable"] is True
+    assert items[0]["lifecycle"] == "AVAILABLE"
+    assert items[0]["creatable"] is True
+    assert items[1]["lifecycle"] == "PLANNED"
+    assert items[1]["creatable"] is False
+    assert items[2]["creatable"] is True
     detail = client.get(f"/workflow-definitions/{LITERATURE_SEARCH_DEFINITION_ID}")
     assert detail.status_code == 200
-    assert detail.json()["recommended_version"]["version"] == "0.3.0"
-    assert detail.json()["recommended_capsule"]["capsule_version"] == "0.5.0"
+    assert detail.json()["recommended_version"]["version"] == "0.4.0"
+    assert detail.json()["recommended_capsule"]["capsule_version"] == "0.6.0"
     unknown = client.get("/workflow-definitions/unknown-workflow")
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "WORKFLOW_DEFINITION_NOT_FOUND"
@@ -200,7 +203,7 @@ def test_workspace_bootstrap_descriptor_is_repository_backed_and_deterministic(t
             "workflow_instance_id"
         ]
     )
-    assert capsule["capsule_version"] == "0.5.0"
+    assert capsule["capsule_version"] == "0.6.0"
     assert capsule["legacy_package"] is None
     checksum_payload = dict(first)
     checksum = checksum_payload.pop("descriptor_checksum")
@@ -211,10 +214,9 @@ def test_workspace_bootstrap_descriptor_is_repository_backed_and_deterministic(t
     assert generated.status_code == 201
     with_package = client.get(f"/projects/{project_id}/workspace-bootstrap")
     assert with_package.status_code == 200
-    package = with_package.json()["workflow_capsules"][0]["legacy_package"]
-    assert package["package_id"] == generated.json()["package_id"]
-    assert package["package_checksum"] == generated.json()["package_checksum"]
-    assert package["download_path"].startswith(f"/projects/{project_id}/packages/")
+    assert with_package.json()["workflow_capsules"][0]["legacy_package"] is None
+    download = client.get(generated.json()["download_url"])
+    assert download.status_code == 200
 
 
 def test_workspace_bootstrap_fails_closed_for_missing_or_incomplete_cloud_state(tmp_path):
@@ -278,7 +280,4 @@ def test_workspace_bootstrap_orders_multiple_capsules_and_authorizes_only_legacy
     assert [item["workflow_instance_id"] for item in capsules] == sorted(
         item["workflow_instance_id"] for item in capsules
     )
-    assert sum(item["legacy_package"] is not None for item in capsules) == 1
-    assert next(
-        item for item in capsules if item["legacy_package"] is not None
-    )["legacy_package"]["package_id"] == generated.json()["package_id"]
+    assert sum(item["legacy_package"] is not None for item in capsules) == 0

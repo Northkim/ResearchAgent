@@ -16,8 +16,10 @@ import hashlib
 import json
 import os
 import re
+import runpy
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import uuid
@@ -53,6 +55,20 @@ WORKFLOW_VERSION = "0.3.0"
 PACKAGE_TEMPLATE_ID = "literature-search-package-experimental"
 CAPSULE_VERSION = "0.5.0"
 TRUST_CLASSIFICATION = "TRUSTED_BUILT_IN_UNSIGNED"
+SUPPORTED_CAPSULE_PINS = {
+    (WORKFLOW_ID, WORKFLOW_VERSION, CAPSULE_VERSION): (
+        PACKAGE_TEMPLATE_ID,
+        True,
+    ),
+    (WORKFLOW_ID, "0.4.0", "0.6.0"): (
+        PACKAGE_TEMPLATE_ID,
+        False,
+    ),
+    ("idea-discovery-local-experimental", "0.1.0", "0.1.0"): (
+        "idea-discovery-package-experimental",
+        False,
+    ),
+}
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
 WORKSPACE_DESCRIPTOR = "project.json"
@@ -242,6 +258,25 @@ class ArtifactOperationResult:
                 self.consumer_workflow_instance_id
             )
         return value
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowRunResult:
+    status: str
+    project_id: str
+    workspace_id: str
+    workflow_instance_id: str
+    capsule_relative_path: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "reagent.workflow-run-result/v0.1",
+            "status": self.status,
+            "project_id": self.project_id,
+            "workspace_id": self.workspace_id,
+            "workflow_instance_id": self.workflow_instance_id,
+            "capsule_relative_path": self.capsule_relative_path,
+        }
 
 
 def canonical_json(value: Any) -> str:
@@ -724,18 +759,20 @@ def _validate_legacy_package(
     bootstrap: dict[str, Any],
     *,
     expected_instance_id: str | None = None,
+    require_legacy_compatibility: bool = True,
 ) -> tuple[dict[str, Any], str]:
     if root.is_symlink() or not root.is_dir():
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package root must be a real directory")
     manifest = _read_package_json(root / "package-manifest.json")
     if manifest.get("package_schema_version") != PACKAGE_SCHEMA:
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package schema is unsupported")
-    if (
-        manifest.get("workflow_id") != WORKFLOW_ID
-        or manifest.get("workflow_version") != WORKFLOW_VERSION
-        or manifest.get("package_template_id") != PACKAGE_TEMPLATE_ID
-        or manifest.get("package_template_version") != CAPSULE_VERSION
-    ):
+    pin = (
+        manifest.get("workflow_id"),
+        manifest.get("workflow_version"),
+        manifest.get("package_template_version"),
+    )
+    expected_pin = SUPPORTED_CAPSULE_PINS.get(pin)
+    if expected_pin is None or manifest.get("package_template_id") != expected_pin[0]:
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package Workflow or template is unsupported")
     project_id = manifest.get("experimental_project_identity")
     _match_package(project_id, PROJECT_ID, "experimental_project_identity")
@@ -784,6 +821,7 @@ def _validate_legacy_package(
         bootstrap,
         manifest,
         expected_instance_id=expected_instance_id,
+        require_legacy_compatibility=require_legacy_compatibility,
     )
     package_reference = capsule.get("legacy_package")
     if package_reference is None:
@@ -804,6 +842,7 @@ def _validate_legacy_package(
         "memory/progress/reports/",
         "memory/progress/receipts/",
         "memory/search/operations/",
+        "outputs/artifacts/selected-paper-library/",
     )
     actual_files: set[str] = set()
     total_bytes = 0
@@ -826,7 +865,12 @@ def _validate_legacy_package(
                 raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "macOS metadata exceeds the safe bound")
             continue
         entry = declared.get(relative)
-        if entry is None and relative not in output_paths and not relative.startswith(allowed_dynamic):
+        if (
+            entry is None
+            and relative not in output_paths
+            and relative != "inputs/selected-paper-library.json"
+            and not relative.startswith(allowed_dynamic)
+        ):
             raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package contains undeclared files")
         if entry is not None:
             actual_files.add(relative)
@@ -842,9 +886,11 @@ def _validate_legacy_package(
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package required files are missing")
     required_paths = {
         "AGENT.md", "reagent_local.py", "workflow/workflow.json",
-        "memory/context.md", "memory/round-control.json", "inputs/project.json",
-        "inputs/research_request.json", "validate_package.py", "progress_report.py",
+        "memory/context.md", "inputs/project.json", "validate_package.py",
+        "progress_report.py",
     }
+    if manifest.get("workflow_id") == WORKFLOW_ID:
+        required_paths |= {"memory/round-control.json", "inputs/research_request.json"}
     if not required_paths.issubset(declared):
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package execution contract is incomplete")
     try:
@@ -861,6 +907,7 @@ def _select_capsule(
     manifest: dict[str, Any],
     *,
     expected_instance_id: str | None = None,
+    require_legacy_compatibility: bool = True,
 ) -> dict[str, Any]:
     project_id = manifest.get("experimental_project_identity")
     expected_workspace = "workspace-" + str(project_id).removeprefix("project-")
@@ -878,7 +925,10 @@ def _select_capsule(
     capsule = matches[0]
     if (
         capsule["desired_state"] != "ACTIVE"
-        or not capsule["legacy_package_compatible"]
+        or (
+            require_legacy_compatibility
+            and not capsule["legacy_package_compatible"]
+        )
         or capsule["workflow_definition_version"] != manifest.get("workflow_version")
         or capsule["capsule_version"] != manifest.get("package_template_version")
         or capsule["package_schema_version"] != manifest.get("package_schema_version")
@@ -1725,12 +1775,12 @@ def validate_sync_plan(document: Any, workspace: dict[str, Any]) -> dict[str, An
             "NOOP", "INSTALL_CAPSULE", "CONFLICT", "UNAVAILABLE", "RETAINED_NOT_DESIRED"
         }:
             raise _identity("SYNC_MANIFEST_CONFLICT", "Workspace sync action type is invalid")
-        if (
-            item["workflow_definition_id"] != WORKFLOW_ID
-            or item["workflow_definition_version"] != WORKFLOW_VERSION
-            or item["capsule_version"] != CAPSULE_VERSION
-            or item["trust_classification"] != TRUST_CLASSIFICATION
-        ):
+        pin = (
+            item["workflow_definition_id"],
+            item["workflow_definition_version"],
+            item["capsule_version"],
+        )
+        if pin not in SUPPORTED_CAPSULE_PINS or item["trust_classification"] != TRUST_CLASSIFICATION:
             raise _identity("CAPSULE_TRUST_REJECTED", "Workspace sync Capsule pin or trust is unsupported")
         _match(item["capsule_id"], CAPSULE_ID, "capsule_id")
         expected_path = (
@@ -1960,7 +2010,10 @@ def _install_action(workspace, descriptor, plan, action, transport):
             raise _filesystem("CAPSULE_INSTALLATION_CONFLICT", "Capsule destination has an unsafe type")
         bootstrap = _bootstrap_for_action(descriptor, plan, action)
         manifest, _ = _validate_legacy_package(
-            destination, bootstrap, expected_instance_id=action["workflow_instance_id"]
+            destination,
+            bootstrap,
+            expected_instance_id=action["workflow_instance_id"],
+            require_legacy_compatibility=False,
         )
         return _lock_entry(
             action,
@@ -1978,7 +2031,10 @@ def _install_action(workspace, descriptor, plan, action, transport):
         extracted_root = _extract_archive_safely(archive, staging)
         bootstrap = _bootstrap_for_action(descriptor, plan, action)
         manifest, _ = _validate_legacy_package(
-            extracted_root, bootstrap, expected_instance_id=action["workflow_instance_id"]
+            extracted_root,
+            bootstrap,
+            expected_instance_id=action["workflow_instance_id"],
+            require_legacy_compatibility=False,
         )
         immutable_checksum = _immutable_contract_checksum(extracted_root, manifest)
         if extracted_root != staging:
@@ -1994,7 +2050,10 @@ def _install_action(workspace, descriptor, plan, action, transport):
         published = True
         _fsync_directory(destination.parent)
         verified_manifest, _ = _validate_legacy_package(
-            destination, bootstrap, expected_instance_id=action["workflow_instance_id"]
+            destination,
+            bootstrap,
+            expected_instance_id=action["workflow_instance_id"],
+            require_legacy_compatibility=False,
         )
         if (
             _immutable_contract_checksum(destination, verified_manifest) != immutable_checksum
@@ -2041,6 +2100,13 @@ def _validate_acquisition(raw, plan, action):
 
 def _bootstrap_for_action(descriptor, plan, action):
     artifact = action["artifact"]
+    template_id, legacy_compatible = SUPPORTED_CAPSULE_PINS[
+        (
+            action["workflow_definition_id"],
+            action["workflow_definition_version"],
+            action["capsule_version"],
+        )
+    ]
     capsule = {
         "workflow_instance_id": action["workflow_instance_id"],
         "workflow_definition_id": action["workflow_definition_id"],
@@ -2049,9 +2115,9 @@ def _bootstrap_for_action(descriptor, plan, action):
         "capsule_version": action["capsule_version"],
         "capsule_definition_checksum": action["capsule_definition_checksum"],
         "desired_state": "ACTIVE",
-        "legacy_package_compatible": True,
+        "legacy_package_compatible": legacy_compatible,
         "package_schema_version": artifact["package_schema_version"],
-        "package_template_id": PACKAGE_TEMPLATE_ID,
+        "package_template_id": template_id,
         "trust_classification": action["trust_classification"],
         "legacy_package": {
             "package_id": artifact["package_id"],
@@ -2138,6 +2204,14 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
     for item in lock["installed_capsules"]:
         destination = workspace / item["relative_path"]
         _assert_within(workspace, destination)
+        pin = (
+            item["workflow_definition_id"],
+            item["workflow_definition_version"],
+            item["capsule_version"],
+        )
+        if pin not in SUPPORTED_CAPSULE_PINS:
+            raise _identity("CAPSULE_TRUST_REJECTED", "Installed Capsule pin is unsupported")
+        template_id, legacy_compatible = SUPPORTED_CAPSULE_PINS[pin]
         synthetic = {
             **bootstrap,
             "workflow_capsules": [{
@@ -2148,9 +2222,9 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
                 "capsule_version": item["capsule_version"],
                 "capsule_definition_checksum": item["capsule_definition_checksum"],
                 "desired_state": "ACTIVE",
-                "legacy_package_compatible": True,
+                "legacy_package_compatible": legacy_compatible,
                 "package_schema_version": PACKAGE_SCHEMA,
-                "package_template_id": PACKAGE_TEMPLATE_ID,
+                "package_template_id": template_id,
                 "trust_classification": TRUST_CLASSIFICATION,
                 "legacy_package": {
                     "package_id": item["package_id"],
@@ -2163,7 +2237,10 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
             }],
         }
         manifest, _ = _validate_legacy_package(
-            destination, synthetic, expected_instance_id=item["workflow_instance_id"]
+            destination,
+            synthetic,
+            expected_instance_id=item["workflow_instance_id"],
+            require_legacy_compatibility=False,
         )
         if (
             manifest["package_checksum"] != item["package_checksum"]
@@ -2353,10 +2430,18 @@ def _validate_artifact_index(
             "producer_workflow_instance_id",
         )
         _match(item["producer_capsule_version"], SEMVER, "producer_capsule_version")
-        _match(item["artifact_type"], re.compile(r"^[a-z][a-z0-9._-]{1,159}$"), "artifact_type")
+        _match(
+            item["artifact_type"],
+            re.compile(r"^[a-z][a-z0-9._-]{1,139}(?:/v[0-9]+(?:\.[0-9]+)?)?$"),
+            "artifact_type",
+        )
         if (
             not isinstance(item["artifact_schema_version"], str)
-            or not item["artifact_schema_version"].startswith("reagent.artifact.")
+            or not re.fullmatch(
+                r"(?:reagent\.artifact\.[a-z][a-z0-9._-]*/v[0-9]+\.[0-9]+|"
+                r"[a-z][a-z0-9._-]{1,139}/v[0-9]+(?:\.[0-9]+)?)",
+                item["artifact_schema_version"],
+            )
         ):
             raise _identity("ARTIFACT_INDEX_INVALID", "Artifact schema identity is invalid")
         producer_path = _safe_artifact_path(item["producer_relative_path"], root="outputs")
@@ -3076,6 +3161,166 @@ def _validate_materialization_receipt(document, descriptor):
     return value
 
 
+def run_workflow(
+    *,
+    workspace_root: str | Path,
+    workflow_instance_id: str,
+    transport: Any,
+    api_url: str,
+    preflight_only: bool = False,
+    codex_executable: str | None = None,
+) -> WorkflowRunResult:
+    """Explicitly preflight and enter one exact installed Workflow Capsule."""
+
+    workspace, descriptor, bootstrap = load_workspace(workspace_root)
+    _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+    with _WorkspaceWriteLock(workspace):
+        lock = _require_installed_lock(workspace, descriptor)
+        _verify_locked_capsules(workspace, lock, bootstrap)
+        installed = next(
+            (
+                item
+                for item in lock["installed_capsules"]
+                if item["workflow_instance_id"] == workflow_instance_id
+                and item["lifecycle"] == "ACTIVE"
+            ),
+            None,
+        )
+        if installed is None:
+            raise WorkspaceCLIError(
+                "DEPENDENCY_UNRESOLVED",
+                "The requested Workflow Capsule is not actively installed",
+                EXIT_VALIDATION,
+            )
+        capsule = workspace / installed["relative_path"]
+        runner = capsule / "reagent_local.py"
+        if runner.is_symlink() or not runner.is_file():
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Workflow runner is unavailable")
+        pin = (
+            installed["workflow_definition_id"],
+            installed["workflow_definition_version"],
+            installed["capsule_version"],
+        )
+        is_idea = pin == (
+            "idea-discovery-local-experimental",
+            "0.1.0",
+            "0.1.0",
+        )
+        command = [sys.executable, str(runner)]
+        if is_idea:
+            plan = validate_materialization_plan(
+                transport.materialization_plan(
+                    descriptor["project_id"], workflow_instance_id
+                ),
+                descriptor,
+            )
+            if len(plan["artifacts"]) != 1:
+                raise WorkspaceCLIError(
+                    "DEPENDENCY_UNRESOLVED",
+                    "Idea Discovery requires one explicitly bound paper library",
+                    EXIT_VALIDATION,
+                )
+            item = plan["artifacts"][0]
+            receipt_path = (
+                workspace
+                / MATERIALIZATION_RECEIPTS_ROOT
+                / f"{item['binding_id']}.json"
+            )
+            if receipt_path.is_symlink() or not receipt_path.is_file():
+                raise WorkspaceCLIError(
+                    "DEPENDENCY_UNRESOLVED",
+                    "Idea Discovery input has not been explicitly materialized",
+                    EXIT_VALIDATION,
+                )
+            receipt = _validate_materialization_receipt(
+                _read_json(receipt_path), descriptor
+            )
+            expected_target = (
+                f"{item['target_capsule_relative_path']}/"
+                f"{item['target_relative_path']}"
+            )
+            if any(
+                receipt[field] != value
+                for field, value in {
+                    "consumer_workflow_instance_id": workflow_instance_id,
+                    "binding_id": item["binding_id"],
+                    "artifact_id": item["artifact_id"],
+                    "source_checksum": item["expected_checksum"],
+                    "target_checksum": item["expected_checksum"],
+                    "target_relative_path": expected_target,
+                }.items()
+            ):
+                raise WorkspaceCLIError(
+                    "MATERIALIZED_ARTIFACT_DRIFT",
+                    "Idea Discovery materialization receipt differs from the Cloud binding",
+                    EXIT_VALIDATION,
+                )
+            target = workspace / expected_target
+            checksum, size = _verified_regular_file(
+                target,
+                allowed_root=capsule,
+                missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
+            )
+            if checksum != item["expected_checksum"] or size != item["expected_size_bytes"]:
+                raise WorkspaceCLIError(
+                    "MATERIALIZED_ARTIFACT_DRIFT",
+                    "Idea Discovery materialized input checksum drifted",
+                    EXIT_VALIDATION,
+                )
+            command.extend([
+                "run",
+                ".",
+                "--workflow-instance",
+                workflow_instance_id,
+                "--api-url",
+                api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
+        elif preflight_only:
+            namespace = runpy.run_path(str(capsule / "validate_package.py"))
+            try:
+                validation = namespace["validate"](capsule, pristine=False)
+            except Exception as error:
+                raise _identity(
+                    "LOCAL_CAPSULE_DRIFT", "Workflow Capsule preflight failed"
+                ) from error
+            if validation.get("valid") is not True:
+                raise _identity("LOCAL_CAPSULE_DRIFT", "Workflow Capsule is invalid")
+            return WorkflowRunResult(
+                status="PREFLIGHT_READY",
+                project_id=descriptor["project_id"],
+                workspace_id=descriptor["workspace_id"],
+                workflow_instance_id=workflow_instance_id,
+                capsule_relative_path=installed["relative_path"],
+            )
+        else:
+            command.extend(["run", "."])
+        environment = dict(os.environ)
+        environment.pop("REAGENT_DATABASE_URL", None)
+        completed = subprocess.run(
+            command,
+            cwd=capsule,
+            env=environment,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise WorkspaceCLIError(
+                "WORKFLOW_RUN_PREFLIGHT_FAILED" if preflight_only else "WORKFLOW_RUN_FAILED",
+                "Workflow local Harness did not complete successfully",
+                EXIT_VALIDATION,
+            )
+        return WorkflowRunResult(
+            status="PREFLIGHT_READY" if preflight_only else "RUN_COMPLETED",
+            project_id=descriptor["project_id"],
+            workspace_id=descriptor["workspace_id"],
+            workflow_instance_id=workflow_instance_id,
+            capsule_relative_path=installed["relative_path"],
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python reagent_local.py",
@@ -3118,6 +3363,13 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_materialize_command.add_argument("--api-url", default="http://127.0.0.1:8000")
     artifact_materialize_command.add_argument("--dry-run", action="store_true")
     artifact_materialize_command.add_argument("--json", action="store_true")
+    run = commands.add_parser("run", help="preflight and run one exact installed Workflow Capsule")
+    run.add_argument("workspace", type=Path)
+    run.add_argument("--workflow-instance", required=True, dest="workflow_instance_id")
+    run.add_argument("--api-url", default="http://127.0.0.1:8000")
+    run.add_argument("--preflight-only", action="store_true")
+    run.add_argument("--codex-executable")
+    run.add_argument("--json", action="store_true")
     return parser
 
 
@@ -3164,6 +3416,16 @@ def main(argv: list[str] | None = None) -> int:
                     transport=HTTPWorkspaceSyncTransport(args.api_url),
                     dry_run=args.dry_run,
                 )
+            json_output = args.json
+        elif args.command == "run":
+            result = run_workflow(
+                workspace_root=args.workspace,
+                workflow_instance_id=args.workflow_instance_id,
+                transport=HTTPWorkspaceSyncTransport(args.api_url),
+                api_url=args.api_url,
+                preflight_only=args.preflight_only,
+                codex_executable=args.codex_executable,
+            )
             json_output = args.json
         else:
             result = workspace_status(args.workspace)
@@ -3247,7 +3509,7 @@ def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
 
 
 def _print_result(
-    result: WorkspaceOperationResult | WorkspaceSyncResult | ArtifactOperationResult | dict[str, Any],
+    result: WorkspaceOperationResult | WorkspaceSyncResult | ArtifactOperationResult | WorkflowRunResult | dict[str, Any],
     *,
     json_output: bool,
 ) -> None:

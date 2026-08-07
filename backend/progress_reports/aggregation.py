@@ -56,6 +56,20 @@ class ProjectProgressAggregationService:
         }
         reports = self._uow.progress_reports.list_for_project(project_id)
         acknowledgements = self._uow.workspace_sync.list_acknowledgements(project_id)
+        dependency_bindings = (
+            self._uow.artifact_references.list_project_bindings(project_id)
+        )
+        artifact_total = self._uow.artifact_references.count_artifacts(
+            project_id=project_id
+        )
+        artifacts = {
+            item.artifact_id: item
+            for item in self._uow.artifact_references.list_artifacts(
+                project_id=project_id,
+                offset=0,
+                limit=max(artifact_total, 1),
+            )
+        }
         by_instance: dict[str, list[UploadedProgressReport]] = defaultdict(list)
         for report in reports:
             by_instance[report.workflow_instance_id].append(report)
@@ -108,7 +122,10 @@ class ProjectProgressAggregationService:
             history_limit=history_limit,
             history_total=len(ordered_history),
             has_more_history=history_offset + len(page) < len(ordered_history),
-            dependency_edges=(),
+            dependency_edges=tuple(
+                _dependency_edge(binding, artifacts.get(binding.artifact_id))
+                for binding in dependency_bindings
+            ),
         )
 
     def instance_progress(
@@ -203,6 +220,23 @@ def _report_activity_key(report: UploadedProgressReport) -> tuple[datetime, date
         report.report_id,
         report.receipt_id,
     )
+
+
+def _dependency_edge(binding, artifact) -> dict[str, object]:
+    if artifact is None or artifact.project_id != binding.project_id:
+        raise ValueError("Artifact dependency projection is incomplete")
+    return {
+        "binding_id": binding.binding_id,
+        "consumer_workflow_instance_id": binding.consumer_workflow_instance_id,
+        "requirement_key": binding.requirement_key,
+        "artifact_id": binding.artifact_id,
+        "expected_checksum": binding.expected_checksum,
+        "state": binding.state.value,
+        "producer_workflow_instance_id": artifact.producer_workflow_instance_id,
+        "artifact_type": artifact.artifact_type,
+        "artifact_schema_version": artifact.artifact_schema_version,
+        "produced_at": _utc_text(artifact.produced_at),
+    }
 
 
 def _report_activity_text(report: UploadedProgressReport) -> str:

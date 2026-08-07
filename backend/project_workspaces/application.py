@@ -38,7 +38,10 @@ from .legacy import (
 )
 from .manifest import build_desired_manifest, mutation_idempotency_key
 from .bootstrap import build_workspace_bootstrap_descriptor
-from .service import ensure_literature_search_foundation
+from .service import (
+    ensure_literature_search_foundation,
+    ensure_production_workflow_foundation,
+)
 
 
 class ProjectWorkspaceApplicationService:
@@ -58,12 +61,30 @@ class ProjectWorkspaceApplicationService:
         )
 
     def initialize_project(self, project: LocalProject) -> None:
-        """Bridge legacy Project creation into canonical desired state atomically."""
+        """Bridge an existing pre-B7 Project without changing its immutable pins."""
+
+        definition, version, capsule = ensure_literature_search_foundation(
+            self._uow, now=_parse_timestamp(project.created_at)
+        )
+        self._initialize_project_with_pin(project, definition, version, capsule)
+
+    def initialize_new_project(self, project: LocalProject) -> None:
+        """Create a post-B7 Project on the reviewed production Literature pin."""
 
         now = _parse_timestamp(project.created_at)
-        definition, version, capsule = ensure_literature_search_foundation(
+        definition, version, capsule, _, _, _ = ensure_production_workflow_foundation(
             self._uow, now=now
         )
+        self._initialize_project_with_pin(project, definition, version, capsule)
+
+    def _initialize_project_with_pin(
+        self,
+        project: LocalProject,
+        definition: WorkflowDefinition,
+        version: WorkflowDefinitionVersion,
+        capsule: WorkflowCapsuleVersion,
+    ) -> None:
+        now = _parse_timestamp(project.created_at)
         canonical = CloudProject(
             project_id=project.project_id,
             workspace_id=workspace_id_for_project(project.project_id),

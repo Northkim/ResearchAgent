@@ -13,6 +13,12 @@ from backend.application.errors import (
     ApplicationValidationError,
 )
 from backend.workflow_packages import build_literature_search_package
+from backend.workflow_packages.production_workflows import (
+    LITERATURE_SEARCH_CAPSULE_VERSION as PRODUCTION_CAPSULE_VERSION,
+    LITERATURE_SEARCH_WORKFLOW_VERSION as PRODUCTION_WORKFLOW_VERSION,
+    build_literature_search_v0_6_package,
+    literature_search_workflow_document as production_workflow_document,
+)
 from backend.workflow_packages.serialization import canonical_hash
 from backend.workflow_packages.template import WORKFLOW_ID, WORKFLOW_VERSION, workflow_document
 
@@ -36,6 +42,11 @@ class LocalProjectService:
         clock: Callable[[], datetime] | None = None,
         project_id_factory: Callable[[], str] | None = None,
         workspace_initializer: Callable[[LocalProject], None] | None = None,
+        package_pin_resolver: Callable[[str], tuple[str, str, str] | None]
+        | None = None,
+        package_artifact_registrar: Callable[
+            [LocalProject, str], None
+        ] | None = None,
         rollback_callback: Callable[[], None] | None = None,
     ) -> None:
         self._repository = repository
@@ -46,6 +57,8 @@ class LocalProjectService:
             lambda: f"project-{uuid.uuid4().hex}"
         )
         self._workspace_initializer = workspace_initializer
+        self._package_pin_resolver = package_pin_resolver
+        self._package_artifact_registrar = package_artifact_registrar
         self._rollback = rollback_callback
 
     def create(
@@ -92,17 +105,48 @@ class LocalProjectService:
         if project.selected_workflow != LITERATURE_SEARCH_WORKFLOW:
             raise ApplicationValidationError("Project Workflow is not supported")
         storage_root = self._resolved_storage_root()
-        # Keep older immutable Package generations readable while allowing the
-        # current template identity to produce a new deterministic artifact.
-        output = storage_root / project.project_id / "literature-search-v0.5"
-        try:
-            built = build_literature_search_package(
-                project_id=project.project_id,
-                project_name=project.name,
-                research_topic=project.research_topic,
-                output_root=output,
-                allow_absolute_output_root=True,
+        pin = (
+            self._package_pin_resolver(project.project_id)
+            if self._package_pin_resolver is not None
+            else None
+        )
+        production = pin is not None and pin[1:] == (
+            PRODUCTION_WORKFLOW_VERSION,
+            PRODUCTION_CAPSULE_VERSION,
+        )
+        if pin is not None and not production and pin[1:] != ("0.3.0", "0.5.0"):
+            raise ApplicationValidationError(
+                "Project Literature Search pin has no reviewed standalone Package compiler"
             )
+        # Keep the accepted 0.5.0 Package path and bytes unchanged. New B7
+        # Projects receive a separately pinned, instance-bound 0.6.0 Package.
+        output = storage_root / project.project_id / (
+            "literature-search-v0.6" if production else "literature-search-v0.5"
+        )
+        try:
+            if production:
+                assert pin is not None
+                built = build_literature_search_v0_6_package(
+                    project_id=project.project_id,
+                    project_name=project.name,
+                    research_topic=project.research_topic,
+                    output_root=output,
+                    package_id=(
+                        f"literature-search-{project.project_id}-{pin[0]}-v0.6"
+                    ),
+                )
+                workflow_version = PRODUCTION_WORKFLOW_VERSION
+                workflow_checksum = canonical_hash(production_workflow_document())
+            else:
+                built = build_literature_search_package(
+                    project_id=project.project_id,
+                    project_name=project.name,
+                    research_topic=project.research_topic,
+                    output_root=output,
+                    allow_absolute_output_root=True,
+                )
+                workflow_version = WORKFLOW_VERSION
+                workflow_checksum = canonical_hash(workflow_document())
         except (FileExistsError, OSError, ValueError) as error:
             raise ApplicationUnavailableError(
                 "Local Workflow Package generation failed closed"
@@ -120,8 +164,8 @@ class LocalProjectService:
             manifest_checksum=built.manifest_checksum,
             zip_checksum=built.zip_checksum,
             workflow_id=WORKFLOW_ID,
-            workflow_version=WORKFLOW_VERSION,
-            workflow_checksum=canonical_hash(workflow_document()),
+            workflow_version=workflow_version,
+            workflow_checksum=workflow_checksum,
             archive_storage_key=archive_key,
             file_count=built.file_count,
             package_size_bytes=built.package_size_bytes,
@@ -129,6 +173,8 @@ class LocalProjectService:
         )
         updated = project.with_package(package, updated_at=generated_at)
         self._repository.save(updated)
+        if pin is not None and self._package_artifact_registrar is not None:
+            self._package_artifact_registrar(updated, pin[0])
         self._commit()
         return updated
 

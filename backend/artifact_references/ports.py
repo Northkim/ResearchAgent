@@ -76,6 +76,11 @@ class ArtifactReferenceRepository(ABC):
     ) -> tuple[ArtifactDependencyBinding, ...]: ...
 
     @abstractmethod
+    def list_project_bindings(
+        self, project_id: str
+    ) -> tuple[ArtifactDependencyBinding, ...]: ...
+
+    @abstractmethod
     def count_bindings(
         self, project_id: str, consumer_workflow_instance_id: str
     ) -> int: ...

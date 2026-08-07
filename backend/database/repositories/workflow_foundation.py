@@ -24,10 +24,6 @@ from backend.project_workspaces.contracts import (
     WorkflowReviewStatus,
 )
 from backend.project_workspaces.errors import WorkflowFoundationConflictError
-from backend.project_workspaces.literature_search import (
-    LITERATURE_SEARCH_DEFINITION_ID,
-    LITERATURE_SEARCH_STABLE_KEY,
-)
 from backend.project_workspaces.ports import WorkflowFoundationRepository
 
 from ._helpers import pending_by_composite_key, pending_instances
@@ -58,9 +54,13 @@ class SQLAlchemyWorkflowFoundationRepository(WorkflowFoundationRepository):
         return _definition(row) if row is not None else None
 
     def get_definition_by_stable_key(self, stable_key: str) -> WorkflowDefinition | None:
-        if stable_key != LITERATURE_SEARCH_STABLE_KEY:
-            return None
-        return self.get_definition(LITERATURE_SEARCH_DEFINITION_ID)
+        from backend.project_workspaces.literature_search import (
+            LITERATURE_SEARCH_DEFINITION_ID,
+            LITERATURE_SEARCH_STABLE_KEY,
+        )
+        if stable_key == LITERATURE_SEARCH_STABLE_KEY:
+            return self.get_definition(LITERATURE_SEARCH_DEFINITION_ID)
+        return self.get_definition(stable_key)
 
     def list_definitions(self) -> tuple[WorkflowDefinition, ...]:
         rows = list(self.session.scalars(select(LocalWorkflowDefinitionORM)))

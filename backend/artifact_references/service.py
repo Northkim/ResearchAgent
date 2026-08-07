@@ -119,14 +119,10 @@ class ArtifactReferenceService:
                     "Artifact type is not declared by the exact producer Capsule",
                     code="ARTIFACT_TYPE_UNKNOWN",
                 )
-            if any(
-                contract.get(field) != expected
-                for field, expected in {
-                    "artifact_schema_version": declaration.artifact_schema_version,
-                    "media_type": declaration.media_type,
-                    "relative_path": declaration.relative_path,
-                    "progress_artifact_kind": progress_output.artifact_kind,
-                }.items()
+            if not _matches_output_contract(
+                contract=contract,
+                declaration=declaration,
+                progress_artifact_kind=progress_output.artifact_kind,
             ):
                 raise ApplicationCodedValidationError(
                     "Artifact declaration violates the reviewed producer contract",
@@ -511,15 +507,20 @@ def _output_contracts(compatibility) -> dict[str, dict[str, str]]:
     if not isinstance(raw, (list, tuple)):
         return {}
     result: dict[str, dict[str, str]] = {}
-    required = {
+    common = {
         "artifact_type",
         "artifact_schema_version",
         "media_type",
-        "relative_path",
         "progress_artifact_kind",
     }
     for item in raw:
-        if not hasattr(item, "items") or set(item) != required:
+        fields = set(item) if hasattr(item, "items") else set()
+        exact = fields == common | {"relative_path"}
+        addressed = fields == common | {
+            "relative_path_prefix",
+            "content_addressed_filename",
+        }
+        if not exact and not addressed:
             raise ApplicationCodedValidationError(
                 "Producer Capsule Artifact output contract is invalid",
                 code="ARTIFACT_CONTRACT_VIOLATION",
@@ -532,6 +533,25 @@ def _output_contracts(compatibility) -> dict[str, dict[str, str]]:
             )
         result[value["artifact_type"]] = value
     return result
+
+
+def _matches_output_contract(
+    *, contract: dict[str, str], declaration: ArtifactDeclaration, progress_artifact_kind: str
+) -> bool:
+    if (
+        contract.get("artifact_schema_version") != declaration.artifact_schema_version
+        or contract.get("media_type") != declaration.media_type
+        or contract.get("progress_artifact_kind") != progress_artifact_kind
+    ):
+        return False
+    if "relative_path" in contract:
+        return contract["relative_path"] == declaration.relative_path
+    prefix = contract.get("relative_path_prefix")
+    filename = contract.get("content_addressed_filename")
+    if prefix is None or filename != "sha256-<content-sha256>.json":
+        return False
+    expected = prefix.rstrip("/") + "/sha256-" + declaration.content_checksum[7:] + ".json"
+    return declaration.relative_path == expected
 
 
 def _artifact_document(item: ArtifactReference) -> dict[str, Any]:
@@ -553,10 +573,10 @@ def _artifact_document(item: ArtifactReference) -> dict[str, Any]:
         "content_checksum": item.content_checksum,
         "size_bytes": item.size_bytes,
         "cloud_metadata_available": item.cloud_metadata_available,
-        "produced_at": item.produced_at.isoformat().replace("+00:00", "Z"),
-        "retired_at": None if item.retired_at is None else item.retired_at.isoformat().replace("+00:00", "Z"),
-        "created_at": item.created_at.isoformat().replace("+00:00", "Z"),
-        "updated_at": item.updated_at.isoformat().replace("+00:00", "Z"),
+        "produced_at": _utc_text(item.produced_at),
+        "retired_at": None if item.retired_at is None else _utc_text(item.retired_at),
+        "created_at": _utc_text(item.created_at),
+        "updated_at": _utc_text(item.updated_at),
     }
 
 
@@ -599,3 +619,7 @@ def _aware(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("Artifact service clock must be timezone-aware")
     return value.astimezone(timezone.utc)
+
+
+def _utc_text(value: datetime) -> str:
+    return _aware(value).isoformat().replace("+00:00", "Z")

@@ -299,6 +299,11 @@ class ApplicationContainer:
         artifact_references = ArtifactReferenceService(
             unit_of_work=unit_of_work, clock=self.clock
         )
+        workspace_sync = WorkspaceSyncApplicationService(
+            unit_of_work=unit_of_work,
+            package_root=self.local_package_root,
+            clock=self.clock,
+        )
         return LocalProductApplicationServices(
             local_projects=LocalProjectService(
                 repository=unit_of_work.local_projects,
@@ -306,18 +311,18 @@ class ApplicationContainer:
                 package_root=self.local_package_root,
                 clock=self.clock,
                 project_id_factory=self.project_id_factory,
-                workspace_initializer=project_workspaces.initialize_project,
+                workspace_initializer=project_workspaces.initialize_new_project,
+                package_pin_resolver=workspace_sync.standalone_literature_package_pin,
+                package_artifact_registrar=(
+                    workspace_sync.register_standalone_package_artifact
+                ),
                 rollback_callback=unit_of_work.rollback,
             ),
             progress_reports=self._progress_report_service(
                 unit_of_work, artifact_references=artifact_references
             ),
             project_workspaces=project_workspaces,
-            workspace_sync=WorkspaceSyncApplicationService(
-                unit_of_work=unit_of_work,
-                package_root=self.local_package_root,
-                clock=self.clock,
-            ),
+            workspace_sync=workspace_sync,
             project_progress=ProjectProgressAggregationService(
                 unit_of_work=unit_of_work,
                 clock=self.clock,

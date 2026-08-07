@@ -272,6 +272,23 @@ class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
         )
         return tuple(values[offset:offset + limit])
 
+    def list_project_bindings(
+        self, project_id: str
+    ) -> tuple[ArtifactDependencyBinding, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._artifact_dependency_bindings.values()
+                if item.project_id == project_id
+            ),
+            key=lambda item: (
+                item.consumer_workflow_instance_id,
+                item.requirement_key,
+                item.created_at,
+                item.binding_id,
+            ),
+        ))
+
     def count_bindings(
         self, project_id: str, consumer_workflow_instance_id: str
     ) -> int:

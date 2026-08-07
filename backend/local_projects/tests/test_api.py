@@ -108,6 +108,11 @@ def test_package_generate_latest_and_download(product_client) -> None:
     package = generated.json()
     assert replayed.json()["package_checksum"] == package["package_checksum"]
     assert len(package["package_checksum"]) == 71
+    assert package["workflow_version"] == "0.4.0"
+    artifacts = tuple(database.capsule_artifacts.values())
+    assert len(artifacts) == 1
+    assert artifacts[0].package_id == package["package_id"]
+    assert artifacts[0].workflow_instance_id in database.project_workflow_instances
 
     latest = client.get(f"/projects/{project['project_id']}/packages/latest")
     archive = client.get(package["download_url"])

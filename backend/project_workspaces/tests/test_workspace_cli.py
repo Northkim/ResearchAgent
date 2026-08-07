@@ -13,7 +13,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import ApplicationContainer, create_app
+from backend.local_projects.contracts import LocalProject
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
+from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces import workspace_cli
 from backend.project_workspaces.workspace_cli import WorkspaceCLIError
 from backend.workflow_packages import validate_package
@@ -27,17 +29,23 @@ def workspace_fixture(tmp_path: Path):
         unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
         local_package_root=str(package_root),
     )
-    client = TestClient(create_app(container))
-    project = client.post(
-        "/projects",
-        json={
-            "name": "Workspace qualification",
-            "research_topic": "Fictional portable research continuity",
-            "selected_workflow": "LITERATURE_SEARCH",
-        },
+    project_id = "project-" + "b" * 32
+    legacy = LocalProject(
+        project_id=project_id,
+        name="Workspace qualification",
+        research_topic="Fictional portable research continuity",
+        selected_workflow="LITERATURE_SEARCH",
+        created_at="2026-08-06T00:00:00Z",
+        updated_at="2026-08-06T00:00:00Z",
     )
-    assert project.status_code == 201
-    project_id = project.json()["project_id"]
+    seed = InMemoryUnitOfWork(database)
+    seed.local_projects.add(legacy)
+    ProjectWorkspaceApplicationService(
+        unit_of_work=seed,
+        clock=lambda: datetime(2026, 8, 6, tzinfo=timezone.utc),
+    ).initialize_project(legacy)
+    seed.commit()
+    client = TestClient(create_app(container))
     generated = client.post(f"/projects/{project_id}/packages")
     assert generated.status_code == 201
     descriptor = client.get(f"/projects/{project_id}/workspace-bootstrap")

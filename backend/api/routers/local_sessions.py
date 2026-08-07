@@ -272,6 +272,7 @@ async def upload_session_progress_report(
     receipt = services.progress_reports.upload(
         envelope,
         workflow_instance_id=request_body.workflow_instance_id,
+        artifact_declarations=request_body.to_artifact_declarations(),
     )
     if receipt.validation_status is ValidationStatus.REJECTED:
         message = "Progress Report retained but rejected"

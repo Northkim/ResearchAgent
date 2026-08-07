@@ -32,9 +32,9 @@ def test_workspace_bootstrap_descriptor_reloads_from_postgresql(
     first = client.get(f"/projects/{project_id}/workspace-bootstrap")
     assert first.status_code == 200
     assert first.json()["bootstrap_manifest_revision"] == 1
-    assert first.json()["workflow_capsules"][0]["legacy_package"][
-        "package_checksum"
-    ] == package.json()["package_checksum"]
+    assert first.json()["workflow_capsules"][0]["capsule_version"] == "0.6.0"
+    assert first.json()["workflow_capsules"][0]["legacy_package"] is None
+    assert client.get(package.json()["download_url"]).status_code == 200
 
     # Every request receives a fresh SQLAlchemy Unit of Work. This second read
     # therefore proves descriptor reconstruction from committed PostgreSQL rows,

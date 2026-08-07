@@ -58,9 +58,14 @@ class ProgressReportUploadRequest(StrictDTO):
 
 class ArtifactDeclarationRequest(StrictDTO):
     artifact_id: str = Field(pattern=r"^artifact-[0-9a-f]{32}$")
-    artifact_type: str = Field(pattern=r"^[a-z][a-z0-9._-]{1,159}$")
+    artifact_type: str = Field(
+        pattern=r"^[a-z][a-z0-9._-]{1,139}(?:/v[0-9]+(?:\.[0-9]+)?)?$"
+    )
     artifact_schema_version: str = Field(
-        pattern=r"^reagent\.artifact\.[a-z][a-z0-9._-]*/v[0-9]+\.[0-9]+$"
+        pattern=(
+            r"^(?:reagent\.artifact\.[a-z][a-z0-9._-]*/v[0-9]+\.[0-9]+|"
+            r"[a-z][a-z0-9._-]{1,139}/v[0-9]+(?:\.[0-9]+)?)$"
+        )
     )
     media_type: str
     relative_path: str

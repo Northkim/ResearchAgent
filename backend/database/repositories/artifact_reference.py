@@ -319,6 +319,27 @@ class SQLAlchemyArtifactReferenceRepository(ArtifactReferenceRepository):
         rows.sort(key=lambda row: (row.requirement_key, row.created_at, row.binding_id))
         return tuple(_binding(row) for row in rows[offset:offset + limit])
 
+    def list_project_bindings(
+        self, project_id: str
+    ) -> tuple[ArtifactDependencyBinding, ...]:
+        rows = list(self.session.scalars(
+            select(ArtifactDependencyBindingORM).where(
+                ArtifactDependencyBindingORM.project_id == project_id
+            )
+        ))
+        rows.extend(
+            row
+            for row in pending_instances(self.session, ArtifactDependencyBindingORM)
+            if row.project_id == project_id and row not in rows
+        )
+        rows.sort(key=lambda row: (
+            row.consumer_workflow_instance_id,
+            row.requirement_key,
+            row.created_at,
+            row.binding_id,
+        ))
+        return tuple(_binding(row) for row in rows)
+
     def count_bindings(
         self, project_id: str, consumer_workflow_instance_id: str
     ) -> int:

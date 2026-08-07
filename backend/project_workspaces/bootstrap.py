@@ -119,6 +119,7 @@ def build_workspace_bootstrap_descriptor(
         package = local_project.current_package
         if (
             package is not None
+            and capsule.legacy_package_compatible
             and instance.desired_state is WorkflowInstanceDesiredState.ACTIVE
             and instance.workflow_instance_id
             == legacy_workflow_instance_id(project.project_id)

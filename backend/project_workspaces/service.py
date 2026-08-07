@@ -38,6 +38,14 @@ from .literature_search import (
     literature_search_capsule_definition_checksum,
     literature_search_contract_checksum,
 )
+from .production_workflows import (
+    idea_discovery_capsule,
+    idea_discovery_definition,
+    idea_discovery_definition_version,
+    idea_discovery_requirement,
+    literature_search_capsule as production_literature_search_capsule,
+    literature_search_definition_version as production_literature_search_version,
+)
 
 if TYPE_CHECKING:
     from backend.persistence.ports.unit_of_work import UnitOfWork
@@ -138,6 +146,79 @@ def ensure_literature_search_foundation(
     repository.add_definition_version(version)
     repository.add_capsule_version(capsule)
     return definition, version, capsule
+
+
+def ensure_production_workflow_foundation(
+    uow: UnitOfWork, *, now: datetime | None = None
+) -> tuple[
+    WorkflowDefinition,
+    WorkflowDefinitionVersion,
+    WorkflowCapsuleVersion,
+    WorkflowDefinition,
+    WorkflowDefinitionVersion,
+    WorkflowCapsuleVersion,
+]:
+    """Seed both reviewed production Workflows without mutating legacy pins."""
+
+    timestamp = now or datetime.now(timezone.utc)
+    literature_definition, _, _ = ensure_literature_search_foundation(
+        uow, now=timestamp
+    )
+    literature_version = production_literature_search_version(timestamp)
+    literature_capsule = production_literature_search_capsule(timestamp)
+    idea_definition = idea_discovery_definition(timestamp)
+    idea_version = idea_discovery_definition_version(timestamp)
+    idea_capsule = idea_discovery_capsule(timestamp)
+    repository = uow.workflow_foundation
+    repository.add_definition_version(literature_version)
+    repository.add_capsule_version(literature_capsule)
+    repository.add_definition(idea_definition)
+    repository.add_definition_version(idea_version)
+    repository.add_capsule_version(idea_capsule)
+    requirement = idea_discovery_requirement(timestamp)
+    existing_requirement = uow.artifact_references.get_requirement(
+        requirement.workflow_definition_id,
+        requirement.workflow_version,
+        requirement.requirement_key,
+    )
+    if existing_requirement is None:
+        uow.artifact_references.add_requirement(requirement)
+    elif (
+        existing_requirement.workflow_definition_id,
+        existing_requirement.workflow_version,
+        existing_requirement.requirement_key,
+        existing_requirement.artifact_type,
+        existing_requirement.compatibility_mode,
+        existing_requirement.schema_constraint,
+        existing_requirement.cardinality_min,
+        existing_requirement.cardinality_max,
+        existing_requirement.required,
+        existing_requirement.materialization_mode,
+        existing_requirement.target_relative_path,
+    ) != (
+        requirement.workflow_definition_id,
+        requirement.workflow_version,
+        requirement.requirement_key,
+        requirement.artifact_type,
+        requirement.compatibility_mode,
+        requirement.schema_constraint,
+        requirement.cardinality_min,
+        requirement.cardinality_max,
+        requirement.required,
+        requirement.materialization_mode,
+        requirement.target_relative_path,
+    ):
+        raise WorkflowFoundationConflictError(
+            "Idea Discovery Artifact requirement immutable-content conflict"
+        )
+    return (
+        literature_definition,
+        literature_version,
+        literature_capsule,
+        idea_definition,
+        idea_version,
+        idea_capsule,
+    )
 
 
 def _definition(now: datetime) -> WorkflowDefinition:

@@ -18,6 +18,13 @@ from backend.application.errors import (
 from backend.local_projects import LocalProject
 from backend.persistence.ports import DuplicateEntityError, UnitOfWork
 from backend.workflow_packages import build_literature_search_package
+from backend.workflow_packages.production_workflows import (
+    IDEA_DISCOVERY_WORKFLOW_ID,
+    IDEA_DISCOVERY_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_WORKFLOW_VERSION as PRODUCTION_LITERATURE_SEARCH_VERSION,
+    build_idea_discovery_package,
+    build_literature_search_v0_6_package,
+)
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
 from .contracts import (
@@ -84,6 +91,94 @@ class WorkspaceSyncApplicationService:
         self._uow = unit_of_work
         self._package_root = Path(package_root)
         self._clock = clock
+
+    def standalone_literature_package_pin(
+        self, project_id: str
+    ) -> tuple[str, str, str] | None:
+        """Resolve one exact desired Literature instance for Package delivery."""
+
+        matches = tuple(
+            instance
+            for instance in self._uow.workflow_foundation.list_workflow_instances(
+                project_id
+            )
+            if instance.workflow_definition_id == LITERATURE_SEARCH_DEFINITION_ID
+            and instance.desired_state is WorkflowInstanceDesiredState.ACTIVE
+            and instance.capsule_version is not None
+        )
+        if not matches:
+            return None
+        if len(matches) != 1:
+            raise ApplicationCodedConflictError(
+                "Standalone Package delivery requires one exact desired Literature Search Instance",
+                code="PACKAGE_WORKFLOW_INSTANCE_AMBIGUOUS",
+            )
+        instance = matches[0]
+        return (
+            instance.workflow_instance_id,
+            instance.workflow_version,
+            instance.capsule_version or "",
+        )
+
+    def register_standalone_package_artifact(
+        self, project: LocalProject, workflow_instance_id: str
+    ) -> None:
+        """Bind a generated standalone Package to its exact Workflow Instance."""
+
+        package = project.current_package
+        instance = self._uow.workflow_foundation.get_workflow_instance(
+            workflow_instance_id
+        )
+        if (
+            package is None
+            or instance is None
+            or instance.project_id != project.project_id
+            or instance.workflow_definition_id != LITERATURE_SEARCH_DEFINITION_ID
+            or package.workflow_id != instance.workflow_definition_id
+            or package.workflow_version != instance.workflow_version
+            or instance.capsule_id is None
+            or instance.capsule_version is None
+        ):
+            raise ApplicationCodedConflictError(
+                "Standalone Package identity does not match the Workflow Instance",
+                code="PACKAGE_WORKFLOW_INSTANCE_CONFLICT",
+            )
+        existing = self._uow.workspace_sync.get_capsule_artifact(
+            project.project_id, workflow_instance_id
+        )
+        if existing is not None:
+            if (
+                existing.package_id != package.package_id
+                or existing.package_checksum != package.package_checksum
+                or existing.manifest_checksum != package.manifest_checksum
+                or existing.archive_checksum != package.zip_checksum
+            ):
+                raise ApplicationCodedConflictError(
+                    "Workflow Instance already has another immutable Package artifact",
+                    code="CAPSULE_ARTIFACT_CONFLICT",
+                )
+            return
+        timestamp = _parse_time(package.generated_at)
+        self._uow.workspace_sync.add_capsule_artifact(WorkflowCapsuleArtifact(
+            capsule_artifact_id=capsule_artifact_id(
+                project.project_id, workflow_instance_id, package.package_id
+            ),
+            project_id=project.project_id,
+            workflow_instance_id=workflow_instance_id,
+            capsule_id=instance.capsule_id,
+            capsule_version=instance.capsule_version,
+            package_id=package.package_id,
+            package_schema_version=package.package_schema_version,
+            package_checksum=package.package_checksum,
+            manifest_checksum=package.manifest_checksum,
+            archive_checksum=package.zip_checksum,
+            archive_size_bytes=package.package_size_bytes,
+            file_count=package.file_count,
+            archive_storage_key=package.archive_storage_key,
+            status=CapsuleArtifactStatus.AVAILABLE,
+            created_at=timestamp,
+            updated_at=timestamp,
+        ))
 
     def create_plan(
         self,
@@ -334,13 +429,16 @@ class WorkspaceSyncApplicationService:
                 raise _unavailable("Workflow Capsule artifact pin conflicts with the Instance")
             return existing
         local_project: LocalProject | None = self._uow.local_projects.get(instance.project_id)
-        if local_project is None or instance.workflow_definition_id != LITERATURE_SEARCH_DEFINITION_ID:
+        if local_project is None:
             return None
         if instance.capsule_id is None or instance.capsule_version is None:
             return None
         package = local_project.current_package
         if (
-            package is not None
+            instance.workflow_definition_id == LITERATURE_SEARCH_DEFINITION_ID
+            and instance.workflow_version == "0.3.0"
+            and instance.capsule_version == "0.5.0"
+            and package is not None
             and instance.workflow_instance_id == legacy_workflow_instance_id(instance.project_id)
         ):
             artifact = WorkflowCapsuleArtifact(
@@ -372,9 +470,35 @@ class WorkspaceSyncApplicationService:
         project: LocalProject,
         manifest: DesiredProjectManifest,
     ) -> WorkflowCapsuleArtifact:
-        package_id = (
-            f"literature-search-{project.project_id}-{instance.workflow_instance_id}-v0.5"
-        )
+        if (
+            instance.workflow_definition_id == LITERATURE_SEARCH_DEFINITION_ID
+            and instance.workflow_version == "0.3.0"
+            and instance.capsule_version == "0.5.0"
+        ):
+            package_id = (
+                f"literature-search-{project.project_id}-{instance.workflow_instance_id}-v0.5"
+            )
+            builder = build_literature_search_package
+        elif (
+            instance.workflow_definition_id == LITERATURE_SEARCH_DEFINITION_ID
+            and instance.workflow_version == PRODUCTION_LITERATURE_SEARCH_VERSION
+            and instance.capsule_version == "0.6.0"
+        ):
+            package_id = (
+                f"literature-search-{project.project_id}-{instance.workflow_instance_id}-v0.6"
+            )
+            builder = build_literature_search_v0_6_package
+        elif (
+            instance.workflow_definition_id == IDEA_DISCOVERY_WORKFLOW_ID
+            and instance.workflow_version == IDEA_DISCOVERY_WORKFLOW_VERSION
+            and instance.capsule_version == "0.1.0"
+        ):
+            package_id = (
+                f"idea-discovery-{project.project_id}-{instance.workflow_instance_id}-v0.1"
+            )
+            builder = build_idea_discovery_package
+        else:
+            raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")
         output = (
             self._resolved_package_root()
             / project.project_id
@@ -383,14 +507,16 @@ class WorkspaceSyncApplicationService:
             / instance.capsule_version
         )
         try:
-            built = build_literature_search_package(
+            build_options = dict(
                 project_id=project.project_id,
                 project_name=project.name,
                 research_topic=project.research_topic,
                 output_root=output,
-                allow_absolute_output_root=True,
                 package_id=package_id,
             )
+            if builder is build_literature_search_package:
+                build_options["allow_absolute_output_root"] = True
+            built = builder(**build_options)
         except (FileExistsError, OSError, ValueError) as error:
             raise ApplicationCodedUnavailableError(
                 "Workflow Capsule artifact materialization failed closed",
