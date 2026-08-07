@@ -206,3 +206,36 @@ def test_project_progress_is_paginated_and_stably_ordered(
     assert page["history_total"] == 2
     assert len(page["history"]) == 1
     assert page["has_more_history"] is True
+
+
+def test_retired_instance_keeps_its_independent_progress_history(
+    instance_progress_client,
+) -> None:
+    client, database, second_id = instance_progress_client
+    report = native_report(
+        project_id=PROJECT_ID,
+        package_id=SECOND_PACKAGE_ID,
+        package_checksum=SECOND_PACKAGE_CHECKSUM,
+        workflow_id=WORKFLOW_ID,
+        workflow_version=WORKFLOW_VERSION,
+        current_state="Retained research history for the second instance.",
+    )
+    payload = upload_envelope(report).to_dict()
+    payload["workflow_instance_id"] = second_id
+    assert client.post(
+        f"/projects/{PROJECT_ID}/progress-reports", json=payload
+    ).status_code == 201
+
+    retired = client.post(
+        f"/projects/{PROJECT_ID}/workflow-instances/{second_id}/retire",
+        json={"base_revision": 2},
+    )
+    progress = client.get(
+        f"/projects/{PROJECT_ID}/workflow-instances/{second_id}/progress"
+    )
+
+    assert retired.status_code == progress.status_code == 200
+    assert progress.json()["projection"]["lifecycle"] == "RETIRED"
+    assert progress.json()["projection"]["desired_state"] == "NOT_DESIRED"
+    assert progress.json()["history_total"] == 1
+    assert len(database.progress_reports) == 1

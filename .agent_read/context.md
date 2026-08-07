@@ -84,7 +84,51 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-B4 pull sync and installation acknowledgement qualified
+### Current milestone — NIGHT-B5 multi-Workflow Progress and Project navigation qualified
+
+NIGHT-B5 continued directly on clean `main` from accepted B4 final commit
+`63f19b80310108c0d0dc1f4e6e5ea8ba3a3a56f6`. Additive migration
+`20260806_0011` is the sole head. Every stored Progress Report now has an exact
+Project/Workflow-Instance binding; historical Literature Search reports map
+only to the frozen deterministic B1 instance. Original report IDs, timestamps,
+JSON, bytes/checksums, Artifact metadata and idempotency evidence remain
+unchanged. Missing or ambiguous history fails migration rather than selecting
+an arbitrary same-definition instance.
+
+New B4 Capsules resolve Progress identity through their persisted exact
+artifact binding. Only the accepted standalone legacy Package may use its
+verified Project/Package binding plus the frozen UUIDv5 rule. Upload retry
+remains byte-exact and PostgreSQL advisory transaction locking preserves one
+canonical projection under concurrent retry.
+
+Workflow and Project Progress are derived from immutable history. Each
+instance has independently ordered latest status, summary, activity and report
+count; retired history is preserved. Project aggregation returns instance and
+status counts, latest activity and bounded paginated history without a fake
+completion percentage. Workflow lifecycle, research progress, cloud desired
+state and client-reported installation acknowledgement are separate fields.
+
+The Project frontend now has exactly Overview, Workflows, Progress and Help.
+The board is Registry/Instance/Manifest/Progress driven, distinguishes multiple
+instances of the same definition, and reuses B2 add/retire mutations with
+optimistic revision handling. Production still contains only the ratified
+Literature Search Registry entry; no stable ID, Package or executable Capsule
+was invented for later Workflows. Existing Literature Search results and guide
+routes remain compatible.
+
+An isolated PostgreSQL 18.1 cluster qualified empty/populated migration,
+downgrade/re-upgrade, restart, concurrent idempotency and the 20-Instance/
+1,000-report aggregation path. Full backend, frontend Vitest/typecheck/ESLint/
+build, compileall and Alembic no-drift passed; only the four pre-existing
+external/live gates skip. No `.env`, credential, owner database, ProjectDB,
+network Provider, worktree, branch or push was used.
+
+ADR 0025 records exact Workflow-instance Progress identity and derived
+non-linear read models. NIGHT-B6 remains owner-gated: typed Artifact Reference,
+Workspace Artifact Index, checksum-bound handoff, explicit materialization and
+dependency validation are not implemented. Idea Discovery remains later.
+
+### Prior milestone — NIGHT-B4 pull sync and installation acknowledgement qualified
 
 NIGHT-B4 continued directly on clean `main` from accepted B3 final commit
 `d3c1735504f7782af255fe081837edd1dcfb054f`. Additive migration
