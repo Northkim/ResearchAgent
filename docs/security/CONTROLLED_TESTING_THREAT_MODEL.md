@@ -112,4 +112,3 @@ database URLs, filesystem paths, and exception text.
 These risks block a shared instance for mutually untrusted users and block
 public production. They are acceptable only for small, supervised, isolated
 controlled tests behind an authenticated private access layer.
-

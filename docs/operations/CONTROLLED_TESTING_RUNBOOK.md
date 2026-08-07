@@ -176,4 +176,3 @@ the instance. Use one isolated database/process set per tester plus an
 authenticated private access layer. Public deployment, shared
 mutually-untrusted use, live Provider use, and automatic Workspace backup are
 not authorized by H2.
-

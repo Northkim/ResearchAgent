@@ -84,7 +84,54 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-H1 product hardening qualified
+### Current milestone — NIGHT-H2 isolated controlled testing qualified
+
+NIGHT-H2 continued on clean `main` from accepted H1 final commit
+`0fad50ae9262d3396ccc10c36d49d2aa15f1f947`. The repository's actual starting
+security model was local single-user: no user/owner/tenant identity, a
+same-origin browser API, and explicit local Workspace/Harness operations. H2
+adds no production Workflow or database migration; the sole Alembic head
+remains `20260806_0013`.
+
+The accepted controlled topology is one isolated instance per tester: dedicated
+PostgreSQL database, runtime directory and loopback frontend/backend ports,
+reached only through an operator-managed authenticated private access layer.
+The new fail-closed controlled profile requires loopback PostgreSQL, fake-only
+Provider/Proxy, empty CORS, absolute roots and bounded bodies; it rejects live
+flags or keys, hides API docs and legacy Hosted routes, and production-builds
+Next.js. Shared mutually-untrusted use remains blocked by the unratified
+identity/Project ownership model.
+
+Every HTTP response now has a Request ID and security headers. Controlled logs
+contain route template/status/duration/bounded IDs and error class/code only;
+raw access-query logs and tracebacks are suppressed. `/ready` verifies database
+connectivity, exact migration and production B7 Registry/dependency records,
+while `/health` remains liveness. Existing machine error documents remain
+compatible; the header carries diagnostics. A fixed checksum-labelled local
+client download removes repository cloning from tester onboarding.
+
+An isolated 25-step product/deployment drill ran real frontend/backend/CLI/
+filesystem/PostgreSQL paths from fresh migration through Literature Artifact,
+Idea sync/bind/materialize/Progress, application/database/frontend restarts,
+`pg_dump`, database drop/recreate, `pg_restore`, identity/history verification,
+new post-restore Progress and graceful shutdown. Provider/Agent content alone
+used committed deterministic no-network fixtures. PostgreSQL downtime produced
+health 200, ready 503 and sanitized Request-ID errors, then recovered without
+application restart. Database recovery preserves Cloud metadata/provenance but
+not Local Workspace/research bytes.
+
+Qualification passed: full backend `700 passed, 1 skipped` with all historical
+migration/real PostgreSQL/offline integration gates enabled; the only skip is
+the unauthorized live OpenAlex test. Frontend Vitest `16 files / 31 tests`,
+Playwright `5 passed`, typecheck, ESLint, production build, compileall, pip
+consistency, offline npm audit, sole-head/current/check and no Alembic drift all
+passed. Detailed evidence is
+`.agent_read/progress/night_h2_controlled_testing_readiness.md`; ADR 0029
+records the isolated testing boundary. Isolated controlled testing is ready;
+shared multi-user and live Provider tests require separate owner decisions,
+and public production remains not ready.
+
+### Prior milestone — NIGHT-H1 product hardening qualified
 
 NIGHT-H1 continued on clean `main` from accepted B7 final commit
 `79a00e143b362668959fc36327ea8580f87fcb70`. It adds no production Workflow,

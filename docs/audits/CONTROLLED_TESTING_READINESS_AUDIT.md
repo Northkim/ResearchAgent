@@ -120,4 +120,3 @@ required changing Artifact, Workflow, trust, or Cloud/local semantics.
 - full backend: 700 passed, one expected live-Provider skip; Vitest 31 passed;
   Playwright 5 passed; typecheck, ESLint, production build, compileall, and
   Alembic no-drift passed.
-
