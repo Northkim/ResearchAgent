@@ -69,6 +69,7 @@ from backend.research.skills import register_research_skills
 from backend.research.grounded_skills import register_grounded_research_skills
 from backend.research.synthetic_grounded_fixtures import provider_responses
 from backend.workflow_engine.services import WorkflowExecutionCoordinator
+from backend.api.readiness import ReadinessResult, check_postgres_readiness
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
 DispatcherFactory = Callable[[AgentRuntime], ExecutionDispatcher]
@@ -136,6 +137,7 @@ class ApplicationContainer:
         close_callback: Callable[[], None] | None = None,
         local_package_root: str = "runtime_data/local_packages",
         project_id_factory: Callable[[], str] | None = None,
+        readiness_probe: Callable[[], ReadinessResult] | None = None,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
@@ -176,6 +178,9 @@ class ApplicationContainer:
         self._close_callback = close_callback
         self.local_package_root = local_package_root
         self.project_id_factory = project_id_factory
+        self._readiness_probe = readiness_probe or (
+            lambda: ReadinessResult(True, {"persistence": "injected"})
+        )
 
     def build_services(self, unit_of_work: UnitOfWork) -> ApplicationServices:
         domain = ExecutionCoordinator(clock=self.clock)
@@ -354,6 +359,9 @@ class ApplicationContainer:
         if self._close_callback is not None:
             self._close_callback()
 
+    def readiness(self) -> ReadinessResult:
+        return self._readiness_probe()
+
     @classmethod
     def from_environment(cls) -> ApplicationContainer:
         database_url = os.environ.get("REAGENT_DATABASE_URL")
@@ -363,7 +371,12 @@ class ApplicationContainer:
                     "REAGENT_DATABASE_URL is required for persistence endpoints"
                 )
 
-            return cls(unit_of_work_factory=unavailable_factory)
+            return cls(
+                unit_of_work_factory=unavailable_factory,
+                readiness_probe=lambda: ReadinessResult(
+                    False, {"database": "not_configured"}
+                ),
+            )
 
         engine = create_postgres_engine(database_url)
         session_factory = create_session_factory(engine)
@@ -417,4 +430,5 @@ class ApplicationContainer:
                 "REAGENT_LOCAL_PACKAGE_ROOT",
                 "runtime_data/local_packages",
             ),
+            readiness_probe=lambda: check_postgres_readiness(engine),
         )

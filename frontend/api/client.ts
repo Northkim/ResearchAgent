@@ -32,8 +32,9 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly code: string,
+    readonly requestId?: string,
   ) {
-    super(message);
+    super(requestId ? `${message} Diagnostic request: ${requestId}.` : message);
     this.name = "ApiError";
   }
 }
@@ -59,6 +60,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body.error?.message ?? `Backend request failed with ${response.status}`,
       response.status,
       body.error?.code ?? "REQUEST_FAILED",
+      response.headers.get("x-request-id") ?? undefined,
     );
   }
 
@@ -74,6 +76,7 @@ async function requestText(path: string): Promise<string> {
       `Artifact content request failed with ${response.status}`,
       response.status,
       "ARTIFACT_CONTENT_FAILED",
+      response.headers.get("x-request-id") ?? undefined,
     );
   }
   return response.text();
@@ -120,6 +123,10 @@ export const apiClient = {
 
   workspaceBootstrapDownloadUrl(projectId: string): string {
     return `${API_BASE}/projects/${encodeURIComponent(projectId)}/workspace-bootstrap`;
+  },
+
+  localClientDownloadUrl(): string {
+    return `${API_BASE}/local-client/reagent_local.py`;
   },
 
   getProjectProgress(

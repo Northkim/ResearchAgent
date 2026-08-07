@@ -86,6 +86,13 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
           <p>Download this Project&apos;s setup file once. The command creates a separate local folder; it does not upload research files.</p>
           <div className="button-row">
             <a
+              href={apiClient.localClientDownloadUrl()}
+              download="reagent_local.py"
+              className="button button-secondary"
+            >
+              Download local tool
+            </a>
+            <a
               href={apiClient.workspaceBootstrapDownloadUrl(projectId)}
               download="workspace-bootstrap.json"
               className="button button-secondary"

@@ -33,8 +33,9 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
       <section>
         <p className="eyebrow">1 · First local setup</p>
         <h2>Create the Local Workspace once</h2>
-        <p>Download this Project&apos;s setup file, place it beside <code>reagent_local.py</code>, then run:</p>
+        <p>Download the self-contained local tool and this Project&apos;s setup file into the same folder, then run:</p>
         <div className="button-row">
+          <a href={apiClient.localClientDownloadUrl()} download="reagent_local.py" className="button button-secondary">Download local tool</a>
           <a href={apiClient.workspaceBootstrapDownloadUrl(projectId)} download="workspace-bootstrap.json" className="button button-secondary">Download Workspace setup</a>
         </div>
         <CopyCommand command="python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json" label="Workspace bootstrap command" />
@@ -88,7 +89,7 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
         <p>Literature Search 0.3.0 / Capsule 0.5.0 remains immutable and usable, but its old result cannot be silently converted into the production paper library required by Idea Discovery. Keep the old history, explicitly retire the old Workflow if appropriate, add Literature Search again, sync, and finish the new 0.4.0 Workflow.</p>
       </section>
 
-      <section><h2>Cloud continuity is not backup</h2><p>Cloud stores Project configuration, bounded Progress, and result metadata—not your complete research files. Moving devices still requires the real Local Workspace or external storage.</p></section>
+      <section><h2>Cloud continuity is not backup</h2><p>Cloud stores Project configuration, bounded Progress, and result metadata—not your complete research files. Keep the real Local Workspace in tester-approved local backup storage; database recovery cannot recreate its outputs or memory.</p></section>
       <details className="technical-details">
         <summary>Technical model and current limits</summary>
         <p>Cloud Desired Manifest, Capsule pins, Installed Lock, installation acknowledgement, Artifact checksum, and materialization receipts remain available for diagnostics. Normal use does not require editing them.</p>

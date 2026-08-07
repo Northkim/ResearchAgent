@@ -11,9 +11,15 @@ class HealthResponse(StrictDTO):
     status: str
 
 
+class ReadinessResponse(StrictDTO):
+    status: str
+    checks: dict[str, str]
+
+
 class ErrorDetail(StrictDTO):
     code: str
     message: str
+    request_id: str | None = None
 
 
 class ErrorResponse(StrictDTO):

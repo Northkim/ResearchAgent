@@ -1,0 +1,16 @@
+# Operator-only example for one isolated tester instance. Copy outside Git or
+# export these values in the supervised host process. Do not give database
+# credentials or Provider secrets to the tester.
+REAGENT_DATABASE_URL=postgresql://127.0.0.1:5432/reagent_controlled_tester_01
+REAGENT_DEPLOYMENT_PROFILE=isolated-controlled-test
+REAGENT_V0_1_LOCAL_MODE_ENABLED=1
+REAGENT_EXPERIMENTAL_FAKE_PROXY_ENABLED=1
+REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED=0
+REAGENT_PAPER_SEARCH_PROVIDER=fake
+REAGENT_ARTIFACT_ROOT=/var/lib/reagent/tester-01/artifacts
+REAGENT_LOCAL_PACKAGE_ROOT=/var/lib/reagent/tester-01/local-packages
+REAGENT_MAX_REQUEST_BYTES=1048576
+
+# Browser traffic uses the Next.js same-origin /backend rewrite. Keep this
+# empty; CORS does not provide authorization.
+REAGENT_CORS_ALLOWED_ORIGINS=

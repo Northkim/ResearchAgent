@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -26,12 +27,21 @@ from .routers import (
     artifacts_router,
     artifact_references_router,
     health_router,
+    local_client_router,
     local_projects_router,
     local_sessions_router,
     progress_reports_router,
     runs_router,
     workflows_router,
     project_workspaces_router,
+)
+from .deployment import DeploymentSettings
+from .operations import (
+    OperationalBoundaryMiddleware,
+    configure_operational_logging,
+    log_unhandled_error,
+    operational_response_headers,
+    request_id_from_scope,
 )
 
 
@@ -41,7 +51,9 @@ def create_app(
     proxy_container: Any | None = None,
     enable_experimental_proxy: bool | None = None,
     enable_local_workflow_sessions: bool | None = None,
+    deployment_settings: DeploymentSettings | None = None,
 ) -> FastAPI:
+    settings = deployment_settings or DeploymentSettings.from_environment()
     composition = container or ApplicationContainer.from_environment()
     if enable_experimental_proxy is None:
         from backend.cloud_api_proxy.composition import feature_enabled
@@ -61,6 +73,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        configure_operational_logging()
         yield
         if proxy_composition is not None:
             proxy_composition.close()
@@ -70,16 +83,34 @@ def create_app(
         title="ReAgent API",
         version="0.1.0",
         lifespan=lifespan,
+        docs_url="/docs" if settings.expose_api_docs else None,
+        redoc_url="/redoc" if settings.expose_api_docs else None,
+        openapi_url="/openapi.json" if settings.expose_api_docs else None,
     )
     application.state.container = composition
     application.state.proxy_container = proxy_composition
+    application.state.deployment_profile = settings.profile.value
+    if settings.cors_allowed_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=list(settings.cors_allowed_origins),
+            allow_credentials=False,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["Accept", "Authorization", "Content-Type", "X-Request-ID"],
+        )
+    application.add_middleware(
+        OperationalBoundaryMiddleware,
+        maximum_request_bytes=settings.maximum_request_bytes,
+    )
     application.include_router(health_router)
+    application.include_router(local_client_router)
     application.include_router(local_projects_router)
     application.include_router(project_workspaces_router)
-    application.include_router(runs_router)
-    application.include_router(approvals_router)
-    application.include_router(workflows_router)
-    application.include_router(artifacts_router)
+    if settings.expose_legacy_hosted_routes:
+        application.include_router(runs_router)
+        application.include_router(approvals_router)
+        application.include_router(workflows_router)
+        application.include_router(artifacts_router)
     application.include_router(artifact_references_router)
     application.include_router(progress_reports_router)
     if enable_local_workflow_sessions:
@@ -91,7 +122,7 @@ def create_app(
 
     @application.exception_handler(ApplicationError)
     async def handle_application_error(
-        _: Request,
+        request: Request,
         error: ApplicationError,
     ) -> JSONResponse:
         if isinstance(error, ApplicationAuthenticationError):
@@ -122,7 +153,7 @@ def create_app(
 
     @application.exception_handler(RequestValidationError)
     async def handle_request_validation_error(
-        _: Request,
+        request: Request,
         error: RequestValidationError,
     ) -> JSONResponse:
         return JSONResponse(
@@ -132,10 +163,39 @@ def create_app(
                     "error": {
                         "code": "INVALID_REQUEST",
                         "message": "Request body failed DTO validation",
-                        "details": error.errors(),
+                        "details": [
+                            {
+                                "type": item.get("type"),
+                                "loc": item.get("loc"),
+                                "msg": item.get("msg"),
+                            }
+                            for item in error.errors()
+                        ],
                     }
                 }
             ),
+        )
+
+    @application.exception_handler(Exception)
+    async def handle_unexpected_error(
+        request: Request,
+        error: Exception,
+    ) -> JSONResponse:
+        request_id = request_id_from_scope(request.scope)
+        log_unhandled_error(
+            request_id=request_id,
+            error_class=type(error).__name__,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={
+                "error": {
+                    "code": "INTERNAL_SERVER_ERROR",
+                    "message": "The request could not be completed",
+                    "request_id": request_id,
+                }
+            },
+            headers=operational_response_headers(request_id),
         )
 
     return application

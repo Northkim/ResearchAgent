@@ -19,6 +19,9 @@ test("renders the project overview without a fake completion percentage", async 
   expect(screen.getByRole("link", { name: "Download setup file" })).toHaveAttribute(
     "href", `/backend/projects/${localProjectFixture.project_id}/workspace-bootstrap`,
   );
+  expect(screen.getByRole("link", { name: "Download local tool" })).toHaveAttribute(
+    "href", "/backend/local-client/reagent_local.py",
+  );
   expect(screen.getByText(/bootstrap \.\/reagent-workspace/)).toBeVisible();
   expect(screen.getByText("Literature Search")).toBeVisible();
   expect(screen.getByText("Selection rationale is ready for review.")).toBeVisible();

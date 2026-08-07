@@ -6,6 +6,7 @@ task_runtime_dir="${REAGENT_LOCAL_RUNTIME_DIR:-/tmp/reagent-v0-1-${UID}}"
 task_backend_port="${REAGENT_BACKEND_PORT:-8000}"
 task_frontend_port="${REAGENT_FRONTEND_PORT:-3000}"
 task_openalex_enabled="${REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED:-0}"
+task_startup_mode="${REAGENT_STARTUP_MODE:-development}"
 
 fail() {
   echo "ReAgent V0.1 startup failed: $1" >&2
@@ -18,6 +19,11 @@ fail() {
 [[ "${task_frontend_port}" =~ ^[0-9]+$ ]] || fail "REAGENT_FRONTEND_PORT must be numeric"
 [[ "${task_openalex_enabled}" == "0" || "${task_openalex_enabled}" == "1" ]] \
   || fail "REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED must be 0 or 1"
+[[ "${task_startup_mode}" == "development" || "${task_startup_mode}" == "controlled" ]] \
+  || fail "REAGENT_STARTUP_MODE must be development or controlled"
+if [[ "${task_startup_mode}" == "controlled" && "${task_openalex_enabled}" != "0" ]]; then
+  fail "controlled startup is deterministic and cannot enable live OpenAlex"
+fi
 if [[ "${task_openalex_enabled}" == "1" && -z "${REAGENT_OPENALEX_API_KEY:-}" ]]; then
   fail "normal Literature Search requires an exported server-side REAGENT_OPENALEX_API_KEY"
 fi
@@ -94,6 +100,26 @@ finally:
   || fail "database configuration loaded, but the local PostgreSQL database is unavailable or does not exist"
 conda run --no-capture-output -n reagent-dev alembic upgrade head
 
+if [[ "${task_startup_mode}" == "controlled" ]]; then
+  (
+    cd "${task_repo_root}/frontend"
+    env REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" npm run build
+  ) >"${task_runtime_dir}/frontend-build.log" 2>&1 \
+    || fail "Next.js production build failed; inspect ${task_runtime_dir}/frontend-build.log"
+  chmod 600 "${task_runtime_dir}/frontend-build.log"
+  [[ -d "${task_repo_root}/frontend/.next/standalone" ]] \
+    || fail "Next.js standalone output is missing"
+  mkdir -p "${task_repo_root}/frontend/.next/standalone/.next"
+  [[ ! -e "${task_repo_root}/frontend/.next/standalone/.next/static" ]] \
+    || fail "Next.js standalone static target is unexpectedly present"
+  [[ ! -e "${task_repo_root}/frontend/.next/standalone/public" ]] \
+    || fail "Next.js standalone public target is unexpectedly present"
+  cp -R "${task_repo_root}/frontend/.next/static" \
+    "${task_repo_root}/frontend/.next/standalone/.next/static"
+  cp -R "${task_repo_root}/frontend/public" \
+    "${task_repo_root}/frontend/.next/standalone/public"
+fi
+
 task_cleanup_needed=1
 cleanup_on_error() {
   if [[ "${task_cleanup_needed}" == "1" ]]; then
@@ -102,7 +128,17 @@ cleanup_on_error() {
 }
 trap cleanup_on_error EXIT
 
+task_uvicorn_args=(
+  --host 127.0.0.1
+  --port "${task_backend_port}"
+  --no-proxy-headers
+)
+if [[ "${task_startup_mode}" == "controlled" ]]; then
+  task_uvicorn_args+=(--no-access-log)
+fi
+
 env \
+  REAGENT_DEPLOYMENT_PROFILE="$([[ "${task_startup_mode}" == "controlled" ]] && printf '%s' isolated-controlled-test || printf '%s' local-development)" \
   REAGENT_DATABASE_URL="${REAGENT_DATABASE_URL}" \
   REAGENT_ARTIFACT_ROOT="${task_runtime_dir}/artifacts" \
   REAGENT_LOCAL_PACKAGE_ROOT="${task_runtime_dir}/local-packages" \
@@ -113,8 +149,7 @@ env \
   REAGENT_OPENALEX_API_KEY="${REAGENT_OPENALEX_API_KEY:-}" \
   REAGENT_EXPERIMENTAL_OPENALEX_STRUCTURAL_DIAGNOSTICS_ENABLED=0 \
   nohup conda run --no-capture-output -n reagent-dev \
-    uvicorn backend.api.app:app --host 127.0.0.1 --port "${task_backend_port}" \
-    --no-proxy-headers \
+    uvicorn backend.api.app:app "${task_uvicorn_args[@]}" \
     >"${task_runtime_dir}/backend.log" 2>&1 &
 task_backend_pid=$!
 printf '%s\n' "${task_backend_pid}" >"${task_runtime_dir}/backend.pid"
@@ -123,20 +158,30 @@ ps -p "${task_backend_pid}" -o lstart= >"${task_runtime_dir}/backend.identity" \
 chmod 600 "${task_runtime_dir}/backend.pid" "${task_runtime_dir}/backend.identity" "${task_runtime_dir}/backend.log"
 
 for _ in $(seq 1 60); do
-  if curl --fail --silent --show-error "http://127.0.0.1:${task_backend_port}/health" >/dev/null 2>&1; then
+  task_backend_probe="health"
+  [[ "${task_startup_mode}" != "controlled" ]] || task_backend_probe="ready"
+  if curl --fail --silent --show-error "http://127.0.0.1:${task_backend_port}/${task_backend_probe}" >/dev/null 2>&1; then
     break
   fi
   kill -0 "${task_backend_pid}" >/dev/null 2>&1 || fail "FastAPI exited before readiness"
   sleep 0.25
 done
-curl --fail --silent --show-error "http://127.0.0.1:${task_backend_port}/health" >/dev/null \
+curl --fail --silent --show-error "http://127.0.0.1:${task_backend_port}/${task_backend_probe}" >/dev/null \
   || fail "FastAPI did not become ready"
 
 (
   cd "${task_repo_root}/frontend"
-  env REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" \
-    nohup npm run dev -- --hostname 127.0.0.1 --port "${task_frontend_port}" \
-    >"${task_runtime_dir}/frontend.log" 2>&1
+  if [[ "${task_startup_mode}" == "controlled" ]]; then
+    cd .next/standalone
+    env HOSTNAME=127.0.0.1 PORT="${task_frontend_port}" \
+      REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" \
+      nohup node server.js \
+      >"${task_runtime_dir}/frontend.log" 2>&1
+  else
+    env REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" \
+      nohup npm run dev -- --hostname 127.0.0.1 --port "${task_frontend_port}" \
+      >"${task_runtime_dir}/frontend.log" 2>&1
+  fi
 ) &
 task_frontend_pid=$!
 printf '%s\n' "${task_frontend_pid}" >"${task_runtime_dir}/frontend.pid"
@@ -155,8 +200,9 @@ curl --fail --silent --show-error "http://127.0.0.1:${task_frontend_port}/projec
   || fail "Next.js did not become ready"
 
 task_cleanup_needed=0
-echo "ReAgent V0.1 local product is ready."
+echo "ReAgent V0.1 ${task_startup_mode} product is ready."
 echo "Frontend: http://127.0.0.1:${task_frontend_port}/projects"
 echo "Backend:  http://127.0.0.1:${task_backend_port}/health"
+echo "Readiness: http://127.0.0.1:${task_backend_port}/ready"
 echo "Runtime logs and PIDs: ${task_runtime_dir}"
 echo "Stop only these application processes with: make stop"
