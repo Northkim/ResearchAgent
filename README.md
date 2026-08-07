@@ -143,3 +143,29 @@ documents explicit typed input selection, local materialization, and execution.
   not linked from the V0.1 navigation.
 - Public deployment, production authentication, multi-user authorization,
   HTTPS termination, and cloud research execution are unsupported.
+
+## Controlled testing deployment
+
+H2 supports controlled testing only as **one isolated instance per tester**.
+Each instance uses a dedicated database, runtime directory, loopback
+frontend/backend ports, the deterministic fake Provider, and an
+operator-managed authenticated private tunnel or access gateway. The
+application has no user identity or Project ownership model, so a shared
+instance for mutually untrusted testers and any public deployment remain
+unsupported.
+
+Operators start the production-built controlled profile with:
+
+```bash
+export REAGENT_DATABASE_URL=postgresql://127.0.0.1:5432/reagent_controlled_tester_01
+export REAGENT_LOCAL_RUNTIME_DIR=/var/lib/reagent/tester-01
+make controlled-start
+```
+
+The profile fails closed on live Provider configuration, non-loopback
+PostgreSQL, CORS, missing runtime isolation, or the wrong migration/Registry
+state. See the [controlled testing runbook](docs/operations/CONTROLLED_TESTING_RUNBOOK.md),
+[tester guide](docs/getting-started/CONTROLLED_TESTER_GUIDE.md), and
+[threat model](docs/security/CONTROLLED_TESTING_THREAT_MODEL.md). PostgreSQL
+backup protects Cloud metadata; it does not back up Local Workspaces or
+research Artifact bytes.
