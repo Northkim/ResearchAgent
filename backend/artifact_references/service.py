@@ -40,6 +40,97 @@ class ArtifactReferenceService:
         self._uow = unit_of_work
         self._clock = clock
 
+    def derive_reviewed_progress_declarations(
+        self,
+        *,
+        workflow_instance_id: str,
+        normalized: NormalizedProgressRecord,
+    ) -> tuple[ArtifactDeclaration, ...]:
+        """Recover declarations from an exact reviewed Capsule/Progress contract.
+
+        Literature Search 0.6.0 final reports contain the authoritative path,
+        checksum, size, and Artifact kind, but its published runner did not
+        forward the redundant declaration list through the local-session
+        adapter. Derivation remains fail-closed: only a COMPLETED report and an
+        exact producer Capsule output contract can produce declarations.
+        """
+
+        if normalized.status.value != "COMPLETED":
+            return ()
+        instance = self._uow.workflow_foundation.get_workflow_instance(
+            workflow_instance_id
+        )
+        if (
+            instance is None
+            or instance.workflow_definition_id != normalized.workflow_id
+            or instance.workflow_version != normalized.workflow_version
+            or instance.capsule_id is None
+            or instance.capsule_version is None
+        ):
+            raise ApplicationCodedConflictError(
+                "Progress producer does not match its exact Workflow Instance",
+                code="ARTIFACT_PRODUCER_MISMATCH",
+            )
+        capsule = self._uow.workflow_foundation.get_capsule_version(
+            instance.capsule_id, instance.capsule_version
+        )
+        if capsule is None:
+            raise ApplicationCodedValidationError(
+                "Artifact producer Capsule contract is unavailable",
+                code="ARTIFACT_CONTRACT_VIOLATION",
+            )
+        contracts = _output_contracts(capsule.compatibility)
+        if not contracts:
+            return ()
+        produced_at = datetime.fromisoformat(
+            normalized.completed_at.replace("Z", "+00:00")
+        )
+        declarations: list[ArtifactDeclaration] = []
+        for output in sorted(
+            normalized.output_artifacts,
+            key=lambda item: (item.relative_path, item.artifact_kind),
+        ):
+            for artifact_type, contract in contracts.items():
+                if contract.get("progress_artifact_kind") != output.artifact_kind:
+                    continue
+                if output.size is None:
+                    raise ApplicationCodedValidationError(
+                        "Reviewed Artifact Progress metadata has no byte size",
+                        code="ARTIFACT_CONTRACT_VIOLATION",
+                    )
+                identifier = uuid5(
+                    _NAMESPACE,
+                    "production-artifact/v1|package="
+                    + normalized.package_id
+                    + "|report="
+                    + normalized.report_id
+                    + "|path="
+                    + output.relative_path
+                    + "|checksum="
+                    + output.checksum,
+                )
+                declaration = ArtifactDeclaration(
+                    artifact_id="artifact-" + identifier.hex,
+                    artifact_type=artifact_type,
+                    artifact_schema_version=contract["artifact_schema_version"],
+                    media_type=output.media_type,
+                    relative_path=output.relative_path,
+                    content_checksum=output.checksum,
+                    size_bytes=output.size,
+                    produced_at=produced_at,
+                )
+                if not _matches_output_contract(
+                    contract=contract,
+                    declaration=declaration,
+                    progress_artifact_kind=output.artifact_kind,
+                ):
+                    raise ApplicationCodedValidationError(
+                        "Progress Artifact violates the exact reviewed Capsule contract",
+                        code="ARTIFACT_CONTRACT_VIOLATION",
+                    )
+                declarations.append(declaration)
+        return tuple(declarations)
+
     def promote_progress_artifacts(
         self,
         *,

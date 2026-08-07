@@ -82,6 +82,7 @@ ACKNOWLEDGEMENTS_ROOT = ".reagent/acknowledgements"
 INSTALL_RECEIPTS_ROOT = ".reagent/receipts/installations"
 ARTIFACT_INDEX = ".reagent/artifact-index.json"
 MATERIALIZATION_RECEIPTS_ROOT = ".reagent/receipts/materializations"
+WORKFLOW_LIST_SCHEMA = "reagent.workspace-workflow-list/v0.1"
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 2
@@ -3267,6 +3268,12 @@ def run_workflow(
                     "Idea Discovery materialized input checksum drifted",
                     EXIT_VALIDATION,
                 )
+            if not preflight_only:
+                _prepare_idea_output_provenance(
+                    capsule=capsule,
+                    artifact_id=item["artifact_id"],
+                    checksum=item["expected_checksum"],
+                )
             command.extend([
                 "run",
                 ".",
@@ -3321,51 +3328,118 @@ def run_workflow(
         )
 
 
+def _prepare_idea_output_provenance(
+    *, capsule: Path, artifact_id: str, checksum: str
+) -> None:
+    """Expose verified input provenance without requiring receipt inspection.
+
+    The published Idea Discovery output contract requires an exact Artifact ID,
+    while the immutable materialized input intentionally contains bytes only.
+    The Workspace boundary has already verified the Cloud binding, receipt, and
+    bytes, so it atomically establishes the empty output envelope on first run.
+    Research content remains the Harness/user's responsibility.
+    """
+
+    _match(artifact_id, ARTIFACT_ID, "artifact_id")
+    _checksum(checksum, "source_checksum")
+    path = capsule / "outputs/candidate_ideas.json"
+    expected_source = {
+        "artifact_id": artifact_id,
+        "artifact_type": "selected-paper-library/v1",
+        "sha256": checksum,
+    }
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise _filesystem(
+                "WORKFLOW_OUTPUT_PROVENANCE_CONFLICT",
+                "Idea Discovery output provenance path is unsafe",
+            )
+        value = _read_json(path)
+        if (
+            not isinstance(value, dict)
+            or value.get("schema") != "candidate-ideas/v0.1"
+            or value.get("source_artifact") != expected_source
+        ):
+            raise _identity(
+                "WORKFLOW_OUTPUT_PROVENANCE_CONFLICT",
+                "Existing Idea Discovery output refers to a different selected input",
+            )
+        return
+    _atomic_write_json(
+        path,
+        {
+            "schema": "candidate-ideas/v0.1",
+            "source_artifact": expected_source,
+            "ideas": [],
+        },
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python reagent_local.py",
-        description="Bootstrap a Project Workspace or adopt one verified legacy Package.",
+        description=(
+            "Manage one ReAgent Local Workspace. Use `workflow list` to discover "
+            "what is installed and what to do next."
+        ),
     )
     commands = parser.add_subparsers(dest="command", required=True)
     bootstrap = commands.add_parser("bootstrap", help="create one Project Workspace")
-    bootstrap.add_argument("target", type=Path)
-    bootstrap.add_argument("--descriptor", type=Path, required=True)
+    bootstrap.add_argument("target", type=Path, help="new Local Workspace directory")
+    bootstrap.add_argument("--descriptor", type=Path, required=True, help="downloaded Cloud Workspace setup JSON")
     bootstrap.add_argument("--json", action="store_true")
     adopt = commands.add_parser("adopt", help="copy one legacy Literature Search Package into a Workspace")
-    adopt.add_argument("legacy_package", type=Path)
-    adopt.add_argument("workspace", type=Path)
+    adopt.add_argument("legacy_package", type=Path, help="verified legacy Package directory")
+    adopt.add_argument("workspace", type=Path, help="Local Workspace directory")
     adopt.add_argument("--descriptor", type=Path)
     adopt.add_argument("--json", action="store_true")
-    status_parser = commands.add_parser("workspace", help="inspect Workspace identity")
+    status_parser = commands.add_parser("workspace", help="inspect Local Workspace sync state")
     status_commands = status_parser.add_subparsers(dest="workspace_command", required=True)
-    status_command = status_commands.add_parser("status")
-    status_command.add_argument("workspace", type=Path)
+    status_command = status_commands.add_parser("status", help="show sync and acknowledgement status")
+    status_command.add_argument("workspace", type=Path, help="Local Workspace directory")
     status_command.add_argument("--json", action="store_true")
     sync = commands.add_parser("sync", help="explicitly pull and install desired Workflow Capsules")
-    sync.add_argument("workspace", type=Path)
+    sync.add_argument("workspace", type=Path, help="Local Workspace directory")
     sync.add_argument("--api-url", default="http://127.0.0.1:8000")
     sync.add_argument("--dry-run", action="store_true")
     sync.add_argument("--json", action="store_true")
+    workflow = commands.add_parser("workflow", help="discover installed Workflows")
+    workflow_commands = workflow.add_subparsers(dest="workflow_command", required=True)
+    workflow_list_command = workflow_commands.add_parser(
+        "list", help="show local readiness and an exact safe run command"
+    )
+    workflow_list_command.add_argument("workspace", type=Path, help="Local Workspace directory")
+    workflow_list_command.add_argument("--json", action="store_true")
     artifact = commands.add_parser("artifact", help="verify and materialize typed Artifacts")
     artifact_commands = artifact.add_subparsers(dest="artifact_command", required=True)
     artifact_status_command = artifact_commands.add_parser("status")
-    artifact_status_command.add_argument("workspace", type=Path)
+    artifact_status_command.add_argument("workspace", type=Path, help="Local Workspace directory")
     artifact_status_command.add_argument("--json", action="store_true")
     artifact_refresh_command = artifact_commands.add_parser("refresh")
-    artifact_refresh_command.add_argument("workspace", type=Path)
+    artifact_refresh_command.add_argument("workspace", type=Path, help="Local Workspace directory")
     artifact_refresh_command.add_argument("--api-url", default="http://127.0.0.1:8000")
     artifact_refresh_command.add_argument("--json", action="store_true")
     artifact_materialize_command = artifact_commands.add_parser("materialize")
-    artifact_materialize_command.add_argument("workspace", type=Path)
-    artifact_materialize_command.add_argument(
-        "--workflow-instance", required=True, dest="workflow_instance_id"
+    artifact_materialize_command.add_argument("workspace", type=Path, help="Local Workspace directory")
+    materialize_selector = artifact_materialize_command.add_mutually_exclusive_group(required=True)
+    materialize_selector.add_argument(
+        "--workflow-instance", dest="workflow_instance_id", help="exact Workflow Instance ID"
+    )
+    materialize_selector.add_argument(
+        "--workflow", dest="workflow_definition_id",
+        help="stable Workflow key; accepted only when exactly one active local instance matches",
     )
     artifact_materialize_command.add_argument("--api-url", default="http://127.0.0.1:8000")
     artifact_materialize_command.add_argument("--dry-run", action="store_true")
     artifact_materialize_command.add_argument("--json", action="store_true")
     run = commands.add_parser("run", help="preflight and run one exact installed Workflow Capsule")
-    run.add_argument("workspace", type=Path)
-    run.add_argument("--workflow-instance", required=True, dest="workflow_instance_id")
+    run.add_argument("workspace", type=Path, help="Local Workspace directory")
+    run_selector = run.add_mutually_exclusive_group(required=True)
+    run_selector.add_argument("--workflow-instance", dest="workflow_instance_id", help="exact Workflow Instance ID")
+    run_selector.add_argument(
+        "--workflow", dest="workflow_definition_id",
+        help="stable Workflow key; accepted only when exactly one active local instance matches",
+    )
     run.add_argument("--api-url", default="http://127.0.0.1:8000")
     run.add_argument("--preflight-only", action="store_true")
     run.add_argument("--codex-executable")
@@ -3401,6 +3475,9 @@ def main(argv: list[str] | None = None) -> int:
                 dry_run=args.dry_run,
             )
             json_output = args.json
+        elif args.command == "workflow":
+            result = workflow_list(args.workspace)
+            json_output = args.json
         elif args.command == "artifact":
             if args.artifact_command == "status":
                 result = artifact_status(args.workspace)
@@ -3410,17 +3487,23 @@ def main(argv: list[str] | None = None) -> int:
                     transport=HTTPWorkspaceSyncTransport(args.api_url),
                 )
             else:
+                workflow_instance_id = args.workflow_instance_id or resolve_workflow_selector(
+                    args.workspace, args.workflow_definition_id
+                )
                 result = materialize_artifacts(
                     workspace_root=args.workspace,
-                    consumer_workflow_instance_id=args.workflow_instance_id,
+                    consumer_workflow_instance_id=workflow_instance_id,
                     transport=HTTPWorkspaceSyncTransport(args.api_url),
                     dry_run=args.dry_run,
                 )
             json_output = args.json
         elif args.command == "run":
+            workflow_instance_id = args.workflow_instance_id or resolve_workflow_selector(
+                args.workspace, args.workflow_definition_id
+            )
             result = run_workflow(
                 workspace_root=args.workspace,
-                workflow_instance_id=args.workflow_instance_id,
+                workflow_instance_id=workflow_instance_id,
                 transport=HTTPWorkspaceSyncTransport(args.api_url),
                 api_url=args.api_url,
                 preflight_only=args.preflight_only,
@@ -3438,17 +3521,16 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_ACK_PENDING
         return EXIT_SUCCESS
     except WorkspaceCLIError as error:
-        print(
-            f"Workspace operation failed\nstage = {args.command.upper()}\n"
-            f"code = {error.code}\naction = {error}",
-            file=sys.stderr,
-        )
+        _print_human_error(args.command, error)
         return error.exit_code
     except Exception:
-        print(
-            f"Workspace operation failed\nstage = {args.command.upper()}\n"
-            "code = INTERNAL_FAILURE\naction = no state was declared successful; inspect inputs and retry",
-            file=sys.stderr,
+        _print_human_error(
+            args.command,
+            WorkspaceCLIError(
+                "INTERNAL_FAILURE",
+                "No state was declared successful",
+                EXIT_INTERNAL,
+            ),
         )
         return EXIT_INTERNAL
 
@@ -3508,6 +3590,211 @@ def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
     }
 
 
+def _local_progress_summary(capsule: Path) -> tuple[int, str | None]:
+    """Read only checksum-self-identifying local reports for status guidance."""
+
+    reports_root = capsule / "memory/progress/reports"
+    if reports_root.is_symlink() or not reports_root.is_dir():
+        return 0, None
+    reports: list[tuple[int, str, str]] = []
+    for path in sorted(reports_root.glob("prv2-*.json")):
+        metadata = path.stat(follow_symlinks=False)
+        if (
+            path.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_size > MAX_CONTROL_JSON_BYTES
+        ):
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress history contains an unsafe entry")
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress history is invalid") from error
+        if not isinstance(report, dict):
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress history is invalid")
+        report_id = report.get("report_id")
+        report_checksum = report.get("report_checksum")
+        execution_round = report.get("execution_round")
+        status = report.get("status")
+        identified = {**report, "report_checksum": None}
+        if (
+            not isinstance(report_id, str)
+            or path.name != f"{report_id}.json"
+            or not isinstance(report_checksum, str)
+            or not SHA256.fullmatch(report_checksum)
+            or canonical_hash(identified) != report_checksum
+            or isinstance(execution_round, bool)
+            or not isinstance(execution_round, int)
+            or execution_round < 1
+            or status not in {"IN_PROGRESS", "COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}
+        ):
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress identity is invalid")
+        reports.append((execution_round, report_id, status))
+    if not reports:
+        return 0, None
+    reports.sort(key=lambda item: (item[0], item[1]))
+    return len(reports), reports[-1][2]
+
+
+def _local_input_state(
+    workspace: Path,
+    descriptor: dict[str, Any],
+    capsule: Path,
+    workflow_instance_id: str,
+) -> str:
+    receipts_root = workspace / MATERIALIZATION_RECEIPTS_ROOT
+    if not receipts_root.exists():
+        return "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
+    if receipts_root.is_symlink() or not receipts_root.is_dir():
+        raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt directory is unsafe")
+    matched = False
+    for path in sorted(receipts_root.glob("artifact-binding-*.json")):
+        if path.is_symlink() or not path.is_file():
+            raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt is unsafe")
+        receipt = _validate_materialization_receipt(_read_json(path), descriptor)
+        if receipt["consumer_workflow_instance_id"] != workflow_instance_id:
+            continue
+        matched = True
+        target = workspace / receipt["target_relative_path"]
+        try:
+            checksum, _ = _verified_regular_file(
+                target,
+                allowed_root=capsule,
+                missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
+            )
+        except WorkspaceCLIError:
+            return "INPUT_DRIFT"
+        if checksum != receipt["target_checksum"]:
+            return "INPUT_DRIFT"
+    return "LOCALLY_MATERIALIZED" if matched else "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
+
+
+def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
+    """List installed Workflow Capsules with safe, user-oriented local readiness."""
+
+    workspace, descriptor, bootstrap = load_workspace(workspace_root)
+    lock_path = workspace / INSTALLED_LOCK
+    if not lock_path.exists() and not lock_path.is_symlink():
+        return {
+            "schema_version": WORKFLOW_LIST_SCHEMA,
+            "status": "SYNC_REQUIRED",
+            "project_id": descriptor["project_id"],
+            "workspace_id": descriptor["workspace_id"],
+            "workflows": [],
+        }
+    lock = _require_installed_lock(workspace, descriptor)
+    _verify_locked_capsules(workspace, lock, bootstrap)
+    active_counts: dict[str, int] = {}
+    for item in lock["installed_capsules"]:
+        if item["lifecycle"] == "ACTIVE":
+            definition_id = item["workflow_definition_id"]
+            active_counts[definition_id] = active_counts.get(definition_id, 0) + 1
+    workflows: list[dict[str, Any]] = []
+    for item in lock["installed_capsules"]:
+        capsule = workspace / item["relative_path"]
+        try:
+            document = json.loads((capsule / "workflow/workflow.json").read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow metadata is invalid") from error
+        if (
+            not isinstance(document, dict)
+            or document.get("workflow_id") != item["workflow_definition_id"]
+            or document.get("workflow_version") != item["workflow_definition_version"]
+            or not isinstance(document.get("workflow_type"), str)
+        ):
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow metadata identity is invalid")
+        report_count, latest_status = _local_progress_summary(capsule)
+        requirements = document.get("input_requirements", [])
+        if not isinstance(requirements, list):
+            raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow input contract is invalid")
+        if item["lifecycle"] != "ACTIVE":
+            readiness = "RETAINED"
+            next_action = "REVIEW_RESULT"
+        elif latest_status == "COMPLETED":
+            readiness = "COMPLETED"
+            next_action = "REVIEW_RESULT"
+        elif report_count:
+            readiness = "IN_PROGRESS"
+            next_action = "CONTINUE"
+        elif requirements:
+            readiness = _local_input_state(
+                workspace, descriptor, capsule, item["workflow_instance_id"]
+            )
+            next_action = (
+                "RUN" if readiness == "LOCALLY_MATERIALIZED" else "MATERIALIZE_INPUT"
+            )
+        else:
+            readiness = "READY"
+            next_action = "RUN"
+        selector = (
+            item["workflow_definition_id"]
+            if active_counts.get(item["workflow_definition_id"]) == 1
+            and item["lifecycle"] == "ACTIVE"
+            else item["workflow_instance_id"]
+        )
+        selector_flag = "--workflow" if selector == item["workflow_definition_id"] else "--workflow-instance"
+        run_command = f"python reagent_local.py run . {selector_flag} {selector}"
+        next_command = None
+        if next_action in {"RUN", "CONTINUE"}:
+            next_command = run_command
+        elif next_action == "MATERIALIZE_INPUT":
+            next_command = (
+                "python reagent_local.py artifact materialize . "
+                f"{selector_flag} {selector}"
+            )
+        workflows.append({
+            "workflow_instance_id": item["workflow_instance_id"],
+            "workflow_definition_id": item["workflow_definition_id"],
+            "display_name": document["workflow_type"],
+            "workflow_version": item["workflow_definition_version"],
+            "capsule_version": item["capsule_version"],
+            "lifecycle": item["lifecycle"],
+            "local_readiness": readiness,
+            "progress_report_count": report_count,
+            "latest_progress_status": latest_status,
+            "next_action": next_action,
+            "run_command": run_command,
+            "next_command": next_command,
+        })
+    workflows.sort(key=lambda item: (item["display_name"].casefold(), item["workflow_instance_id"]))
+    return {
+        "schema_version": WORKFLOW_LIST_SCHEMA,
+        "status": "WORKFLOWS_LISTED",
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "workflows": workflows,
+    }
+
+
+def resolve_workflow_selector(
+    workspace_root: str | Path, workflow_definition_id: str
+) -> str:
+    """Resolve a stable Workflow key only when it names one active local instance."""
+
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    _match(workflow_definition_id, STABLE_ID, "workflow_definition_id")
+    lock = _require_installed_lock(workspace, descriptor)
+    matches = [
+        item["workflow_instance_id"]
+        for item in lock["installed_capsules"]
+        if item["lifecycle"] == "ACTIVE"
+        and item["workflow_definition_id"] == workflow_definition_id
+    ]
+    if not matches:
+        raise WorkspaceCLIError(
+            "WORKFLOW_SELECTOR_NOT_FOUND",
+            "No active installed Workflow matches that stable key",
+            EXIT_VALIDATION,
+        )
+    if len(matches) != 1:
+        raise WorkspaceCLIError(
+            "WORKFLOW_SELECTOR_AMBIGUOUS",
+            "More than one active installed Workflow matches that stable key",
+            EXIT_VALIDATION,
+        )
+    return matches[0]
+
+
 def _print_result(
     result: WorkspaceOperationResult | WorkspaceSyncResult | ArtifactOperationResult | WorkflowRunResult | dict[str, Any],
     *,
@@ -3517,21 +3804,165 @@ def _print_result(
     if json_output:
         print(canonical_json(value))
         return
-    print(f"Workspace operation: {value['status']}")
-    print(f"Project: {value['project_id']}")
-    print(f"Workspace: {value['workspace_id']}")
+    if value.get("schema_version") == WORKFLOW_LIST_SCHEMA:
+        workflows = value["workflows"]
+        if not workflows:
+            print("No Workflow Capsules are installed yet.")
+            print("Next: run `python reagent_local.py sync .` inside this Local Workspace.")
+            return
+        print(f"Installed Workflows ({len(workflows)})")
+        for item in workflows:
+            print(f"\n{item['display_name']} · {item['local_readiness'].replace('_', ' ').title()}")
+            print(f"  Next: {item['next_action'].replace('_', ' ').title()}")
+            if item["next_command"] is not None:
+                print(f"  Command: {item['next_command']}")
+            print(
+                "  Details: "
+                f"version {item['workflow_version']}, "
+                f"instance …{item['workflow_instance_id'][-8:]}"
+            )
+        return
+    if value.get("schema_version") == "reagent.workspace-sync-result/v0.1":
+        print(f"Local Workspace sync: {value['status'].replace('_', ' ').title()}")
+        print(f"Active Workflows: {value['installed_capsules']}")
+        print(f"Retained Workflows: {value['retained_capsules']}")
+        if value["acknowledgement_status"] == "ACK_PENDING":
+            print("Cloud confirmation: pending")
+            print("Next: keep the Workspace unchanged and run the same sync command again.")
+        else:
+            print("Cloud confirmation: complete")
+            print("Next: run `python reagent_local.py workflow list .` to see what is ready.")
+        return
+    if value.get("schema_version") == "reagent.workspace-status/v0.1":
+        print(f"Local Workspace status: {value['status'].replace('_', ' ').title()}")
+        print(f"Active Workflows: {value['active_capsules']}")
+        print(f"Retained Workflows: {value['retained_capsules']}")
+        print(
+            "Next: run `python reagent_local.py sync .`."
+            if value["sync_required"]
+            else "Next: run `python reagent_local.py workflow list .`."
+        )
+        return
+    print(f"Local Workspace operation: {value['status'].replace('_', ' ').title()}")
     revision = value.get("manifest_revision", value.get("installed_manifest_revision"))
-    print(f"Manifest revision: {revision if revision is not None else 'not installed'}")
+    if revision is not None:
+        print(f"Cloud configuration revision: {revision}")
     if value.get("workflow_instance_id") is not None:
-        print(f"Workflow Instance: {value['workflow_instance_id']}")
-        print(f"Capsule: {value['capsule_relative_path']}")
+        print(f"Workflow: …{value['workflow_instance_id'][-8:]}")
+        print(f"Local folder: {value['capsule_relative_path']}")
     if "acknowledgement_status" in value:
-        print(f"Acknowledgement: {value['acknowledgement_status']}")
+        print(f"Cloud confirmation: {value['acknowledgement_status'].replace('_', ' ').title()}")
     if "artifact_count" in value:
-        print(f"Artifacts: {value['artifact_count']}")
+        print(f"Verified research results: {value['artifact_count']}")
     if value.get("consumer_workflow_instance_id") is not None:
-        print(f"Consumer Workflow Instance: {value['consumer_workflow_instance_id']}")
-        print(f"Materialized: {value['materialized_count']}")
+        print(f"Workflow input: …{value['consumer_workflow_instance_id'][-8:]}")
+        print(f"Inputs prepared: {value['materialized_count']}")
+        if value["status"] == "MATERIALIZED":
+            print("Next: run `python reagent_local.py workflow list .` for the safe run command.")
+
+
+_ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
+    "WORKSPACE_BUSY": (
+        "Another Local Workspace write is still running.",
+        "Wait for it to finish, then retry the same command. Do not delete the lock file.",
+    ),
+    "WORKSPACE_SYNC_NOT_AVAILABLE": (
+        "The Cloud sync service could not be reached.",
+        "Keep the Workspace unchanged, check the API connection, then retry the same sync command.",
+    ),
+    "CAPSULE_DOWNLOAD_FAILED": (
+        "A required Workflow download did not complete or did not match its Cloud identity.",
+        "No Capsule was installed. Check the local API connection and retry sync; existing Workflows remain unchanged.",
+    ),
+    "SYNC_MANIFEST_CONFLICT": (
+        "Cloud Workflow configuration changed while this sync was being prepared.",
+        "Run sync again to fetch the current configuration; do not edit Workspace JSON files.",
+    ),
+    "MANIFEST_REVISION_CONFLICT": (
+        "Cloud Workflow configuration changed elsewhere.",
+        "Refresh the Workflow Board, review the current state, then repeat the explicit action.",
+    ),
+    "LOCAL_ARTIFACT_DRIFT": (
+        "A selected research result changed after it was indexed.",
+        "Idea Discovery was not prepared. Restore the original producer output or select and bind a new result, refresh the Artifact Index, then materialize again.",
+    ),
+    "MATERIALIZATION_CONFLICT": (
+        "The Idea Discovery input path already contains different bytes.",
+        "The existing file was not overwritten. Preserve or move your file, then retry explicit materialization.",
+    ),
+    "MATERIALIZED_ARTIFACT_DRIFT": (
+        "A previously prepared Workflow input no longer matches its receipt.",
+        "The Workflow was not started. Restore the verified input or choose and materialize the input again.",
+    ),
+    "WORKFLOW_OUTPUT_PROVENANCE_CONFLICT": (
+        "The existing Idea Discovery output refers to a different selected input.",
+        "Nothing was overwritten. Review the current input selection and preserve the existing output before starting a new explicitly bound round.",
+    ),
+    "DEPENDENCY_UNRESOLVED": (
+        "This Workflow is not ready to run locally.",
+        "Open the Workflow Board to select its required input, run sync if needed, then run the displayed materialization command.",
+    ),
+    "INSTALLED_LOCK_MISSING": (
+        "This Local Workspace has not installed its desired Workflows.",
+        "Run `python reagent_local.py sync .`, then retry.",
+    ),
+    "WORKFLOW_SELECTOR_NOT_FOUND": (
+        "No active installed Workflow matches that name.",
+        "Run `python reagent_local.py workflow list .`; sync first if the Workflow was just added in Cloud.",
+    ),
+    "WORKFLOW_SELECTOR_AMBIGUOUS": (
+        "More than one active local Workflow has that name.",
+        "Run `python reagent_local.py workflow list .` and use the exact `--workflow-instance` command it displays.",
+    ),
+    "ARTIFACT_BYTES_NOT_AVAILABLE": (
+        "The selected research result is not available at its verified local path.",
+        "Restore the producer Workspace output, refresh the Artifact Index, and retry. Cloud metadata cannot restore local bytes.",
+    ),
+    "ARTIFACT_INDEX_INVALID": (
+        "The Local Workspace research-result index is missing or invalid.",
+        "Run `python reagent_local.py artifact refresh .`; do not edit the Index JSON manually.",
+    ),
+    "ARTIFACT_REFERENCE_NOT_FOUND": (
+        "The selected Workflow input is no longer available in this Project.",
+        "Return to the Workflow Board, review the available Literature Search results, and explicitly select one again.",
+    ),
+    "MATERIALIZATION_PLAN_INVALID": (
+        "Cloud and Local Workspace input identities did not agree.",
+        "Nothing was copied. Refresh the Workflow Board and local Artifact Index, then retry explicit materialization.",
+    ),
+    "WORKFLOW_RUN_FAILED": (
+        "The local Agent Harness stopped before completing the requested round.",
+        "Keep the Workflow files, run `python reagent_local.py workflow list .`, and continue from local memory.",
+    ),
+    "WORKSPACE_DESCRIPTOR_INVALID": (
+        "This directory is not a valid ReAgent Local Workspace.",
+        "Open the Project Help page and bootstrap a Workspace from its downloaded setup file. Do not repair project.json manually.",
+    ),
+    "LOCAL_CAPSULE_DRIFT": (
+        "An installed Workflow's reviewed files no longer match its immutable contract.",
+        "Preserve research outputs, inspect the reported file, and restore the original Capsule. Sync will not overwrite user research state.",
+    ),
+    "INTERNAL_FAILURE": (
+        "The command stopped before declaring success.",
+        "No state was declared successful. Keep the Workspace unchanged, inspect the command inputs, and retry.",
+    ),
+}
+
+
+def _print_human_error(command: str, error: WorkspaceCLIError) -> None:
+    what, next_step = _ERROR_GUIDANCE.get(
+        error.code,
+        (str(error), "Keep the Workspace unchanged, review the command and Help page, then retry."),
+    )
+    print(
+        "Local Workspace operation stopped.\n"
+        f"What happened: {what}\n"
+        f"Why it matters: {error}\n"
+        f"Next: {next_step}\n"
+        f"Code: {error.code}\n"
+        f"Command: {command}",
+        file=sys.stderr,
+    )
 
 
 if __name__ == "__main__":

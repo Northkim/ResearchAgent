@@ -273,6 +273,10 @@ def _post_production_literature_progress(
         manifest=manifest,
         report_path=report_path,
     )
+    # The immutable 0.6.0 local-session adapter omitted this redundant list.
+    # Cloud must recover it only from the exact reviewed Capsule/Progress
+    # contract, preserving the already-published Capsule bytes.
+    payload["artifact_declarations"] = []
     payload["workflow_instance_id"] = instance_id
     response = client.post(
         f"/projects/{manifest['experimental_project_identity']}/progress-reports",
@@ -285,6 +289,8 @@ def _post_production_literature_progress(
 def qualify_real_multi_workflow_artifact_handoff(
     client: TestClient,
     tmp_path: Path,
+    *,
+    database: InMemoryDatabase | None = None,
 ) -> str:
     project = client.post("/projects", json={
         "name": "B7 fictional architecture qualification",
@@ -335,6 +341,21 @@ def qualify_real_multi_workflow_artifact_handoff(
     assert first_upload["http_status"] == 201
     assert replay_upload["http_status"] == 200
     assert replay_upload["idempotent_replay"] is True
+    if database is not None:
+        # Model an accepted B7 Progress row whose immutable local-session
+        # adapter omitted canonical Artifact promotion. An exact retry repairs
+        # only that derived metadata and never creates another Progress row.
+        assert len(database.local_artifact_references) == 1
+        database.local_artifact_references.clear()
+        repaired_upload = _post_production_literature_progress(
+            client,
+            literature_root,
+            literature["workflow_instance_id"],
+            literature_report,
+        )
+        assert repaired_upload["http_status"] == 200
+        assert repaired_upload["idempotent_replay"] is True
+        assert len(database.local_artifact_references) == 1
     artifacts = client.get(
         f"/projects/{project_id}/artifacts",
         params={"artifact_type": "selected-paper-library/v1"},
@@ -423,6 +444,13 @@ def qualify_real_multi_workflow_artifact_handoff(
         preflight_only=True,
     )
     assert ready.status == "PREFLIGHT_READY"
+    local_before_idea_progress = {
+        item["workflow_definition_id"]: item
+        for item in workspace_cli.workflow_list(workspace)["workflows"]
+    }
+    assert local_before_idea_progress[LITERATURE_SEARCH_WORKFLOW_ID]["next_action"] == "REVIEW_RESULT"
+    assert local_before_idea_progress[IDEA_DISCOVERY_WORKFLOW_ID]["local_readiness"] == "LOCALLY_MATERIALIZED"
+    assert local_before_idea_progress[IDEA_DISCOVERY_WORKFLOW_ID]["next_action"] == "RUN"
 
     lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
     idea_entry = next(
@@ -430,20 +458,32 @@ def qualify_real_multi_workflow_artifact_handoff(
         if item["workflow_instance_id"] == idea["workflow_instance_id"]
     )
     idea_root = workspace / idea_entry["relative_path"]
+    assert not (idea_root / "outputs/candidate_ideas.json").exists()
     input_bytes = (idea_root / "inputs/selected-paper-library.json").read_bytes()
     assert input_bytes == (
         literature_root / artifact["relative_path"]
     ).read_bytes()
     candidate_ids = [item["candidate_id"] for item in json.loads(input_bytes)["papers"]]
-    (idea_root / "outputs/candidate_ideas.json").write_text(
-        canonical_json({
-            "schema": "candidate-ideas/v0.1",
-            "source_artifact": {
-                "artifact_id": artifact["artifact_id"],
-                "artifact_type": "selected-paper-library/v1",
-                "sha256": artifact["content_checksum"],
-            },
-            "ideas": [{
+    workspace_cli._prepare_idea_output_provenance(
+        capsule=idea_root,
+        artifact_id=artifact["artifact_id"],
+        checksum=artifact["content_checksum"],
+    )
+    scaffold = json.loads(
+        (idea_root / "outputs/candidate_ideas.json").read_text(encoding="utf-8")
+    )
+    assert scaffold["source_artifact"] == {
+        "artifact_id": artifact["artifact_id"],
+        "artifact_type": "selected-paper-library/v1",
+        "sha256": artifact["content_checksum"],
+    }
+    assert scaffold["ideas"] == []
+    workspace_cli._prepare_idea_output_provenance(
+        capsule=idea_root,
+        artifact_id=artifact["artifact_id"],
+        checksum=artifact["content_checksum"],
+    )
+    scaffold["ideas"] = [{
                 "idea_id": "idea-001",
                 "title": "Fictional continuity study",
                 "research_question": "How should explicit handoffs be evaluated?",
@@ -455,10 +495,18 @@ def qualify_real_multi_workflow_artifact_handoff(
                 "risks": ["The bounded set cannot establish novelty."],
                 "validation_needed": ["Run a broader novelty-oriented literature search."],
                 "status": "candidate",
-            }],
-        }),
+            }]
+    (idea_root / "outputs/candidate_ideas.json").write_text(
+        canonical_json(scaffold),
         encoding="utf-8",
     )
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as provenance_conflict:
+        workspace_cli._prepare_idea_output_provenance(
+            capsule=idea_root,
+            artifact_id=artifact["artifact_id"],
+            checksum="sha256:" + "f" * 64,
+        )
+    assert provenance_conflict.value.code == "WORKFLOW_OUTPUT_PROVENANCE_CONFLICT"
     (idea_root / "outputs/idea_discovery_report.md").write_text(
         """# Idea Discovery report
 ## Literature landscape
@@ -488,6 +536,12 @@ Broader search and empirical design.
         idea_report,
         with_declarations=False,
     )
+    local_after_idea_progress = {
+        item["workflow_definition_id"]: item
+        for item in workspace_cli.workflow_list(workspace)["workflows"]
+    }
+    assert local_after_idea_progress[IDEA_DISCOVERY_WORKFLOW_ID]["local_readiness"] == "IN_PROGRESS"
+    assert local_after_idea_progress[IDEA_DISCOVERY_WORKFLOW_ID]["next_action"] == "CONTINUE"
     projection = client.get(f"/projects/{project_id}/progress").json()
     assert {item["workflow_definition_id"] for item in projection["instances"]} == {
         LITERATURE_SEARCH_WORKFLOW_ID,
@@ -532,4 +586,6 @@ def test_real_multi_workflow_artifact_handoff_and_progress(tmp_path: Path) -> No
         unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
         local_package_root=str(tmp_path / "cloud-packages"),
     )))
-    qualify_real_multi_workflow_artifact_handoff(client, tmp_path)
+    qualify_real_multi_workflow_artifact_handoff(
+        client, tmp_path, database=database
+    )

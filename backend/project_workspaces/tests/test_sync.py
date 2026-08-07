@@ -471,3 +471,88 @@ def test_archive_attack_and_install_failure_do_not_write_lock(sync_fixture, tmp_
     assert error.value.code == "CAPSULE_CHECKSUM_MISMATCH"
     assert not (workspace / workspace_cli.INSTALLED_LOCK).exists()
     assert not (tmp_path / "escape").exists()
+
+
+def test_h1_workflow_list_and_stable_selector_are_user_oriented_and_json_stable(
+    sync_fixture, capsys
+):
+    workspace = sync_fixture["workspace"]
+    transport = _ClientTransport(sync_fixture["client"])
+    synced = workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=transport,
+    )
+
+    listed = workspace_cli.workflow_list(workspace)
+    assert listed["schema_version"] == workspace_cli.WORKFLOW_LIST_SCHEMA
+    assert listed["status"] == "WORKFLOWS_LISTED"
+    assert len(listed["workflows"]) == 1
+    workflow = listed["workflows"][0]
+    assert workflow["display_name"] == "Literature Search"
+    assert workflow["local_readiness"] == "READY"
+    assert workflow["next_action"] == "RUN"
+    assert workflow["run_command"] == (
+        "python reagent_local.py run . --workflow "
+        + workflow["workflow_definition_id"]
+    )
+    assert workspace_cli.resolve_workflow_selector(
+        workspace, workflow["workflow_definition_id"]
+    ) == workflow["workflow_instance_id"]
+
+    workspace_cli._print_result(listed, json_output=False)
+    human = capsys.readouterr().out
+    assert "Installed Workflows (1)" in human
+    assert "Next: Run" in human
+    assert workflow["workflow_instance_id"] not in human
+    workspace_cli._print_result(synced, json_output=True)
+    assert capsys.readouterr().out.strip() == workspace_cli.canonical_json(synced.as_dict())
+
+
+def test_h1_stable_selector_fails_closed_when_same_type_is_ambiguous(sync_fixture):
+    client = sync_fixture["client"]
+    workspace = sync_fixture["workspace"]
+    project_id = sync_fixture["project_id"]
+    workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=_ClientTransport(client),
+    )
+    catalog = client.get("/workflow-definitions").json()["items"]
+    literature = next(
+        item for item in catalog
+        if item["workflow_definition_id"] == "literature-search-local-experimental"
+    )
+    created = client.post(
+        f"/projects/{project_id}/workflow-instances",
+        json={
+            "workflow_definition_id": literature["workflow_definition_id"],
+            "workflow_version": literature["recommended_version"]["version"],
+            "capsule_id": literature["recommended_capsule"]["capsule_id"],
+            "capsule_version": literature["recommended_capsule"]["capsule_version"],
+            "base_revision": 1,
+        },
+    )
+    assert created.status_code == 201
+    workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=_ClientTransport(client),
+    )
+
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as raised:
+        workspace_cli.resolve_workflow_selector(
+            workspace, "literature-search-local-experimental"
+        )
+    assert raised.value.code == "WORKFLOW_SELECTOR_AMBIGUOUS"
+    commands = [item["run_command"] for item in workspace_cli.workflow_list(workspace)["workflows"]]
+    assert all("--workflow-instance wfi-" in command for command in commands)
+
+
+def test_h1_human_error_explains_what_why_and_next(capsys):
+    code = workspace_cli.main([
+        "run", ".", "--workflow", "unknown-workflow", "--preflight-only",
+    ])
+    assert code == workspace_cli.EXIT_IDENTITY
+    error = capsys.readouterr().err
+    assert "What happened:" in error
+    assert "Why it matters:" in error
+    assert "Next:" in error
+    assert "Code: WORKSPACE_DESCRIPTOR_INVALID" in error

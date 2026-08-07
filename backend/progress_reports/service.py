@@ -64,6 +64,14 @@ class ProgressReportService:
         artifact_declarations: tuple[ArtifactDeclaration, ...] = (),
     ) -> ProgressUploadReceipt:
         content = envelope.original_report_bytes()
+        derivation_record: NormalizedProgressRecord | None = None
+        if not artifact_declarations and self._artifact_references is not None:
+            try:
+                derivation_record = self._normalizer.normalize(content)
+            except ValueError:
+                # Invalid reports retain their existing bounded audit behavior;
+                # only valid reviewed Progress can derive canonical Artifacts.
+                derivation_record = None
         self._repository.lock_report_identity(envelope.report_id)
         # Historical Packages may no longer be the Project's current Package.
         # An exact immutable replay can still be proven from the retained row,
@@ -78,10 +86,33 @@ class ProgressReportService:
             and item.original_report_checksum == envelope.original_report_checksum
         )
         if len(exact_historical) == 1:
-            self._assert_artifact_replay(
-                exact_historical[0].receipt_id, artifact_declarations
-            )
-            return self._receipt(exact_historical[0], idempotent=True)
+            historical = exact_historical[0]
+            derived_replay = False
+            if (
+                not artifact_declarations
+                and derivation_record is not None
+                and historical.accepted_for_projection
+            ):
+                artifact_declarations = (
+                    self._artifact_references.derive_reviewed_progress_declarations(
+                        workflow_instance_id=historical.workflow_instance_id,
+                        normalized=derivation_record,
+                    )
+                )
+                derived_replay = bool(artifact_declarations)
+            if derived_replay:
+                # Repair the exact B7 adapter omission without creating another
+                # Progress row. Immutable report metadata and the reviewed
+                # Capsule contract fully determine this promotion.
+                assert derivation_record is not None
+                self._artifact_references.promote_progress_artifacts(
+                    report=historical,
+                    normalized=derivation_record,
+                    declarations=artifact_declarations,
+                )
+                self._commit()
+            self._assert_artifact_replay(historical.receipt_id, artifact_declarations)
+            return self._receipt(historical, idempotent=True)
         if len(exact_historical) > 1:
             raise ValueError("immutable Progress Report identity is ambiguous")
         resolved_instance_id = self._resolve_workflow_identity(
@@ -99,6 +130,27 @@ class ProgressReportService:
             original_report_checksum=envelope.original_report_checksum,
         )
         if replay is not None:
+            derived_replay = False
+            if (
+                not artifact_declarations
+                and derivation_record is not None
+                and replay.accepted_for_projection
+            ):
+                artifact_declarations = (
+                    self._artifact_references.derive_reviewed_progress_declarations(
+                        workflow_instance_id=resolved_instance_id,
+                        normalized=derivation_record,
+                    )
+                )
+                derived_replay = bool(artifact_declarations)
+            if derived_replay:
+                assert derivation_record is not None
+                self._artifact_references.promote_progress_artifacts(
+                    report=replay,
+                    normalized=derivation_record,
+                    declarations=artifact_declarations,
+                )
+                self._commit()
             self._assert_artifact_replay(replay.receipt_id, artifact_declarations)
             return self._receipt(replay, idempotent=True)
 
@@ -227,6 +279,18 @@ class ProgressReportService:
             normalized_record=normalized,
         )
         self._repository.append(uploaded)
+        if (
+            not artifact_declarations
+            and uploaded.accepted_for_projection
+            and normalized is not None
+            and self._artifact_references is not None
+        ):
+            artifact_declarations = (
+                self._artifact_references.derive_reviewed_progress_declarations(
+                    workflow_instance_id=resolved_instance_id,
+                    normalized=normalized,
+                )
+            )
         if artifact_declarations:
             if self._artifact_references is None or normalized is None:
                 raise ValueError(
