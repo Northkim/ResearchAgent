@@ -9,6 +9,13 @@ from typing import Any
 from backend.domain.enums import ApprovalRequestStatus, WorkflowRunStatus
 from backend.domain.models import ApprovalRequest, ArtifactMetadata, Checkpoint, Workflow
 from backend.domain.services import ExecutionState
+from backend.artifact_references.contracts import (
+    ArtifactDependencyBinding,
+    ArtifactReference,
+    WorkflowArtifactRequirement,
+)
+from backend.artifact_references.errors import ArtifactReferenceConflictError
+from backend.artifact_references.ports import ArtifactReferenceRepository
 from backend.execution_events import ExecutionEvent, ExecutionEventStore
 from backend.persistence.models import (
     ApprovalRecord,
@@ -97,6 +104,182 @@ class InMemoryDatabase:
     installation_acknowledgements: dict[
         str, WorkspaceInstallationAcknowledgement
     ] = field(default_factory=dict)
+    local_artifact_references: dict[str, ArtifactReference] = field(default_factory=dict)
+    workflow_artifact_requirements: dict[
+        tuple[str, str, str], WorkflowArtifactRequirement
+    ] = field(default_factory=dict)
+    artifact_dependency_bindings: dict[str, ArtifactDependencyBinding] = field(
+        default_factory=dict
+    )
+
+
+class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def add_artifact(self, artifact: ArtifactReference) -> None:
+        existing = self.get_artifact(artifact.artifact_id)
+        if existing is not None:
+            if existing.immutable_identity() != artifact.immutable_identity():
+                raise ArtifactReferenceConflictError(
+                    "Artifact immutable identity already exists with different content"
+                )
+            return
+        path_owner = next(
+            (
+                item
+                for item in self._uow._local_artifact_references.values()
+                if item.producer_progress_receipt_id
+                == artifact.producer_progress_receipt_id
+                and item.relative_path == artifact.relative_path
+            ),
+            None,
+        )
+        if path_owner is not None:
+            raise ArtifactReferenceConflictError(
+                "Progress output path is already bound to another Artifact"
+            )
+        self._uow._local_artifact_references[artifact.artifact_id] = artifact
+        self._uow._dirty_local_artifact_references.add(artifact.artifact_id)
+
+    def get_artifact(self, artifact_id: str) -> ArtifactReference | None:
+        return self._uow._local_artifact_references.get(artifact_id)
+
+    def list_artifacts(
+        self, *, project_id, producer_workflow_instance_id=None, artifact_type=None,
+        state=None, offset=0, limit=100,
+    ) -> tuple[ArtifactReference, ...]:
+        values = [
+            item
+            for item in self._uow._local_artifact_references.values()
+            if item.project_id == project_id
+            and (
+                producer_workflow_instance_id is None
+                or item.producer_workflow_instance_id == producer_workflow_instance_id
+            )
+            and (artifact_type is None or item.artifact_type == artifact_type)
+            and (state is None or item.state.value == state)
+        ]
+        values.sort(key=lambda item: (-item.produced_at.timestamp(), item.artifact_id))
+        return tuple(values[offset:offset + limit])
+
+    def count_artifacts(
+        self, *, project_id, producer_workflow_instance_id=None, artifact_type=None,
+        state=None,
+    ) -> int:
+        return len(self.list_artifacts(
+            project_id=project_id,
+            producer_workflow_instance_id=producer_workflow_instance_id,
+            artifact_type=artifact_type,
+            state=state,
+            limit=1_000_000,
+        ))
+
+    def list_for_progress(self, receipt_id: str) -> tuple[ArtifactReference, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._local_artifact_references.values()
+                if item.producer_progress_receipt_id == receipt_id
+            ),
+            key=lambda item: (item.relative_path, item.artifact_id),
+        ))
+
+    def add_requirement(self, requirement: WorkflowArtifactRequirement) -> None:
+        key = (
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+        )
+        existing = self._uow._workflow_artifact_requirements.get(key)
+        if existing is not None and existing != requirement:
+            raise ArtifactReferenceConflictError(
+                "Workflow Artifact Requirement immutable-content conflict"
+            )
+        if existing is None:
+            self._uow._workflow_artifact_requirements[key] = requirement
+            self._uow._dirty_workflow_artifact_requirements.add(key)
+
+    def get_requirement(
+        self, workflow_definition_id: str, workflow_version: str, requirement_key: str
+    ) -> WorkflowArtifactRequirement | None:
+        return self._uow._workflow_artifact_requirements.get(
+            (workflow_definition_id, workflow_version, requirement_key)
+        )
+
+    def add_binding(self, binding: ArtifactDependencyBinding) -> None:
+        existing = self.get_binding(binding.binding_id)
+        if existing is not None and existing != binding:
+            raise ArtifactReferenceConflictError(
+                "Artifact dependency binding immutable-content conflict"
+            )
+        if existing is None:
+            if any(
+                item.project_id == binding.project_id
+                and item.consumer_workflow_instance_id
+                == binding.consumer_workflow_instance_id
+                and item.requirement_key == binding.requirement_key
+                and item.state.value == "ACTIVE"
+                for item in self._uow._artifact_dependency_bindings.values()
+            ):
+                raise DuplicateEntityError("Artifact requirement already has an active binding")
+            self._uow._artifact_dependency_bindings[binding.binding_id] = binding
+            self._uow._dirty_artifact_dependency_bindings.add(binding.binding_id)
+
+    def save_binding(self, binding: ArtifactDependencyBinding) -> None:
+        existing = self.get_binding(binding.binding_id)
+        if existing is None:
+            raise ValueError("Artifact dependency binding does not exist")
+        immutable_fields = (
+            "binding_id", "project_id", "consumer_workflow_instance_id",
+            "consumer_workflow_definition_id", "consumer_workflow_version",
+            "requirement_key", "artifact_id", "expected_checksum",
+            "idempotency_key", "created_at",
+        )
+        if any(getattr(existing, field) != getattr(binding, field) for field in immutable_fields):
+            raise ArtifactReferenceConflictError(
+                "Artifact dependency binding immutable-content conflict"
+            )
+        self._uow._artifact_dependency_bindings[binding.binding_id] = binding
+        self._uow._dirty_artifact_dependency_bindings.add(binding.binding_id)
+
+    def get_binding(self, binding_id: str) -> ArtifactDependencyBinding | None:
+        return self._uow._artifact_dependency_bindings.get(binding_id)
+
+    def get_binding_by_idempotency(
+        self, project_id: str, consumer_workflow_instance_id: str, idempotency_key: str
+    ) -> ArtifactDependencyBinding | None:
+        return next((
+            item
+            for item in self._uow._artifact_dependency_bindings.values()
+            if item.project_id == project_id
+            and item.consumer_workflow_instance_id == consumer_workflow_instance_id
+            and item.idempotency_key == idempotency_key
+        ), None)
+
+    def list_bindings(
+        self, project_id: str, consumer_workflow_instance_id: str, *,
+        offset: int = 0, limit: int = 100,
+    ) -> tuple[ArtifactDependencyBinding, ...]:
+        values = sorted(
+            (
+                item
+                for item in self._uow._artifact_dependency_bindings.values()
+                if item.project_id == project_id
+                and item.consumer_workflow_instance_id == consumer_workflow_instance_id
+            ),
+            key=lambda item: (item.requirement_key, item.created_at, item.binding_id),
+        )
+        return tuple(values[offset:offset + limit])
+
+    def count_bindings(
+        self, project_id: str, consumer_workflow_instance_id: str
+    ) -> int:
+        return sum(
+            item.project_id == project_id
+            and item.consumer_workflow_instance_id == consumer_workflow_instance_id
+            for item in self._uow._artifact_dependency_bindings.values()
+        )
 
 
 class InMemoryWorkflowFoundationRepository(WorkflowFoundationRepository):
@@ -1137,6 +1320,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._workflow_foundation_repository = InMemoryWorkflowFoundationRepository(self)
         self._project_manifest_repository = InMemoryProjectManifestRepository(self)
         self._workspace_sync_repository = InMemoryWorkspaceSyncRepository(self)
+        self._artifact_reference_repository = InMemoryArtifactReferenceRepository(self)
         self._refresh()
 
     @property
@@ -1187,6 +1371,10 @@ class InMemoryUnitOfWork(UnitOfWork):
     def workspace_sync(self) -> WorkspaceSyncRepository:
         return self._workspace_sync_repository
 
+    @property
+    def artifact_references(self) -> ArtifactReferenceRepository:
+        return self._artifact_reference_repository
+
     def commit(self) -> None:
         self._validate_concurrency()
         for run_id in self._dirty_workflows:
@@ -1233,6 +1421,18 @@ class InMemoryUnitOfWork(UnitOfWork):
         for installation_id in self._dirty_installation_acknowledgements:
             self.database.installation_acknowledgements[installation_id] = (
                 self._installation_acknowledgements[installation_id]
+            )
+        for artifact_id in self._dirty_local_artifact_references:
+            self.database.local_artifact_references[artifact_id] = (
+                self._local_artifact_references[artifact_id]
+            )
+        for key in self._dirty_workflow_artifact_requirements:
+            self.database.workflow_artifact_requirements[key] = (
+                self._workflow_artifact_requirements[key]
+            )
+        for binding_id in self._dirty_artifact_dependency_bindings:
+            self.database.artifact_dependency_bindings[binding_id] = (
+                self._artifact_dependency_bindings[binding_id]
             )
         self._refresh()
 
@@ -1397,6 +1597,15 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._installation_acknowledgements = dict(
             self.database.installation_acknowledgements
         )
+        self._local_artifact_references = dict(
+            self.database.local_artifact_references
+        )
+        self._workflow_artifact_requirements = dict(
+            self.database.workflow_artifact_requirements
+        )
+        self._artifact_dependency_bindings = dict(
+            self.database.artifact_dependency_bindings
+        )
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -1430,4 +1639,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_manifest_entries: set[str] = set()
         self._dirty_capsule_artifacts: set[str] = set()
         self._dirty_installation_acknowledgements: set[str] = set()
+        self._dirty_local_artifact_references: set[str] = set()
+        self._dirty_workflow_artifact_requirements: set[tuple[str, str, str]] = set()
+        self._dirty_artifact_dependency_bindings: set[str] = set()
         self._manifest_revision_expected: dict[str, int] = {}

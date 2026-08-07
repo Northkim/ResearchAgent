@@ -46,6 +46,7 @@ async def upload_progress_report(
         receipt = services.progress_reports.upload(
             envelope,
             workflow_instance_id=request.workflow_instance_id,
+            artifact_declarations=request.to_artifact_declarations(),
         )
     except DuplicateEntityError as error:
         raise ApplicationCodedConflictError(

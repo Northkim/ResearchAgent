@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 
 from backend.research.ports import ArtifactContentStorage
+from backend.artifact_references.contracts import ArtifactDeclaration
 from backend.workflow_packages.serialization import canonical_hash
 
 from .chain import ProgressReportChainValidator
@@ -38,12 +39,14 @@ class ProgressReportService:
             [ProgressReportUploadEnvelope, NormalizedProgressRecord | None, str | None],
             str,
         ],
+        artifact_reference_service=None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._storage = content_storage
         self._commit = commit_callback
         self._resolve_workflow_identity = workflow_identity_resolver
+        self._artifact_references = artifact_reference_service
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._normalizer = ProgressReportNormalizer()
         self._chain = ProgressReportChainValidator()
@@ -58,6 +61,7 @@ class ProgressReportService:
         envelope: ProgressReportUploadEnvelope,
         *,
         workflow_instance_id: str | None = None,
+        artifact_declarations: tuple[ArtifactDeclaration, ...] = (),
     ) -> ProgressUploadReceipt:
         content = envelope.original_report_bytes()
         self._repository.lock_report_identity(envelope.report_id)
@@ -74,6 +78,9 @@ class ProgressReportService:
             and item.original_report_checksum == envelope.original_report_checksum
         )
         if len(exact_historical) == 1:
+            self._assert_artifact_replay(
+                exact_historical[0].receipt_id, artifact_declarations
+            )
             return self._receipt(exact_historical[0], idempotent=True)
         if len(exact_historical) > 1:
             raise ValueError("immutable Progress Report identity is ambiguous")
@@ -92,6 +99,7 @@ class ProgressReportService:
             original_report_checksum=envelope.original_report_checksum,
         )
         if replay is not None:
+            self._assert_artifact_replay(replay.receipt_id, artifact_declarations)
             return self._receipt(replay, idempotent=True)
 
         identity_errors: list[str] = []
@@ -211,6 +219,16 @@ class ProgressReportService:
             normalized_record=normalized,
         )
         self._repository.append(uploaded)
+        if artifact_declarations:
+            if self._artifact_references is None or normalized is None:
+                raise ValueError(
+                    "canonical Artifact declaration service is unavailable"
+                )
+            self._artifact_references.promote_progress_artifacts(
+                report=uploaded,
+                normalized=normalized,
+                declarations=artifact_declarations,
+            )
         if uploaded.accepted_for_projection and normalized is not None:
             scoped_history = tuple(
                 item
@@ -228,6 +246,17 @@ class ProgressReportService:
                 self._repository.save_projection(projection)
         self._commit()
         return self._receipt(uploaded, idempotent=False)
+
+    def _assert_artifact_replay(
+        self,
+        receipt_id: str,
+        declarations: tuple[ArtifactDeclaration, ...],
+    ) -> None:
+        if self._artifact_references is None:
+            if declarations:
+                raise ValueError("canonical Artifact declaration service is unavailable")
+            return
+        self._artifact_references.assert_progress_replay(receipt_id, declarations)
 
     def get_report(
         self,

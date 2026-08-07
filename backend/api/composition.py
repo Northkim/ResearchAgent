@@ -36,6 +36,7 @@ from backend.domain.services import ExecutionCoordinator
 from backend.domain.models._utils import utc_now
 from backend.persistence.ports import UnitOfWork
 from backend.progress_reports import ProgressReportService
+from backend.artifact_references.service import ArtifactReferenceService
 from backend.progress_reports.identity import ProgressWorkflowIdentityResolver
 from backend.progress_reports.aggregation import ProjectProgressAggregationService
 from backend.local_projects.service import LocalProjectService
@@ -101,6 +102,7 @@ class ProgressApplicationServices:
 
     progress_reports: ProgressReportService
     project_progress: ProjectProgressAggregationService
+    artifact_references: ArtifactReferenceService
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,6 +114,7 @@ class LocalProductApplicationServices:
     project_workspaces: ProjectWorkspaceApplicationService
     workspace_sync: WorkspaceSyncApplicationService
     project_progress: ProjectProgressAggregationService
+    artifact_references: ArtifactReferenceService
 
 
 class ApplicationContainer:
@@ -271,12 +274,18 @@ class ApplicationContainer:
         self,
         unit_of_work: UnitOfWork,
     ) -> ProgressApplicationServices:
+        artifact_references = ArtifactReferenceService(
+            unit_of_work=unit_of_work, clock=self.clock
+        )
         return ProgressApplicationServices(
-            progress_reports=self._progress_report_service(unit_of_work),
+            progress_reports=self._progress_report_service(
+                unit_of_work, artifact_references=artifact_references
+            ),
             project_progress=ProjectProgressAggregationService(
                 unit_of_work=unit_of_work,
                 clock=self.clock,
             ),
+            artifact_references=artifact_references,
         )
 
     def build_local_product_services(
@@ -286,6 +295,9 @@ class ApplicationContainer:
         project_workspaces = ProjectWorkspaceApplicationService(
             unit_of_work=unit_of_work,
             clock=self.clock,
+        )
+        artifact_references = ArtifactReferenceService(
+            unit_of_work=unit_of_work, clock=self.clock
         )
         return LocalProductApplicationServices(
             local_projects=LocalProjectService(
@@ -297,7 +309,9 @@ class ApplicationContainer:
                 workspace_initializer=project_workspaces.initialize_project,
                 rollback_callback=unit_of_work.rollback,
             ),
-            progress_reports=self._progress_report_service(unit_of_work),
+            progress_reports=self._progress_report_service(
+                unit_of_work, artifact_references=artifact_references
+            ),
             project_workspaces=project_workspaces,
             workspace_sync=WorkspaceSyncApplicationService(
                 unit_of_work=unit_of_work,
@@ -308,12 +322,18 @@ class ApplicationContainer:
                 unit_of_work=unit_of_work,
                 clock=self.clock,
             ),
+            artifact_references=artifact_references,
         )
 
     def _progress_report_service(
         self,
         unit_of_work: UnitOfWork,
+        *,
+        artifact_references: ArtifactReferenceService | None = None,
     ) -> ProgressReportService:
+        artifact_references = artifact_references or ArtifactReferenceService(
+            unit_of_work=unit_of_work, clock=self.clock
+        )
         return ProgressReportService(
             repository=unit_of_work.progress_reports,
             content_storage=self.artifact_storage,
@@ -321,6 +341,7 @@ class ApplicationContainer:
             workflow_identity_resolver=ProgressWorkflowIdentityResolver(
                 unit_of_work
             ).resolve,
+            artifact_reference_service=artifact_references,
             clock=self.clock,
         )
 

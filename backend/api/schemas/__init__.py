@@ -7,6 +7,14 @@ from .approvals import (
     ApproveRequest,
     RejectRequest,
 )
+from .artifact_references import (
+    ArtifactDependencyBindRequest,
+    ArtifactDependencyPageResponse,
+    ArtifactDependencyResponse,
+    ArtifactMaterializationPlanResponse,
+    ArtifactReferencePageResponse,
+    ArtifactReferenceResponse,
+)
 from .common import ErrorResponse, HealthResponse
 from .queries import (
     ExecutionEventResponse,
@@ -53,6 +61,12 @@ __all__ = [
     "ApprovalDecisionResponse",
     "ApprovalPageResponse",
     "ApprovalResponse",
+    "ArtifactDependencyBindRequest",
+    "ArtifactDependencyPageResponse",
+    "ArtifactDependencyResponse",
+    "ArtifactMaterializationPlanResponse",
+    "ArtifactReferencePageResponse",
+    "ArtifactReferenceResponse",
     "ApproveRequest",
     "CreateRunRequest",
     "CreateCatalogRunRequest",

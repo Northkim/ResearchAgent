@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from backend.execution_events.ports import ExecutionEventStore
+from backend.artifact_references.ports import ArtifactReferenceRepository
 from backend.progress_reports.ports import ProgressReportRepository
 from backend.local_projects.ports import LocalProjectRepository
 from backend.project_workspaces.ports import (
@@ -75,6 +76,12 @@ class UnitOfWork(ABC):
         """Optional Capsule acquisition/installation observation repository."""
 
         raise NotImplementedError("Workspace sync persistence is unavailable")
+
+    @property
+    def artifact_references(self) -> ArtifactReferenceRepository:
+        """Optional local-product Artifact metadata repository."""
+
+        raise NotImplementedError("Artifact Reference persistence is unavailable")
 
     @abstractmethod
     def commit(self) -> None:

@@ -2,6 +2,7 @@
 
 from .approval import SQLAlchemyApprovalRepository
 from .artifact import SQLAlchemyArtifactRepository
+from .artifact_reference import SQLAlchemyArtifactReferenceRepository
 from .checkpoint import SQLAlchemyCheckpointRepository
 from .events import SQLAlchemyExecutionEventStore
 from .memory import SQLAlchemyMemoryRepository
@@ -16,6 +17,7 @@ from .workspace_sync import SQLAlchemyWorkspaceSyncRepository
 __all__ = [
     "SQLAlchemyApprovalRepository",
     "SQLAlchemyArtifactRepository",
+    "SQLAlchemyArtifactReferenceRepository",
     "SQLAlchemyCheckpointRepository",
     "SQLAlchemyExecutionEventStore",
     "SQLAlchemyMemoryRepository",

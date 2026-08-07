@@ -1,0 +1,1 @@
+"""Typed Artifact Reference tests."""

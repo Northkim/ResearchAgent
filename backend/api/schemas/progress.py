@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import Field
@@ -13,6 +14,7 @@ from backend.progress_reports.contracts import (
     ProjectProgressProjection,
     UploadedProgressReport,
 )
+from backend.artifact_references.contracts import ArtifactDeclaration
 
 from .common import StrictDTO
 
@@ -39,11 +41,35 @@ class ProgressReportUploadRequest(StrictDTO):
     source_path_hint: str
     context_snapshot_metadata: dict[str, Any] | None = None
     envelope_checksum: str
+    artifact_declarations: list["ArtifactDeclarationRequest"] = Field(
+        default_factory=list,
+        max_length=100,
+    )
 
     def to_contract(self) -> ProgressReportUploadEnvelope:
         payload = self.model_dump()
         payload.pop("workflow_instance_id")
+        payload.pop("artifact_declarations")
         return ProgressReportUploadEnvelope.from_dict(payload)
+
+    def to_artifact_declarations(self) -> tuple[ArtifactDeclaration, ...]:
+        return tuple(item.to_contract() for item in self.artifact_declarations)
+
+
+class ArtifactDeclarationRequest(StrictDTO):
+    artifact_id: str = Field(pattern=r"^artifact-[0-9a-f]{32}$")
+    artifact_type: str = Field(pattern=r"^[a-z][a-z0-9._-]{1,159}$")
+    artifact_schema_version: str = Field(
+        pattern=r"^reagent\.artifact\.[a-z][a-z0-9._-]*/v[0-9]+\.[0-9]+$"
+    )
+    media_type: str
+    relative_path: str
+    content_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=0, le=1_099_511_627_776)
+    produced_at: datetime
+
+    def to_contract(self) -> ArtifactDeclaration:
+        return ArtifactDeclaration(**self.model_dump())
 
 
 class ProgressUploadReceiptResponse(StrictDTO):

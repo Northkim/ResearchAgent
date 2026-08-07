@@ -24,6 +24,7 @@ from .composition import ApplicationContainer
 from .routers import (
     approvals_router,
     artifacts_router,
+    artifact_references_router,
     health_router,
     local_projects_router,
     local_sessions_router,
@@ -79,6 +80,7 @@ def create_app(
     application.include_router(approvals_router)
     application.include_router(workflows_router)
     application.include_router(artifacts_router)
+    application.include_router(artifact_references_router)
     application.include_router(progress_reports_router)
     if enable_local_workflow_sessions:
         application.include_router(local_sessions_router)

@@ -2,6 +2,7 @@
 
 from .approvals import router as approvals_router
 from .artifacts import router as artifacts_router
+from .artifact_references import router as artifact_references_router
 from .health import router as health_router
 from .progress_reports import router as progress_reports_router
 from .local_projects import router as local_projects_router
@@ -12,6 +13,7 @@ from .project_workspaces import router as project_workspaces_router
 
 __all__ = [
     "artifacts_router",
+    "artifact_references_router",
     "approvals_router",
     "health_router",
     "progress_reports_router",

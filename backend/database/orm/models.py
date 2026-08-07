@@ -17,6 +17,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -992,6 +993,13 @@ class UploadedProgressReportORM(Base):
             "original_report_checksum",
             name="uq_progress_reports_exact_identity",
         ),
+        UniqueConstraint(
+            "receipt_id",
+            "project_id",
+            "workflow_instance_id",
+            "report_id",
+            name="uq_progress_reports_artifact_producer_identity",
+        ),
         CheckConstraint("original_report_size > 0", name="progress_report_size_positive"),
         Index(
             "ix_progress_reports_project_package_received",
@@ -1042,6 +1050,211 @@ class UploadedProgressReportORM(Base):
     chain_state: Mapped[str] = mapped_column(String(50), nullable=False)
     accepted_for_projection: Mapped[bool] = mapped_column(Boolean, nullable=False)
     normalized_record_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class LocalArtifactReferenceORM(Base):
+    """Cloud metadata for immutable local-product research outputs."""
+
+    __tablename__ = "local_artifact_references"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "producer_workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_local_artifact_references_producer_instance",
+        ),
+        ForeignKeyConstraint(
+            [
+                "producer_progress_receipt_id",
+                "project_id",
+                "producer_workflow_instance_id",
+                "producer_progress_report_id",
+            ],
+            [
+                "uploaded_progress_reports.receipt_id",
+                "uploaded_progress_reports.project_id",
+                "uploaded_progress_reports.workflow_instance_id",
+                "uploaded_progress_reports.report_id",
+            ],
+            name="fk_local_artifact_references_progress_producer",
+        ),
+        ForeignKeyConstraint(
+            ["producer_capsule_id", "producer_capsule_version"],
+            [
+                "local_workflow_capsule_versions.capsule_id",
+                "local_workflow_capsule_versions.capsule_version",
+            ],
+            name="fk_local_artifact_references_capsule_version",
+        ),
+        UniqueConstraint(
+            "project_id", "artifact_id", name="uq_local_artifact_references_project_identity"
+        ),
+        UniqueConstraint(
+            "producer_progress_receipt_id",
+            "relative_path",
+            name="uq_local_artifact_references_progress_path",
+        ),
+        CheckConstraint(
+            "state IN ('DECLARED','LOCAL_AVAILABLE','EXTERNAL_AVAILABLE','METADATA_ONLY',"
+            "'MISSING','STALE','INCOMPATIBLE','RETIRED')",
+            name="local_artifact_reference_state",
+        ),
+        CheckConstraint(
+            "producer_execution_round > 0", name="local_artifact_reference_round_positive"
+        ),
+        CheckConstraint(
+            "size_bytes BETWEEN 0 AND 1099511627776",
+            name="local_artifact_reference_size",
+        ),
+        CheckConstraint(
+            "cloud_metadata_available", name="local_artifact_reference_cloud_metadata"
+        ),
+        Index(
+            "ix_local_artifact_references_project_produced",
+            "project_id", "produced_at", "artifact_id",
+        ),
+        Index(
+            "ix_local_artifact_references_producer",
+            "project_id", "producer_workflow_instance_id", "produced_at",
+        ),
+        Index(
+            "ix_local_artifact_references_type_state",
+            "project_id", "artifact_type", "state",
+        ),
+        Index("ix_local_artifact_references_checksum", "content_checksum"),
+    )
+
+    artifact_id: Mapped[str] = mapped_column(String(41), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    producer_workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    producer_progress_receipt_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    producer_progress_report_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    producer_execution_round: Mapped[int] = mapped_column(Integer, nullable=False)
+    producer_capsule_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    producer_capsule_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    artifact_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    artifact_schema_version: Mapped[str] = mapped_column(String(200), nullable=False)
+    media_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    state: Mapped[str] = mapped_column(String(24), nullable=False)
+    relative_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    content_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cloud_metadata_available: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    produced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowArtifactRequirementORM(Base):
+    __tablename__ = "workflow_artifact_requirements"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_definition_id", "workflow_version"],
+            [
+                "local_workflow_definition_versions.workflow_definition_id",
+                "local_workflow_definition_versions.version",
+            ],
+            name="fk_workflow_artifact_requirements_definition_version",
+        ),
+        CheckConstraint(
+            "compatibility_mode IN ('EXACT','COMPATIBLE_RANGE','CONVERTER_REQUIRED')",
+            name="workflow_artifact_requirement_compatibility",
+        ),
+        CheckConstraint(
+            "materialization_mode IN ('REFERENCE_ONLY','VERIFIED_COPY')",
+            name="workflow_artifact_requirement_materialization",
+        ),
+        CheckConstraint(
+            "cardinality_min >= 0 AND cardinality_max >= cardinality_min "
+            "AND cardinality_max <= 100",
+            name="workflow_artifact_requirement_cardinality",
+        ),
+        Index(
+            "ix_workflow_artifact_requirements_type_schema",
+            "artifact_type", "schema_constraint",
+        ),
+    )
+
+    workflow_definition_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workflow_version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    requirement_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    artifact_type: Mapped[str] = mapped_column(String(160), nullable=False)
+    compatibility_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    schema_constraint: Mapped[str] = mapped_column(String(200), nullable=False)
+    cardinality_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    cardinality_max: Mapped[int] = mapped_column(Integer, nullable=False)
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    materialization_mode: Mapped[str] = mapped_column(String(24), nullable=False)
+    target_relative_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ArtifactDependencyBindingORM(Base):
+    __tablename__ = "project_artifact_dependency_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "consumer_workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_project_artifact_bindings_consumer_instance",
+        ),
+        ForeignKeyConstraint(
+            [
+                "consumer_workflow_definition_id",
+                "consumer_workflow_version",
+                "requirement_key",
+            ],
+            [
+                "workflow_artifact_requirements.workflow_definition_id",
+                "workflow_artifact_requirements.workflow_version",
+                "workflow_artifact_requirements.requirement_key",
+            ],
+            name="fk_project_artifact_bindings_requirement",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "artifact_id"],
+            ["local_artifact_references.project_id", "local_artifact_references.artifact_id"],
+            name="fk_project_artifact_bindings_artifact",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "consumer_workflow_instance_id",
+            "idempotency_key",
+            name="uq_project_artifact_bindings_idempotency",
+        ),
+        CheckConstraint(
+            "state IN ('ACTIVE','RETIRED')", name="project_artifact_binding_state"
+        ),
+        Index(
+            "uq_project_artifact_bindings_active_requirement",
+            "project_id", "consumer_workflow_instance_id", "requirement_key",
+            unique=True,
+            postgresql_where=text("state = 'ACTIVE'"),
+        ),
+        Index(
+            "ix_project_artifact_bindings_artifact", "project_id", "artifact_id"
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(49), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    consumer_workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    consumer_workflow_definition_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_workflow_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    requirement_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    artifact_id: Mapped[str] = mapped_column(String(41), nullable=False)
+    expected_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    state: Mapped[str] = mapped_column(String(16), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProjectProgressProjectionORM(Base):

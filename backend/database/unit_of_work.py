@@ -12,11 +12,13 @@ from backend.database.orm import (
     AgentSessionORM,
     ApprovalRequestORM,
     ArtifactORM,
+    ArtifactDependencyBindingORM,
     CheckpointORM,
     CheckpointRecordORM,
     ExecutionEventORM,
     MemoryRevisionORM,
     LocalProjectORM,
+    LocalArtifactReferenceORM,
     LocalWorkflowCapsuleVersionORM,
     LocalWorkflowDefinitionORM,
     LocalWorkflowDefinitionVersionORM,
@@ -27,6 +29,7 @@ from backend.database.orm import (
     ProjectORM,
     ProjectWorkflowInstanceORM,
     WorkflowCapsuleArtifactORM,
+    WorkflowArtifactRequirementORM,
     WorkspaceInstallationAcknowledgementORM,
     StepRunORM,
     UploadedProgressReportORM,
@@ -56,6 +59,7 @@ from backend.project_workspaces.ports import (
 from .repositories import (
     SQLAlchemyApprovalRepository,
     SQLAlchemyArtifactRepository,
+    SQLAlchemyArtifactReferenceRepository,
     SQLAlchemyCheckpointRepository,
     SQLAlchemyExecutionEventStore,
     SQLAlchemyMemoryRepository,
@@ -99,6 +103,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._workflow_foundation = SQLAlchemyWorkflowFoundationRepository(self.session)
         self._project_manifests = SQLAlchemyProjectManifestRepository(self.session)
         self._workspace_sync = SQLAlchemyWorkspaceSyncRepository(self.session)
+        self._artifact_references = SQLAlchemyArtifactReferenceRepository(self.session)
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -147,6 +152,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     @property
     def workspace_sync(self) -> WorkspaceSyncRepository:
         return self._workspace_sync
+
+    @property
+    def artifact_references(self):
+        return self._artifact_references
 
     def commit(self) -> None:
         try:
@@ -206,6 +215,9 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(StepRunORM)
         self._flush_type(ProviderOperationORM)
         self._flush_type(UploadedProgressReportORM)
+        self._flush_type(LocalArtifactReferenceORM)
+        self._flush_type(WorkflowArtifactRequirementORM)
+        self._flush_type(ArtifactDependencyBindingORM)
         self._flush_type(ProjectProgressProjectionORM)
 
         checkpoints = sorted(
