@@ -84,7 +84,54 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-B7 multi-Workflow architecture qualified
+### Current milestone — NIGHT-H1 product hardening qualified
+
+NIGHT-H1 continued on clean `main` from accepted B7 final commit
+`79a00e143b362668959fc36327ea8580f87fcb70`. It adds no production Workflow,
+database migration, trust change, automatic binding/materialization, browser
+local write, or Cloud byte ownership. The sole Alembic head remains
+`20260806_0013`.
+
+A first-time-user audit and deterministic real-Chrome product E2E exercised
+Project creation, Workspace bootstrap, incremental Capsule sync, interactive
+Literature finish, `selected-paper-library/v1`, explicit Idea addition and
+binding, Index refresh/materialization, Idea execution/Progress, and a fresh
+second session from Capsule files. The 23-step path now requires no internal
+JSON edit and no raw UUID copy when one active instance matches; ambiguity
+still fails closed to an exact Instance ID.
+
+Three product-blocking integration gaps were repaired without changing
+published Capsule bytes. Cloud derives a missing Literature Artifact
+declaration only from an accepted COMPLETED report plus the exact reviewed
+producer Capsule output contract, and an exact retry can repair the missing
+canonical row without another Progress row. The Artifact selector no longer
+sends an unsupported state filter. After exact Idea dependency/receipt/byte
+preflight, the Workspace runner atomically supplies only the verified source
+Artifact identity envelope required by `candidate-ideas/v0.1`; it never creates
+research content or overwrites an existing output.
+
+Web next actions are derived from Cloud desired/install/dependency/Progress
+evidence. Local `workflow list` derives byte-aware readiness from the Lock,
+receipts, inputs, and self-identifying Progress. A stable `--workflow` selector
+is accepted only for one active match; existing exact-ID and JSON interfaces
+remain compatible. Human errors preserve diagnostic codes and add what/why/
+next recovery guidance. Overview, Board, Help, README and getting-started docs
+now provide one controlled user path and explain legacy 0.3.0/0.5.0 adoption.
+
+Qualification passed: full backend `683 passed, 10 skipped` with isolated
+PostgreSQL, post-physical-restart relevant DB set `12 passed`, frontend Vitest
+`15 files / 29 tests`, full Playwright `5 passed`, TypeScript, ESLint,
+production build, compileall, sole-head/current/check and no Alembic drift. The
+10 skips are unchanged explicit dedicated-migration or destructive/live gates;
+no H1 skip was added. Live Provider product E2E was not authorized.
+
+ADR 0028 records the derived guidance, unique stable selector, exact immutable
+Progress-to-Artifact repair, and Idea source-provenance bootstrap. The detailed
+audit is `.agent_read/progress/post_b7_product_hardening.md`. Evidence recommends
+Deployment / Controlled User Testing Hardening as the next owner decision;
+ReAgent is not claimed production-ready.
+
+### Prior milestone — NIGHT-B7 multi-Workflow architecture qualified
 
 NIGHT-B7 continued on clean `main` from accepted B6 final commit
 `95acc28896b150b7559dd477c48dd650b9fa5e79`. Additive data migration
