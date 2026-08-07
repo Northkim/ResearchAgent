@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:runtime-schema:reagent.workspace-artifact-index:v0.1",
+  "title": "reagent.workspace-artifact-index/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "workspace_id", "artifacts", "updated_at", "index_checksum"],
+  "properties": {
+    "schema_version": {"const": "reagent.workspace-artifact-index/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "artifacts": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "updated_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "index_checksum": {"$ref": "#/$defs/checksum"}
+  },
+  "$defs": {
+    "checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "artifact_type", "artifact_schema_version", "producer_workflow_instance_id", "producer_capsule_version", "producer_relative_path", "content_checksum", "size_bytes", "verification_status", "last_verified_at", "local_relative_path"],
+      "properties": {
+        "artifact_id": {"type": "string", "pattern": "^artifact-[0-9a-f]{32}$"},
+        "artifact_type": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,159}$"},
+        "artifact_schema_version": {"type": "string", "pattern": "^reagent\\.artifact\\.[a-z0-9._-]+/v[0-9]+(?:\\.[0-9]+)?$"},
+        "producer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+        "producer_capsule_version": {"type": "string", "minLength": 5, "maxLength": 100},
+        "producer_relative_path": {"type": "string", "pattern": "^outputs/[^\\u0000]+$", "maxLength": 500},
+        "content_checksum": {"$ref": "#/$defs/checksum"},
+        "size_bytes": {"type": "integer", "minimum": 0, "maximum": 134217728},
+        "verification_status": {"const": "VERIFIED"},
+        "last_verified_at": {"type": "string", "format": "date-time", "maxLength": 35},
+        "local_relative_path": {"type": "string", "pattern": "^capsules/[^\\u0000]+$", "maxLength": 1000}
+      }
+    }
+  }
+}

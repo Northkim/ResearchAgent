@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:runtime-schema:reagent.artifact-materialization-plan:v0.1",
+  "title": "reagent.artifact-materialization-plan/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "workspace_id", "consumer_workflow_instance_id", "artifacts", "created_at", "plan_checksum"],
+  "properties": {
+    "schema_version": {"const": "reagent.artifact-materialization-plan/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "consumer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+    "artifacts": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/entry"}},
+    "created_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "plan_checksum": {"$ref": "#/$defs/checksum"}
+  },
+  "$defs": {
+    "checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["binding_id", "requirement_key", "consumer_workflow_instance_id", "producer_workflow_instance_id", "artifact_id", "artifact_type", "artifact_schema_version", "expected_checksum", "expected_size_bytes", "source_capsule_relative_path", "source_relative_path", "target_capsule_relative_path", "target_relative_path", "materialization_mode"],
+      "properties": {
+        "binding_id": {"type": "string", "pattern": "^artifact-binding-[0-9a-f]{32}$"},
+        "requirement_key": {"type": "string", "minLength": 2, "maxLength": 128},
+        "consumer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+        "producer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+        "artifact_id": {"type": "string", "pattern": "^artifact-[0-9a-f]{32}$"},
+        "artifact_type": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,159}$"},
+        "artifact_schema_version": {"type": "string", "minLength": 5, "maxLength": 200},
+        "expected_checksum": {"$ref": "#/$defs/checksum"},
+        "expected_size_bytes": {"type": "integer", "minimum": 0, "maximum": 134217728},
+        "source_capsule_relative_path": {"type": "string", "pattern": "^capsules/[^\\u0000]+$", "maxLength": 1000},
+        "source_relative_path": {"type": "string", "pattern": "^outputs/[^\\u0000]+$", "maxLength": 500},
+        "target_capsule_relative_path": {"type": "string", "pattern": "^capsules/[^\\u0000]+$", "maxLength": 1000},
+        "target_relative_path": {"type": "string", "pattern": "^inputs/[^\\u0000]+$", "maxLength": 500},
+        "materialization_mode": {"const": "VERIFIED_COPY"}
+      }
+    }
+  }
+}

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Self-contained Project Workspace bootstrap and legacy Package adoption CLI.
+"""Self-contained Project Workspace lifecycle CLI.
 
 This module intentionally uses only the Python standard library. Bootstrap
 copies the same reviewed source to the Workspace root as ``reagent_local.py``.
 Explicit ``sync`` performs reviewed pull-only Capsule installation; it never
 executes downloaded content or rewrites existing Capsule research state.
+Explicit ``artifact`` commands verify local producer bytes and materialize
+checksum-bound copies without sharing writable files between Capsules.
 """
 
 from __future__ import annotations
@@ -40,6 +42,10 @@ INSTALLED_LOCK_SCHEMA = "reagent.workspace-installed-lock/v0.1"
 SYNC_PLAN_SCHEMA = "reagent.workspace-sync-plan/v0.1"
 SYNC_ACK_SCHEMA = "reagent.capsule-installation-ack/v0.1"
 SYNC_ACK_RECEIPT_SCHEMA = "reagent.workspace-sync-ack-receipt/v0.1"
+ARTIFACT_INDEX_SCHEMA = "reagent.workspace-artifact-index/v0.1"
+ARTIFACT_PAGE_SCHEMA = "reagent.artifact-reference-page/v0.1"
+MATERIALIZATION_PLAN_SCHEMA = "reagent.artifact-materialization-plan/v0.1"
+MATERIALIZATION_RECEIPT_SCHEMA = "reagent.artifact-materialization-receipt/v0.1"
 PACKAGE_SCHEMA = "workflow-package/v0.1"
 DESIRED_MANIFEST_SCHEMA = "reagent.project-desired-manifest/v0.1"
 WORKFLOW_ID = "literature-search-local-experimental"
@@ -58,6 +64,8 @@ SYNC_JOURNAL = ".reagent/sync/current.json"
 SYNC_LOCK = ".reagent/runtime/sync.lock"
 ACKNOWLEDGEMENTS_ROOT = ".reagent/acknowledgements"
 INSTALL_RECEIPTS_ROOT = ".reagent/receipts/installations"
+ARTIFACT_INDEX = ".reagent/artifact-index.json"
+MATERIALIZATION_RECEIPTS_ROOT = ".reagent/receipts/materializations"
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 2
@@ -74,6 +82,8 @@ PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
 WORKSPACE_ID = re.compile(r"^workspace-[0-9a-f]{32}$")
 WORKFLOW_INSTANCE_ID = re.compile(r"^wfi-[0-9a-f]{32}$")
 CAPSULE_ID = re.compile(r"^capsule-[0-9a-f]{32}$")
+ARTIFACT_ID = re.compile(r"^artifact-[0-9a-f]{32}$")
+BINDING_ID = re.compile(r"^artifact-binding-[0-9a-f]{32}$")
 STABLE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
 MAX_FILES = 5_000
@@ -207,6 +217,31 @@ class WorkspaceSyncResult:
             "acknowledgement_status": self.acknowledgement_status,
             "lock_checksum": self.lock_checksum,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactOperationResult:
+    status: str
+    project_id: str
+    workspace_id: str
+    artifact_count: int
+    materialized_count: int = 0
+    consumer_workflow_instance_id: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        value: dict[str, Any] = {
+            "schema_version": "reagent.artifact-operation-result/v0.1",
+            "status": self.status,
+            "project_id": self.project_id,
+            "workspace_id": self.workspace_id,
+            "artifact_count": self.artifact_count,
+            "materialized_count": self.materialized_count,
+        }
+        if self.consumer_workflow_instance_id is not None:
+            value["consumer_workflow_instance_id"] = (
+                self.consumer_workflow_instance_id
+            )
+        return value
 
 
 def canonical_json(value: Any) -> str:
@@ -1129,8 +1164,13 @@ configuration only; they do not prove local installation or execution state.
 - Do not write into another Capsule or outside this Workspace.
 - Run `python reagent_local.py sync .` explicitly to pull reviewed, exact-pinned
   Capsules. Sync never executes downloaded code or deletes retired Capsules.
+- Run `python reagent_local.py artifact refresh .` to verify producer bytes into
+  `.reagent/artifact-index.json`, then use the explicit `artifact materialize`
+  command for one checksum-bound consumer. Materialization copies bytes; it
+  never creates shared writable links or silently selects the latest Artifact.
 - `.reagent/installed-lock.json` is local installed-state metadata; cloud
   acknowledgement is not a backup of this Workspace.
+- Cloud Artifact References are metadata, not stored Artifact bytes or a backup.
 """
 
 
@@ -1439,6 +1479,63 @@ class HTTPWorkspaceSyncTransport:
         return self._json_request(
             "POST", f"/projects/{project_id}/workspace/sync-ack", payload
         )
+
+    def list_artifacts(
+        self, project_id: str, *, offset: int = 0, limit: int = 100
+    ) -> dict[str, Any]:
+        query = urllib.parse.urlencode({"offset": offset, "limit": limit})
+        return self._json_get(f"/projects/{project_id}/artifacts?{query}")
+
+    def materialization_plan(
+        self, project_id: str, consumer_workflow_instance_id: str
+    ) -> dict[str, Any]:
+        _match(
+            consumer_workflow_instance_id,
+            WORKFLOW_INSTANCE_ID,
+            "consumer_workflow_instance_id",
+        )
+        return self._json_get(
+            f"/projects/{project_id}/workflow-instances/"
+            f"{consumer_workflow_instance_id}/artifact-materialization-plan"
+        )
+
+    def _json_get(self, path: str) -> dict[str, Any]:
+        request = urllib.request.Request(self._base_url + path, method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                if response.status != 200 or response.geturl() != self._base_url + path:
+                    raise OSError("unexpected Artifact metadata response")
+                content = response.read(2_097_153)
+        except urllib.error.HTTPError as error:
+            try:
+                body = json.loads(error.read(65_536).decode("utf-8"))
+                code = body.get("error", {}).get("code", "ARTIFACT_REFERENCE_NOT_FOUND")
+            except Exception:
+                code = "ARTIFACT_REFERENCE_NOT_FOUND"
+            raise WorkspaceCLIError(
+                code, "Cloud rejected the Artifact metadata request", EXIT_CLOUD
+            ) from error
+        except (OSError, urllib.error.URLError) as error:
+            raise WorkspaceCLIError(
+                "WORKSPACE_SYNC_NOT_AVAILABLE",
+                "Local ReAgent API is unavailable",
+                EXIT_CLOUD,
+            ) from error
+        if len(content) > 2_097_152:
+            raise WorkspaceCLIError(
+                "ARTIFACT_INDEX_INVALID",
+                "Artifact metadata response exceeds size limits",
+                EXIT_CLOUD,
+            )
+        try:
+            value = json.loads(content.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise WorkspaceCLIError(
+                "ARTIFACT_INDEX_INVALID",
+                "Artifact metadata response is invalid",
+                EXIT_CLOUD,
+            ) from error
+        return _object(value, "Artifact metadata response")
 
     def _json_request(
         self, method: str, path: str, payload: dict[str, Any]
@@ -2189,6 +2286,796 @@ def _sync_result(status, lock, ack_status):
     )
 
 
+def validate_artifact_index(
+    document: Any, workspace: dict[str, Any]
+) -> dict[str, Any]:
+    try:
+        return _validate_artifact_index(document, workspace)
+    except WorkspaceCLIError as error:
+        if error.code.startswith("ARTIFACT_INDEX_"):
+            raise
+        raise WorkspaceCLIError(
+            "ARTIFACT_INDEX_INVALID",
+            "Workspace Artifact Index is invalid",
+            EXIT_VALIDATION,
+        ) from error
+
+
+def _read_artifact_index(
+    path: Path, workspace: dict[str, Any]
+) -> dict[str, Any]:
+    try:
+        return validate_artifact_index(_read_json(path), workspace)
+    except WorkspaceCLIError as error:
+        if error.code.startswith("ARTIFACT_INDEX_"):
+            raise
+        raise WorkspaceCLIError(
+            "ARTIFACT_INDEX_INVALID",
+            "Workspace Artifact Index cannot be read safely",
+            EXIT_VALIDATION,
+        ) from error
+
+
+def _validate_artifact_index(
+    document: Any, workspace: dict[str, Any]
+) -> dict[str, Any]:
+    value = _object(document, "Workspace Artifact Index")
+    fields = {
+        "schema_version", "project_id", "workspace_id", "artifacts",
+        "updated_at", "index_checksum",
+    }
+    _exact_fields(value, fields, "Workspace Artifact Index")
+    if value["schema_version"] != ARTIFACT_INDEX_SCHEMA:
+        raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index schema is unsupported")
+    if (
+        value["project_id"] != workspace["project_id"]
+        or value["workspace_id"] != workspace["workspace_id"]
+    ):
+        raise _identity("ARTIFACT_INDEX_CONFLICT", "Artifact Index identity mismatch")
+    artifacts = value["artifacts"]
+    if not isinstance(artifacts, list) or len(artifacts) > 10_000:
+        raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index entries are invalid")
+    identities: list[str] = []
+    paths: dict[str, str] = {}
+    for raw in artifacts:
+        item = _object(raw, "Artifact Index entry")
+        required = {
+            "artifact_id", "artifact_type", "artifact_schema_version",
+            "producer_workflow_instance_id", "producer_capsule_version",
+            "producer_relative_path", "content_checksum", "size_bytes",
+            "verification_status", "last_verified_at", "local_relative_path",
+        }
+        _exact_fields(item, required, "Artifact Index entry")
+        _match(item["artifact_id"], ARTIFACT_ID, "artifact_id")
+        _match(
+            item["producer_workflow_instance_id"],
+            WORKFLOW_INSTANCE_ID,
+            "producer_workflow_instance_id",
+        )
+        _match(item["producer_capsule_version"], SEMVER, "producer_capsule_version")
+        _match(item["artifact_type"], re.compile(r"^[a-z][a-z0-9._-]{1,159}$"), "artifact_type")
+        if (
+            not isinstance(item["artifact_schema_version"], str)
+            or not item["artifact_schema_version"].startswith("reagent.artifact.")
+        ):
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact schema identity is invalid")
+        producer_path = _safe_artifact_path(item["producer_relative_path"], root="outputs")
+        local_path = _safe_artifact_path(item["local_relative_path"])
+        _checksum(item["content_checksum"], "content_checksum")
+        if (
+            isinstance(item["size_bytes"], bool)
+            or not isinstance(item["size_bytes"], int)
+            or not 0 <= item["size_bytes"] <= MAX_FILE_BYTES
+        ):
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact size is invalid")
+        if item["verification_status"] != "VERIFIED":
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact is not verified")
+        _timestamp(item["last_verified_at"], "last_verified_at")
+        identities.append(item["artifact_id"])
+        _record_case_path(paths, local_path)
+        if not local_path.endswith(producer_path):
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact local path is inconsistent")
+    if identities != sorted(set(identities)):
+        raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index ordering is invalid")
+    _timestamp(value["updated_at"], "updated_at")
+    payload = dict(value)
+    checksum = payload.pop("index_checksum")
+    _checksum(checksum, "index_checksum")
+    if canonical_hash(payload) != checksum:
+        raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index checksum is invalid")
+    return value
+
+
+def refresh_artifact_index(
+    *,
+    workspace_root: str | Path,
+    transport: Any,
+    now: datetime | None = None,
+) -> ArtifactOperationResult:
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    with _WorkspaceWriteLock(workspace):
+        index_path = workspace / ARTIFACT_INDEX
+        if index_path.is_symlink():
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index path is unsafe")
+        if index_path.exists():
+            if not index_path.is_file():
+                raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index path is invalid")
+            _read_artifact_index(index_path, descriptor)
+        lock = _require_installed_lock(workspace, descriptor)
+        installed = {
+            item["workflow_instance_id"]: item
+            for item in lock["installed_capsules"]
+        }
+        cloud_artifacts = _fetch_all_artifacts(transport, descriptor["project_id"])
+        timestamp = _utc_text(now or datetime.now(timezone.utc))
+        entries: list[dict[str, Any]] = []
+        for artifact in cloud_artifacts:
+            if artifact.get("state") != "LOCAL_AVAILABLE":
+                continue
+            _validate_cloud_artifact(artifact, descriptor)
+            instance_id = artifact["producer_workflow_instance_id"]
+            capsule = installed.get(instance_id)
+            if capsule is None:
+                raise WorkspaceCLIError(
+                    "ARTIFACT_BYTES_NOT_AVAILABLE",
+                    "Producer Capsule is not installed in this Workspace",
+                    EXIT_VALIDATION,
+                )
+            if artifact["producer_capsule_version"] != capsule["capsule_version"]:
+                raise _identity(
+                    "ARTIFACT_INDEX_CONFLICT",
+                    "Artifact producer Capsule pin conflicts with Installed Lock",
+                )
+            producer_path = _safe_artifact_path(
+                artifact["relative_path"], root="outputs"
+            )
+            capsule_path = _safe_artifact_path(capsule["relative_path"])
+            local_relative_path = f"{capsule_path}/{producer_path}"
+            source = workspace / local_relative_path
+            content_checksum, size = _verified_regular_file(
+                source,
+                allowed_root=workspace / capsule_path,
+                missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
+            )
+            if (
+                content_checksum != artifact["content_checksum"]
+                or size != artifact["size_bytes"]
+            ):
+                raise WorkspaceCLIError(
+                    "LOCAL_ARTIFACT_DRIFT",
+                    "Producer Artifact bytes no longer match Cloud metadata",
+                    EXIT_VALIDATION,
+                )
+            entries.append({
+                "artifact_id": artifact["artifact_id"],
+                "artifact_type": artifact["artifact_type"],
+                "artifact_schema_version": artifact["artifact_schema_version"],
+                "producer_workflow_instance_id": instance_id,
+                "producer_capsule_version": artifact["producer_capsule_version"],
+                "producer_relative_path": producer_path,
+                "content_checksum": content_checksum,
+                "size_bytes": size,
+                "verification_status": "VERIFIED",
+                "last_verified_at": timestamp,
+                "local_relative_path": local_relative_path,
+            })
+        entries.sort(key=lambda item: item["artifact_id"])
+        payload = {
+            "schema_version": ARTIFACT_INDEX_SCHEMA,
+            "project_id": descriptor["project_id"],
+            "workspace_id": descriptor["workspace_id"],
+            "artifacts": entries,
+            "updated_at": timestamp,
+        }
+        document = {**payload, "index_checksum": canonical_hash(payload)}
+        _atomic_write_json(index_path, document)
+        _read_artifact_index(index_path, descriptor)
+        return ArtifactOperationResult(
+            status="INDEX_REFRESHED",
+            project_id=descriptor["project_id"],
+            workspace_id=descriptor["workspace_id"],
+            artifact_count=len(entries),
+        )
+
+
+def artifact_status(workspace_root: str | Path) -> dict[str, Any]:
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    path = workspace / ARTIFACT_INDEX
+    if not path.exists() and not path.is_symlink():
+        return {
+            "schema_version": "reagent.artifact-status/v0.1",
+            "status": "NO_INDEX",
+            "project_id": descriptor["project_id"],
+            "workspace_id": descriptor["workspace_id"],
+            "artifact_count": 0,
+            "verified_count": 0,
+            "drift_count": 0,
+        }
+    if path.is_symlink():
+        raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index path is unsafe")
+    index = _read_artifact_index(path, descriptor)
+    verified = 0
+    drift = 0
+    for item in index["artifacts"]:
+        candidate = workspace / item["local_relative_path"]
+        try:
+            checksum, size = _verified_regular_file(
+                candidate,
+                allowed_root=workspace,
+                missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
+            )
+        except WorkspaceCLIError:
+            drift += 1
+            continue
+        if checksum == item["content_checksum"] and size == item["size_bytes"]:
+            verified += 1
+        else:
+            drift += 1
+    return {
+        "schema_version": "reagent.artifact-status/v0.1",
+        "status": "VERIFIED" if drift == 0 else "LOCAL_ARTIFACT_DRIFT",
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "artifact_count": len(index["artifacts"]),
+        "verified_count": verified,
+        "drift_count": drift,
+        "index_checksum": index["index_checksum"],
+    }
+
+
+def materialize_artifacts(
+    *,
+    workspace_root: str | Path,
+    consumer_workflow_instance_id: str,
+    transport: Any,
+    dry_run: bool = False,
+    now: datetime | None = None,
+) -> ArtifactOperationResult:
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    _match(
+        consumer_workflow_instance_id,
+        WORKFLOW_INSTANCE_ID,
+        "consumer_workflow_instance_id",
+    )
+    plan = validate_materialization_plan(
+        transport.materialization_plan(
+            descriptor["project_id"], consumer_workflow_instance_id
+        ),
+        descriptor,
+    )
+    if dry_run:
+        return ArtifactOperationResult(
+            status="PLAN_CREATED",
+            project_id=descriptor["project_id"],
+            workspace_id=descriptor["workspace_id"],
+            artifact_count=len(plan["artifacts"]),
+            consumer_workflow_instance_id=consumer_workflow_instance_id,
+        )
+    with _WorkspaceWriteLock(workspace):
+        lock = _require_installed_lock(workspace, descriptor)
+        installed = {
+            item["workflow_instance_id"]: item
+            for item in lock["installed_capsules"]
+        }
+        index_path = workspace / ARTIFACT_INDEX
+        if index_path.is_symlink() or not index_path.is_file():
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact Index is unavailable")
+        index = _read_artifact_index(index_path, descriptor)
+        indexed = {item["artifact_id"]: item for item in index["artifacts"]}
+        completed = 0
+        for item in plan["artifacts"]:
+            consumer = installed.get(item["consumer_workflow_instance_id"])
+            producer = installed.get(item["producer_workflow_instance_id"])
+            if consumer is None:
+                raise WorkspaceCLIError(
+                    "DEPENDENCY_UNRESOLVED",
+                    "Consumer Capsule is not installed",
+                    EXIT_VALIDATION,
+                )
+            if producer is None:
+                raise WorkspaceCLIError(
+                    "ARTIFACT_BYTES_NOT_AVAILABLE",
+                    "Producer Capsule bytes are unavailable",
+                    EXIT_VALIDATION,
+                )
+            entry = indexed.get(item["artifact_id"])
+            if entry is None:
+                raise WorkspaceCLIError(
+                    "ARTIFACT_BYTES_NOT_AVAILABLE",
+                    "Artifact has not been verified into the Workspace Index",
+                    EXIT_VALIDATION,
+                )
+            _require_plan_index_match(item, entry, producer, consumer)
+            _materialize_one(
+                workspace=workspace,
+                descriptor=descriptor,
+                plan=plan,
+                item=item,
+                index_entry=entry,
+                timestamp=_utc_text(now or datetime.now(timezone.utc)),
+            )
+            completed += 1
+        return ArtifactOperationResult(
+            status="MATERIALIZED" if completed else "NO_DEPENDENCIES",
+            project_id=descriptor["project_id"],
+            workspace_id=descriptor["workspace_id"],
+            artifact_count=len(index["artifacts"]),
+            materialized_count=completed,
+            consumer_workflow_instance_id=consumer_workflow_instance_id,
+        )
+
+
+def validate_materialization_plan(
+    document: Any, workspace: dict[str, Any]
+) -> dict[str, Any]:
+    value = _object(document, "Artifact materialization plan")
+    fields = {
+        "schema_version", "project_id", "workspace_id",
+        "consumer_workflow_instance_id", "artifacts", "created_at",
+        "plan_checksum",
+    }
+    _exact_fields(value, fields, "Artifact materialization plan")
+    if value["schema_version"] != MATERIALIZATION_PLAN_SCHEMA:
+        raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization plan schema is unsupported")
+    if (
+        value["project_id"] != workspace["project_id"]
+        or value["workspace_id"] != workspace["workspace_id"]
+    ):
+        raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization plan identity mismatch")
+    _match(
+        value["consumer_workflow_instance_id"],
+        WORKFLOW_INSTANCE_ID,
+        "consumer_workflow_instance_id",
+    )
+    artifacts = value["artifacts"]
+    if not isinstance(artifacts, list) or len(artifacts) > 100:
+        raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization plan entries are invalid")
+    order: list[tuple[str, str]] = []
+    targets: dict[str, str] = {}
+    for raw in artifacts:
+        item = _object(raw, "Artifact materialization entry")
+        required = {
+            "binding_id", "requirement_key", "consumer_workflow_instance_id",
+            "producer_workflow_instance_id", "artifact_id", "artifact_type",
+            "artifact_schema_version", "expected_checksum", "expected_size_bytes",
+            "source_capsule_relative_path", "source_relative_path",
+            "target_capsule_relative_path", "target_relative_path",
+            "materialization_mode",
+        }
+        _exact_fields(item, required, "Artifact materialization entry")
+        _match(item["binding_id"], BINDING_ID, "binding_id")
+        _match(item["artifact_id"], ARTIFACT_ID, "artifact_id")
+        for field in ("consumer_workflow_instance_id", "producer_workflow_instance_id"):
+            _match(item[field], WORKFLOW_INSTANCE_ID, field)
+        if item["consumer_workflow_instance_id"] != value["consumer_workflow_instance_id"]:
+            raise _identity("MATERIALIZATION_PLAN_INVALID", "Consumer identity is inconsistent")
+        _checksum(item["expected_checksum"], "expected_checksum")
+        if (
+            isinstance(item["expected_size_bytes"], bool)
+            or not isinstance(item["expected_size_bytes"], int)
+            or not 0 <= item["expected_size_bytes"] <= MAX_FILE_BYTES
+        ):
+            raise _identity("MATERIALIZATION_PLAN_INVALID", "Artifact size is unsupported")
+        _safe_artifact_path(item["source_capsule_relative_path"], root="capsules")
+        _safe_artifact_path(item["source_relative_path"], root="outputs")
+        _safe_artifact_path(item["target_capsule_relative_path"], root="capsules")
+        target = _safe_artifact_path(item["target_relative_path"], root="inputs")
+        _record_case_path(targets, f"{item['target_capsule_relative_path']}/{target}")
+        if item["materialization_mode"] != "VERIFIED_COPY":
+            raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization mode is not supported")
+        order.append((item["requirement_key"], item["artifact_id"]))
+    if order != sorted(set(order)):
+        raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization plan ordering is invalid")
+    _timestamp(value["created_at"], "created_at")
+    payload = dict(value)
+    checksum = payload.pop("plan_checksum")
+    _checksum(checksum, "plan_checksum")
+    if canonical_hash(payload) != checksum:
+        raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization plan checksum is invalid")
+    return value
+
+
+def _fetch_all_artifacts(transport: Any, project_id: str) -> list[dict[str, Any]]:
+    values: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        page = _object(
+            transport.list_artifacts(project_id, offset=offset, limit=100),
+            "Artifact Reference page",
+        )
+        required = {
+            "schema_version", "project_id", "artifacts", "offset", "limit",
+            "total", "has_more",
+        }
+        _exact_fields(page, required, "Artifact Reference page")
+        if page["schema_version"] != ARTIFACT_PAGE_SCHEMA or page["project_id"] != project_id:
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact page identity is invalid")
+        if page["offset"] != offset or page["limit"] != 100:
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact pagination is inconsistent")
+        batch = page["artifacts"]
+        if not isinstance(batch, list) or len(batch) > 100:
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact page entries are invalid")
+        values.extend(batch)
+        if not page["has_more"]:
+            if len(values) != page["total"]:
+                raise _identity("ARTIFACT_INDEX_INVALID", "Artifact page total is inconsistent")
+            return values
+        if not batch:
+            raise _identity("ARTIFACT_INDEX_INVALID", "Artifact pagination made no progress")
+        offset += len(batch)
+
+
+def _validate_cloud_artifact(artifact: Any, workspace: dict[str, Any]) -> None:
+    value = _object(artifact, "Cloud Artifact Reference")
+    required = {
+        "schema_version", "artifact_id", "project_id",
+        "producer_workflow_instance_id", "producer_progress_receipt_id",
+        "producer_progress_report_id", "producer_execution_round",
+        "producer_capsule_id", "producer_capsule_version", "artifact_type",
+        "artifact_schema_version", "media_type", "state", "relative_path",
+        "content_checksum", "size_bytes", "cloud_metadata_available",
+        "produced_at", "retired_at", "created_at", "updated_at",
+    }
+    _exact_fields(value, required, "Cloud Artifact Reference")
+    if value["schema_version"] != "reagent.artifact-reference/v0.1":
+        raise _identity("ARTIFACT_INDEX_INVALID", "Cloud Artifact schema is unsupported")
+    if value["project_id"] != workspace["project_id"]:
+        raise _identity("ARTIFACT_PROJECT_MISMATCH", "Cloud Artifact Project mismatch")
+    _match(value["artifact_id"], ARTIFACT_ID, "artifact_id")
+    _match(value["producer_workflow_instance_id"], WORKFLOW_INSTANCE_ID, "producer_workflow_instance_id")
+    _match(value["producer_capsule_version"], SEMVER, "producer_capsule_version")
+    _safe_artifact_path(value["relative_path"], root="outputs")
+    _checksum(value["content_checksum"], "content_checksum")
+    if (
+        isinstance(value["size_bytes"], bool)
+        or not isinstance(value["size_bytes"], int)
+        or not 0 <= value["size_bytes"] <= MAX_FILE_BYTES
+        or value["cloud_metadata_available"] is not True
+    ):
+        raise _identity("ARTIFACT_INDEX_INVALID", "Cloud Artifact bounds are invalid")
+
+
+def _require_installed_lock(workspace: Path, descriptor: dict[str, Any]) -> dict[str, Any]:
+    path = workspace / INSTALLED_LOCK
+    if path.is_symlink() or not path.is_file():
+        raise _identity("INSTALLED_LOCK_MISSING", "Installed Workspace Lock is required")
+    return validate_installed_lock(_read_json(path), descriptor)
+
+
+def _safe_artifact_path(value: Any, *, root: str | None = None) -> str:
+    try:
+        result = _safe_package_path(value)
+    except WorkspaceCLIError as error:
+        raise WorkspaceCLIError("UNSAFE_ARTIFACT_PATH", str(error), EXIT_VALIDATION) from error
+    if root is not None and not result.startswith(root + "/"):
+        raise WorkspaceCLIError(
+            "UNSAFE_ARTIFACT_PATH",
+            f"Artifact path must be under {root}/",
+            EXIT_VALIDATION,
+        )
+    return result
+
+
+def _verified_regular_file(
+    path: Path, *, allowed_root: Path, missing_code: str
+) -> tuple[str, int]:
+    _reject_symlink_chain(path.parent)
+    _assert_within(allowed_root, path)
+    try:
+        value = path.stat(follow_symlinks=False)
+    except OSError as error:
+        raise WorkspaceCLIError(missing_code, "Artifact bytes are unavailable", EXIT_VALIDATION) from error
+    if not stat.S_ISREG(value.st_mode) or path.is_symlink() or value.st_nlink != 1:
+        raise WorkspaceCLIError(
+            "UNSAFE_ARTIFACT_PATH",
+            "Artifact source must be one unlinked regular file",
+            EXIT_VALIDATION,
+        )
+    if value.st_size > MAX_FILE_BYTES:
+        raise WorkspaceCLIError(
+            "ARTIFACT_CONTRACT_VIOLATION",
+            "Artifact exceeds the supported local materialization bound",
+            EXIT_VALIDATION,
+        )
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        opened = os.fstat(descriptor)
+        if (
+            opened.st_dev,
+            opened.st_ino,
+            opened.st_size,
+            opened.st_mtime_ns,
+        ) != (
+            value.st_dev,
+            value.st_ino,
+            value.st_size,
+            value.st_mtime_ns,
+        ):
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT",
+                "Artifact source changed during verification",
+                EXIT_VALIDATION,
+            )
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+    finally:
+        os.close(descriptor)
+    return "sha256:" + digest.hexdigest(), size
+
+
+def _copy_verified_artifact(
+    source: Path,
+    destination: Any,
+    *,
+    allowed_root: Path,
+    expected_checksum: str,
+    expected_size: int,
+) -> None:
+    """Copy from one no-follow descriptor while validating the exact bytes.
+
+    Opening and hashing the source through the same descriptor closes the gap
+    between pre-copy verification and copying.  A producer replacing or
+    mutating the source during materialization therefore fails closed.
+    """
+
+    _reject_symlink_chain(source.parent)
+    _assert_within(allowed_root, source)
+    try:
+        before = source.stat(follow_symlinks=False)
+        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as error:
+        raise WorkspaceCLIError(
+            "ARTIFACT_BYTES_NOT_AVAILABLE",
+            "Artifact bytes are unavailable",
+            EXIT_VALIDATION,
+        ) from error
+    digest = hashlib.sha256()
+    size = 0
+    try:
+        opened = os.fstat(descriptor)
+        identity = (
+            opened.st_dev,
+            opened.st_ino,
+            opened.st_size,
+            opened.st_mtime_ns,
+        )
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_nlink != 1
+            or identity
+            != (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+        ):
+            raise WorkspaceCLIError(
+                "UNSAFE_ARTIFACT_PATH",
+                "Artifact source changed or is not one unlinked regular file",
+                EXIT_VALIDATION,
+            )
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            digest.update(chunk)
+            destination.write(chunk)
+        after = os.fstat(descriptor)
+        if (
+            after.st_dev,
+            after.st_ino,
+            after.st_size,
+            after.st_mtime_ns,
+        ) != identity:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT",
+                "Artifact source changed during materialization",
+                EXIT_VALIDATION,
+            )
+    finally:
+        os.close(descriptor)
+    actual_checksum = "sha256:" + digest.hexdigest()
+    if actual_checksum != expected_checksum or size != expected_size:
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            "Producer Artifact changed after Index verification",
+            EXIT_VALIDATION,
+        )
+    destination.flush()
+    os.fsync(destination.fileno())
+
+
+def _require_plan_index_match(item, entry, producer, consumer) -> None:
+    expected = {
+        "producer_workflow_instance_id": item["producer_workflow_instance_id"],
+        "artifact_type": item["artifact_type"],
+        "artifact_schema_version": item["artifact_schema_version"],
+        "producer_relative_path": item["source_relative_path"],
+        "content_checksum": item["expected_checksum"],
+        "size_bytes": item["expected_size_bytes"],
+    }
+    if any(entry.get(field) != value for field, value in expected.items()):
+        raise WorkspaceCLIError(
+            "ARTIFACT_INDEX_CONFLICT",
+            "Artifact Index differs from the Cloud materialization plan",
+            EXIT_VALIDATION,
+        )
+    if (
+        producer["relative_path"] != item["source_capsule_relative_path"]
+        or consumer["relative_path"] != item["target_capsule_relative_path"]
+    ):
+        raise WorkspaceCLIError(
+            "MATERIALIZATION_PLAN_INVALID",
+            "Materialization Capsule path differs from Installed Lock",
+            EXIT_VALIDATION,
+        )
+
+
+def _materialize_one(*, workspace, descriptor, plan, item, index_entry, timestamp):
+    source = workspace / index_entry["local_relative_path"]
+    source_checksum, source_size = _verified_regular_file(
+        source,
+        allowed_root=workspace / item["source_capsule_relative_path"],
+        missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
+    )
+    if (
+        source_checksum != item["expected_checksum"]
+        or source_size != item["expected_size_bytes"]
+    ):
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            "Producer Artifact changed after Index verification",
+            EXIT_VALIDATION,
+        )
+    target_capsule = workspace / item["target_capsule_relative_path"]
+    target = target_capsule / item["target_relative_path"]
+    _assert_within(target_capsule, target)
+    _ensure_destination_parents(workspace, target.parent)
+    _reject_symlink_chain(target.parent)
+    parent_identity = _directory_identity(target.parent)
+    receipt_path = workspace / MATERIALIZATION_RECEIPTS_ROOT / f"{item['binding_id']}.json"
+    if receipt_path.is_symlink():
+        raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt path is unsafe")
+    if target.exists() or target.is_symlink():
+        if target.is_symlink():
+            raise WorkspaceCLIError("MATERIALIZATION_CONFLICT", "Consumer target is a symlink", EXIT_VALIDATION)
+        checksum, size = _verified_regular_file(
+            target, allowed_root=target_capsule, missing_code="MATERIALIZATION_CONFLICT"
+        )
+        if checksum != item["expected_checksum"] or size != item["expected_size_bytes"]:
+            code = "MATERIALIZED_ARTIFACT_DRIFT" if receipt_path.exists() else "MATERIALIZATION_CONFLICT"
+            raise WorkspaceCLIError(code, "Consumer target contains different bytes", EXIT_VALIDATION)
+        if receipt_path.exists():
+            existing = _validate_materialization_receipt(
+                _read_json(receipt_path), descriptor
+            )
+            candidate = _materialization_receipt(
+                descriptor, plan, item, existing["materialized_at"]
+            )
+            if existing != candidate:
+                raise WorkspaceCLIError(
+                    "MATERIALIZATION_CONFLICT",
+                    "Materialization receipt differs from the requested binding",
+                    EXIT_VALIDATION,
+                )
+            return
+        candidate = _materialization_receipt(descriptor, plan, item, timestamp)
+        _atomic_write_json(receipt_path, candidate)
+        return
+    descriptor_fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{item['artifact_id']}.", dir=target.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor_fd, "wb", closefd=True) as handle:
+            _copy_verified_artifact(
+                source,
+                handle,
+                allowed_root=workspace / item["source_capsule_relative_path"],
+                expected_checksum=source_checksum,
+                expected_size=source_size,
+            )
+        copied_checksum, copied_size = _verified_regular_file(
+            temporary,
+            allowed_root=target.parent,
+            missing_code="MATERIALIZATION_CONFLICT",
+        )
+        if copied_checksum != source_checksum or copied_size != source_size:
+            raise WorkspaceCLIError(
+                "ARTIFACT_CHECKSUM_MISMATCH",
+                "Staged consumer input failed checksum verification",
+                EXIT_VALIDATION,
+            )
+        _reject_symlink_chain(target.parent)
+        if _directory_identity(target.parent) != parent_identity:
+            raise WorkspaceCLIError(
+                "UNSAFE_ARTIFACT_PATH",
+                "Consumer target parent changed during materialization",
+                EXIT_VALIDATION,
+            )
+        try:
+            os.link(temporary, target, follow_symlinks=False)
+        except FileExistsError as error:
+            raise WorkspaceCLIError(
+                "MATERIALIZATION_CONFLICT",
+                "Consumer target appeared during materialization",
+                EXIT_VALIDATION,
+            ) from error
+        temporary.unlink()
+        _fsync_directory(target.parent)
+        final_checksum, final_size = _verified_regular_file(
+            target, allowed_root=target_capsule, missing_code="MATERIALIZATION_CONFLICT"
+        )
+        if final_checksum != source_checksum or final_size != source_size:
+            raise WorkspaceCLIError(
+                "ARTIFACT_CHECKSUM_MISMATCH",
+                "Published consumer input failed checksum verification",
+                EXIT_VALIDATION,
+            )
+        _atomic_write_json(
+            receipt_path,
+            _materialization_receipt(descriptor, plan, item, timestamp),
+        )
+        _validate_materialization_receipt(_read_json(receipt_path), descriptor)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _materialization_receipt(descriptor, plan, item, timestamp):
+    payload = {
+        "schema_version": MATERIALIZATION_RECEIPT_SCHEMA,
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "consumer_workflow_instance_id": item["consumer_workflow_instance_id"],
+        "requirement_key": item["requirement_key"],
+        "binding_id": item["binding_id"],
+        "artifact_id": item["artifact_id"],
+        "producer_workflow_instance_id": item["producer_workflow_instance_id"],
+        "artifact_type": item["artifact_type"],
+        "artifact_schema_version": item["artifact_schema_version"],
+        "source_checksum": item["expected_checksum"],
+        "target_relative_path": (
+            f"{item['target_capsule_relative_path']}/{item['target_relative_path']}"
+        ),
+        "target_checksum": item["expected_checksum"],
+        "materialized_at": timestamp,
+        "materialization_version": "0.1.0",
+        "plan_checksum": plan["plan_checksum"],
+    }
+    return {**payload, "receipt_checksum": canonical_hash(payload)}
+
+
+def _validate_materialization_receipt(document, descriptor):
+    value = _object(document, "Artifact materialization receipt")
+    required = {
+        "schema_version", "project_id", "workspace_id",
+        "consumer_workflow_instance_id", "requirement_key", "binding_id",
+        "artifact_id", "producer_workflow_instance_id", "artifact_type",
+        "artifact_schema_version", "source_checksum", "target_relative_path",
+        "target_checksum", "materialized_at", "materialization_version",
+        "plan_checksum", "receipt_checksum",
+    }
+    _exact_fields(value, required, "Artifact materialization receipt")
+    if value["schema_version"] != MATERIALIZATION_RECEIPT_SCHEMA:
+        raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt schema is invalid")
+    if value["project_id"] != descriptor["project_id"] or value["workspace_id"] != descriptor["workspace_id"]:
+        raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt identity mismatch")
+    _safe_artifact_path(value["target_relative_path"], root="capsules")
+    for field in ("source_checksum", "target_checksum", "plan_checksum"):
+        _checksum(value[field], field)
+    _timestamp(value["materialized_at"], "materialized_at")
+    payload = dict(value)
+    checksum = payload.pop("receipt_checksum")
+    _checksum(checksum, "receipt_checksum")
+    if canonical_hash(payload) != checksum:
+        raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt checksum is invalid")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python reagent_local.py",
@@ -2214,6 +3101,23 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument("--api-url", default="http://127.0.0.1:8000")
     sync.add_argument("--dry-run", action="store_true")
     sync.add_argument("--json", action="store_true")
+    artifact = commands.add_parser("artifact", help="verify and materialize typed Artifacts")
+    artifact_commands = artifact.add_subparsers(dest="artifact_command", required=True)
+    artifact_status_command = artifact_commands.add_parser("status")
+    artifact_status_command.add_argument("workspace", type=Path)
+    artifact_status_command.add_argument("--json", action="store_true")
+    artifact_refresh_command = artifact_commands.add_parser("refresh")
+    artifact_refresh_command.add_argument("workspace", type=Path)
+    artifact_refresh_command.add_argument("--api-url", default="http://127.0.0.1:8000")
+    artifact_refresh_command.add_argument("--json", action="store_true")
+    artifact_materialize_command = artifact_commands.add_parser("materialize")
+    artifact_materialize_command.add_argument("workspace", type=Path)
+    artifact_materialize_command.add_argument(
+        "--workflow-instance", required=True, dest="workflow_instance_id"
+    )
+    artifact_materialize_command.add_argument("--api-url", default="http://127.0.0.1:8000")
+    artifact_materialize_command.add_argument("--dry-run", action="store_true")
+    artifact_materialize_command.add_argument("--json", action="store_true")
     return parser
 
 
@@ -2244,6 +3148,22 @@ def main(argv: list[str] | None = None) -> int:
                 transport=HTTPWorkspaceSyncTransport(args.api_url),
                 dry_run=args.dry_run,
             )
+            json_output = args.json
+        elif args.command == "artifact":
+            if args.artifact_command == "status":
+                result = artifact_status(args.workspace)
+            elif args.artifact_command == "refresh":
+                result = refresh_artifact_index(
+                    workspace_root=args.workspace,
+                    transport=HTTPWorkspaceSyncTransport(args.api_url),
+                )
+            else:
+                result = materialize_artifacts(
+                    workspace_root=args.workspace,
+                    consumer_workflow_instance_id=args.workflow_instance_id,
+                    transport=HTTPWorkspaceSyncTransport(args.api_url),
+                    dry_run=args.dry_run,
+                )
             json_output = args.json
         else:
             result = workspace_status(args.workspace)
@@ -2326,7 +3246,11 @@ def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
     }
 
 
-def _print_result(result: WorkspaceOperationResult | WorkspaceSyncResult | dict[str, Any], *, json_output: bool) -> None:
+def _print_result(
+    result: WorkspaceOperationResult | WorkspaceSyncResult | ArtifactOperationResult | dict[str, Any],
+    *,
+    json_output: bool,
+) -> None:
     value = result if isinstance(result, dict) else result.as_dict()
     if json_output:
         print(canonical_json(value))
@@ -2341,6 +3265,11 @@ def _print_result(result: WorkspaceOperationResult | WorkspaceSyncResult | dict[
         print(f"Capsule: {value['capsule_relative_path']}")
     if "acknowledgement_status" in value:
         print(f"Acknowledgement: {value['acknowledgement_status']}")
+    if "artifact_count" in value:
+        print(f"Artifacts: {value['artifact_count']}")
+    if value.get("consumer_workflow_instance_id") is not None:
+        print(f"Consumer Workflow Instance: {value['consumer_workflow_instance_id']}")
+        print(f"Materialized: {value['materialized_count']}")
 
 
 if __name__ == "__main__":

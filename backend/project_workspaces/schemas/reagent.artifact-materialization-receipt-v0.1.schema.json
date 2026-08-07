@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:reagent:runtime-schema:reagent.artifact-materialization-receipt:v0.1",
+  "title": "reagent.artifact-materialization-receipt/v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project_id", "workspace_id", "consumer_workflow_instance_id", "requirement_key", "binding_id", "artifact_id", "producer_workflow_instance_id", "artifact_type", "artifact_schema_version", "source_checksum", "target_relative_path", "target_checksum", "materialized_at", "materialization_version", "plan_checksum", "receipt_checksum"],
+  "properties": {
+    "schema_version": {"const": "reagent.artifact-materialization-receipt/v0.1"},
+    "project_id": {"type": "string", "pattern": "^project-[0-9a-f]{32}$"},
+    "workspace_id": {"type": "string", "pattern": "^workspace-[0-9a-f]{32}$"},
+    "consumer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+    "requirement_key": {"type": "string", "minLength": 2, "maxLength": 128},
+    "binding_id": {"type": "string", "pattern": "^artifact-binding-[0-9a-f]{32}$"},
+    "artifact_id": {"type": "string", "pattern": "^artifact-[0-9a-f]{32}$"},
+    "producer_workflow_instance_id": {"type": "string", "pattern": "^wfi-[0-9a-f]{32}$"},
+    "artifact_type": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,159}$"},
+    "artifact_schema_version": {"type": "string", "minLength": 5, "maxLength": 200},
+    "source_checksum": {"$ref": "#/$defs/checksum"},
+    "target_relative_path": {"type": "string", "pattern": "^capsules/[^\\u0000]+$", "maxLength": 1000},
+    "target_checksum": {"$ref": "#/$defs/checksum"},
+    "materialized_at": {"type": "string", "format": "date-time", "maxLength": 35},
+    "materialization_version": {"const": "0.1.0"},
+    "plan_checksum": {"$ref": "#/$defs/checksum"},
+    "receipt_checksum": {"$ref": "#/$defs/checksum"}
+  },
+  "$defs": {
+    "checksum": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}

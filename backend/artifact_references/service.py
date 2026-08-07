@@ -377,13 +377,19 @@ class ArtifactReferenceService:
             raise ApplicationCodedValidationError(
                 "Consumer Capsule pin is unavailable", code="DEPENDENCY_UNRESOLVED"
             )
-        created_at = _aware(self._clock())
         plans: list[dict[str, Any]] = []
-        for binding in self._uow.artifact_references.list_bindings(
-            project_id, consumer_workflow_instance_id, limit=1_000
-        ):
-            if binding.state is not DependencyBindingState.ACTIVE:
-                continue
+        bindings = tuple(
+            binding
+            for binding in self._uow.artifact_references.list_bindings(
+                project_id, consumer_workflow_instance_id, limit=1_000
+            )
+            if binding.state is DependencyBindingState.ACTIVE
+        )
+        created_at = max(
+            (binding.updated_at for binding in bindings),
+            default=project.updated_at,
+        )
+        for binding in bindings:
             artifact = self._uow.artifact_references.get_artifact(binding.artifact_id)
             requirement = self._uow.artifact_references.get_requirement(
                 binding.consumer_workflow_definition_id,
