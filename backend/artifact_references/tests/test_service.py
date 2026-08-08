@@ -26,6 +26,7 @@ from backend.progress_reports.tests.factories import (
 )
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces.contracts import (
+    CoreCapabilityMaturity,
     ProjectWorkflowInstance,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
@@ -85,6 +86,7 @@ def _seed(database: InMemoryDatabase) -> InMemoryUnitOfWork:
             output_schema_id="test-output/v1",
             compatibility={},
             review_status=WorkflowReviewStatus.REVIEWED,
+            core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
             published_at=NOW,
             created_at=NOW,
             updated_at=NOW,

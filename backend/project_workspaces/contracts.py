@@ -36,6 +36,11 @@ class WorkflowReviewStatus(str, Enum):
     RETIRED = "RETIRED"
 
 
+class CoreCapabilityMaturity(str, Enum):
+    REVIEWED_CORE = "REVIEWED_CORE"
+    SCAFFOLD_CORE = "SCAFFOLD_CORE"
+
+
 class WorkflowInstanceDesiredState(str, Enum):
     ACTIVE = "ACTIVE"
     RETIRED = "RETIRED"
@@ -292,6 +297,7 @@ class WorkflowDefinitionVersion:
     output_schema_id: str
     compatibility: Mapping[str, Any]
     review_status: WorkflowReviewStatus
+    core_capability_maturity: CoreCapabilityMaturity
     published_at: datetime | None
     created_at: datetime
     updated_at: datetime
@@ -302,6 +308,8 @@ class WorkflowDefinitionVersion:
         require_sha256(self.contract_checksum, "contract_checksum")
         _require_bounded(self.input_schema_id, 1, 200, "input_schema_id")
         _require_bounded(self.output_schema_id, 1, 200, "output_schema_id")
+        if not isinstance(self.core_capability_maturity, CoreCapabilityMaturity):
+            raise ValueError("core_capability_maturity must use the canonical enum")
         object.__setattr__(self, "compatibility", _freeze_json(self.compatibility))
         if self.published_at is not None:
             _require_aware(self.published_at, "published_at")

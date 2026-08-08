@@ -15,6 +15,7 @@ from backend.database.orm import (
     ProjectWorkflowInstanceORM,
 )
 from backend.project_workspaces.contracts import (
+    CoreCapabilityMaturity,
     ProjectWorkflowInstance,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
@@ -81,6 +82,7 @@ class SQLAlchemyWorkflowFoundationRepository(WorkflowFoundationRepository):
             output_schema_id=version.output_schema_id,
             compatibility=_plain_json(version.compatibility),
             review_status=version.review_status.value,
+            core_capability_maturity=version.core_capability_maturity.value,
             published_at=version.published_at,
             created_at=version.created_at,
             updated_at=version.updated_at,
@@ -228,7 +230,16 @@ def _definition_content(value: WorkflowDefinition):
 
 
 def _definition_version_content(value: WorkflowDefinitionVersion):
-    return (value.workflow_definition_id, value.version, value.contract_checksum, value.input_schema_id, value.output_schema_id, _plain_json(value.compatibility), value.review_status)
+    return (
+        value.workflow_definition_id,
+        value.version,
+        value.contract_checksum,
+        value.input_schema_id,
+        value.output_schema_id,
+        _plain_json(value.compatibility),
+        value.review_status,
+        value.core_capability_maturity,
+    )
 
 
 def _capsule_content(value: WorkflowCapsuleVersion):
@@ -246,7 +257,19 @@ def _definition(row) -> WorkflowDefinition:
 
 
 def _definition_version(row) -> WorkflowDefinitionVersion:
-    return WorkflowDefinitionVersion(row.workflow_definition_id, row.version, row.contract_checksum, row.input_schema_id, row.output_schema_id, row.compatibility, WorkflowReviewStatus(row.review_status), row.published_at, row.created_at, row.updated_at)
+    return WorkflowDefinitionVersion(
+        row.workflow_definition_id,
+        row.version,
+        row.contract_checksum,
+        row.input_schema_id,
+        row.output_schema_id,
+        row.compatibility,
+        WorkflowReviewStatus(row.review_status),
+        CoreCapabilityMaturity(row.core_capability_maturity),
+        row.published_at,
+        row.created_at,
+        row.updated_at,
+    )
 
 
 def _capsule(row) -> WorkflowCapsuleVersion:

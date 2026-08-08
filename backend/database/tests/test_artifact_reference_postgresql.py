@@ -25,6 +25,7 @@ from backend.progress_reports.service import ProgressReportService
 from backend.progress_reports.tests.factories import HASH_A, HASH_B, native_report, upload_envelope
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces.contracts import (
+    CoreCapabilityMaturity,
     ProjectWorkflowInstance,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
@@ -393,6 +394,7 @@ def _seed(sql_uow_factory, *, include_other_project: bool = False) -> None:
             output_schema_id="test-output/v1",
             compatibility={},
             review_status=WorkflowReviewStatus.REVIEWED,
+            core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
             published_at=NOW,
             created_at=NOW,
             updated_at=NOW,

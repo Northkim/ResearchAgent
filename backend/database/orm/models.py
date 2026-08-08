@@ -92,6 +92,10 @@ class LocalWorkflowDefinitionORM(Base):
 class LocalWorkflowDefinitionVersionORM(Base):
     __tablename__ = "local_workflow_definition_versions"
     __table_args__ = (
+        CheckConstraint(
+            "core_capability_maturity IN ('REVIEWED_CORE', 'SCAFFOLD_CORE')",
+            name="local_workflow_definition_version_core_maturity",
+        ),
         Index(
             "ix_local_workflow_definition_versions_definition_review",
             "workflow_definition_id",
@@ -110,6 +114,7 @@ class LocalWorkflowDefinitionVersionORM(Base):
     output_schema_id: Mapped[str] = mapped_column(String(200), nullable=False)
     compatibility: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     review_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    core_capability_maturity: Mapped[str] = mapped_column(String(24), nullable=False)
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
