@@ -301,6 +301,7 @@ export const workflowCatalogFixture: WorkflowCatalogPage = {
       input_schema_id: "literature-search-input/v0.3",
       output_schema_id: "literature-search-output/v0.3",
       review_status: "PUBLISHED",
+      core_capability_maturity: "REVIEWED_CORE",
       published_at: "2026-08-06T00:00:00Z",
     },
     recommended_capsule: {

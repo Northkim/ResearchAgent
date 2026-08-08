@@ -18,6 +18,7 @@ from .contracts import (
     CapsuleTrustClassification,
     CloudProject,
     CloudProjectStatus,
+    CoreCapabilityMaturity,
     ProjectWorkflowInstance,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
@@ -43,6 +44,9 @@ from .production_workflows import (
     idea_discovery_definition,
     idea_discovery_definition_version,
     idea_discovery_requirement,
+    idea_discovery_v0_2_capsule,
+    idea_discovery_v0_2_definition_version,
+    idea_discovery_v0_2_requirement,
     literature_search_capsule as production_literature_search_capsule,
     literature_search_definition_version as production_literature_search_version,
 )
@@ -167,50 +171,57 @@ def ensure_production_workflow_foundation(
     literature_version = production_literature_search_version(timestamp)
     literature_capsule = production_literature_search_capsule(timestamp)
     idea_definition = idea_discovery_definition(timestamp)
-    idea_version = idea_discovery_definition_version(timestamp)
-    idea_capsule = idea_discovery_capsule(timestamp)
+    legacy_idea_version = idea_discovery_definition_version(timestamp)
+    legacy_idea_capsule = idea_discovery_capsule(timestamp)
+    idea_version = idea_discovery_v0_2_definition_version(timestamp)
+    idea_capsule = idea_discovery_v0_2_capsule(timestamp)
     repository = uow.workflow_foundation
     repository.add_definition_version(literature_version)
     repository.add_capsule_version(literature_capsule)
     repository.add_definition(idea_definition)
+    repository.add_definition_version(legacy_idea_version)
+    repository.add_capsule_version(legacy_idea_capsule)
     repository.add_definition_version(idea_version)
     repository.add_capsule_version(idea_capsule)
-    requirement = idea_discovery_requirement(timestamp)
-    existing_requirement = uow.artifact_references.get_requirement(
-        requirement.workflow_definition_id,
-        requirement.workflow_version,
-        requirement.requirement_key,
-    )
-    if existing_requirement is None:
-        uow.artifact_references.add_requirement(requirement)
-    elif (
-        existing_requirement.workflow_definition_id,
-        existing_requirement.workflow_version,
-        existing_requirement.requirement_key,
-        existing_requirement.artifact_type,
-        existing_requirement.compatibility_mode,
-        existing_requirement.schema_constraint,
-        existing_requirement.cardinality_min,
-        existing_requirement.cardinality_max,
-        existing_requirement.required,
-        existing_requirement.materialization_mode,
-        existing_requirement.target_relative_path,
-    ) != (
-        requirement.workflow_definition_id,
-        requirement.workflow_version,
-        requirement.requirement_key,
-        requirement.artifact_type,
-        requirement.compatibility_mode,
-        requirement.schema_constraint,
-        requirement.cardinality_min,
-        requirement.cardinality_max,
-        requirement.required,
-        requirement.materialization_mode,
-        requirement.target_relative_path,
+    for requirement in (
+        idea_discovery_requirement(timestamp),
+        idea_discovery_v0_2_requirement(timestamp),
     ):
-        raise WorkflowFoundationConflictError(
-            "Idea Discovery Artifact requirement immutable-content conflict"
+        existing_requirement = uow.artifact_references.get_requirement(
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
         )
+        if existing_requirement is None:
+            uow.artifact_references.add_requirement(requirement)
+        elif (
+            existing_requirement.workflow_definition_id,
+            existing_requirement.workflow_version,
+            existing_requirement.requirement_key,
+            existing_requirement.artifact_type,
+            existing_requirement.compatibility_mode,
+            existing_requirement.schema_constraint,
+            existing_requirement.cardinality_min,
+            existing_requirement.cardinality_max,
+            existing_requirement.required,
+            existing_requirement.materialization_mode,
+            existing_requirement.target_relative_path,
+        ) != (
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+            requirement.artifact_type,
+            requirement.compatibility_mode,
+            requirement.schema_constraint,
+            requirement.cardinality_min,
+            requirement.cardinality_max,
+            requirement.required,
+            requirement.materialization_mode,
+            requirement.target_relative_path,
+        ):
+            raise WorkflowFoundationConflictError(
+                "Idea Discovery Artifact requirement immutable-content conflict"
+            )
     return (
         literature_definition,
         literature_version,
@@ -242,6 +253,7 @@ def _definition_version(now: datetime) -> WorkflowDefinitionVersion:
         output_schema_id="literature-search-report/v0.2",
         compatibility={"package_schema_version": PACKAGE_SCHEMA_VERSION},
         review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
         published_at=now,
         created_at=now,
         updated_at=now,

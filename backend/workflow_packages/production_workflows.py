@@ -55,10 +55,20 @@ IDEA_DISCOVERY_PROMPT_ID = "idea-discovery-interactive"
 IDEA_DISCOVERY_PROMPT_VERSION = "0.1.0"
 IDEA_DISCOVERY_SKILL_VERSION = "0.1.0"
 
+# F1A publishes a separate immutable Idea Discovery pin.  The B7 constants
+# above intentionally continue to identify the accepted 0.1.0 Capsule.
+IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION = "0.2.0"
+IDEA_DISCOVERY_V0_2_CAPSULE_VERSION = "0.2.0"
+IDEA_DISCOVERY_V0_2_PROMPT_VERSION = "0.2.0"
+IDEA_DISCOVERY_V0_2_SKILL_VERSION = "0.2.0"
+
 SELECTED_PAPER_LIBRARY_TYPE = "selected-paper-library/v1"
 SELECTED_PAPER_LIBRARY_SCHEMA = "selected-paper-library/v1"
 SELECTED_PAPER_LIBRARY_PREFIX = "outputs/artifacts/selected-paper-library"
 IDEA_INPUT_TARGET = "inputs/selected-paper-library.json"
+SELECTED_RESEARCH_IDEA_TYPE = "selected-research-idea/v1"
+SELECTED_RESEARCH_IDEA_SCHEMA = "selected-research-idea/v1"
+SELECTED_RESEARCH_IDEA_PREFIX = "outputs/artifacts/selected-research-idea"
 
 _ZERO_HASH = "sha256:" + "0" * 64
 _ZIP_TIMESTAMP = (2000, 1, 1, 0, 0, 0)
@@ -72,6 +82,17 @@ def selected_paper_library_output_contract() -> dict[str, str]:
         "relative_path_prefix": SELECTED_PAPER_LIBRARY_PREFIX,
         "content_addressed_filename": "sha256-<content-sha256>.json",
         "progress_artifact_kind": SELECTED_PAPER_LIBRARY_TYPE,
+    }
+
+
+def selected_research_idea_output_contract() -> dict[str, str]:
+    return {
+        "artifact_type": SELECTED_RESEARCH_IDEA_TYPE,
+        "artifact_schema_version": SELECTED_RESEARCH_IDEA_SCHEMA,
+        "media_type": "application/json",
+        "relative_path_prefix": SELECTED_RESEARCH_IDEA_PREFIX,
+        "content_addressed_filename": "sha256-<content-sha256>.json",
+        "progress_artifact_kind": SELECTED_RESEARCH_IDEA_TYPE,
     }
 
 
@@ -143,12 +164,41 @@ def idea_discovery_workflow_document() -> dict[str, Any]:
     }
 
 
+def idea_discovery_v0_2_workflow_document() -> dict[str, Any]:
+    """Reviewed 0.2 contract; the accepted 0.1 document stays byte-stable."""
+
+    value = idea_discovery_workflow_document()
+    value["workflow_version"] = IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION
+    value["reviewed_skills"] = [{
+        **value["reviewed_skills"][0],
+        "version": IDEA_DISCOVERY_V0_2_SKILL_VERSION,
+    }]
+    value["steps"] = [
+        "analyze-materialized-literature",
+        "develop-candidate-ideas-with-user",
+        "require-explicit-user-selection",
+        "validate-exactly-one-selected-idea",
+        "publish-selected-research-idea-v1-content-addressed-file",
+        "append-progress-and-promote-canonical-artifact-metadata",
+    ]
+    value["artifact_outputs"] = [selected_research_idea_output_contract()]
+    value["completion_gate"] = (
+        "EXPLICIT_USER_SELECTION_AND_SELECTED_RESEARCH_IDEA_PUBLICATION"
+    )
+    value["immutable_versioning"] = "0.1.0 remains independently valid"
+    return value
+
+
 def literature_search_contract_checksum() -> str:
     return canonical_hash(literature_search_workflow_document())
 
 
 def idea_discovery_contract_checksum() -> str:
     return canonical_hash(idea_discovery_workflow_document())
+
+
+def idea_discovery_v0_2_contract_checksum() -> str:
+    return canonical_hash(idea_discovery_v0_2_workflow_document())
 
 
 def _json(value: Any) -> bytes:
@@ -195,6 +245,104 @@ def _production_validator_source() -> bytes:
     )
     function_marker = "\ndef _progress_v2_identity("
     source = source.replace(function_marker, _SELECTED_LIBRARY_VALIDATOR + function_marker, 1)
+    return source.encode("utf-8")
+
+
+def _idea_v0_2_progress_source() -> bytes:
+    source = Path(__file__).with_name("package_progress.py").read_text(encoding="utf-8")
+    source = source.replace(
+        "import json\n", "import json\nimport os\nimport runpy\nimport tempfile\n", 1
+    )
+    marker = "\ndef finalize(\n"
+    if marker not in source:
+        raise RuntimeError("accepted Progress helper extension point is unavailable")
+    source = source.replace(marker, _SELECTED_IDEA_HELPER + marker, 1)
+    output_marker = "    skill_pins = [\n"
+    if output_marker not in source:
+        raise RuntimeError("accepted Progress output extension point is unavailable")
+    completion = (
+        '    if draft["status"] == "COMPLETED":\n'
+        '        if draft["current_state"] != "COMPLETED":\n'
+        '            raise ProgressReportError("completed Idea Discovery must use the COMPLETED stage")\n'
+        "        outputs.append(_build_selected_research_idea(root))\n"
+        '    elif draft["current_state"] == "COMPLETED":\n'
+        '        raise ProgressReportError("COMPLETED stage requires completed status and selected Artifact")\n'
+    )
+    source = source.replace(output_marker, completion + output_marker, 1)
+    return source.encode("utf-8")
+
+
+def _idea_v0_2_runner_source() -> bytes:
+    source = Path(__file__).with_name("idea_runtime.py").read_text(encoding="utf-8")
+    source = source.replace("import urllib.request\n", "import urllib.request\nimport uuid\n", 1)
+    source = source.replace(
+        '"client_version": "reagent-local-idea-discovery/0.1.0",',
+        '"client_version": "reagent-local-idea-discovery/0.2.0",',
+        1,
+    )
+    payload_marker = "    payload = {\n"
+    declaration_source = '''    declarations = []
+    namespace = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
+    for output in report["output_artifacts"]:
+        if output["artifact_kind"] != "selected-research-idea/v1":
+            continue
+        value = uuid.uuid5(
+            namespace,
+            "production-artifact/v1|package=" + manifest["package_id"]
+            + "|report=" + report["report_id"]
+            + "|path=" + output["relative_path"]
+            + "|checksum=" + output["checksum"],
+        )
+        declarations.append({
+            "artifact_id": "artifact-" + value.hex,
+            "artifact_type": "selected-research-idea/v1",
+            "artifact_schema_version": "selected-research-idea/v1",
+            "media_type": output["media_type"],
+            "relative_path": output["relative_path"],
+            "content_checksum": output["checksum"],
+            "size_bytes": output["size"],
+            "produced_at": report["completed_at"],
+        })
+'''
+    if payload_marker not in source:
+        raise RuntimeError("accepted Idea runtime payload extension point is unavailable")
+    source = source.replace(payload_marker, declaration_source + payload_marker, 1)
+    source = source.replace('"artifact_declarations": [],', '"artifact_declarations": declarations,', 1)
+    return source.encode("utf-8")
+
+
+def _idea_v0_2_validator_source() -> bytes:
+    source = Path(__file__).with_name("idea_validator.py").read_text(encoding="utf-8")
+    source = source.replace(
+        '    "memory/progress/receipts/",\n)',
+        '    "memory/progress/receipts/",\n'
+        f'    "{SELECTED_RESEARCH_IDEA_PREFIX}/",\n)',
+        1,
+    )
+    source = source.replace(
+        'manifest.get("workflow_version") != "0.1.0"',
+        'manifest.get("workflow_version") != "0.2.0"',
+        1,
+    )
+    source = source.replace(
+        'manifest.get("package_template_version") != "0.1.0"',
+        'manifest.get("package_template_version") != "0.2.0"',
+        1,
+    )
+    function_marker = "\ndef validate(root: str | Path, *, pristine: bool = False)"
+    if function_marker not in source:
+        raise RuntimeError("accepted Idea validator extension point is unavailable")
+    source = source.replace(
+        function_marker, _SELECTED_IDEA_VALIDATOR + function_marker, 1
+    )
+    return_marker = '    return {\n        "valid": True,\n'
+    if return_marker not in source:
+        raise RuntimeError("accepted Idea validator return point is unavailable")
+    source = source.replace(
+        return_marker,
+        "    _validate_selected_idea_artifacts(package_root)\n" + return_marker,
+        1,
+    )
     return source.encode("utf-8")
 
 
@@ -389,6 +537,87 @@ def _idea_files(
     }
 
 
+def _idea_v0_2_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    """Render 0.2 as a new immutable Capsule without changing 0.1 bytes."""
+
+    files = dict(_idea_files(
+        project_id=project_id,
+        project_name=project_name,
+        package_id=package_id,
+        package_checksum=package_checksum,
+        research_topic=research_topic,
+    ))
+    workflow = idea_discovery_v0_2_workflow_document()
+    _replace_spec(files, "workflow/workflow.json", _json(workflow))
+
+    context_text = files["memory/context.md"].content.decode("utf-8")
+    prefix, remainder = context_text.split("```json\n", 1)
+    encoded, suffix = remainder.split("\n```", 1)
+    context_payload = json.loads(encoded)
+    context_payload["workflow_version"] = IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION
+    context_payload["context_checksum"] = canonical_hash(
+        {**context_payload, "context_checksum": None}
+    )
+    _replace_spec(
+        files,
+        "memory/context.md",
+        (
+            prefix + "```json\n" + canonical_json(context_payload) + "\n```" + suffix
+        ).encode("utf-8"),
+    )
+
+    agent = """# ReAgent Idea Discovery\n\nThis Capsule is the authoritative local state for one Idea Discovery Workflow Instance.\n\n1. Run only after Workspace preflight has verified the Installed Lock and materialization receipt.\n2. Read `workflow/prompts/idea-discovery.md`, then the materialized `inputs/selected-paper-library.json`.\n3. Treat `inputs/` as read-only. Never read a sibling Literature Search Capsule directly.\n4. Keep evidence, inference, potential gap, and candidate direction distinct. Do not claim global novelty.\n5. Discuss key direction and shortlist decisions with the user. Never select an idea on the user's behalf.\n6. Only after explicit user confirmation, mark exactly one candidate record `selected`; keep its record fields unchanged.\n7. Write only `outputs/candidate_ideas.json`, `outputs/idea_discovery_report.md`, and this Capsule's `memory/`.\n8. `COMPLETED` is valid only when finalization publishes `selected-research-idea/v1`. Before every exit, update memory and Progress.\n9. Do not access credentials, run a cloud LLM, or invoke unapproved external research.\n"""
+    prompt = """# Reviewed Idea Discovery method\n\nUse only the materialized selected-paper-library/v1 input. Group and compare the supplied literature, clearly separate evidence from inference, identify potential gaps or tensions, and discuss candidate directions with the user before selection. Preserve candidate_id references. Never claim global novelty: every direction requires further validation.\n\nCandidate development is not completion. Ask the user to explicitly confirm one research direction. Do not infer confirmation, rank-select, choose the first or latest idea, or silently replace an earlier choice. After explicit confirmation, preserve the exact candidate record and set exactly that record's status to `selected`; all other records must use a non-selected allowed status. Only then may the Progress draft enter `COMPLETED`, which publishes a content-addressed selected-research-idea/v1 Artifact.\n"""
+    skill = """# Evidence-grounded ideation\n\nUse the supplied paper records as bounded evidence. Attribute observations with candidate IDs, label inference, involve the user in shortlist decisions, and describe novelty only as a hypothesis requiring further validation. A production selected idea requires one explicit user confirmation and exactly one unchanged candidate record with status `selected`; never auto-select.\n"""
+    _replace_spec(files, "AGENT.md", agent.encode("utf-8"))
+    _replace_spec(files, "workflow/prompts/idea-discovery.md", prompt.encode("utf-8"))
+    _replace_spec(files, "workflow/skills/evidence-grounded-ideation/SKILL.md", skill.encode("utf-8"))
+    skill_contract = json.loads(
+        files["workflow/skills/evidence-grounded-ideation/skill.json"].content
+    )
+    skill_contract["version"] = IDEA_DISCOVERY_V0_2_SKILL_VERSION
+    skill_contract["required_capabilities"].append("publish_selected_research_idea")
+    _replace_spec(
+        files,
+        "workflow/skills/evidence-grounded-ideation/skill.json",
+        _json(skill_contract),
+    )
+    _replace_spec(files, "reagent_local.py", _idea_v0_2_runner_source())
+    _replace_spec(files, "validate_package.py", _idea_v0_2_validator_source())
+    _replace_spec(files, "progress_report.py", _idea_v0_2_progress_source())
+    _replace_spec(
+        files,
+        "workflow/AGENT.md",
+        b"# Idea Discovery Workflow\n\nUse the reviewed prompt interactively. Completion requires the user's explicit selection and selected-research-idea/v1 publication.\n",
+    )
+    _replace_spec(
+        files,
+        "outputs/README.md",
+        b"# Idea Discovery outputs\n\nCandidate directions are not proof of global novelty. Completion publishes only the explicitly user-selected direction as selected-research-idea/v1.\n",
+    )
+    files["workflow/artifact-outputs.json"] = FileSpec(
+        _json({
+            "schema_version": "reagent.artifact-output-contract/v0.1",
+            **selected_research_idea_output_contract(),
+            "validity_point": "EXPLICIT_USER_SELECTION_AFTER_IDEA_VALIDATION",
+            "source_schema": "candidate-ideas/v0.1",
+            "selection_policy": "EXACTLY_ONE_EXPLICITLY_SELECTED",
+            "producer_core_capability_maturity": "REVIEWED_CORE",
+        }),
+        "application/json", "reviewed production Artifact contract", False,
+        "CONFIGURATION",
+    )
+    files["workflow/schemas/selected-research-idea.schema.json"] = FileSpec(
+        _json(_selected_research_idea_schema()),
+        "application/schema+json", "selected research idea Artifact schema", False,
+        "SCHEMA",
+    )
+    return files
+
+
 def _selected_library_schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -416,6 +645,26 @@ def _candidate_ideas_schema() -> dict[str, Any]:
             "schema": {"const": "candidate-ideas/v0.1"},
             "source_artifact": {"type": "object"},
             "ideas": {"type": "array", "maxItems": 100},
+        },
+    }
+
+
+def _selected_research_idea_schema() -> dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "urn:reagent:selected-research-idea:v1",
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "schema", "core_capability_maturity", "source_candidate_ideas",
+            "source_literature_artifact", "selected_idea",
+        ],
+        "properties": {
+            "schema": {"const": SELECTED_RESEARCH_IDEA_SCHEMA},
+            "core_capability_maturity": {"const": "REVIEWED_CORE"},
+            "source_candidate_ideas": {"type": "object"},
+            "source_literature_artifact": {"type": "object"},
+            "selected_idea": {"type": "object"},
         },
     }
 
@@ -487,11 +736,20 @@ def _make_manifest(
         continuation = "ONE ROUND; explicit finish publishes selected-paper-library/v1; upload-only retry remains idempotent"
         proxy = "SHORT_LIVED EXACT-PACKAGE LOCAL SESSION; OPENALEX ONLY; NO CREDENTIAL IN PACKAGE"
     else:
+        idea_v0_2 = workflow_version == IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION
+        idea_skill_version = (
+            IDEA_DISCOVERY_V0_2_SKILL_VERSION
+            if idea_v0_2 else IDEA_DISCOVERY_SKILL_VERSION
+        )
+        idea_prompt_version = (
+            IDEA_DISCOVERY_V0_2_PROMPT_VERSION
+            if idea_v0_2 else IDEA_DISCOVERY_PROMPT_VERSION
+        )
         skill_path = "workflow/skills/evidence-grounded-ideation/SKILL.md"
         skill_contract_path = "workflow/skills/evidence-grounded-ideation/skill.json"
         skills = (SkillPin(
             name="reagent.evidence-grounded-ideation",
-            semantic_version=IDEA_DISCOVERY_SKILL_VERSION,
+            semantic_version=idea_skill_version,
             source_type="BUNDLED_REAGENT_ORIGINAL",
             source_identity="reagent-b7-evidence-grounded-ideation",
             checksum=canonical_hash({
@@ -506,7 +764,7 @@ def _make_manifest(
         ),)
         prompt_path = "workflow/prompts/idea-discovery.md"
         prompt_id = IDEA_DISCOVERY_PROMPT_ID
-        prompt_version = IDEA_DISCOVERY_PROMPT_VERSION
+        prompt_version = idea_prompt_version
         outputs = (
             PackageOutputContract("outputs/candidate_ideas.json", "CANDIDATE_IDEAS", "application/json", "candidate-ideas/v0.1", "Codex Agent Harness", "candidate IDs must resolve to materialized literature"),
             PackageOutputContract("outputs/idea_discovery_report.md", "IDEA_DISCOVERY_REPORT", "text/markdown", "idea-discovery-report/v0.1", "Codex Agent Harness", "evidence/inference/novelty boundary"),
@@ -752,6 +1010,206 @@ def build_idea_discovery_package(
         template_id=IDEA_DISCOVERY_TEMPLATE_ID,
         template_version=IDEA_DISCOVERY_CAPSULE_VERSION,
     )
+
+
+def build_idea_discovery_v0_2_package(
+    *, project_id: str, project_name: str, research_topic: str,
+    output_root: str | Path, package_id: str,
+) -> BuildResult:
+    return _build(
+        renderer=_idea_v0_2_files,
+        project_id=project_id, project_name=project_name,
+        research_topic=research_topic, output_root=output_root,
+        package_id=package_id, workflow_type="Idea Discovery",
+        workflow_id=IDEA_DISCOVERY_WORKFLOW_ID,
+        workflow_version=IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
+        template_id=IDEA_DISCOVERY_TEMPLATE_ID,
+        template_version=IDEA_DISCOVERY_V0_2_CAPSULE_VERSION,
+    )
+
+
+_SELECTED_IDEA_HELPER = r'''
+
+def _build_selected_research_idea(root: Path) -> dict[str, Any]:
+    validator = runpy.run_path(str(root / "validate_package.py"))
+    library_path = root / "inputs/selected-paper-library.json"
+    candidates_path = root / "outputs/candidate_ideas.json"
+    for path, label in ((library_path, "literature library"), (candidates_path, "candidate ideas")):
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise ProgressReportError(f"{label} must be one regular unlinked file")
+    try:
+        source_ids = validator["_validate_selected_library"](library_path)
+        validator["_validate_candidate_ideas"](candidates_path, source_ids)
+    except Exception as error:
+        raise ProgressReportError(f"selected idea validation failed: {error}") from error
+    library_bytes = library_path.read_bytes()
+    candidate_bytes = candidates_path.read_bytes()
+    candidates = _load_object(candidates_path, "candidate ideas")
+    source = candidates["source_artifact"]
+    if source["artifact_type"] != "selected-paper-library/v1":
+        raise ProgressReportError("candidate source has the wrong Artifact type")
+    if source["sha256"] != sha256_bytes(library_bytes):
+        raise ProgressReportError("candidate source checksum differs from materialized literature")
+    selected = [item for item in candidates["ideas"] if item["status"] == "selected"]
+    if len(selected) != 1:
+        raise ProgressReportError("explicit completion requires exactly one selected candidate idea")
+    artifact = {
+        "schema": "selected-research-idea/v1",
+        "core_capability_maturity": "REVIEWED_CORE",
+        "source_candidate_ideas": {
+            "schema": "candidate-ideas/v0.1",
+            "relative_path": "outputs/candidate_ideas.json",
+            "sha256": sha256_bytes(candidate_bytes),
+        },
+        "source_literature_artifact": dict(source),
+        "selected_idea": selected[0],
+    }
+    content = canonical_json(artifact).encode("utf-8")
+    checksum = sha256_bytes(content)
+    relative = "outputs/artifacts/selected-research-idea/sha256-" + checksum[7:] + ".json"
+    target = root.joinpath(*relative.split("/"))
+    current = root
+    for part in ("outputs", "artifacts", "selected-research-idea"):
+        current = current / part
+        if current.exists() or current.is_symlink():
+            if current.is_symlink() or not current.is_dir():
+                raise ProgressReportError("selected idea Artifact parent is unsafe")
+        else:
+            current.mkdir()
+    try:
+        target.parent.resolve().relative_to(root.resolve())
+    except ValueError as error:
+        raise ProgressReportError("selected idea Artifact path escaped the Capsule") from error
+    if target.exists() or target.is_symlink():
+        if (
+            target.is_symlink() or not target.is_file()
+            or target.stat().st_nlink != 1 or target.read_bytes() != content
+        ):
+            raise ProgressReportError("content-addressed selected idea Artifact conflicts")
+    else:
+        with tempfile.NamedTemporaryFile(
+            prefix=".selected-research-idea.", dir=target.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            if target.exists() or target.is_symlink():
+                raise ProgressReportError("selected idea Artifact target appeared during publication")
+            os.replace(temporary, target)
+            directory = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        finally:
+            temporary.unlink(missing_ok=True)
+    published = target.read_bytes()
+    if published != content or sha256_bytes(published) != checksum:
+        raise ProgressReportError("published selected idea Artifact failed reread verification")
+    return {
+        "relative_path": relative,
+        "artifact_kind": "selected-research-idea/v1",
+        "media_type": "application/json",
+        "checksum": checksum,
+        "size": len(content),
+    }
+'''
+
+
+_SELECTED_IDEA_VALIDATOR = r'''
+
+def _validate_selected_idea_record(item: Any, source_ids: set[str] | None = None) -> None:
+    required = {
+        "idea_id", "title", "research_question", "motivation", "literature_basis",
+        "observed_gap", "proposed_direction", "assumptions", "risks",
+        "validation_needed", "status",
+    }
+    if not isinstance(item, dict) or set(item) != required:
+        raise PackageValidationError("selected idea fields mismatch")
+    if not re.fullmatch(r"idea-[0-9]{3,}", str(item["idea_id"])):
+        raise PackageValidationError("selected idea identity is invalid")
+    if item["status"] != "selected":
+        raise PackageValidationError("selected idea must retain selected status")
+    for field in (
+        "title", "research_question", "motivation", "observed_gap", "proposed_direction",
+    ):
+        if not isinstance(item[field], str) or not item[field].strip():
+            raise PackageValidationError(f"selected idea {field} is required")
+    basis = item["literature_basis"]
+    if (
+        not isinstance(basis, list) or not basis
+        or len(basis) != len(set(basis))
+        or any(not re.fullmatch(r"candidate-[0-9a-f]{16,64}", str(value)) for value in basis)
+        or (source_ids is not None and any(value not in source_ids for value in basis))
+    ):
+        raise PackageValidationError("selected idea literature basis is invalid")
+    for field in ("assumptions", "risks", "validation_needed"):
+        if not isinstance(item[field], list) or not all(
+            isinstance(value, str) and value.strip() for value in item[field]
+        ):
+            raise PackageValidationError(f"selected idea {field} is invalid")
+
+
+def _validate_selected_idea_artifacts(package_root: Path) -> None:
+    root = package_root / "outputs/artifacts/selected-research-idea"
+    if not root.exists():
+        return
+    if root.is_symlink() or not root.is_dir():
+        raise PackageValidationError("selected idea Artifact root is unsafe")
+    library_path = package_root / "inputs/selected-paper-library.json"
+    source_ids = _validate_selected_library(library_path) if library_path.exists() else None
+    candidates_path = package_root / "outputs/candidate_ideas.json"
+    candidate_checksum = (
+        sha256_bytes(candidates_path.read_bytes())
+        if candidates_path.exists() and not candidates_path.is_symlink()
+        and candidates_path.is_file() and candidates_path.stat().st_nlink == 1
+        else None
+    )
+    current_candidates = _object(candidates_path, "candidate ideas") if candidate_checksum else None
+    for path in sorted(root.iterdir()):
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise PackageValidationError("selected idea Artifact must be one regular unlinked file")
+        content = path.read_bytes()
+        if path.name != "sha256-" + sha256_bytes(content)[7:] + ".json":
+            raise PackageValidationError("selected idea Artifact content address mismatch")
+        value = _object(path, "selected idea Artifact")
+        if set(value) != {
+            "schema", "core_capability_maturity", "source_candidate_ideas",
+            "source_literature_artifact", "selected_idea",
+        }:
+            raise PackageValidationError("selected idea Artifact fields mismatch")
+        if value["schema"] != "selected-research-idea/v1":
+            raise PackageValidationError("selected idea Artifact schema mismatch")
+        if value["core_capability_maturity"] != "REVIEWED_CORE":
+            raise PackageValidationError("selected idea Artifact maturity mismatch")
+        candidate_source = value["source_candidate_ideas"]
+        if (
+            not isinstance(candidate_source, dict)
+            or set(candidate_source) != {"schema", "relative_path", "sha256"}
+            or candidate_source["schema"] != "candidate-ideas/v0.1"
+            or candidate_source["relative_path"] != "outputs/candidate_ideas.json"
+            or not SHA256.fullmatch(str(candidate_source["sha256"]))
+        ):
+            raise PackageValidationError("selected idea candidate provenance mismatch")
+        literature = value["source_literature_artifact"]
+        if (
+            not isinstance(literature, dict)
+            or set(literature) != {"artifact_id", "artifact_type", "sha256"}
+            or not re.fullmatch(r"artifact-[0-9a-f]{32}", str(literature.get("artifact_id", "")))
+            or literature.get("artifact_type") != "selected-paper-library/v1"
+            or not SHA256.fullmatch(str(literature.get("sha256", "")))
+        ):
+            raise PackageValidationError("selected idea literature provenance mismatch")
+        _validate_selected_idea_record(value["selected_idea"], source_ids)
+        if candidate_checksum == candidate_source["sha256"] and current_candidates is not None:
+            selected = [
+                item for item in current_candidates["ideas"] if item["status"] == "selected"
+            ]
+            if len(selected) != 1 or selected[0] != value["selected_idea"]:
+                raise PackageValidationError("current selected idea Artifact is not exact")
+'''
 
 
 _SELECTED_LIBRARY_HELPER = r'''

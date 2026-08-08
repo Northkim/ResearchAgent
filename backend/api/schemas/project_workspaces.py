@@ -31,6 +31,7 @@ class WorkflowVersionCatalogResponse(StrictDTO):
     input_schema_id: str
     output_schema_id: str
     review_status: str
+    core_capability_maturity: str
     published_at: str | None
 
     @classmethod
@@ -41,6 +42,7 @@ class WorkflowVersionCatalogResponse(StrictDTO):
             input_schema_id=value.input_schema_id,
             output_schema_id=value.output_schema_id,
             review_status=value.review_status.value,
+            core_capability_maturity=value.core_capability_maturity.value,
             published_at=value.published_at.isoformat() if value.published_at else None,
         )
 

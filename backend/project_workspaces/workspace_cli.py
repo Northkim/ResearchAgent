@@ -68,6 +68,10 @@ SUPPORTED_CAPSULE_PINS = {
         "idea-discovery-package-experimental",
         False,
     ),
+    ("idea-discovery-local-experimental", "0.2.0", "0.2.0"): (
+        "idea-discovery-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -3202,11 +3206,10 @@ def run_workflow(
             installed["workflow_definition_version"],
             installed["capsule_version"],
         )
-        is_idea = pin == (
-            "idea-discovery-local-experimental",
-            "0.1.0",
-            "0.1.0",
-        )
+        is_idea = pin in {
+            ("idea-discovery-local-experimental", "0.1.0", "0.1.0"),
+            ("idea-discovery-local-experimental", "0.2.0", "0.2.0"),
+        }
         command = [sys.executable, str(runner)]
         if is_idea:
             plan = validate_materialization_plan(

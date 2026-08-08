@@ -339,6 +339,7 @@ export interface WorkflowVersionCatalog {
   input_schema_id: string;
   output_schema_id: string;
   review_status: string;
+  core_capability_maturity: "REVIEWED_CORE" | "SCAFFOLD_CORE";
   published_at: string | null;
 }
 
