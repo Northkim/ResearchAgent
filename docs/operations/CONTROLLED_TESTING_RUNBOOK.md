@@ -53,7 +53,7 @@ curl --fail http://127.0.0.1:18101/ready
 ```
 
 `/health` is liveness only. `/ready` succeeds only when PostgreSQL is
-reachable, the sole revision is `20260806_0013`, and the reviewed Literature
+reachable, the sole revision is `20260806_0014`, and the reviewed Literature
 Search, Idea Discovery, and typed dependency records exist. It never calls a
 live Provider. A gateway should send user traffic only while readiness passes.
 

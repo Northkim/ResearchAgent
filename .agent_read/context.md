@@ -1,6 +1,6 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-07
+Last updated: 2026-08-09
 
 ## Current governing route — Phase R0 teacher-aligned boundary freeze
 
@@ -84,7 +84,48 @@ Do not continue V1 product development of:
 The freeze permits repository-safety bug fixes, deterministic tests,
 preservation, and extraction/repackaging of reusable schemas or validators.
 
-### Current milestone — NIGHT-H2 isolated controlled testing qualified
+### Current milestone — NIGHT-F1A full research-flow contracts qualified
+
+NIGHT-F1A resumes from the accepted H2 commit `2fc5a01` and adds the sole
+Alembic head `20260806_0014`. Canonical `core_capability_maturity` now belongs
+to every immutable Workflow Definition Version and is exactly `REVIEWED_CORE`
+or `SCAFFOLD_CORE`, independent from lifecycle and review status. Existing
+Literature Search and Idea Discovery 0.1.0 versions backfill as reviewed.
+
+Idea Discovery 0.2.0/Capsule 0.2.0 is a new immutable reviewed pin. It retains
+the exact `selected-paper-library/v1` dependency, requires an explicit user
+selection of exactly one validated candidate, and publishes a canonical
+content-addressed `selected-research-idea/v1` only on successful completion.
+Progress upload promotes the declaration through the existing exact
+producer/Instance/Capsule/Progress provenance checks. Equal retries are
+idempotent; changed declarations conflict. Idea 0.1.0 and all Literature
+Capsules remain byte-stable, and existing instances never upgrade implicitly.
+
+`manuscript-draft/v1`, `review-report/v1`, and `experiment-record/v1` plus the
+future dependency map are code-level contracts only. No Writing, Review, or
+Experiment Definition/Capsule/Prompt/UI card/preset is seeded. Scaffold
+experiment contracts must use `PLACEHOLDER_NOT_EXECUTED` with null results;
+scaffold maturity cannot claim reviewed research execution. All handoffs stay
+same-Project, explicit Artifact-ID-and-checksum selections with verified local
+copy. Cloud stores metadata and provenance, not Artifact bytes.
+
+Interruption-recovery closure passed with no repository damage, partial
+implementation, immutable-version drift, F1B scope leak, or blocking warning.
+Qualification passed 57 focused F1A/B6/B7/H2 tests; relevant real-PostgreSQL
+regression passed 19 tests; the full backend passed `725 passed, 11 skipped`;
+and the dedicated F1A `0013 -> 0014 -> 0013 -> 0014` test retained real old
+Project pins, Progress, Artifacts, and immutable identities. The 11 skips are
+seven dedicated-migration gates, three pre-existing isolated-environment gates,
+and one explicit live-Provider gate; `F1A_NEW_SKIP = 0`. Frontend Vitest passed
+16 files/31 tests, Playwright passed 5 tests, and TypeScript, ESLint, compileall,
+production build, Alembic sole-head/current/check and `git diff --check` passed.
+No live Provider, credential, owner database, hosted research execution, or
+network research call was used. ADR 0030 and
+`.agent_read/progress/night_f1a_full_research_flow_contracts.md` carry the
+detailed boundary and evidence. NIGHT-F1A is owner-review ready; F1B or any
+production scaffold Workflow work remains separately gated.
+
+### Prior milestone — NIGHT-H2 isolated controlled testing qualified
 
 NIGHT-H2 continued on clean `main` from accepted H1 final commit
 `0fad50ae9262d3396ccc10c36d49d2aa15f1f947`. The repository's actual starting
