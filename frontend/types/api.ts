@@ -344,6 +344,16 @@ export interface WorkflowVersionCatalog {
   core_capability_maturity: "REVIEWED_CORE" | "SCAFFOLD_CORE";
   published_at: string | null;
   artifact_requirements?: WorkflowArtifactRequirement[];
+  skills?: WorkflowSkillProjection[];
+}
+
+export interface WorkflowSkillProjection {
+  skill_id: string;
+  display_name: string;
+  version: string;
+  checksum: string;
+  trust: "BUILT_IN_REVIEWED";
+  purpose: string;
 }
 
 export interface WorkflowArtifactRequirement {
@@ -395,6 +405,7 @@ export interface ProjectWorkflowInstance {
   in_current_manifest: boolean;
   created_at: string;
   updated_at: string;
+  skills?: WorkflowSkillProjection[];
 }
 
 export interface ProjectWorkflowInstancePage {

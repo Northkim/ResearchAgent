@@ -69,6 +69,9 @@ SCAFFOLD_WORKFLOW_VERSION = "0.1.0"
 SCAFFOLD_CAPSULE_VERSION = "0.1.0"
 SCAFFOLD_PROMPT_VERSION = "0.1.0"
 SCAFFOLD_SKILL_VERSION = "0.1.0"
+SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION = "0.2.0"
+SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION = "0.2.0"
+SCAFFOLD_SKILL_BACKED_PROMPT_VERSION = "0.2.0"
 WRITING_TEMPLATE_ID = "writing-scaffold-package-experimental"
 REVIEW_TEMPLATE_ID = "review-scaffold-package-experimental"
 EXPERIMENT_TEMPLATE_ID = "reproduction-experiment-scaffold-package-experimental"
@@ -165,7 +168,9 @@ EXPERIMENT_REQUIREMENTS = (
 )
 
 
-def scaffold_workflow_document(workflow_id: str) -> dict[str, Any]:
+def scaffold_workflow_document(
+    workflow_id: str, *, workflow_version: str = SCAFFOLD_WORKFLOW_VERSION
+) -> dict[str, Any]:
     values = {
         WRITING_WORKFLOW_ID: (
             "Writing", WRITING_REQUIREMENTS, MANUSCRIPT_DRAFT_TYPE,
@@ -186,7 +191,7 @@ def scaffold_workflow_document(workflow_id: str) -> dict[str, Any]:
         "experimental_status": EXPERIMENTAL_STATUS,
         "workflow_type": workflow_type,
         "workflow_id": workflow_id,
-        "workflow_version": SCAFFOLD_WORKFLOW_VERSION,
+        "workflow_version": workflow_version,
         "execution_owner": "codex-or-claude-local-agent-harness",
         "hosted_agent_runtime_required": False,
         "network_boundary": "NO_WORKFLOW_NETWORK_REQUIRED",
@@ -210,8 +215,12 @@ def scaffold_workflow_document(workflow_id: str) -> dict[str, Any]:
     return result
 
 
-def scaffold_contract_checksum(workflow_id: str) -> str:
-    return canonical_hash(scaffold_workflow_document(workflow_id))
+def scaffold_contract_checksum(
+    workflow_id: str, *, workflow_version: str = SCAFFOLD_WORKFLOW_VERSION
+) -> str:
+    return canonical_hash(scaffold_workflow_document(
+        workflow_id, workflow_version=workflow_version
+    ))
 
 
 def literature_search_workflow_document() -> dict[str, Any]:
@@ -921,6 +930,80 @@ Preserve exact provenance and explicit placeholder language. Never turn missing 
     }
 
 
+def _scaffold_v0_2_files(
+    *, workflow_id: str, project_id: str, project_name: str,
+    package_id: str, package_checksum: str,
+) -> dict[str, FileSpec]:
+    """Render a new immutable scaffold Capsule backed by exact Registry Skills."""
+
+    from backend.project_workspaces.skills import PRODUCTION_SKILLS
+
+    files = dict(_scaffold_files(
+        workflow_id=workflow_id,
+        project_id=project_id,
+        project_name=project_name,
+        package_id=package_id,
+        package_checksum=package_checksum,
+    ))
+    workflow = scaffold_workflow_document(
+        workflow_id, workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+    )
+    _replace_spec(files, "workflow/workflow.json", _json(workflow))
+
+    config = json.loads(files["workflow/scaffold.json"].content)
+    config["workflow_version"] = SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+    config["pinned_skills"] = [
+        {
+            "skill_id": asset.skill_id,
+            "skill_version": asset.version,
+            "content_checksum": asset.content_checksum,
+            "trust": "BUILT_IN_REVIEWED",
+        }
+        for asset in PRODUCTION_SKILLS
+    ]
+    _replace_spec(files, "workflow/scaffold.json", _json(config))
+
+    context_text = files["memory/context.md"].content.decode("utf-8")
+    prefix, remainder = context_text.split("```json\n", 1)
+    encoded, suffix = remainder.split("\n```", 1)
+    context = json.loads(encoded)
+    context["workflow_version"] = SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+    _replace_spec(
+        files,
+        "memory/context.md",
+        (prefix + "```json\n" + canonical_json(context) + "\n```" + suffix).encode(),
+    )
+
+    old_skill_root = "workflow/skills/scaffold-safety/"
+    for path in tuple(files):
+        if path.startswith(old_skill_root):
+            del files[path]
+    for asset in PRODUCTION_SKILLS:
+        root = f"workflow/skills/{asset.skill_id}"
+        for relative_path, content in asset.content_files().items():
+            media_type = (
+                "text/markdown" if relative_path.endswith(".md")
+                else "application/json"
+            )
+            files[f"{root}/{relative_path}"] = FileSpec(
+                content,
+                media_type,
+                f"pinned reviewed Skill {asset.skill_id}",
+                False,
+                "INSTRUCTION" if relative_path.endswith(".md") else "CONFIGURATION",
+            )
+
+    agent = files["AGENT.md"].content.decode("utf-8")
+    consumption = """
+13. At startup, read `package-manifest.json` and verify its exact `skill_pins`.
+14. Read each pinned Skill's `skill.json`, then its declared `SKILL.md`, before the Workflow prompt.
+15. Use only Skills bundled in this Capsule; never scan the Workspace or sibling Capsules for Skills.
+16. Skills cannot override system safety, modify `inputs/`, change immutable Skill files, or write outside declared mutable roots.
+"""
+    _replace_spec(files, "AGENT.md", (agent.rstrip() + "\n" + consumption).encode())
+    return files
+
+
 def _writing_files(**kwargs) -> dict[str, FileSpec]:
     kwargs.pop("research_topic", None)
     return _scaffold_files(workflow_id=WRITING_WORKFLOW_ID, **kwargs)
@@ -934,6 +1017,21 @@ def _review_files(**kwargs) -> dict[str, FileSpec]:
 def _experiment_files(**kwargs) -> dict[str, FileSpec]:
     kwargs.pop("research_topic", None)
     return _scaffold_files(workflow_id=EXPERIMENT_WORKFLOW_ID, **kwargs)
+
+
+def _writing_v0_2_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_v0_2_files(workflow_id=WRITING_WORKFLOW_ID, **kwargs)
+
+
+def _review_v0_2_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_v0_2_files(workflow_id=REVIEW_WORKFLOW_ID, **kwargs)
+
+
+def _experiment_v0_2_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_v0_2_files(workflow_id=EXPERIMENT_WORKFLOW_ID, **kwargs)
 
 
 def _selected_library_schema() -> dict[str, Any]:
@@ -1094,26 +1192,48 @@ def _make_manifest(
         proxy = "NO PROVIDER CAPABILITY; LOCAL INTERACTIVE HARNESS ONLY"
     else:
         config = json.loads(files["workflow/scaffold.json"].content)
-        skill_path = "workflow/skills/scaffold-safety/SKILL.md"
-        skill_contract_path = "workflow/skills/scaffold-safety/skill.json"
-        skills = (SkillPin(
-            name="reagent.scaffold-safety",
-            semantic_version=SCAFFOLD_SKILL_VERSION,
-            source_type="BUNDLED_REAGENT_ORIGINAL",
-            source_identity="reagent-f1b-scaffold-safety",
-            checksum=canonical_hash({
-                "instructions": sha256_bytes(files[skill_path].content),
-                "contract": sha256_bytes(files[skill_contract_path].content),
-            }),
-            relative_path=skill_path,
-            required_capabilities=(
-                "read_materialized_input", "write_declared_outputs",
-                "append_progress_report", "preserve_scaffold_markers",
-            ),
-        ),)
+        if workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION:
+            from backend.project_workspaces.skills import PRODUCTION_SKILLS
+
+            skills = tuple(
+                SkillPin(
+                    name=asset.skill_id,
+                    semantic_version=asset.version,
+                    source_type="BUNDLED_REAGENT_ORIGINAL",
+                    source_identity=asset.content_source_identity,
+                    checksum=asset.content_checksum,
+                    relative_path=(
+                        f"workflow/skills/{asset.skill_id}/SKILL.md"
+                    ),
+                    required_capabilities=asset.required_capabilities,
+                )
+                for asset in PRODUCTION_SKILLS
+            )
+        else:
+            skill_path = "workflow/skills/scaffold-safety/SKILL.md"
+            skill_contract_path = "workflow/skills/scaffold-safety/skill.json"
+            skills = (SkillPin(
+                name="reagent.scaffold-safety",
+                semantic_version=SCAFFOLD_SKILL_VERSION,
+                source_type="BUNDLED_REAGENT_ORIGINAL",
+                source_identity="reagent-f1b-scaffold-safety",
+                checksum=canonical_hash({
+                    "instructions": sha256_bytes(files[skill_path].content),
+                    "contract": sha256_bytes(files[skill_contract_path].content),
+                }),
+                relative_path=skill_path,
+                required_capabilities=(
+                    "read_materialized_input", "write_declared_outputs",
+                    "append_progress_report", "preserve_scaffold_markers",
+                ),
+            ),)
         prompt_path = f"workflow/prompts/{config['workflow_slug']}.md"
         prompt_id = f"{config['workflow_slug']}-scaffold"
-        prompt_version = SCAFFOLD_PROMPT_VERSION
+        prompt_version = (
+            SCAFFOLD_SKILL_BACKED_PROMPT_VERSION
+            if workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+            else SCAFFOLD_PROMPT_VERSION
+        )
         outputs = (PackageOutputContract(
             config["human_output_path"],
             f"{config['workflow_kind']}_SCAFFOLD_PLACEHOLDER",
@@ -1389,13 +1509,15 @@ def _build_scaffold_package(
     *, renderer: Callable[..., dict[str, FileSpec]], workflow_id: str,
     workflow_type: str, template_id: str, project_id: str, project_name: str,
     research_topic: str, output_root: str | Path, package_id: str,
+    workflow_version: str = SCAFFOLD_WORKFLOW_VERSION,
+    capsule_version: str = SCAFFOLD_CAPSULE_VERSION,
 ) -> BuildResult:
     return _build(
         renderer=renderer, project_id=project_id, project_name=project_name,
         research_topic=research_topic, output_root=output_root,
         package_id=package_id, workflow_type=workflow_type,
-        workflow_id=workflow_id, workflow_version=SCAFFOLD_WORKFLOW_VERSION,
-        template_id=template_id, template_version=SCAFFOLD_CAPSULE_VERSION,
+        workflow_id=workflow_id, workflow_version=workflow_version,
+        template_id=template_id, template_version=capsule_version,
     )
 
 
@@ -1417,6 +1539,36 @@ def build_experiment_scaffold_package(**kwargs) -> BuildResult:
     return _build_scaffold_package(
         renderer=_experiment_files, workflow_id=EXPERIMENT_WORKFLOW_ID,
         workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
+        **kwargs,
+    )
+
+
+def build_writing_scaffold_v0_2_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_writing_v0_2_files, workflow_id=WRITING_WORKFLOW_ID,
+        workflow_type="Writing", template_id=WRITING_TEMPLATE_ID,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        capsule_version=SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_review_scaffold_v0_2_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_review_v0_2_files, workflow_id=REVIEW_WORKFLOW_ID,
+        workflow_type="Review", template_id=REVIEW_TEMPLATE_ID,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        capsule_version=SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_experiment_scaffold_v0_2_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_experiment_v0_2_files, workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        capsule_version=SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
         **kwargs,
     )
 

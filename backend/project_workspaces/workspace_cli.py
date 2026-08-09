@@ -76,11 +76,23 @@ SUPPORTED_CAPSULE_PINS = {
         "writing-scaffold-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.2.0", "0.2.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
     ("review-local-experimental", "0.1.0", "0.1.0"): (
         "review-scaffold-package-experimental",
         False,
     ),
+    ("review-local-experimental", "0.2.0", "0.2.0"): (
+        "review-scaffold-package-experimental",
+        False,
+    ),
     ("reproduction-experiment-local-experimental", "0.1.0", "0.1.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
+    ("reproduction-experiment-local-experimental", "0.2.0", "0.2.0"): (
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
@@ -2253,12 +2265,25 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
                 },
             }],
         }
-        manifest, _ = _validate_legacy_package(
-            destination,
-            synthetic,
-            expected_instance_id=item["workflow_instance_id"],
-            require_legacy_compatibility=False,
-        )
+        try:
+            manifest, _ = _validate_legacy_package(
+                destination,
+                synthetic,
+                expected_instance_id=item["workflow_instance_id"],
+                require_legacy_compatibility=False,
+            )
+        except WorkspaceCLIError as error:
+            if pin[0] in {
+                "writing-local-experimental",
+                "review-local-experimental",
+                "reproduction-experiment-local-experimental",
+            } and pin[1:] == ("0.2.0", "0.2.0"):
+                raise _identity(
+                    "LOCAL_CAPSULE_DRIFT",
+                    "A required built-in Skill is missing or changed. "
+                    "Restore the verified Capsule, then run sync.",
+                ) from error
+            raise
         if (
             manifest["package_checksum"] != item["package_checksum"]
             or _immutable_contract_checksum(destination, manifest)
@@ -3233,7 +3258,7 @@ def run_workflow(
                 "review-local-experimental",
                 "reproduction-experiment-local-experimental",
             }
-            and pin[1:] == ("0.1.0", "0.1.0")
+            and pin[1:] in {("0.1.0", "0.1.0"), ("0.2.0", "0.2.0")}
         )
         command = [sys.executable, str(runner)]
         if is_idea:

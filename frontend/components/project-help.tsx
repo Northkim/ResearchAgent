@@ -70,6 +70,7 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
         <p>These three available Workflows have a <strong>Scaffold core</strong>. Their Registry, Capsule, exact inputs, local execution, immutable Artifact provenance, Progress, and continuity are functional, but their research capability is a visible placeholder.</p>
         <ul><li>Writing produces a marked structural manuscript placeholder.</li><li>Review produces no substantive issues, score, acceptance prediction, or peer-review claim.</li><li>Reproduction &amp; Experiment supports only an Idea Experiment skeleton and never executes an experiment.</li></ul>
         <p>A Full Research Project preset creates all five independent Workflow Instances in one transaction. It is recommended guidance, not an enforced pipeline: Experiment is optional and Literature, Writing, Review, or Experiment may have additional rounds.</p>
+        <p>Skill-backed scaffold versions bundle exact built-in reviewed Skills during local sync. The Workflow Board shows their names and versions; you never install Skills separately, and Skill presence does not upgrade the Scaffold core.</p>
       </section>
 
       <section>

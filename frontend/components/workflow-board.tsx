@@ -32,6 +32,23 @@ const INPUT_WORKFLOW_IDS = new Set([
   "reproduction-experiment-local-experimental",
 ]);
 
+function WorkflowSkills({ skills }: { skills: NonNullable<ProjectWorkflowInstance["skills"]> }) {
+  if (!skills.length) return null;
+  return (
+    <div className="boundary-callout workflow-skills" aria-label="Bundled skills">
+      <strong>Skills bundled with this Workflow</strong>
+      <ul>
+        {skills.map((skill) => (
+          <li key={`${skill.skill_id}@${skill.version}`}>
+            {skill.display_name} {skill.version} · Built-in reviewed
+          </li>
+        ))}
+      </ul>
+      <p>These exact versions arrive inside the verified Capsule when you sync. Skills do not change the Workflow&apos;s core maturity.</p>
+    </div>
+  );
+}
+
 export function WorkflowBoard({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
   const instances = useProjectWorkflowInstances(projectId);
@@ -194,6 +211,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                       <p>Product flow is functional. Research capability is placeholder.</p>
                     </div>
                   ) : null}
+                  <WorkflowSkills skills={instance.skills ?? []} />
                   <p>{state?.latest_summary ?? "No Progress Report has been uploaded for this instance."}</p>
                   <div className="workflow-next-action" data-action={nextAction.code}>
                     <strong>Next: {nextAction.title}</strong>
@@ -267,6 +285,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                   {item.recommended_version?.core_capability_maturity === "SCAFFOLD_CORE" ? (
                     <p><strong>Prototype core:</strong> Product flow is functional. Research capability is placeholder.</p>
                   ) : null}
+                  <WorkflowSkills skills={item.recommended_version?.skills ?? []} />
                   <p className="section-caption">{item.recommended_version ? `Version ${item.recommended_version.version}` : "No published executable version"}</p>
                   <button className="button button-secondary" disabled={!canAdd || create.isPending} onClick={() => addWorkflow(item)}>
                     {item.lifecycle === "PLANNED" ? "Planned" : "Add workflow"}

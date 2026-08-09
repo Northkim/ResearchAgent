@@ -245,6 +245,73 @@ def _validate_outputs(root: Path, config: dict[str, Any]) -> None:
         validate_scaffold_artifact(value)
 
 
+def _validate_pinned_skills(
+    root: Path, manifest: dict[str, Any], config: dict[str, Any]
+) -> None:
+    """Fail closed on missing, drifted, floating, or undeclared Skill content."""
+
+    expected = config.get("pinned_skills")
+    if expected is None:
+        return  # Immutable F1B 0.1.0 Capsule contract.
+    pins = manifest.get("skill_pins")
+    if not isinstance(expected, list) or not expected or not isinstance(pins, list):
+        raise PackageValidationError("required built-in Skill pins are invalid")
+    if len(expected) != len(pins):
+        raise PackageValidationError("required built-in Skill pin count mismatch")
+    expected_by_id = {
+        item.get("skill_id"): item for item in expected if isinstance(item, dict)
+    }
+    if len(expected_by_id) != len(expected):
+        raise PackageValidationError("required built-in Skill pins are duplicated")
+    for pin in pins:
+        if not isinstance(pin, dict):
+            raise PackageValidationError("required built-in Skill pin is invalid")
+        skill_id = pin.get("name")
+        declared = expected_by_id.get(skill_id)
+        if (
+            declared is None
+            or pin.get("semantic_version") != declared.get("skill_version")
+            or pin.get("checksum") != declared.get("content_checksum")
+            or declared.get("trust") != "BUILT_IN_REVIEWED"
+        ):
+            raise PackageValidationError("required built-in Skill identity mismatch")
+        entrypoint = safe_relative_path(pin.get("relative_path"))
+        skill_root = f"workflow/skills/{skill_id}"
+        if entrypoint != f"{skill_root}/SKILL.md":
+            raise PackageValidationError("required built-in Skill entrypoint mismatch")
+        instructions_path = root.joinpath(*entrypoint.split("/"))
+        contract_path = root.joinpath(*f"{skill_root}/skill.json".split("/"))
+        if (
+            instructions_path.is_symlink()
+            or contract_path.is_symlink()
+            or not instructions_path.is_file()
+            or not contract_path.is_file()
+            or instructions_path.stat().st_nlink != 1
+            or contract_path.stat().st_nlink != 1
+        ):
+            raise PackageValidationError("required built-in Skill is missing or unsafe")
+        contract = _object(contract_path, "built-in Skill contract")
+        if (
+            contract.get("schema_version") != "local-skill/v0.1"
+            or contract.get("name") != skill_id
+            or contract.get("version") != declared.get("skill_version")
+            or contract.get("trust") != "BUILT_IN_REVIEWED_ONLY"
+        ):
+            raise PackageValidationError("required built-in Skill contract mismatch")
+        files = contract.get("files")
+        instruction_checksum = sha256_bytes(instructions_path.read_bytes())
+        if not isinstance(files, list) or files != [{
+            "path": "SKILL.md", "sha256": instruction_checksum,
+        }]:
+            raise PackageValidationError("required built-in Skill file manifest mismatch")
+        checksum = canonical_hash({
+            "instructions": instruction_checksum,
+            "contract": sha256_bytes(contract_path.read_bytes()),
+        })
+        if checksum != pin.get("checksum"):
+            raise PackageValidationError("required built-in Skill checksum mismatch")
+
+
 def validate(root: str | Path, *, pristine: bool = False) -> dict[str, Any]:
     package_root = Path(root)
     if package_root.is_symlink() or not package_root.is_dir():
@@ -254,8 +321,8 @@ def validate(root: str | Path, *, pristine: bool = False) -> dict[str, Any]:
     if (
         manifest.get("package_schema_version") != "workflow-package/v0.1"
         or manifest.get("workflow_id") != config.get("workflow_id")
-        or manifest.get("workflow_version") != "0.1.0"
-        or manifest.get("package_template_version") != "0.1.0"
+        or manifest.get("workflow_version") != config.get("workflow_version")
+        or manifest.get("package_template_version") not in {"0.1.0", "0.2.0"}
     ):
         raise PackageValidationError("scaffold Capsule identity mismatch")
     if config.get("core_capability_maturity") != "SCAFFOLD_CORE":
@@ -322,6 +389,7 @@ def validate(root: str | Path, *, pristine: bool = False) -> dict[str, Any]:
     workflow = _object(package_root / "workflow/workflow.json", "workflow contract")
     if manifest.get("workflow_checksum") != canonical_hash(workflow):
         raise PackageValidationError("workflow checksum mismatch")
+    _validate_pinned_skills(package_root, manifest, config)
     _validate_outputs(package_root, config)
     return {
         "valid": True,

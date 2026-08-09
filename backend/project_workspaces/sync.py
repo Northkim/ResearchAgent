@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -26,6 +27,8 @@ from backend.workflow_packages.production_workflows import (
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
     SCAFFOLD_WORKFLOW_VERSION,
+    SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+    SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
     WRITING_WORKFLOW_ID,
     LITERATURE_SEARCH_WORKFLOW_VERSION as PRODUCTION_LITERATURE_SEARCH_VERSION,
     build_idea_discovery_package,
@@ -34,6 +37,9 @@ from backend.workflow_packages.production_workflows import (
     build_writing_scaffold_package,
     build_review_scaffold_package,
     build_experiment_scaffold_package,
+    build_writing_scaffold_v0_2_package,
+    build_review_scaffold_v0_2_package,
+    build_experiment_scaffold_v0_2_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
@@ -43,6 +49,10 @@ from .contracts import (
     DesiredProjectManifest,
     InstallationAcknowledgementStatus,
     ProjectWorkflowInstance,
+    SkillLifecycle,
+    SkillReviewStatus,
+    SkillSourceClass,
+    SkillTrustTier,
     WorkflowCapsuleArtifact,
     WorkflowInstanceDesiredState,
     WorkspaceInstallationAcknowledgement,
@@ -533,6 +543,28 @@ class WorkspaceSyncApplicationService:
             package_id = (
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.1"
             )
+        elif (
+            instance.workflow_definition_id in {
+                WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID, EXPERIMENT_WORKFLOW_ID,
+            }
+            and instance.workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+            and instance.capsule_version == SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION
+        ):
+            slug, builder = {
+                WRITING_WORKFLOW_ID: (
+                    "writing", build_writing_scaffold_v0_2_package
+                ),
+                REVIEW_WORKFLOW_ID: (
+                    "review", build_review_scaffold_v0_2_package
+                ),
+                EXPERIMENT_WORKFLOW_ID: (
+                    "reproduction-experiment",
+                    build_experiment_scaffold_v0_2_package,
+                ),
+            }[instance.workflow_definition_id]
+            package_id = (
+                f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.2"
+            )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")
         output = (
@@ -560,6 +592,13 @@ class WorkspaceSyncApplicationService:
             ) from error
         if not built.validation.valid or not built.archive_validation.valid:
             raise _unavailable("Workflow Capsule artifact validation failed")
+        if (
+            instance.workflow_definition_id in {
+                WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID, EXPERIMENT_WORKFLOW_ID,
+            }
+            and instance.workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+        ):
+            self._verify_compiled_skill_authority(instance, built.package_root)
         timestamp = manifest.created_at.astimezone(timezone.utc)
         return WorkflowCapsuleArtifact(
             capsule_artifact_id=capsule_artifact_id(project.project_id, instance.workflow_instance_id, built.package_id),
@@ -579,6 +618,50 @@ class WorkspaceSyncApplicationService:
             created_at=timestamp,
             updated_at=timestamp,
         )
+
+    def _verify_compiled_skill_authority(
+        self, instance: ProjectWorkflowInstance, package_root: Path
+    ) -> None:
+        """Bind compiler output to Registry pins; never trust static bytes alone."""
+
+        pins = self._uow.workflow_foundation.list_workflow_skill_pins(
+            instance.workflow_definition_id, instance.workflow_version
+        )
+        try:
+            manifest = json.loads(
+                (package_root / "package-manifest.json").read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise _unavailable("Skill-backed Capsule manifest is unavailable") from error
+        compiled = manifest.get("skill_pins")
+        if not isinstance(compiled, list) or len(compiled) != len(pins) or not pins:
+            raise _unavailable("Skill-backed Capsule pin set conflicts with Registry")
+        for pin, package_pin in zip(pins, compiled, strict=True):
+            definition = self._uow.workflow_foundation.get_skill_definition(
+                pin.skill_id
+            )
+            version = self._uow.workflow_foundation.get_skill_version(
+                pin.skill_id, pin.skill_version
+            )
+            if (
+                definition is None
+                or version is None
+                or definition.lifecycle is not SkillLifecycle.AVAILABLE
+                or definition.source_class is not SkillSourceClass.PLATFORM_BUILT_IN
+                or definition.trust_tier is not SkillTrustTier.BUILT_IN_REVIEWED
+                or version.trust_tier is not SkillTrustTier.BUILT_IN_REVIEWED
+                or version.review_status is not SkillReviewStatus.REVIEWED
+                or version.published_at is None
+                or version.content_checksum != pin.skill_checksum
+                or package_pin.get("name") != pin.skill_id
+                or package_pin.get("semantic_version") != pin.skill_version
+                or package_pin.get("checksum") != pin.skill_checksum
+                or package_pin.get("source_identity")
+                != version.content_source_identity
+            ):
+                raise _unavailable(
+                    "Skill-backed Capsule requires exact reviewed Registry authority"
+                )
 
     def _resolved_package_root(self) -> Path:
         root = self._package_root.expanduser().resolve()
