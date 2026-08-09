@@ -579,21 +579,21 @@ ARTIFACT_CONTRACTS: Mapping[str, ArtifactContract] = MappingProxyType({
     ),
     MANUSCRIPT_DRAFT_TYPE: ArtifactContract(
         MANUSCRIPT_DRAFT_TYPE, MANUSCRIPT_DRAFT_SCHEMA,
-        JSON_MEDIA_TYPE, validate_manuscript_draft, False,
+        JSON_MEDIA_TYPE, validate_manuscript_draft, True,
     ),
     REVIEW_REPORT_TYPE: ArtifactContract(
         REVIEW_REPORT_TYPE, REVIEW_REPORT_SCHEMA,
-        JSON_MEDIA_TYPE, validate_review_report, False,
+        JSON_MEDIA_TYPE, validate_review_report, True,
     ),
     EXPERIMENT_RECORD_TYPE: ArtifactContract(
         EXPERIMENT_RECORD_TYPE, EXPERIMENT_RECORD_SCHEMA,
-        JSON_MEDIA_TYPE, validate_experiment_record, False,
+        JSON_MEDIA_TYPE, validate_experiment_record, True,
     ),
 })
 
 FUTURE_WORKFLOW_CONTRACTS: Mapping[str, FutureWorkflowContract] = MappingProxyType({
     "writing": FutureWorkflowContract(
-        stable_key="writing",
+        stable_key="writing-local-experimental",
         inputs=(
             FutureDependency("research_idea", SELECTED_RESEARCH_IDEA_TYPE, True),
             FutureDependency("literature_library", SELECTED_PAPER_LIBRARY_TYPE, True),
@@ -602,22 +602,25 @@ FUTURE_WORKFLOW_CONTRACTS: Mapping[str, FutureWorkflowContract] = MappingProxyTy
             FutureDependency("prior_manuscript", MANUSCRIPT_DRAFT_TYPE, False),
         ),
         output_artifact_type=MANUSCRIPT_DRAFT_TYPE,
+        production_seeded=True,
     ),
     "review": FutureWorkflowContract(
-        stable_key="review",
+        stable_key="review-local-experimental",
         inputs=(
             FutureDependency("manuscript", MANUSCRIPT_DRAFT_TYPE, True),
             FutureDependency("literature_library", SELECTED_PAPER_LIBRARY_TYPE, False),
             FutureDependency("experiment_record", EXPERIMENT_RECORD_TYPE, False),
         ),
         output_artifact_type=REVIEW_REPORT_TYPE,
+        production_seeded=True,
     ),
     "reproduction-experiment": FutureWorkflowContract(
-        stable_key="reproduction-experiment",
+        stable_key="reproduction-experiment-local-experimental",
         inputs=(
             FutureDependency("research_idea", SELECTED_RESEARCH_IDEA_TYPE, True),
             FutureDependency("literature_library", SELECTED_PAPER_LIBRARY_TYPE, False),
         ),
         output_artifact_type=EXPERIMENT_RECORD_TYPE,
+        production_seeded=True,
     ),
 })

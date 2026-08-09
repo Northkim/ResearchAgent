@@ -22,10 +22,18 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_WORKFLOW_ID,
     IDEA_DISCOVERY_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
+    EXPERIMENT_WORKFLOW_ID,
+    REVIEW_WORKFLOW_ID,
+    SCAFFOLD_CAPSULE_VERSION,
+    SCAFFOLD_WORKFLOW_VERSION,
+    WRITING_WORKFLOW_ID,
     LITERATURE_SEARCH_WORKFLOW_VERSION as PRODUCTION_LITERATURE_SEARCH_VERSION,
     build_idea_discovery_package,
     build_idea_discovery_v0_2_package,
     build_literature_search_v0_6_package,
+    build_writing_scaffold_package,
+    build_review_scaffold_package,
+    build_experiment_scaffold_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
@@ -508,6 +516,23 @@ class WorkspaceSyncApplicationService:
                 f"idea-discovery-{project.project_id}-{instance.workflow_instance_id}-v0.2"
             )
             builder = build_idea_discovery_v0_2_package
+        elif (
+            instance.workflow_definition_id in {
+                WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID, EXPERIMENT_WORKFLOW_ID,
+            }
+            and instance.workflow_version == SCAFFOLD_WORKFLOW_VERSION
+            and instance.capsule_version == SCAFFOLD_CAPSULE_VERSION
+        ):
+            slug, builder = {
+                WRITING_WORKFLOW_ID: ("writing", build_writing_scaffold_package),
+                REVIEW_WORKFLOW_ID: ("review", build_review_scaffold_package),
+                EXPERIMENT_WORKFLOW_ID: (
+                    "reproduction-experiment", build_experiment_scaffold_package,
+                ),
+            }[instance.workflow_definition_id]
+            package_id = (
+                f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.1"
+            )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")
         output = (

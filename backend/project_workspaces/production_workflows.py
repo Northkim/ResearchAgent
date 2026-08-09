@@ -18,17 +18,34 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_2_CAPSULE_VERSION,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_INPUT_TARGET,
+    EXPERIMENT_RECORD_TYPE,
+    EXPERIMENT_REQUIREMENTS,
+    EXPERIMENT_TEMPLATE_ID,
+    EXPERIMENT_WORKFLOW_ID,
     LITERATURE_SEARCH_CAPSULE_VERSION,
     LITERATURE_SEARCH_TEMPLATE_ID,
     LITERATURE_SEARCH_WORKFLOW_ID,
     LITERATURE_SEARCH_WORKFLOW_VERSION,
     SELECTED_PAPER_LIBRARY_SCHEMA,
     SELECTED_PAPER_LIBRARY_TYPE,
+    MANUSCRIPT_DRAFT_TYPE,
+    REVIEW_REPORT_TYPE,
+    REVIEW_REQUIREMENTS,
+    REVIEW_TEMPLATE_ID,
+    REVIEW_WORKFLOW_ID,
+    SCAFFOLD_CAPSULE_VERSION,
+    SCAFFOLD_INPUT_TARGETS,
+    SCAFFOLD_WORKFLOW_VERSION,
+    WRITING_REQUIREMENTS,
+    WRITING_TEMPLATE_ID,
+    WRITING_WORKFLOW_ID,
     idea_discovery_contract_checksum,
     idea_discovery_v0_2_contract_checksum,
     literature_search_contract_checksum,
     selected_paper_library_output_contract,
     selected_research_idea_output_contract,
+    scaffold_contract_checksum,
+    scaffold_output_contract,
 )
 from backend.workflow_packages.serialization import canonical_hash
 
@@ -43,6 +60,39 @@ from .contracts import (
 )
 
 IDEA_DISCOVERY_DEFINITION_ID = IDEA_DISCOVERY_WORKFLOW_ID
+
+SCAFFOLD_WORKFLOWS = {
+    WRITING_WORKFLOW_ID: {
+        "display_name": "Writing",
+        "description": (
+            "Run the complete manuscript Artifact flow with an explicitly marked "
+            "placeholder research core."
+        ),
+        "template_id": WRITING_TEMPLATE_ID,
+        "requirements": WRITING_REQUIREMENTS,
+        "output_type": MANUSCRIPT_DRAFT_TYPE,
+    },
+    REVIEW_WORKFLOW_ID: {
+        "display_name": "Review",
+        "description": (
+            "Run the complete review Artifact flow without claiming substantive "
+            "peer review."
+        ),
+        "template_id": REVIEW_TEMPLATE_ID,
+        "requirements": REVIEW_REQUIREMENTS,
+        "output_type": REVIEW_REPORT_TYPE,
+    },
+    EXPERIMENT_WORKFLOW_ID: {
+        "display_name": "Reproduction & Experiment",
+        "description": (
+            "Build an Idea Experiment skeleton with no real experiment or paper "
+            "reproduction execution."
+        ),
+        "template_id": EXPERIMENT_TEMPLATE_ID,
+        "requirements": EXPERIMENT_REQUIREMENTS,
+        "output_type": EXPERIMENT_RECORD_TYPE,
+    },
+}
 
 LITERATURE_SEARCH_V0_6_CAPSULE_CHECKSUM = canonical_hash(
     {
@@ -99,6 +149,30 @@ IDEA_DISCOVERY_V0_2_CAPSULE_CHECKSUM = canonical_hash(
 IDEA_DISCOVERY_V0_2_CAPSULE_ID = (
     "capsule-" + IDEA_DISCOVERY_V0_2_CAPSULE_CHECKSUM[7:39]
 )
+
+
+def scaffold_capsule_checksum(workflow_id: str) -> str:
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return canonical_hash({
+        "generator_version": f"reagent-{workflow_id}-compiler/0.1.0",
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": config["template_id"],
+        "package_template_version": SCAFFOLD_CAPSULE_VERSION,
+        "workflow_checksum": scaffold_contract_checksum(workflow_id),
+        "artifact_requirements": list(config["requirements"]),
+        "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+        "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+    })
+
+
+SCAFFOLD_CAPSULE_CHECKSUMS = {
+    workflow_id: scaffold_capsule_checksum(workflow_id)
+    for workflow_id in SCAFFOLD_WORKFLOWS
+}
+SCAFFOLD_CAPSULE_IDS = {
+    workflow_id: "capsule-" + checksum[7:39]
+    for workflow_id, checksum in SCAFFOLD_CAPSULE_CHECKSUMS.items()
+}
 
 
 def literature_search_definition_version(now: datetime) -> WorkflowDefinitionVersion:
@@ -311,3 +385,104 @@ def idea_discovery_v0_2_requirement(now: datetime) -> WorkflowArtifactRequiremen
         created_at=now,
         updated_at=now,
     )
+
+
+def scaffold_definition(workflow_id: str, now: datetime) -> WorkflowDefinition:
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return WorkflowDefinition(
+        workflow_definition_id=workflow_id,
+        display_name=config["display_name"],
+        description=config["description"],
+        lifecycle=WorkflowDefinitionLifecycle.AVAILABLE,
+        allows_multiple_instances=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def scaffold_definition_version(
+    workflow_id: str, now: datetime
+) -> WorkflowDefinitionVersion:
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=workflow_id,
+        version=SCAFFOLD_WORKFLOW_VERSION,
+        contract_checksum=scaffold_contract_checksum(workflow_id),
+        input_schema_id="artifact-bindings/v0.1",
+        output_schema_id=config["output_type"],
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "artifact_requirements": list(config["requirements"]),
+            "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+            "scaffold_notice": (
+                "Product flow is functional. Research capability is placeholder."
+            ),
+            "supported_mode": (
+                "IDEA_EXPERIMENT"
+                if workflow_id == EXPERIMENT_WORKFLOW_ID else None
+            ),
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.SCAFFOLD_CORE,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def scaffold_capsule(workflow_id: str, now: datetime) -> WorkflowCapsuleVersion:
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return WorkflowCapsuleVersion(
+        capsule_id=SCAFFOLD_CAPSULE_IDS[workflow_id],
+        capsule_version=SCAFFOLD_CAPSULE_VERSION,
+        workflow_definition_id=workflow_id,
+        workflow_version=SCAFFOLD_WORKFLOW_VERSION,
+        definition_checksum=SCAFFOLD_CAPSULE_CHECKSUMS[workflow_id],
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=("memory/context.md", "memory/progress", "memory/input-provenance.json", "memory/current-artifact.json", "outputs", "inputs"),
+        capability_requirements=(
+            "progress.upload/v0.2", "artifact.materialize/v0.1",
+            "artifact.publish/v0.1",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": config["template_id"],
+            "trust_classification": (
+                CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value
+            ),
+            "artifact_requirements": list(config["requirements"]),
+            "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+            "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+            "scaffold_notice": (
+                "Product flow is functional. Research capability is placeholder."
+            ),
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def scaffold_requirements(
+    workflow_id: str, now: datetime
+) -> tuple[WorkflowArtifactRequirement, ...]:
+    result = []
+    for item in SCAFFOLD_WORKFLOWS[workflow_id]["requirements"]:
+        result.append(WorkflowArtifactRequirement(
+            workflow_definition_id=workflow_id,
+            workflow_version=SCAFFOLD_WORKFLOW_VERSION,
+            requirement_key=item["requirement_key"],
+            artifact_type=item["artifact_type"],
+            compatibility_mode=CompatibilityMode.EXACT,
+            schema_constraint=item["artifact_schema"],
+            cardinality_min=1 if item["required"] else 0,
+            cardinality_max=1,
+            required=item["required"],
+            materialization_mode=MaterializationMode.VERIFIED_COPY,
+            target_relative_path=item["target_relative_path"],
+            created_at=now,
+            updated_at=now,
+        ))
+    return tuple(result)

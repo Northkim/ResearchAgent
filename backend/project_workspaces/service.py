@@ -49,6 +49,11 @@ from .production_workflows import (
     idea_discovery_v0_2_requirement,
     literature_search_capsule as production_literature_search_capsule,
     literature_search_definition_version as production_literature_search_version,
+    SCAFFOLD_WORKFLOWS,
+    scaffold_capsule,
+    scaffold_definition,
+    scaffold_definition_version,
+    scaffold_requirements,
 )
 
 if TYPE_CHECKING:
@@ -222,6 +227,26 @@ def ensure_production_workflow_foundation(
             raise WorkflowFoundationConflictError(
                 "Idea Discovery Artifact requirement immutable-content conflict"
             )
+    for workflow_id in SCAFFOLD_WORKFLOWS:
+        repository.add_definition(scaffold_definition(workflow_id, timestamp))
+        repository.add_definition_version(
+            scaffold_definition_version(workflow_id, timestamp)
+        )
+        repository.add_capsule_version(scaffold_capsule(workflow_id, timestamp))
+        for requirement in scaffold_requirements(workflow_id, timestamp):
+            existing_requirement = uow.artifact_references.get_requirement(
+                requirement.workflow_definition_id,
+                requirement.workflow_version,
+                requirement.requirement_key,
+            )
+            if existing_requirement is None:
+                uow.artifact_references.add_requirement(requirement)
+            elif _requirement_content(existing_requirement) != _requirement_content(
+                requirement
+            ):
+                raise WorkflowFoundationConflictError(
+                    "Scaffold Workflow Artifact requirement immutable-content conflict"
+                )
     return (
         literature_definition,
         literature_version,
@@ -288,3 +313,19 @@ def _parse_time(value: str) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("legacy timestamp must be timezone-aware")
     return parsed
+
+
+def _requirement_content(value):
+    return (
+        value.workflow_definition_id,
+        value.workflow_version,
+        value.requirement_key,
+        value.artifact_type,
+        value.compatibility_mode,
+        value.schema_constraint,
+        value.cardinality_min,
+        value.cardinality_max,
+        value.required,
+        value.materialization_mode,
+        value.target_relative_path,
+    )

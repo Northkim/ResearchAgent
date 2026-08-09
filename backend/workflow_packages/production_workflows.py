@@ -62,6 +62,17 @@ IDEA_DISCOVERY_V0_2_CAPSULE_VERSION = "0.2.0"
 IDEA_DISCOVERY_V0_2_PROMPT_VERSION = "0.2.0"
 IDEA_DISCOVERY_V0_2_SKILL_VERSION = "0.2.0"
 
+WRITING_WORKFLOW_ID = "writing-local-experimental"
+REVIEW_WORKFLOW_ID = "review-local-experimental"
+EXPERIMENT_WORKFLOW_ID = "reproduction-experiment-local-experimental"
+SCAFFOLD_WORKFLOW_VERSION = "0.1.0"
+SCAFFOLD_CAPSULE_VERSION = "0.1.0"
+SCAFFOLD_PROMPT_VERSION = "0.1.0"
+SCAFFOLD_SKILL_VERSION = "0.1.0"
+WRITING_TEMPLATE_ID = "writing-scaffold-package-experimental"
+REVIEW_TEMPLATE_ID = "review-scaffold-package-experimental"
+EXPERIMENT_TEMPLATE_ID = "reproduction-experiment-scaffold-package-experimental"
+
 SELECTED_PAPER_LIBRARY_TYPE = "selected-paper-library/v1"
 SELECTED_PAPER_LIBRARY_SCHEMA = "selected-paper-library/v1"
 SELECTED_PAPER_LIBRARY_PREFIX = "outputs/artifacts/selected-paper-library"
@@ -69,6 +80,19 @@ IDEA_INPUT_TARGET = "inputs/selected-paper-library.json"
 SELECTED_RESEARCH_IDEA_TYPE = "selected-research-idea/v1"
 SELECTED_RESEARCH_IDEA_SCHEMA = "selected-research-idea/v1"
 SELECTED_RESEARCH_IDEA_PREFIX = "outputs/artifacts/selected-research-idea"
+
+MANUSCRIPT_DRAFT_TYPE = "manuscript-draft/v1"
+REVIEW_REPORT_TYPE = "review-report/v1"
+EXPERIMENT_RECORD_TYPE = "experiment-record/v1"
+
+SCAFFOLD_INPUT_TARGETS = {
+    "research_idea": "inputs/selected-research-idea.json",
+    "literature_library": "inputs/selected-paper-library.json",
+    "experiment_record": "inputs/experiment-record.json",
+    "review_feedback": "inputs/review-report.json",
+    "prior_manuscript": "inputs/prior-manuscript.json",
+    "manuscript": "inputs/manuscript-draft.json",
+}
 
 _ZERO_HASH = "sha256:" + "0" * 64
 _ZIP_TIMESTAMP = (2000, 1, 1, 0, 0, 0)
@@ -94,6 +118,100 @@ def selected_research_idea_output_contract() -> dict[str, str]:
         "content_addressed_filename": "sha256-<content-sha256>.json",
         "progress_artifact_kind": SELECTED_RESEARCH_IDEA_TYPE,
     }
+
+
+def scaffold_output_contract(artifact_type: str) -> dict[str, str]:
+    slug = artifact_type.split("/", 1)[0]
+    return {
+        "artifact_type": artifact_type,
+        "artifact_schema_version": artifact_type,
+        "media_type": "application/json",
+        "relative_path_prefix": f"outputs/artifacts/{slug}",
+        "content_addressed_filename": "sha256-<content-sha256>.json",
+        "progress_artifact_kind": artifact_type,
+    }
+
+
+def _scaffold_requirement(
+    key: str, artifact_type: str, *, required: bool
+) -> dict[str, Any]:
+    return {
+        "requirement_key": key,
+        "artifact_type": artifact_type,
+        "artifact_schema": artifact_type,
+        "cardinality": "ONE",
+        "required": required,
+        "selection_policy": "EXPLICIT_SPECIFIC_ARTIFACT",
+        "materialization_mode": "VERIFIED_COPY",
+        "target_relative_path": SCAFFOLD_INPUT_TARGETS[key],
+    }
+
+
+WRITING_REQUIREMENTS = (
+    _scaffold_requirement("research_idea", SELECTED_RESEARCH_IDEA_TYPE, required=True),
+    _scaffold_requirement("literature_library", SELECTED_PAPER_LIBRARY_TYPE, required=True),
+    _scaffold_requirement("experiment_record", EXPERIMENT_RECORD_TYPE, required=False),
+    _scaffold_requirement("review_feedback", REVIEW_REPORT_TYPE, required=False),
+    _scaffold_requirement("prior_manuscript", MANUSCRIPT_DRAFT_TYPE, required=False),
+)
+REVIEW_REQUIREMENTS = (
+    _scaffold_requirement("manuscript", MANUSCRIPT_DRAFT_TYPE, required=True),
+    _scaffold_requirement("literature_library", SELECTED_PAPER_LIBRARY_TYPE, required=False),
+    _scaffold_requirement("experiment_record", EXPERIMENT_RECORD_TYPE, required=False),
+)
+EXPERIMENT_REQUIREMENTS = (
+    _scaffold_requirement("research_idea", SELECTED_RESEARCH_IDEA_TYPE, required=True),
+    _scaffold_requirement("literature_library", SELECTED_PAPER_LIBRARY_TYPE, required=False),
+)
+
+
+def scaffold_workflow_document(workflow_id: str) -> dict[str, Any]:
+    values = {
+        WRITING_WORKFLOW_ID: (
+            "Writing", WRITING_REQUIREMENTS, MANUSCRIPT_DRAFT_TYPE,
+            ("INPUT_REVIEW", "OUTLINE", "SCAFFOLD_DRAFT", "USER_REVIEW", "COMPLETED"),
+        ),
+        REVIEW_WORKFLOW_ID: (
+            "Review", REVIEW_REQUIREMENTS, REVIEW_REPORT_TYPE,
+            ("INPUT_REVIEW", "SCAFFOLD_REVIEW", "USER_REVIEW", "COMPLETED"),
+        ),
+        EXPERIMENT_WORKFLOW_ID: (
+            "Reproduction & Experiment", EXPERIMENT_REQUIREMENTS, EXPERIMENT_RECORD_TYPE,
+            ("INPUT_REVIEW", "EXPERIMENT_PLAN", "PLACEHOLDER_EXECUTION", "USER_REVIEW", "COMPLETED"),
+        ),
+    }
+    workflow_type, requirements, output_type, stages = values[workflow_id]
+    result = {
+        "schema_version": "local-workflow/v0.2",
+        "experimental_status": EXPERIMENTAL_STATUS,
+        "workflow_type": workflow_type,
+        "workflow_id": workflow_id,
+        "workflow_version": SCAFFOLD_WORKFLOW_VERSION,
+        "execution_owner": "codex-or-claude-local-agent-harness",
+        "hosted_agent_runtime_required": False,
+        "network_boundary": "NO_WORKFLOW_NETWORK_REQUIRED",
+        "core_capability_maturity": "SCAFFOLD_CORE",
+        "scaffold_notice": (
+            "Product flow is functional. Research capability is placeholder."
+        ),
+        "input_requirements": list(requirements),
+        "stages": list(stages),
+        "artifact_outputs": [scaffold_output_contract(output_type)],
+        "completion_semantics": "SCAFFOLD_FLOW_COMPLETED_NOT_RESEARCH_COMPLETED",
+        "immutable_replacement_policy": "REVIEWED_CORE_REQUIRES_NEW_VERSION",
+    }
+    if workflow_id == EXPERIMENT_WORKFLOW_ID:
+        result.update({
+            "supported_mode": "IDEA_EXPERIMENT",
+            "paper_reproduction": "NOT_YET_ENABLED",
+            "execution_status": "PLACEHOLDER_NOT_EXECUTED",
+            "actual_results": None,
+        })
+    return result
+
+
+def scaffold_contract_checksum(workflow_id: str) -> str:
+    return canonical_hash(scaffold_workflow_document(workflow_id))
 
 
 def literature_search_workflow_document() -> dict[str, Any]:
@@ -618,6 +736,206 @@ def _idea_v0_2_files(
     return files
 
 
+_SCAFFOLD_PROGRESS_HELPER = r'''
+
+def _current_scaffold_artifact(root: Path) -> dict[str, Any]:
+    current = _load_object(root / "memory/current-artifact.json", "current scaffold Artifact")
+    if set(current) != {"relative_path", "artifact_kind", "media_type", "checksum", "size"}:
+        raise ProgressReportError("current scaffold Artifact fields mismatch")
+    relative = safe_relative_path(current["relative_path"])
+    path = root.joinpath(*relative.split("/"))
+    if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+        raise ProgressReportError("current scaffold Artifact must be one regular file")
+    content = path.read_bytes()
+    if current["media_type"] != "application/json" or current["checksum"] != sha256_bytes(content) or current["size"] != len(content):
+        raise ProgressReportError("current scaffold Artifact identity mismatch")
+    return current
+'''
+
+
+def _scaffold_progress_source() -> bytes:
+    source = Path(__file__).with_name("package_progress.py").read_text(encoding="utf-8")
+    marker = "\ndef finalize(\n"
+    output_marker = "    skill_pins = [\n"
+    if marker not in source or output_marker not in source:
+        raise RuntimeError("Progress helper scaffold extension point is unavailable")
+    source = source.replace(marker, _SCAFFOLD_PROGRESS_HELPER + marker, 1)
+    source = source.replace(
+        output_marker,
+        "    outputs.append(_current_scaffold_artifact(root))\n" + output_marker,
+        1,
+    )
+    return source.encode("utf-8")
+
+
+def _scaffold_files(
+    *, workflow_id: str, project_id: str, project_name: str,
+    package_id: str, package_checksum: str,
+) -> dict[str, FileSpec]:
+    from . import scaffold_runtime, scaffold_validator
+
+    workflow = scaffold_workflow_document(workflow_id)
+    definitions = {
+        WRITING_WORKFLOW_ID: {
+            "kind": "WRITING", "slug": "writing", "human": "outputs/manuscript.md",
+            "output": MANUSCRIPT_DRAFT_TYPE,
+            "next": "Review the placeholder draft and use an explicit Review Workflow if desired",
+        },
+        REVIEW_WORKFLOW_ID: {
+            "kind": "REVIEW", "slug": "review", "human": "outputs/review_report.md",
+            "output": REVIEW_REPORT_TYPE,
+            "next": "Treat this only as flow-validation feedback; do not make research decisions from it",
+        },
+        EXPERIMENT_WORKFLOW_ID: {
+            "kind": "EXPERIMENT", "slug": "reproduction-experiment",
+            "human": "outputs/experiment_plan.md", "output": EXPERIMENT_RECORD_TYPE,
+            "next": "Review the placeholder plan; real experiment execution is not enabled",
+        },
+    }
+    definition = definitions[workflow_id]
+    config = {
+        "schema_version": "reagent.scaffold-workflow/v0.1",
+        "workflow_id": workflow_id,
+        "workflow_version": SCAFFOLD_WORKFLOW_VERSION,
+        "workflow_kind": definition["kind"],
+        "workflow_slug": definition["slug"],
+        "core_capability_maturity": "SCAFFOLD_CORE",
+        "input_requirements": workflow["input_requirements"],
+        "human_output_path": definition["human"],
+        "output_artifact_type": definition["output"],
+        "artifact_path_prefix": scaffold_output_contract(definition["output"])["relative_path_prefix"],
+        "completed_next_action": definition["next"],
+        "supported_mode": (
+            "IDEA_EXPERIMENT" if workflow_id == EXPERIMENT_WORKFLOW_ID else None
+        ),
+    }
+    agent = f"""# ReAgent {workflow['workflow_type']} — SCAFFOLD_CORE
+
+> **SCAFFOLD PLACEHOLDER**
+> Product flow is functional. Core research capability is currently scaffold-only.
+
+1. This Capsule is the complete local state for one exact Workflow Instance.
+2. Read `workflow/scaffold.json`, the scaffold prompt, `memory/context.md`, and only the materialized files declared under `inputs/`.
+3. Treat every input as read-only. Never read sibling Capsule outputs directly.
+4. Write only this Capsule's declared `outputs/` and `memory/` paths.
+5. Never invent citations, DOI values, papers, novelty, metrics, experiment results, significance, peer-review findings, scores, acceptance predictions, or successful reproduction claims.
+6. Do not claim that substantive academic {workflow['workflow_type'].lower()} was performed.
+7. Keep every scaffold marker in human-facing and canonical outputs.
+8. Finalization must pass the bundled validator and publish a content-addressed Artifact.
+9. End every round with a real Progress Report; `COMPLETED` means only that this scaffold flow ended.
+10. Memory belongs only to this Workflow Instance. A fresh session continues from local files, not chat history.
+11. The user may interrupt and continue safely; immutable Artifacts and prior Progress are never overwritten.
+12. Do not access credentials, live Providers, external Resources, or real experiment execution.
+"""
+    prompt = f"""# Reviewed scaffold method — {workflow['workflow_type']}
+
+This prompt validates product flow and provenance only. The research core is `SCAFFOLD_CORE`.
+Read the exact materialized inputs, preserve their Artifact IDs and checksums, and allow the bundled deterministic finalizer to create only the visibly marked placeholder output. Do not add substantive scientific content. Do not fabricate evidence or conclusions. If inputs are insufficient, stop rather than guessing.
+"""
+    skill = """# Scaffold safety helper
+
+Preserve exact provenance and explicit placeholder language. Never turn missing research capability into fabricated scientific content. This built-in helper is local Capsule guidance, not a general Skill platform.
+"""
+    context = {
+        "schema_version": "reagent.scaffold-context/v0.1",
+        "workflow_id": workflow_id,
+        "workflow_version": SCAFFOLD_WORKFLOW_VERSION,
+        "package_id": package_id,
+        "package_checksum": package_checksum,
+        "core_capability_maturity": "SCAFFOLD_CORE",
+        "completed_rounds": 0,
+        "latest_artifact": None,
+        "continuation": "Read local files; prior chat history is not required.",
+        "updated_at": DETERMINISTIC_GENERATED_AT,
+    }
+    draft = {
+        "execution_round": 1,
+        "harness_type": "codex",
+        "harness_version": None,
+        "harness_session_id": f"{definition['slug']}-round-1",
+        "previous_report_id": None,
+        "previous_report_checksum": None,
+        "started_at": DETERMINISTIC_GENERATED_AT,
+        "completed_at": DETERMINISTIC_GENERATED_AT,
+        "status": "IN_PROGRESS",
+        "completed_work": [],
+        "current_state": "INPUT_REVIEW",
+        "next_recommended_action": "Bind and materialize every required exact Artifact",
+        "continuation_reason": None,
+        "warnings": ["SCAFFOLD_CORE: no substantive research capability"],
+        "errors": [],
+        "unresolved_questions": [],
+        "continuation_instructions": ["Read AGENT.md and memory/context.md"],
+    }
+    project = {
+        "schema_version": "local-project-input/v0.1",
+        "project_id": project_id,
+        "project_name": project_name,
+        "selected_workflow": workflow_id,
+    }
+    provenance = {
+        "schema_version": "reagent.scaffold-input-provenance/v0.1",
+        "workflow_instance_id": None,
+        "artifacts": {},
+    }
+    return {
+        "AGENT.md": FileSpec(agent.encode(), "text/markdown", "scaffold safety instructions", False, "INSTRUCTION"),
+        "AGENTS.md": FileSpec(b"# Codex shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Codex shim", False, "INSTRUCTION"),
+        "CLAUDE.md": FileSpec(b"# Claude Code shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Claude shim", False, "INSTRUCTION"),
+        "README.md": FileSpec(f"# {workflow['workflow_type']} Scaffold Capsule\n\nProduct flow is functional. Research capability is placeholder. Run only through the Workspace generic CLI.\n".encode(), "text/markdown", "Capsule overview", False, "INSTRUCTION"),
+        "reagent_local.py": FileSpec(Path(scaffold_runtime.__file__).read_bytes(), "text/x-python", "shared local scaffold runner", False, "INSTRUCTION"),
+        "validate_package.py": FileSpec(Path(scaffold_validator.__file__).read_bytes(), "text/x-python", "shared self-contained scaffold validator", False, "INSTRUCTION"),
+        "progress_report.py": FileSpec(_scaffold_progress_source(), "text/x-python", "Progress v0.2 scaffold helper", False, "INSTRUCTION"),
+        "workflow/AGENT.md": FileSpec(b"# Scaffold Workflow\n\nFollow the root AGENT.md. Never produce unmarked or substantive scientific output.\n", "text/markdown", "workflow safety instructions", False, "INSTRUCTION"),
+        "workflow/workflow.json": FileSpec(_json(workflow), "application/json", "pinned Workflow", False, "CONFIGURATION"),
+        "workflow/scaffold.json": FileSpec(_json(config), "application/json", "scaffold execution contract", False, "CONFIGURATION"),
+        f"workflow/prompts/{definition['slug']}.md": FileSpec(prompt.encode(), "text/markdown", "reviewed scaffold prompt", False, "INSTRUCTION"),
+        "workflow/skills/scaffold-safety/SKILL.md": FileSpec(skill.encode(), "text/markdown", "built-in scaffold safety helper", False, "INSTRUCTION"),
+        "workflow/skills/scaffold-safety/skill.json": FileSpec(_json({
+            "schema_version": "local-skill/v0.1",
+            "name": "reagent.scaffold-safety",
+            "version": SCAFFOLD_SKILL_VERSION,
+            "trust": "BUILT_IN_REVIEWED_ONLY",
+            "required_capabilities": [
+                "read_materialized_input", "write_declared_outputs",
+                "append_progress_report", "preserve_scaffold_markers",
+            ],
+        }), "application/json", "built-in helper contract", False, "CONFIGURATION"),
+        "workflow/artifact-inputs.json": FileSpec(_json({
+            "schema_version": "reagent.artifact-input-contract/v0.1",
+            "requirements": workflow["input_requirements"],
+        }), "application/json", "typed Artifact input requirements", False, "CONFIGURATION"),
+        "workflow/artifact-outputs.json": FileSpec(_json({
+            "schema_version": "reagent.artifact-output-contract/v0.1",
+            **scaffold_output_contract(definition["output"]),
+            "producer_core_capability_maturity": "SCAFFOLD_CORE",
+            "validity_point": "VALIDATED_SCAFFOLD_FINALIZATION",
+        }), "application/json", "production scaffold Artifact contract", False, "CONFIGURATION"),
+        "inputs/project.json": FileSpec(_json(project), "application/json", "immutable Project identity", False, "INPUT"),
+        "outputs/README.md": FileSpec(f"# {workflow['workflow_type']} outputs\n\nEvery output is a SCAFFOLD PLACEHOLDER and is not a substantive research result.\n".encode(), "text/markdown", "output safety policy", False, "OUTPUT"),
+        "memory/context.md": FileSpec(("# Scaffold Workflow Context\n\n```json\n" + canonical_json(context) + "\n```\n").encode(), "text/markdown", "cross-session context", True, "STATE"),
+        "memory/input-provenance.json": FileSpec(_json(provenance), "application/json", "verified exact input provenance", True, "STATE"),
+        "memory/progress/report-draft.json": FileSpec(_json(draft), "application/json", "mutable Progress draft", True, "STATE"),
+        "memory/progress/reports/README.md": FileSpec(b"# Append-only Progress Reports\n", "text/markdown", "Progress policy", False, "STATE"),
+        "memory/progress/receipts/README.md": FileSpec(b"# Verified upload receipts\n", "text/markdown", "receipt policy", False, "STATE"),
+    }
+
+
+def _writing_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_files(workflow_id=WRITING_WORKFLOW_ID, **kwargs)
+
+
+def _review_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_files(workflow_id=REVIEW_WORKFLOW_ID, **kwargs)
+
+
+def _experiment_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_files(workflow_id=EXPERIMENT_WORKFLOW_ID, **kwargs)
+
+
 def _selected_library_schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -735,7 +1053,7 @@ def _make_manifest(
         )
         continuation = "ONE ROUND; explicit finish publishes selected-paper-library/v1; upload-only retry remains idempotent"
         proxy = "SHORT_LIVED EXACT-PACKAGE LOCAL SESSION; OPENALEX ONLY; NO CREDENTIAL IN PACKAGE"
-    else:
+    elif workflow_id == IDEA_DISCOVERY_WORKFLOW_ID:
         idea_v0_2 = workflow_version == IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION
         idea_skill_version = (
             IDEA_DISCOVERY_V0_2_SKILL_VERSION
@@ -774,12 +1092,51 @@ def _make_manifest(
         )
         continuation = "MULTI ROUND; append Progress every session; local files, not chat history, preserve continuity"
         proxy = "NO PROVIDER CAPABILITY; LOCAL INTERACTIVE HARNESS ONLY"
+    else:
+        config = json.loads(files["workflow/scaffold.json"].content)
+        skill_path = "workflow/skills/scaffold-safety/SKILL.md"
+        skill_contract_path = "workflow/skills/scaffold-safety/skill.json"
+        skills = (SkillPin(
+            name="reagent.scaffold-safety",
+            semantic_version=SCAFFOLD_SKILL_VERSION,
+            source_type="BUNDLED_REAGENT_ORIGINAL",
+            source_identity="reagent-f1b-scaffold-safety",
+            checksum=canonical_hash({
+                "instructions": sha256_bytes(files[skill_path].content),
+                "contract": sha256_bytes(files[skill_contract_path].content),
+            }),
+            relative_path=skill_path,
+            required_capabilities=(
+                "read_materialized_input", "write_declared_outputs",
+                "append_progress_report", "preserve_scaffold_markers",
+            ),
+        ),)
+        prompt_path = f"workflow/prompts/{config['workflow_slug']}.md"
+        prompt_id = f"{config['workflow_slug']}-scaffold"
+        prompt_version = SCAFFOLD_PROMPT_VERSION
+        outputs = (PackageOutputContract(
+            config["human_output_path"],
+            f"{config['workflow_kind']}_SCAFFOLD_PLACEHOLDER",
+            "text/markdown", "scaffold-placeholder/v0.1",
+            "Codex or Claude Code Agent Harness",
+            "visible scaffold marker; no substantive scientific content",
+        ),)
+        inputs = (PackageInputManifest(
+            "local-project-display", "inputs/project.json",
+            sha256_bytes(files["inputs/project.json"].content), True,
+            "application/json", "CLOUD_SUPPLIED",
+        ),)
+        continuation = (
+            "MULTI ROUND; append-only Progress and immutable Artifacts; "
+            "local memory, not chat history, preserves continuity"
+        )
+        proxy = "NO PROVIDER OR RESOURCE CAPABILITY; LOCAL SCAFFOLD HARNESS ONLY"
     prompts = (PromptPin(
         prompt_id=prompt_id,
         version=prompt_version,
         checksum=sha256_bytes(files[prompt_path].content),
         relative_path=prompt_path,
-        purpose=f"Drive reviewed local {workflow_type} interaction.",
+        purpose=f"Drive reviewed local {workflow_type} interaction safely.",
     ),)
     file_manifest_checksum = canonical_hash(_normalized_entries(entries))
     base = WorkflowPackageManifest(
@@ -1025,6 +1382,42 @@ def build_idea_discovery_v0_2_package(
         workflow_version=IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
         template_id=IDEA_DISCOVERY_TEMPLATE_ID,
         template_version=IDEA_DISCOVERY_V0_2_CAPSULE_VERSION,
+    )
+
+
+def _build_scaffold_package(
+    *, renderer: Callable[..., dict[str, FileSpec]], workflow_id: str,
+    workflow_type: str, template_id: str, project_id: str, project_name: str,
+    research_topic: str, output_root: str | Path, package_id: str,
+) -> BuildResult:
+    return _build(
+        renderer=renderer, project_id=project_id, project_name=project_name,
+        research_topic=research_topic, output_root=output_root,
+        package_id=package_id, workflow_type=workflow_type,
+        workflow_id=workflow_id, workflow_version=SCAFFOLD_WORKFLOW_VERSION,
+        template_id=template_id, template_version=SCAFFOLD_CAPSULE_VERSION,
+    )
+
+
+def build_writing_scaffold_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_writing_files, workflow_id=WRITING_WORKFLOW_ID,
+        workflow_type="Writing", template_id=WRITING_TEMPLATE_ID, **kwargs,
+    )
+
+
+def build_review_scaffold_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_review_files, workflow_id=REVIEW_WORKFLOW_ID,
+        workflow_type="Review", template_id=REVIEW_TEMPLATE_ID, **kwargs,
+    )
+
+
+def build_experiment_scaffold_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_experiment_files, workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
+        **kwargs,
     )
 
 
