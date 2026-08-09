@@ -877,11 +877,49 @@ def _validate_legacy_package(
         for item in manifest.get("output_contracts", [])
         if isinstance(item, dict)
     }
+    dynamic_input_paths = {"inputs/selected-paper-library.json"}
+    scaffold_entry = declared.get("workflow/scaffold.json")
+    if scaffold_entry is not None:
+        scaffold_path = root / "workflow/scaffold.json"
+        scaffold_bytes = scaffold_path.read_bytes()
+        if (
+            scaffold_entry.get("mutable_by_harness") is not False
+            or sha256_bytes(scaffold_bytes) != scaffold_entry.get("sha256")
+        ):
+            raise _package_error(
+                "LEGACY_PACKAGE_CHECKSUM_MISMATCH",
+                "Scaffold input contract checksum is invalid",
+            )
+        scaffold = _object_package(
+            _read_json(scaffold_path), "Scaffold input contract"
+        )
+        requirements = scaffold.get("input_requirements", [])
+        if not isinstance(requirements, list):
+            raise _package_error(
+                "LEGACY_PACKAGE_UNSUPPORTED",
+                "Scaffold input requirements are invalid",
+            )
+        for requirement in requirements:
+            target = _safe_package_path(
+                _object_package(requirement, "Scaffold input requirement").get(
+                    "target_relative_path"
+                )
+            )
+            if not target.startswith("inputs/"):
+                raise _package_error(
+                    "UNSAFE_PACKAGE_PATH",
+                    "Scaffold input target must stay below inputs",
+                )
+            dynamic_input_paths.add(target)
     allowed_dynamic = (
         "memory/progress/reports/",
         "memory/progress/receipts/",
         "memory/search/operations/",
-        "outputs/artifacts/selected-paper-library/",
+        # Production finalizers publish validated, content-addressed Workflow
+        # results below this root. These bytes are intentionally absent from
+        # the immutable package file manifest, while the Capsule's validator
+        # and Artifact output contract constrain their schema and filename.
+        "outputs/artifacts/",
     )
     actual_files: set[str] = set()
     total_bytes = 0
@@ -907,7 +945,8 @@ def _validate_legacy_package(
         if (
             entry is None
             and relative not in output_paths
-            and relative != "inputs/selected-paper-library.json"
+            and relative not in dynamic_input_paths
+            and relative != "memory/current-artifact.json"
             and not relative.startswith(allowed_dynamic)
         ):
             raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package contains undeclared files")
