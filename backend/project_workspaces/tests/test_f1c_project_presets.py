@@ -57,7 +57,7 @@ def test_server_resolved_presets_create_one_revision_atomically(tmp_path, setup,
     assert versions["literature-search-local-experimental"] == ("0.4.0", "0.6.0")
     if setup == "full-research":
         assert versions["idea-discovery-local-experimental"] == ("0.2.0", "0.2.0")
-        assert all(versions[key] == ("0.1.0", "0.1.0") for key in expected[2:])
+        assert all(versions[key] == ("0.2.0", "0.2.0") for key in expected[2:])
 
 
 def test_custom_is_registry_validated_and_preserves_requested_independent_workflows(tmp_path):

@@ -53,14 +53,22 @@ test("renders production scaffold maturity and warning without a Full Flow prese
       description: `${display_name} production scaffold flow.`,
       recommended_version: {
         ...workflowCatalogFixture.items[0].recommended_version!,
-        version: "0.1.0",
+        version: "0.2.0",
         core_capability_maturity: "SCAFFOLD_CORE" as const,
+        skills: [{
+          skill_id: "scaffold-core-safety-local-builtin",
+          display_name: "Scaffold Core Safety",
+          version: "0.1.0",
+          checksum: `sha256:${"7".repeat(64)}`,
+          trust: "BUILT_IN_REVIEWED" as const,
+          purpose: "Prevent fabricated research claims.",
+        }],
       },
       recommended_capsule: {
         ...workflowCatalogFixture.items[0].recommended_capsule!,
         capsule_id: `capsule-${String(index + 5).repeat(32)}`,
-        capsule_version: "0.1.0",
-        workflow_version: "0.1.0",
+        capsule_version: "0.2.0",
+        workflow_version: "0.2.0",
       },
     }))],
   });
@@ -71,6 +79,8 @@ test("renders production scaffold maturity and warning without a Full Flow prese
   expect(screen.getByRole("heading", { name: "Reproduction & Experiment" })).toBeVisible();
   expect(screen.getAllByText("Core · Scaffold")).toHaveLength(3);
   expect(screen.getAllByText(/Product flow is functional/)).toHaveLength(3);
+  expect(screen.getAllByText(/Scaffold Core Safety 0.1.0/)).toHaveLength(3);
+  expect(screen.getAllByText(/Built-in reviewed skills are bundled|exact versions arrive/i)).toHaveLength(3);
   expect(screen.queryByText(/Full Research Project/i)).not.toBeInTheDocument();
 });
 

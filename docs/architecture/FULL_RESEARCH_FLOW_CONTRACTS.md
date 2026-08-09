@@ -169,3 +169,9 @@ not a backup of local research bytes.
 Any scaffold-to-reviewed core replacement requires a new immutable
 Workflow Definition and Capsule Version. Published Capsule content and
 checksum-bound contracts are never updated in place.
+
+F1D publishes new scaffold Definition/Capsule 0.2.0 versions without changing
+0.1.0. Each 0.2.0 version pins Research Artifact Provenance 0.1.0 and Scaffold
+Core Safety 0.1.0 exactly. Their reviewed declarative bytes are delivered only
+inside the Capsule and do not change Artifact contracts or core maturity. See
+[`SKILL_SYSTEM.md`](SKILL_SYSTEM.md).

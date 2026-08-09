@@ -48,3 +48,8 @@ python reagent_local.py workflow list .
 The CLI prints friendly ordinal labels for multiple same-type Instances and
 falls back to exact instance selectors when the stable selector is ambiguous.
 No Manifest, UUID, checksum, or receipt JSON editing is required for normal use.
+
+Writing, Review, and Reproduction & Experiment 0.2.0 also bundle exact reviewed
+Skills inside their Capsules. Sync installs these automatically; the Workflow
+Board shows their names and versions. Skill delivery does not change their
+Scaffold Core maturity. See [Skills bundled with Workflows](SKILLS.md).

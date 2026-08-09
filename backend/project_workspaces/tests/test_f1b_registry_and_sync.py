@@ -48,10 +48,14 @@ def test_production_registry_has_exactly_five_real_workflow_types(tmp_path) -> N
         assert detail["lifecycle"] == "AVAILABLE"
         assert detail["creatable"] is True
         assert detail["allows_multiple_instances"] is True
-        assert detail["recommended_version"]["version"] == "0.1.0"
+        assert detail["recommended_version"]["version"] == "0.2.0"
         assert detail["recommended_version"]["core_capability_maturity"] == "SCAFFOLD_CORE"
-        assert detail["recommended_capsule"]["capsule_id"] == SCAFFOLD_CAPSULE_IDS[workflow_id]
-        assert detail["recommended_capsule"]["definition_checksum"] == SCAFFOLD_CAPSULE_CHECKSUMS[workflow_id]
+        legacy = next(
+            item for item in detail["capsules"]
+            if item["capsule_version"] == "0.1.0"
+        )
+        assert legacy["capsule_id"] == SCAFFOLD_CAPSULE_IDS[workflow_id]
+        assert legacy["definition_checksum"] == SCAFFOLD_CAPSULE_CHECKSUMS[workflow_id]
         assert detail["recommended_capsule"]["trust_classification"] == "TRUSTED_BUILT_IN_UNSIGNED"
 
 
@@ -78,7 +82,10 @@ def test_each_scaffold_syncs_independently_and_repeat_is_noop(tmp_path) -> None:
         created = client.post(f"/projects/{project_id}/workflow-instances", json={
             "workflow_definition_id": workflow_id,
             "workflow_version": "0.1.0",
-            "capsule_id": detail["recommended_capsule"]["capsule_id"],
+            "capsule_id": next(
+                item["capsule_id"] for item in detail["capsules"]
+                if item["capsule_version"] == "0.1.0"
+            ),
             "capsule_version": "0.1.0",
             "base_revision": revision,
         })

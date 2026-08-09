@@ -2626,3 +2626,45 @@ Playwright `5 passed`; compileall, Alembic sole head/current/check at
 `20260806_0015`, and git diff check passed. The isolated PostgreSQL cluster,
 E2E files and Playwright reports were removed. No live Provider, `.env`, owner
 database, owner Workspace, credentials, worktree, branch or push was used.
+
+## NIGHT-F1D Skill Registry and Capsule delivery shell (2026-08-09)
+
+NIGHT-F1D is implemented and qualified on `main` from F1C HEAD
+`61e17b6e7ee2f5982f22e56db4682a675754cb35`. The original Skill direction is
+preserved: Cloud-side metadata owns canonical Skill Definitions, immutable
+Skill Versions and exact Workflow Version pins; the existing Capsule remains
+the atomic delivery unit; and Codex/Claude Code consumes only verified local
+instructions under that Capsule's `workflow/skills/` directory. No ReAgent
+execution engine, independent Skill sync, Resource layer or executable Skill
+model was added.
+
+Migration `20260806_0016` adds the canonical Skill tables and seeds two reviewed
+declarative operational Skills: Research Artifact Provenance 0.1.0 and Scaffold
+Core Safety 0.1.0. Writing, Review and Reproduction & Experiment gain immutable
+Definition/Capsule 0.2.0 versions with exact pins to both Skills. Their 0.1.0
+versions and all Literature Search/Idea Discovery versions remain unchanged;
+existing Instances remain pinned, while new Instances and new Full Research
+Projects resolve the current 0.2.0 scaffold versions. Core maturity remains
+`SCAFFOLD_CORE`.
+
+Package build, sync and local run preflight now fail closed for missing,
+untrusted, unsafe or checksum-mismatched pinned Skill content. The Capsule
+checksum binds Skill bytes, Installed Lock remains Capsule authority, and no
+Workspace-wide Skill scan occurs. Bounded metadata-only Skill list/detail APIs,
+exact Workflow projections, Workflow Board visibility and read-only operator
+list/show/verify commands were added. Browser/admin mutation, uploads, imports,
+marketplace behavior and arbitrary executable content remain deferred by the
+current identity/trust boundary. Skill, Prompt, Artifact, Resource and memory
+remain separate domains.
+
+Qualification: focused final `24 passed`; full backend on isolated PostgreSQL
+18 `758 passed, 12 skipped`; dedicated F1D migration qualification passed;
+frontend Vitest `16 files / 33 tests`, TypeScript, ESLint, production build and
+deterministic fake-provider Playwright `5 passed`; compileall, Alembic sole
+head/current/check at `20260806_0016`, and git diff check passed. The isolated
+database and all E2E/report files were removed. No live Provider, `.env`, owner
+database/Workspace, credential, extra worktree, feature branch or push was used.
+
+Next permitted milestone after owner acceptance is NIGHT-F1E: the strictly
+separate Resource Definition/Binding and deterministic local resolver shell.
+Do not begin F1E automatically.

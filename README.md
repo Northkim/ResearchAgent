@@ -99,6 +99,8 @@ binding any Artifact.
 
 See [Full Research Project](docs/getting-started/FULL_RESEARCH_PROJECT.md) for
 readiness, exact input selection, scaffold boundaries, and revision rounds.
+Skill-backed scaffold Capsules install reviewed instructions automatically; see
+[Skills bundled with Workflows](docs/getting-started/SKILLS.md).
 
 ## Legacy Package compatibility
 
