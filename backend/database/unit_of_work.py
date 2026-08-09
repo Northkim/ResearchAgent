@@ -19,6 +19,8 @@ from backend.database.orm import (
     MemoryRevisionORM,
     LocalProjectORM,
     LocalArtifactReferenceORM,
+    LocalBuiltInSkillDefinitionORM,
+    LocalSkillVersionORM,
     LocalWorkflowCapsuleVersionORM,
     LocalWorkflowDefinitionORM,
     LocalWorkflowDefinitionVersionORM,
@@ -34,6 +36,7 @@ from backend.database.orm import (
     StepRunORM,
     UploadedProgressReportORM,
     WorkflowDefinitionORM,
+    WorkflowDefinitionVersionSkillPinORM,
     WorkflowRunORM,
 )
 from backend.execution_events.ports import ExecutionEventStore
@@ -204,6 +207,9 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(ProjectORM)
         self._flush_type(LocalWorkflowDefinitionORM)
         self._flush_type(LocalWorkflowDefinitionVersionORM)
+        self._flush_type(LocalBuiltInSkillDefinitionORM)
+        self._flush_type(LocalSkillVersionORM)
+        self._flush_type(WorkflowDefinitionVersionSkillPinORM)
         self._flush_type(LocalWorkflowCapsuleVersionORM)
         self._flush_type(ProjectWorkflowInstanceORM)
         self._flush_type(ProjectDesiredManifestORM)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Query, Response, status
 
 from backend.project_workspaces.contracts import (
     WorkflowDefinitionLifecycle,
@@ -15,6 +15,10 @@ from ..schemas.project_workspaces import (
     CreateWorkflowInstanceRequest,
     DesiredProjectManifestResponse,
     RetireWorkflowInstanceRequest,
+    SkillCatalogDetailResponse,
+    SkillCatalogPageResponse,
+    SkillCatalogResponse,
+    SkillVersionResponse,
     WorkflowCatalogDetailResponse,
     WorkflowCatalogPageResponse,
     WorkflowCatalogResponse,
@@ -69,6 +73,9 @@ def _catalog_response(definition, service) -> WorkflowCatalogResponse:
                 service.requirements_for(
                     selected_version.workflow_definition_id, selected_version.version
                 ),
+                service.skill_projections_for(
+                    selected_version.workflow_definition_id, selected_version.version
+                ),
             )
             if selected_version else None
         ),
@@ -91,6 +98,74 @@ async def list_workflow_definitions(
     return WorkflowCatalogPageResponse(items=items, total=len(items))
 
 
+def _skill_version_response(value) -> SkillVersionResponse:
+    return SkillVersionResponse(
+        version=value.skill_version,
+        checksum=value.content_checksum,
+        manifest_schema_version=value.manifest_schema_version,
+        trust=value.trust_tier.value,
+        review_status=value.review_status.value,
+        published_at=value.published_at.isoformat() if value.published_at else None,
+    )
+
+
+def _skill_response(definition, service) -> SkillCatalogResponse:
+    versions = list(service.skill_versions_for(definition.skill_id))
+    versions.sort(key=lambda item: item.skill_version)
+    current = versions[-1] if versions else None
+    return SkillCatalogResponse(
+        skill_id=definition.skill_id,
+        display_name=definition.display_name,
+        description=definition.description,
+        lifecycle=definition.lifecycle.value,
+        source_class=definition.source_class.value,
+        trust=definition.trust_tier.value,
+        current_version=_skill_version_response(current) if current else None,
+    )
+
+
+@router.get("/skills", response_model=SkillCatalogPageResponse)
+async def list_skills(
+    services: LocalProductServicesDependency,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> SkillCatalogPageResponse:
+    definitions, total = services.project_workspaces.list_skills(
+        offset=offset, limit=limit
+    )
+    return SkillCatalogPageResponse(
+        items=[
+            _skill_response(item, services.project_workspaces)
+            for item in definitions
+        ],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.get("/skills/{skill_id}", response_model=SkillCatalogDetailResponse)
+async def get_skill(
+    skill_id: str,
+    services: LocalProductServicesDependency,
+) -> SkillCatalogDetailResponse:
+    definition = services.project_workspaces.get_skill(skill_id)
+    summary = _skill_response(definition, services.project_workspaces)
+    versions = services.project_workspaces.skill_versions_for(skill_id)
+    usages = services.project_workspaces.workflow_usages_for_skill(skill_id)
+    return SkillCatalogDetailResponse(
+        **summary.model_dump(),
+        versions=[_skill_version_response(item) for item in versions],
+        workflow_usages=[{
+            "workflow_definition_id": workflow_id,
+            "workflow_version": workflow_version,
+            "skill_version": pin.skill_version,
+            "checksum": pin.skill_checksum,
+            "purpose": pin.purpose,
+        } for workflow_id, workflow_version, pin, _, _ in usages],
+    )
+
+
 @router.get(
     "/workflow-definitions/{workflow_definition_id}",
     response_model=WorkflowCatalogDetailResponse,
@@ -108,6 +183,8 @@ async def get_workflow_definition(
         versions=[
             WorkflowVersionCatalogResponse.from_contract(
                 item, services.project_workspaces.requirements_for(
+                    item.workflow_definition_id, item.version
+                ), services.project_workspaces.skill_projections_for(
                     item.workflow_definition_id, item.version
                 )
             )
@@ -131,7 +208,12 @@ async def list_workflow_instances(
     instances = services.project_workspaces.list_instances(project_id)
     manifest = services.project_workspaces.current_manifest(project_id)
     return WorkflowInstancePageResponse(
-        items=[WorkflowInstanceResponse.from_contract(item) for item in instances],
+        items=[WorkflowInstanceResponse.from_contract(
+            item,
+            services.project_workspaces.skill_projections_for(
+                item.workflow_definition_id, item.workflow_version
+            ),
+        ) for item in instances],
         total=len(instances),
         manifest_revision=manifest.manifest_revision,
     )
@@ -151,7 +233,12 @@ async def create_workflow_instance(
         project_id=project_id,
         **request.model_dump(),
     )
-    return WorkflowInstanceResponse.from_contract(instance)
+    return WorkflowInstanceResponse.from_contract(
+        instance,
+        services.project_workspaces.skill_projections_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
+    )
 
 
 @router.get(
@@ -163,8 +250,12 @@ async def get_workflow_instance(
     instance_id: str,
     services: LocalProductServicesDependency,
 ) -> WorkflowInstanceResponse:
+    instance = services.project_workspaces.get_instance(project_id, instance_id)
     return WorkflowInstanceResponse.from_contract(
-        services.project_workspaces.get_instance(project_id, instance_id)
+        instance,
+        services.project_workspaces.skill_projections_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
     )
 
 
@@ -178,12 +269,16 @@ async def retire_workflow_instance(
     request: RetireWorkflowInstanceRequest,
     services: LocalProductServicesDependency,
 ) -> WorkflowInstanceResponse:
-    return WorkflowInstanceResponse.from_contract(
-        services.project_workspaces.retire_instance(
+    instance = services.project_workspaces.retire_instance(
             project_id=project_id,
             instance_id=instance_id,
             base_revision=request.base_revision,
         )
+    return WorkflowInstanceResponse.from_contract(
+        instance,
+        services.project_workspaces.skill_projections_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
     )
 
 

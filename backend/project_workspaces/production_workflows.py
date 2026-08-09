@@ -34,6 +34,8 @@ from backend.workflow_packages.production_workflows import (
     REVIEW_TEMPLATE_ID,
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
+    SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+    SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
     SCAFFOLD_INPUT_TARGETS,
     SCAFFOLD_WORKFLOW_VERSION,
     WRITING_REQUIREMENTS,
@@ -48,6 +50,8 @@ from backend.workflow_packages.production_workflows import (
     scaffold_output_contract,
 )
 from backend.workflow_packages.serialization import canonical_hash
+
+from .skills import PRODUCTION_SKILLS, production_skill_pins
 
 from .contracts import (
     CapsuleTrustClassification,
@@ -172,6 +176,44 @@ SCAFFOLD_CAPSULE_CHECKSUMS = {
 SCAFFOLD_CAPSULE_IDS = {
     workflow_id: "capsule-" + checksum[7:39]
     for workflow_id, checksum in SCAFFOLD_CAPSULE_CHECKSUMS.items()
+}
+
+
+def skill_backed_scaffold_capsule_checksum(workflow_id: str) -> str:
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return canonical_hash({
+        "generator_version": (
+            f"reagent-{workflow_id}-compiler/"
+            f"{SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION}"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": config["template_id"],
+        "package_template_version": SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+        "workflow_checksum": scaffold_contract_checksum(
+            workflow_id,
+            workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        ),
+        "artifact_requirements": list(config["requirements"]),
+        "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+        "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+        "skill_pins": [
+            {
+                "skill_id": asset.skill_id,
+                "skill_version": asset.version,
+                "content_checksum": asset.content_checksum,
+            }
+            for asset in PRODUCTION_SKILLS
+        ],
+    })
+
+
+SCAFFOLD_V0_2_CAPSULE_CHECKSUMS = {
+    workflow_id: skill_backed_scaffold_capsule_checksum(workflow_id)
+    for workflow_id in SCAFFOLD_WORKFLOWS
+}
+SCAFFOLD_V0_2_CAPSULE_IDS = {
+    workflow_id: "capsule-" + checksum[7:39]
+    for workflow_id, checksum in SCAFFOLD_V0_2_CAPSULE_CHECKSUMS.items()
 }
 
 
@@ -486,3 +528,113 @@ def scaffold_requirements(
             updated_at=now,
         ))
     return tuple(result)
+
+
+def skill_backed_scaffold_definition_version(
+    workflow_id: str, now: datetime
+) -> WorkflowDefinitionVersion:
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=workflow_id,
+        version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        contract_checksum=scaffold_contract_checksum(
+            workflow_id,
+            workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        ),
+        input_schema_id="artifact-bindings/v0.1",
+        output_schema_id=config["output_type"],
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "artifact_requirements": list(config["requirements"]),
+            "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+            "scaffold_notice": (
+                "Product flow is functional. Research capability is placeholder."
+            ),
+            "supported_mode": (
+                "IDEA_EXPERIMENT"
+                if workflow_id == EXPERIMENT_WORKFLOW_ID else None
+            ),
+            "skill_delivery": "EXACT_CAPSULE_BUNDLED",
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.SCAFFOLD_CORE,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def skill_backed_scaffold_capsule(
+    workflow_id: str, now: datetime
+) -> WorkflowCapsuleVersion:
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return WorkflowCapsuleVersion(
+        capsule_id=SCAFFOLD_V0_2_CAPSULE_IDS[workflow_id],
+        capsule_version=SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+        workflow_definition_id=workflow_id,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        definition_checksum=SCAFFOLD_V0_2_CAPSULE_CHECKSUMS[workflow_id],
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=(
+            "memory/context.md", "memory/progress",
+            "memory/input-provenance.json", "memory/current-artifact.json",
+            "outputs", "inputs",
+        ),
+        capability_requirements=(
+            "progress.upload/v0.2", "artifact.materialize/v0.1",
+            "artifact.publish/v0.1",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": config["template_id"],
+            "trust_classification": (
+                CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value
+            ),
+            "artifact_requirements": list(config["requirements"]),
+            "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+            "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+            "scaffold_notice": (
+                "Product flow is functional. Research capability is placeholder."
+            ),
+            "skill_delivery": "EXACT_CAPSULE_BUNDLED",
+            "skill_pins": [
+                {
+                    "skill_id": pin.skill_id,
+                    "skill_version": pin.skill_version,
+                    "skill_checksum": pin.skill_checksum,
+                    "trust": "BUILT_IN_REVIEWED",
+                }
+                for pin in production_skill_pins(
+                    workflow_id, SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION, now
+                )
+            ],
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def skill_backed_scaffold_requirements(
+    workflow_id: str, now: datetime
+) -> tuple[WorkflowArtifactRequirement, ...]:
+    return tuple(
+        WorkflowArtifactRequirement(
+            workflow_definition_id=workflow_id,
+            workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+            requirement_key=item["requirement_key"],
+            artifact_type=item["artifact_type"],
+            compatibility_mode=CompatibilityMode.EXACT,
+            schema_constraint=item["artifact_schema"],
+            cardinality_min=1 if item["required"] else 0,
+            cardinality_max=1,
+            required=item["required"],
+            materialization_mode=MaterializationMode.VERIFIED_COPY,
+            target_relative_path=item["target_relative_path"],
+            created_at=now,
+            updated_at=now,
+        )
+        for item in SCAFFOLD_WORKFLOWS[workflow_id]["requirements"]
+    )

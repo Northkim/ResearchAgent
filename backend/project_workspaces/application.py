@@ -60,6 +60,8 @@ class ProjectWorkspaceApplicationService:
         self._instance_id_factory = instance_id_factory or (
             lambda: "wfi-" + uuid.uuid4().hex
         )
+        self._skill_projection_cache = None
+        self._skill_version_cache = None
 
     def initialize_project(self, project: LocalProject) -> None:
         """Bridge an existing pre-B7 Project without changing its immutable pins."""
@@ -230,6 +232,85 @@ class ProjectWorkspaceApplicationService:
             item for item in self._uow.artifact_references.list_requirements()
             if item.workflow_definition_id == workflow_definition_id
             and item.workflow_version == workflow_version
+        )
+
+    def list_skills(self, *, offset: int = 0, limit: int = 50):
+        if offset < 0 or not 1 <= limit <= 100:
+            raise ApplicationCodedValidationError(
+                "Skill pagination is outside the supported bound",
+                code="SKILL_PAGINATION_INVALID",
+            )
+        values = self._uow.workflow_foundation.list_skill_definitions()
+        return values[offset:offset + limit], len(values)
+
+    def get_skill(self, skill_id: str):
+        definition = self._uow.workflow_foundation.get_skill_definition(skill_id)
+        if definition is None:
+            raise ApplicationCodedNotFoundError(
+                "Skill Definition not found", code="SKILL_DEFINITION_NOT_FOUND"
+            )
+        return definition
+
+    def skill_versions_for(self, skill_id: str):
+        if self._skill_version_cache is None:
+            values = {}
+            for item in self._uow.workflow_foundation.list_all_skill_versions():
+                values.setdefault(item.skill_id, []).append(item)
+            self._skill_version_cache = {
+                key: tuple(sorted(items, key=lambda item: item.skill_version))
+                for key, items in values.items()
+            }
+        return self._skill_version_cache.get(skill_id, ())
+
+    def skill_projections_for(
+        self, workflow_definition_id: str, workflow_version: str
+    ):
+        if self._skill_projection_cache is None:
+            definitions = {
+                item.skill_id: item
+                for item in self._uow.workflow_foundation.list_skill_definitions()
+            }
+            versions = {
+                (item.skill_id, item.skill_version): item
+                for items in (
+                    self.skill_versions_for(skill_id)
+                    for skill_id in definitions
+                )
+                for item in items
+            }
+            values = {}
+            for pin in self._uow.workflow_foundation.list_all_workflow_skill_pins():
+                definition = definitions.get(pin.skill_id)
+                version = versions.get((pin.skill_id, pin.skill_version))
+                if definition is None or version is None:
+                    raise ApplicationCodedConflictError(
+                        "Workflow Skill projection references missing authority",
+                        code="WORKFLOW_SKILL_PIN_INVALID",
+                    )
+                if version.content_checksum != pin.skill_checksum:
+                    raise ApplicationCodedConflictError(
+                        "Workflow Skill pin checksum conflicts with Skill Version",
+                        code="WORKFLOW_SKILL_PIN_INVALID",
+                    )
+                values.setdefault(
+                    (pin.workflow_definition_id, pin.workflow_version), []
+                ).append((pin, definition, version))
+            self._skill_projection_cache = {
+                key: tuple(sorted(items, key=lambda item: item[0].pin_order))
+                for key, items in values.items()
+            }
+        return self._skill_projection_cache.get(
+            (workflow_definition_id, workflow_version), ()
+        )
+
+    def workflow_usages_for_skill(self, skill_id: str):
+        self.skill_projections_for("__cache__", "0.0.0")
+        return tuple(
+            (workflow_id, workflow_version, pin, definition, version)
+            for (workflow_id, workflow_version), items
+            in self._skill_projection_cache.items()
+            for pin, definition, version in items
+            if pin.skill_id == skill_id
         )
 
     def list_instances(self, project_id: str) -> tuple[ProjectWorkflowInstance, ...]:

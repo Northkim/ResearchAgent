@@ -10,6 +10,9 @@ from .contracts import (
     DesiredProjectManifest,
     ProjectManifestEntry,
     ProjectWorkflowInstance,
+    SkillDefinition,
+    SkillVersion,
+    WorkflowDefinitionVersionSkillPin,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
     WorkflowDefinitionVersion,
@@ -19,6 +22,44 @@ from .contracts import (
 
 
 class WorkflowFoundationRepository(ABC):
+    @abstractmethod
+    def add_skill_definition(self, definition: SkillDefinition) -> None: ...
+
+    @abstractmethod
+    def get_skill_definition(self, skill_id: str) -> SkillDefinition | None: ...
+
+    @abstractmethod
+    def list_skill_definitions(self) -> tuple[SkillDefinition, ...]: ...
+
+    @abstractmethod
+    def add_skill_version(self, version: SkillVersion) -> None: ...
+
+    @abstractmethod
+    def get_skill_version(
+        self, skill_id: str, skill_version: str
+    ) -> SkillVersion | None: ...
+
+    @abstractmethod
+    def list_skill_versions(self, skill_id: str) -> tuple[SkillVersion, ...]: ...
+
+    @abstractmethod
+    def list_all_skill_versions(self) -> tuple[SkillVersion, ...]: ...
+
+    @abstractmethod
+    def add_workflow_skill_pin(
+        self, pin: WorkflowDefinitionVersionSkillPin
+    ) -> None: ...
+
+    @abstractmethod
+    def list_workflow_skill_pins(
+        self, workflow_definition_id: str, workflow_version: str
+    ) -> tuple[WorkflowDefinitionVersionSkillPin, ...]: ...
+
+    @abstractmethod
+    def list_all_workflow_skill_pins(
+        self,
+    ) -> tuple[WorkflowDefinitionVersionSkillPin, ...]: ...
+
     @abstractmethod
     def add_definition(self, definition: WorkflowDefinition) -> None: ...
 

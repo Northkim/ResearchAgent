@@ -34,9 +34,10 @@ class WorkflowVersionCatalogResponse(StrictDTO):
     core_capability_maturity: str
     published_at: str | None
     artifact_requirements: list[dict[str, Any]]
+    skills: list[dict[str, Any]] = Field(default_factory=list)
 
     @classmethod
-    def from_contract(cls, value: WorkflowDefinitionVersion, requirements=()):
+    def from_contract(cls, value: WorkflowDefinitionVersion, requirements=(), skills=()):
         return cls(
             version=value.version,
             contract_checksum=value.contract_checksum,
@@ -52,7 +53,46 @@ class WorkflowVersionCatalogResponse(StrictDTO):
                 "required": item.required,
                 "target_relative_path": item.target_relative_path,
             } for item in requirements],
+            skills=[{
+                "skill_id": pin.skill_id,
+                "display_name": definition.display_name,
+                "version": pin.skill_version,
+                "checksum": pin.skill_checksum,
+                "trust": version.trust_tier.value,
+                "purpose": pin.purpose,
+            } for pin, definition, version in skills],
         )
+
+
+class SkillVersionResponse(StrictDTO):
+    version: str
+    checksum: str
+    manifest_schema_version: str
+    trust: str
+    review_status: str
+    published_at: str | None
+
+
+class SkillCatalogResponse(StrictDTO):
+    skill_id: str
+    display_name: str
+    description: str
+    lifecycle: str
+    source_class: str
+    trust: str
+    current_version: SkillVersionResponse | None
+
+
+class SkillCatalogPageResponse(StrictDTO):
+    items: list[SkillCatalogResponse]
+    total: int
+    offset: int
+    limit: int
+
+
+class SkillCatalogDetailResponse(SkillCatalogResponse):
+    versions: list[SkillVersionResponse]
+    workflow_usages: list[dict[str, Any]]
 
 
 class CapsuleVersionCatalogResponse(StrictDTO):
@@ -126,9 +166,10 @@ class WorkflowInstanceResponse(StrictDTO):
     in_current_manifest: bool
     created_at: str
     updated_at: str
+    skills: list[dict[str, Any]] = Field(default_factory=list)
 
     @classmethod
-    def from_contract(cls, value: ProjectWorkflowInstance):
+    def from_contract(cls, value: ProjectWorkflowInstance, skills=()):
         return cls(
             workflow_instance_id=value.workflow_instance_id,
             project_id=value.project_id,
@@ -143,6 +184,14 @@ class WorkflowInstanceResponse(StrictDTO):
             in_current_manifest=value.desired_state.value == "ACTIVE",
             created_at=value.created_at.isoformat(),
             updated_at=value.updated_at.isoformat(),
+            skills=[{
+                "skill_id": pin.skill_id,
+                "display_name": definition.display_name,
+                "version": pin.skill_version,
+                "checksum": pin.skill_checksum,
+                "trust": version.trust_tier.value,
+                "purpose": pin.purpose,
+            } for pin, definition, version in skills],
         )
 
 

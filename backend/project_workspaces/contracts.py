@@ -19,6 +19,7 @@ _WORKSPACE_ID = re.compile(r"^workspace-[0-9a-f]{32}$")
 _ENTRY_ID = re.compile(r"^entry-[0-9a-f]{32}$")
 _CAPSULE_ARTIFACT_ID = re.compile(r"^capsule-artifact-[0-9a-f]{32}$")
 _INSTALLATION_ID = re.compile(r"^install-[0-9a-f]{32}$")
+_SKILL_ID = re.compile(r"^[a-z][a-z0-9._-]{1,127}$")
 _SEMVER = re.compile(
     r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$"
 )
@@ -71,6 +72,27 @@ class CapsuleArtifactStatus(str, Enum):
 
 class InstallationAcknowledgementStatus(str, Enum):
     ACKNOWLEDGED = "ACKNOWLEDGED"
+
+
+class SkillLifecycle(str, Enum):
+    AVAILABLE = "AVAILABLE"
+    RETIRED = "RETIRED"
+
+
+class SkillSourceClass(str, Enum):
+    PLATFORM_BUILT_IN = "PLATFORM_BUILT_IN"
+
+
+class SkillTrustTier(str, Enum):
+    BUILT_IN_REVIEWED = "BUILT_IN_REVIEWED"
+    PRIVATE_DISABLED = "PRIVATE_DISABLED"
+    IMPORTED_QUARANTINED = "IMPORTED_QUARANTINED"
+
+
+class SkillReviewStatus(str, Enum):
+    REVIEWED = "REVIEWED"
+    RETIRED = "RETIRED"
+    QUARANTINED = "QUARANTINED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -315,6 +337,80 @@ class WorkflowDefinitionVersion:
             _require_aware(self.published_at, "published_at")
         _require_aware(self.created_at, "created_at")
         _require_aware(self.updated_at, "updated_at")
+
+
+@dataclass(frozen=True, slots=True)
+class SkillDefinition:
+    skill_id: str
+    display_name: str
+    description: str
+    lifecycle: SkillLifecycle
+    source_class: SkillSourceClass
+    trust_tier: SkillTrustTier
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(self.skill_id, _SKILL_ID, "skill_id")
+        _require_bounded(self.display_name, 1, 120, "display_name")
+        _require_bounded(self.description, 1, 2000, "description")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+
+
+@dataclass(frozen=True, slots=True)
+class SkillVersion:
+    skill_id: str
+    skill_version: str
+    content_checksum: str
+    manifest_schema_version: str
+    content_manifest: Mapping[str, Any]
+    trust_tier: SkillTrustTier
+    review_status: SkillReviewStatus
+    content_source_identity: str
+    published_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(self.skill_id, _SKILL_ID, "skill_id")
+        _require_match(self.skill_version, _SEMVER, "skill_version")
+        require_sha256(self.content_checksum, "content_checksum")
+        if self.manifest_schema_version != "local-skill/v0.1":
+            raise ValueError("unsupported Skill manifest schema")
+        object.__setattr__(self, "content_manifest", _freeze_json(self.content_manifest))
+        _require_bounded(
+            self.content_source_identity, 1, 255, "content_source_identity"
+        )
+        if self.published_at is not None:
+            _require_aware(self.published_at, "published_at")
+        _require_aware(self.created_at, "created_at")
+        _require_aware(self.updated_at, "updated_at")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowDefinitionVersionSkillPin:
+    workflow_definition_id: str
+    workflow_version: str
+    pin_order: int
+    skill_id: str
+    skill_version: str
+    skill_checksum: str
+    purpose: str
+    created_at: datetime
+
+    def __post_init__(self) -> None:
+        _require_match(
+            self.workflow_definition_id, _STABLE_ID, "workflow_definition_id"
+        )
+        _require_match(self.workflow_version, _SEMVER, "workflow_version")
+        if not 0 <= self.pin_order < 100:
+            raise ValueError("pin_order must be between 0 and 99")
+        _require_match(self.skill_id, _SKILL_ID, "skill_id")
+        _require_match(self.skill_version, _SEMVER, "skill_version")
+        require_sha256(self.skill_checksum, "skill_checksum")
+        _require_bounded(self.purpose, 1, 500, "purpose")
+        _require_aware(self.created_at, "created_at")
 
 
 @dataclass(frozen=True, slots=True)

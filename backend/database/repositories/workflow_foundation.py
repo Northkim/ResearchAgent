@@ -9,20 +9,30 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.database.orm import (
+    LocalBuiltInSkillDefinitionORM,
+    LocalSkillVersionORM,
     LocalWorkflowCapsuleVersionORM,
     LocalWorkflowDefinitionORM,
     LocalWorkflowDefinitionVersionORM,
     ProjectWorkflowInstanceORM,
+    WorkflowDefinitionVersionSkillPinORM,
 )
 from backend.project_workspaces.contracts import (
     CoreCapabilityMaturity,
     ProjectWorkflowInstance,
+    SkillDefinition,
+    SkillLifecycle,
+    SkillReviewStatus,
+    SkillSourceClass,
+    SkillTrustTier,
+    SkillVersion,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
     WorkflowDefinitionLifecycle,
     WorkflowDefinitionVersion,
     WorkflowInstanceDesiredState,
     WorkflowReviewStatus,
+    WorkflowDefinitionVersionSkillPin,
 )
 from backend.project_workspaces.errors import WorkflowFoundationConflictError
 from backend.project_workspaces.ports import WorkflowFoundationRepository
@@ -33,6 +43,146 @@ from ._helpers import pending_by_composite_key, pending_instances
 class SQLAlchemyWorkflowFoundationRepository(WorkflowFoundationRepository):
     def __init__(self, session: Session) -> None:
         self.session = session
+
+    def add_skill_definition(self, definition: SkillDefinition) -> None:
+        existing = self.get_skill_definition(definition.skill_id)
+        if existing is not None:
+            _require_equivalent(existing, definition, _skill_definition_content, "Skill Definition")
+            return
+        self.session.add(LocalBuiltInSkillDefinitionORM(
+            skill_id=definition.skill_id,
+            display_name=definition.display_name,
+            description=definition.description,
+            lifecycle=definition.lifecycle.value,
+            source_class=definition.source_class.value,
+            trust_tier=definition.trust_tier.value,
+            created_at=definition.created_at,
+            updated_at=definition.updated_at,
+        ))
+
+    def get_skill_definition(self, skill_id: str) -> SkillDefinition | None:
+        row = _pending_single(
+            self.session, LocalBuiltInSkillDefinitionORM, "skill_id", skill_id
+        ) or self.session.get(LocalBuiltInSkillDefinitionORM, skill_id)
+        return _skill_definition(row) if row is not None else None
+
+    def list_skill_definitions(self) -> tuple[SkillDefinition, ...]:
+        rows = list(self.session.scalars(select(LocalBuiltInSkillDefinitionORM)))
+        rows.extend(
+            row for row in pending_instances(self.session, LocalBuiltInSkillDefinitionORM)
+            if row not in rows
+        )
+        rows.sort(key=lambda row: row.skill_id)
+        return tuple(_skill_definition(row) for row in rows)
+
+    def add_skill_version(self, version: SkillVersion) -> None:
+        existing = self.get_skill_version(version.skill_id, version.skill_version)
+        if existing is not None:
+            _require_equivalent(existing, version, _skill_version_content, "Skill Version")
+            return
+        self.session.add(LocalSkillVersionORM(
+            skill_id=version.skill_id,
+            skill_version=version.skill_version,
+            content_checksum=version.content_checksum,
+            manifest_schema_version=version.manifest_schema_version,
+            content_manifest=_plain_json(version.content_manifest),
+            trust_tier=version.trust_tier.value,
+            review_status=version.review_status.value,
+            content_source_identity=version.content_source_identity,
+            published_at=version.published_at,
+            created_at=version.created_at,
+            updated_at=version.updated_at,
+        ))
+
+    def get_skill_version(
+        self, skill_id: str, skill_version: str
+    ) -> SkillVersion | None:
+        key = (skill_id, skill_version)
+        row = pending_by_composite_key(
+            self.session, LocalSkillVersionORM, key, ("skill_id", "skill_version")
+        ) or self.session.get(LocalSkillVersionORM, key)
+        return _skill_version(row) if row is not None else None
+
+    def list_skill_versions(self, skill_id: str) -> tuple[SkillVersion, ...]:
+        rows = list(self.session.scalars(
+            select(LocalSkillVersionORM).where(LocalSkillVersionORM.skill_id == skill_id)
+        ))
+        rows.extend(
+            row for row in pending_instances(self.session, LocalSkillVersionORM)
+            if row.skill_id == skill_id and row not in rows
+        )
+        rows.sort(key=lambda row: row.skill_version)
+        return tuple(_skill_version(row) for row in rows)
+
+    def list_all_skill_versions(self) -> tuple[SkillVersion, ...]:
+        rows = list(self.session.scalars(select(LocalSkillVersionORM)))
+        rows.extend(
+            row for row in pending_instances(self.session, LocalSkillVersionORM)
+            if row not in rows
+        )
+        rows.sort(key=lambda row: (row.skill_id, row.skill_version))
+        return tuple(_skill_version(row) for row in rows)
+
+    def add_workflow_skill_pin(
+        self, pin: WorkflowDefinitionVersionSkillPin
+    ) -> None:
+        key = (pin.workflow_definition_id, pin.workflow_version, pin.pin_order)
+        row = pending_by_composite_key(
+            self.session, WorkflowDefinitionVersionSkillPinORM, key,
+            ("workflow_definition_id", "workflow_version", "pin_order"),
+        ) or self.session.get(WorkflowDefinitionVersionSkillPinORM, key)
+        if row is not None:
+            _require_equivalent(
+                _workflow_skill_pin(row), pin, _workflow_skill_pin_content,
+                "Workflow Skill Pin",
+            )
+            return
+        self.session.add(WorkflowDefinitionVersionSkillPinORM(
+            workflow_definition_id=pin.workflow_definition_id,
+            workflow_version=pin.workflow_version,
+            pin_order=pin.pin_order,
+            skill_id=pin.skill_id,
+            skill_version=pin.skill_version,
+            skill_checksum=pin.skill_checksum,
+            purpose=pin.purpose,
+            created_at=pin.created_at,
+        ))
+
+    def list_workflow_skill_pins(
+        self, workflow_definition_id: str, workflow_version: str
+    ) -> tuple[WorkflowDefinitionVersionSkillPin, ...]:
+        rows = list(self.session.scalars(
+            select(WorkflowDefinitionVersionSkillPinORM).where(
+                WorkflowDefinitionVersionSkillPinORM.workflow_definition_id
+                == workflow_definition_id,
+                WorkflowDefinitionVersionSkillPinORM.workflow_version
+                == workflow_version,
+            )
+        ))
+        rows.extend(
+            row for row in pending_instances(
+                self.session, WorkflowDefinitionVersionSkillPinORM
+            )
+            if row.workflow_definition_id == workflow_definition_id
+            and row.workflow_version == workflow_version and row not in rows
+        )
+        rows.sort(key=lambda row: (row.pin_order, row.skill_id))
+        return tuple(_workflow_skill_pin(row) for row in rows)
+
+    def list_all_workflow_skill_pins(
+        self,
+    ) -> tuple[WorkflowDefinitionVersionSkillPin, ...]:
+        rows = list(self.session.scalars(select(WorkflowDefinitionVersionSkillPinORM)))
+        rows.extend(
+            row for row in pending_instances(
+                self.session, WorkflowDefinitionVersionSkillPinORM
+            ) if row not in rows
+        )
+        rows.sort(key=lambda row: (
+            row.workflow_definition_id, row.workflow_version, row.pin_order,
+            row.skill_id,
+        ))
+        return tuple(_workflow_skill_pin(row) for row in rows)
 
     def add_definition(self, definition: WorkflowDefinition) -> None:
         existing = self.get_definition(definition.workflow_definition_id)
@@ -268,6 +418,28 @@ def _definition_content(value: WorkflowDefinition):
     return (value.workflow_definition_id, value.display_name, value.description, value.lifecycle, value.allows_multiple_instances)
 
 
+def _skill_definition_content(value: SkillDefinition):
+    return (
+        value.skill_id, value.display_name, value.description, value.lifecycle,
+        value.source_class, value.trust_tier,
+    )
+
+
+def _skill_version_content(value: SkillVersion):
+    return (
+        value.skill_id, value.skill_version, value.content_checksum,
+        value.manifest_schema_version, _plain_json(value.content_manifest),
+        value.trust_tier, value.review_status, value.content_source_identity,
+    )
+
+
+def _workflow_skill_pin_content(value: WorkflowDefinitionVersionSkillPin):
+    return (
+        value.workflow_definition_id, value.workflow_version, value.pin_order,
+        value.skill_id, value.skill_version, value.skill_checksum, value.purpose,
+    )
+
+
 def _definition_version_content(value: WorkflowDefinitionVersion):
     return (
         value.workflow_definition_id,
@@ -293,6 +465,31 @@ def _instance_identity_content(value: ProjectWorkflowInstance):
 
 def _definition(row) -> WorkflowDefinition:
     return WorkflowDefinition(row.workflow_definition_id, row.display_name, row.description, WorkflowDefinitionLifecycle(row.lifecycle), row.allows_multiple_instances, row.created_at, row.updated_at)
+
+
+def _skill_definition(row) -> SkillDefinition:
+    return SkillDefinition(
+        row.skill_id, row.display_name, row.description,
+        SkillLifecycle(row.lifecycle), SkillSourceClass(row.source_class),
+        SkillTrustTier(row.trust_tier), row.created_at, row.updated_at,
+    )
+
+
+def _skill_version(row) -> SkillVersion:
+    return SkillVersion(
+        row.skill_id, row.skill_version, row.content_checksum,
+        row.manifest_schema_version, row.content_manifest,
+        SkillTrustTier(row.trust_tier), SkillReviewStatus(row.review_status),
+        row.content_source_identity, row.published_at, row.created_at, row.updated_at,
+    )
+
+
+def _workflow_skill_pin(row) -> WorkflowDefinitionVersionSkillPin:
+    return WorkflowDefinitionVersionSkillPin(
+        row.workflow_definition_id, row.workflow_version, row.pin_order,
+        row.skill_id, row.skill_version, row.skill_checksum, row.purpose,
+        row.created_at,
+    )
 
 
 def _definition_version(row) -> WorkflowDefinitionVersion:

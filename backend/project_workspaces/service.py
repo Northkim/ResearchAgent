@@ -20,6 +20,8 @@ from .contracts import (
     CloudProjectStatus,
     CoreCapabilityMaturity,
     ProjectWorkflowInstance,
+    SkillReviewStatus,
+    SkillTrustTier,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
     WorkflowDefinitionLifecycle,
@@ -54,7 +56,11 @@ from .production_workflows import (
     scaffold_definition,
     scaffold_definition_version,
     scaffold_requirements,
+    skill_backed_scaffold_capsule,
+    skill_backed_scaffold_definition_version,
+    skill_backed_scaffold_requirements,
 )
+from .skills import PRODUCTION_SKILLS, production_skill_pins
 
 if TYPE_CHECKING:
     from backend.persistence.ports.unit_of_work import UnitOfWork
@@ -233,7 +239,40 @@ def ensure_production_workflow_foundation(
             scaffold_definition_version(workflow_id, timestamp)
         )
         repository.add_capsule_version(scaffold_capsule(workflow_id, timestamp))
-        for requirement in scaffold_requirements(workflow_id, timestamp):
+        repository.add_definition_version(
+            skill_backed_scaffold_definition_version(workflow_id, timestamp)
+        )
+        repository.add_capsule_version(
+            skill_backed_scaffold_capsule(workflow_id, timestamp)
+        )
+        for asset in PRODUCTION_SKILLS:
+            definition = asset.definition(timestamp)
+            version = asset.skill_version(timestamp)
+            if (
+                definition.trust_tier is not SkillTrustTier.BUILT_IN_REVIEWED
+                or version.trust_tier is not SkillTrustTier.BUILT_IN_REVIEWED
+                or version.review_status is not SkillReviewStatus.REVIEWED
+            ):
+                raise WorkflowFoundationConflictError(
+                    "Only reviewed built-in Skills may be seeded"
+                )
+            repository.add_skill_definition(definition)
+            repository.add_skill_version(version)
+        for pin in production_skill_pins(
+            workflow_id, "0.2.0", timestamp
+        ):
+            version = repository.get_skill_version(
+                pin.skill_id, pin.skill_version
+            )
+            if version is None or version.content_checksum != pin.skill_checksum:
+                raise WorkflowFoundationConflictError(
+                    "Workflow Skill pin checksum does not match Skill Version authority"
+                )
+            repository.add_workflow_skill_pin(pin)
+        for requirement in (
+            *scaffold_requirements(workflow_id, timestamp),
+            *skill_backed_scaffold_requirements(workflow_id, timestamp),
+        ):
             existing_requirement = uow.artifact_references.get_requirement(
                 requirement.workflow_definition_id,
                 requirement.workflow_version,

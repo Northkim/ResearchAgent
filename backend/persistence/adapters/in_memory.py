@@ -46,6 +46,9 @@ from backend.project_workspaces.contracts import (
     DesiredProjectManifest,
     ProjectManifestEntry,
     ProjectWorkflowInstance,
+    SkillDefinition,
+    SkillVersion,
+    WorkflowDefinitionVersionSkillPin,
     WorkflowCapsuleVersion,
     WorkflowDefinition,
     WorkflowDefinitionVersion,
@@ -91,6 +94,11 @@ class InMemoryDatabase:
     ] = field(default_factory=dict)
     workflow_capsule_versions: dict[
         tuple[str, str], WorkflowCapsuleVersion
+    ] = field(default_factory=dict)
+    skill_definitions: dict[str, SkillDefinition] = field(default_factory=dict)
+    skill_versions: dict[tuple[str, str], SkillVersion] = field(default_factory=dict)
+    workflow_skill_pins: dict[
+        tuple[str, str, int], WorkflowDefinitionVersionSkillPin
     ] = field(default_factory=dict)
     project_workflow_instances: dict[str, ProjectWorkflowInstance] = field(
         default_factory=dict
@@ -308,6 +316,81 @@ class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
 class InMemoryWorkflowFoundationRepository(WorkflowFoundationRepository):
     def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
         self._uow = unit_of_work
+
+    def add_skill_definition(self, definition: SkillDefinition) -> None:
+        self._add_immutable(
+            self._uow._skill_definitions,
+            definition.skill_id,
+            definition,
+            "Skill Definition",
+        )
+
+    def get_skill_definition(self, skill_id: str) -> SkillDefinition | None:
+        return self._uow._skill_definitions.get(skill_id)
+
+    def list_skill_definitions(self) -> tuple[SkillDefinition, ...]:
+        return tuple(self._uow._skill_definitions[key] for key in sorted(
+            self._uow._skill_definitions
+        ))
+
+    def add_skill_version(self, version: SkillVersion) -> None:
+        self._add_immutable(
+            self._uow._skill_versions,
+            (version.skill_id, version.skill_version),
+            version,
+            "Skill Version",
+        )
+
+    def get_skill_version(
+        self, skill_id: str, skill_version: str
+    ) -> SkillVersion | None:
+        return self._uow._skill_versions.get((skill_id, skill_version))
+
+    def list_skill_versions(self, skill_id: str) -> tuple[SkillVersion, ...]:
+        return tuple(sorted(
+            (item for item in self._uow._skill_versions.values()
+             if item.skill_id == skill_id),
+            key=lambda item: item.skill_version,
+        ))
+
+    def list_all_skill_versions(self) -> tuple[SkillVersion, ...]:
+        return tuple(sorted(
+            self._uow._skill_versions.values(),
+            key=lambda item: (item.skill_id, item.skill_version),
+        ))
+
+    def add_workflow_skill_pin(
+        self, pin: WorkflowDefinitionVersionSkillPin
+    ) -> None:
+        self._add_immutable(
+            self._uow._workflow_skill_pins,
+            (pin.workflow_definition_id, pin.workflow_version, pin.pin_order),
+            pin,
+            "Workflow Skill Pin",
+        )
+
+    def list_workflow_skill_pins(
+        self, workflow_definition_id: str, workflow_version: str
+    ) -> tuple[WorkflowDefinitionVersionSkillPin, ...]:
+        return tuple(sorted(
+            (
+                item for item in self._uow._workflow_skill_pins.values()
+                if item.workflow_definition_id == workflow_definition_id
+                and item.workflow_version == workflow_version
+            ),
+            key=lambda item: (item.pin_order, item.skill_id),
+        ))
+
+    def list_all_workflow_skill_pins(
+        self,
+    ) -> tuple[WorkflowDefinitionVersionSkillPin, ...]:
+        return tuple(sorted(
+            self._uow._workflow_skill_pins.values(),
+            key=lambda item: (
+                item.workflow_definition_id, item.workflow_version,
+                item.pin_order, item.skill_id,
+            ),
+        ))
 
     def add_definition(self, definition: WorkflowDefinition) -> None:
         self._add_immutable(
@@ -1445,6 +1528,9 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.workflow_capsule_versions = dict(
                 self._workflow_capsule_versions
             )
+            self.database.skill_definitions = dict(self._skill_definitions)
+            self.database.skill_versions = dict(self._skill_versions)
+            self.database.workflow_skill_pins = dict(self._workflow_skill_pins)
             self.database.project_workflow_instances = dict(
                 self._project_workflow_instances
             )
@@ -1625,6 +1711,9 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.workflow_definition_versions
         )
         self._workflow_capsule_versions = dict(self.database.workflow_capsule_versions)
+        self._skill_definitions = dict(self.database.skill_definitions)
+        self._skill_versions = dict(self.database.skill_versions)
+        self._workflow_skill_pins = dict(self.database.workflow_skill_pins)
         self._project_workflow_instances = dict(
             self.database.project_workflow_instances
         )

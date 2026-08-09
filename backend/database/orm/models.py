@@ -120,6 +120,102 @@ class LocalWorkflowDefinitionVersionORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class LocalBuiltInSkillDefinitionORM(Base):
+    __tablename__ = "local_builtin_skill_definitions"
+    __table_args__ = (
+        CheckConstraint(
+            "lifecycle IN ('AVAILABLE','RETIRED')",
+            name="local_builtin_skill_definition_lifecycle",
+        ),
+        CheckConstraint(
+            "source_class = 'PLATFORM_BUILT_IN'",
+            name="local_builtin_skill_definition_source_class",
+        ),
+        CheckConstraint(
+            "trust_tier = 'BUILT_IN_REVIEWED'",
+            name="local_builtin_skill_definition_trust",
+        ),
+        Index("ix_local_builtin_skill_definitions_lifecycle", "lifecycle", "skill_id"),
+    )
+
+    skill_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    description: Mapped[str] = mapped_column(String(2000), nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(20), nullable=False)
+    source_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    trust_tier: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LocalSkillVersionORM(Base):
+    __tablename__ = "local_skill_versions"
+    __table_args__ = (
+        CheckConstraint(
+            "trust_tier IN ('BUILT_IN_REVIEWED','PRIVATE_DISABLED','IMPORTED_QUARANTINED')",
+            name="local_skill_version_trust",
+        ),
+        CheckConstraint(
+            "review_status IN ('REVIEWED','RETIRED','QUARANTINED')",
+            name="local_skill_version_review_status",
+        ),
+        Index("ix_local_skill_versions_skill_review", "skill_id", "review_status"),
+    )
+
+    skill_id: Mapped[str] = mapped_column(
+        String(128),
+        ForeignKey("local_builtin_skill_definitions.skill_id"),
+        primary_key=True,
+    )
+    skill_version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    content_checksum: Mapped[str] = mapped_column(String(71), nullable=False, unique=True)
+    manifest_schema_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    content_manifest: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    trust_tier: Mapped[str] = mapped_column(String(32), nullable=False)
+    review_status: Mapped[str] = mapped_column(String(20), nullable=False)
+    content_source_identity: Mapped[str] = mapped_column(String(255), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowDefinitionVersionSkillPinORM(Base):
+    __tablename__ = "workflow_definition_version_skill_pins"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_definition_id", "workflow_version"],
+            [
+                "local_workflow_definition_versions.workflow_definition_id",
+                "local_workflow_definition_versions.version",
+            ],
+            name="fk_workflow_skill_pins_workflow_version",
+        ),
+        ForeignKeyConstraint(
+            ["skill_id", "skill_version"],
+            ["local_skill_versions.skill_id", "local_skill_versions.skill_version"],
+            name="fk_workflow_skill_pins_skill_version",
+        ),
+        UniqueConstraint(
+            "workflow_definition_id", "workflow_version", "skill_id",
+            name="uq_workflow_skill_pins_exact_skill",
+        ),
+        CheckConstraint("pin_order BETWEEN 0 AND 99", name="workflow_skill_pin_order"),
+        Index(
+            "ix_workflow_skill_pins_workflow",
+            "workflow_definition_id", "workflow_version", "pin_order",
+        ),
+    )
+
+    workflow_definition_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workflow_version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    pin_order: Mapped[int] = mapped_column(Integer, primary_key=True)
+    skill_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    skill_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    skill_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class LocalWorkflowCapsuleVersionORM(Base):
     __tablename__ = "local_workflow_capsule_versions"
     __table_args__ = (
