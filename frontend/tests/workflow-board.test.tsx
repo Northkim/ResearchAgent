@@ -37,6 +37,43 @@ test("renders Registry-driven Workflow cards and keeps planned definitions disab
   expect(screen.getByRole("link", { name: "Workflows" })).toHaveAttribute("aria-current", "page");
 });
 
+test("renders production scaffold maturity and warning without a Full Flow preset", async () => {
+  arrange();
+  vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue({
+    total: 5,
+    items: [...workflowCatalogFixture.items, ...[
+      ["writing-local-experimental", "Writing"],
+      ["review-local-experimental", "Review"],
+      ["reproduction-experiment-local-experimental", "Reproduction & Experiment"],
+    ].map(([workflow_definition_id, display_name], index) => ({
+      ...workflowCatalogFixture.items[0],
+      workflow_definition_id,
+      stable_workflow_key: workflow_definition_id,
+      display_name,
+      description: `${display_name} production scaffold flow.`,
+      recommended_version: {
+        ...workflowCatalogFixture.items[0].recommended_version!,
+        version: "0.1.0",
+        core_capability_maturity: "SCAFFOLD_CORE" as const,
+      },
+      recommended_capsule: {
+        ...workflowCatalogFixture.items[0].recommended_capsule!,
+        capsule_id: `capsule-${String(index + 5).repeat(32)}`,
+        capsule_version: "0.1.0",
+        workflow_version: "0.1.0",
+      },
+    }))],
+  });
+  render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Writing" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Review" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Reproduction & Experiment" })).toBeVisible();
+  expect(screen.getAllByText("Core · Scaffold")).toHaveLength(3);
+  expect(screen.getAllByText(/Product flow is functional/)).toHaveLength(3);
+  expect(screen.queryByText(/Full Research Project/i)).not.toBeInTheDocument();
+});
+
 test("distinguishes two Instances of the same Workflow Definition", async () => {
   arrange();
   const secondId = `wfi-${"9".repeat(32)}`;

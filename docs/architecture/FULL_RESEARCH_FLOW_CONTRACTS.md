@@ -1,22 +1,22 @@
 # Full Research Flow contracts
 
-Status: owner-ratified contract foundation (NIGHT-F1A)
+Status: production scaffold flow implemented (NIGHT-F1B)
 
 ReAgent composes five independent Workflows. Literature Search and Idea
 Discovery have reviewed production research cores. Writing, Review, and
-Reproduction & Experiment are not production Workflows yet; F1A defines only
-their future handoff schemas and dependency map.
+Reproduction & Experiment are real production Workflows whose version 0.1.0
+research cores are explicitly `SCAFFOLD_CORE`.
 
 ```text
 Literature Search
   -> selected-paper-library/v1
   -> Idea Discovery
   -> selected-research-idea/v1
-       |-> future Writing -> manuscript-draft/v1
-       |                       -> future Review -> review-report/v1
-       |                              -> future Writing revision
-       `-> future Reproduction & Experiment -> experiment-record/v1
-                                                   `-> optional future Writing input
+       |-> Writing -> manuscript-draft/v1
+       |                -> Review -> review-report/v1
+       |                     -> new Writing Instance revision
+       `-> Reproduction & Experiment -> experiment-record/v1
+                                             `-> optional Writing input
 ```
 
 This is a non-linear composition model, not a persisted pipeline entity.
@@ -85,7 +85,7 @@ syncs a separate Capsule while retaining old Progress, memory and outputs.
 
 ## manuscript-draft/v1
 
-Contract-only in F1A. Media type: `application/json`.
+Production scaffold output in F1B. Media type: `application/json`.
 
 Required sources are one `selected-research-idea/v1` and one
 `selected-paper-library/v1`. Optional exact sources are
@@ -99,7 +99,7 @@ Artifact in place.
 
 ## review-report/v1
 
-Contract-only in F1A. Media type: `application/json`.
+Production scaffold output in F1B. Media type: `application/json`.
 
 Every report binds one specific `manuscript-draft/v1`, optional supporting
 Artifacts, summary, unique major/minor issue IDs, unique requested-revision
@@ -117,7 +117,7 @@ The Writing/Review loop is immutable:
 
 ## experiment-record/v1
 
-Contract-only in F1A. Media type: `application/json`.
+Production scaffold output in F1B. Media type: `application/json`.
 
 Modes are `IDEA_EXPERIMENT` and `PAPER_REPRODUCTION`. The record binds exact
 source Artifacts, an execution status, a structured plan, optional actual
@@ -129,21 +129,28 @@ The scaffold safety invariant is mandatory: when maturity is
 runtimes, p-values, or execution claims. Only a future `REVIEWED_CORE` version
 may use real planned/running/completed/failed execution states.
 
-## Future dependency map (not Registry seeds)
+## Production scaffold dependency map
 
-Future Writing requires selected research idea and literature library;
+Writing requires selected research idea and literature library;
 experiment record, review feedback and prior manuscript are optional. Its
 output is manuscript draft.
 
-Future Review requires manuscript draft; literature library and experiment
+Review requires manuscript draft; literature library and experiment
 record are optional. Its output is review report.
 
-Future Reproduction & Experiment requires selected research idea; literature
+Reproduction & Experiment requires selected research idea; literature
 library is optional. Its output is experiment record.
 
-These definitions are code-level validation contracts only. NIGHT-F1A does not
-create Workflow Definitions, Capsules, Prompts, UI cards, execution cores or a
-Full Research Flow preset for Writing, Review, or Experiment.
+Migration `20260806_0015` seeds these three stable production Definitions,
+immutable Definition/Capsule 0.1.0 versions and exact requirements. The generic
+Workspace sync, Installed Lock, verified materialization, local run, Progress
+and Artifact promotion paths are real. Their deterministic outputs are visibly
+marked placeholders. Reproduction & Experiment supports only
+`IDEA_EXPERIMENT`; paper reproduction and all real execution remain disabled.
+
+F1B deliberately does not add a Full Research Flow preset. Users add each
+Workflow independently. Revision qualification uses a new Writing Instance so
+Draft A and Review A remain immutable and Draft B binds both explicitly.
 
 ## Cloud/local and version boundaries
 
@@ -152,6 +159,6 @@ exact bindings and maturity-bearing Workflow Version metadata. Local Workspace
 keeps Artifact bytes, candidate sources, memory and outputs. Cloud metadata is
 not a backup of local research bytes.
 
-Any future scaffold-to-reviewed core replacement requires a new immutable
+Any scaffold-to-reviewed core replacement requires a new immutable
 Workflow Definition and Capsule Version. Published Capsule content and
 checksum-bound contracts are never updated in place.

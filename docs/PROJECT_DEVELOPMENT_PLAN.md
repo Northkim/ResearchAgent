@@ -71,6 +71,7 @@ this engineering order.
 | NIGHT-H1 | Product hardening and UX validation | **PASS — OWNER ACCEPTED** — first-time 23-step product journey, derived Web/local next actions, UUID-free unambiguous selectors, actionable recovery, local continuity, onboarding and deterministic full-stack E2E; no new Workflow, migration, automatic binding/materialization or Cloud bytes |
 | NIGHT-H2 | Deployment, security and controlled testing readiness | **PASS_WITH_OWNER_DECISIONS_REQUIRED — OWNER REVIEW REQUIRED** — fail-closed isolated controlled profile, loopback/same-origin boundary, hidden legacy execution/docs, request limits/IDs/safe logs, readiness, production frontend startup, local-client distribution, backup/restore and restart drills, operator/tester/security docs; one isolated instance per tester is ready, while shared multi-user identity and live Provider authorization remain owner gates |
 | NIGHT-F1A | Full Research Flow contract foundation | **PASS — OWNER REVIEW READY** — additive migration `20260806_0014`, canonical reviewed/scaffold core maturity, immutable Idea Discovery 0.2.0/Capsule 0.2.0, explicit user-selected `selected-research-idea/v1`, and contract-only Writing/Review/Experiment handoffs; interruption-recovery closure and full regression passed with no downstream production Workflow, preset, cloud execution or Artifact bytes |
+| NIGHT-F1B | Full Research Flow scaffold Workflows | **PASS — OWNER REVIEW READY** — production Writing, Review, and Reproduction & Experiment Definition/Capsule 0.1.0 versions use real Registry/sync/materialization/run/Artifact/Progress flow with `SCAFFOLD_CORE`; isolated PostgreSQL full-chain, migration/restart, security, frontend and full regression qualification passed; no preset, Skill/Resource platform, paper reproduction, real experiment execution, or substantive research output |
 | R3D | Production/public Provider boundary | **PRODUCTION GATE CLOSED** — production auth, HTTPS, multi-user, secret management, paid use and retention remain unapproved |
 | R4 | Skill management/import and package delivery | Build AG Admin, normalized Skill ingestion, versioning, review, and packaging |
 | R5 | Cross-machine and cross-Harness continuation | Refresh/move packages and verify continuity under owner-approved conflict policy |
@@ -143,7 +144,8 @@ Literature Search 0.4.0 publishes one self-contained, content-addressed
 Discovery 0.1.0 binds one specific Artifact/checksum, requires explicit local
 copy and runs in a separate Capsule with its own memory, outputs and Progress.
 The accepted 0.3.0/0.5.0 Capsule remains immutable and is not promoted or
-upgraded in place. Writing, Review and Experiment remain closed.
+upgraded in place. At B7, Writing, Review and Experiment remained closed; F1B
+later activates only their explicitly marked scaffold product bodies.
 
 NIGHT-F1A extends that accepted boundary without creating a persisted pipeline
 or pretending later research cores exist. Workflow Definition Versions now
@@ -156,8 +158,20 @@ remain unchanged, and existing instances never auto-upgrade. Code-level
 contracts freeze future `manuscript-draft/v1`, `review-report/v1`, and
 `experiment-record/v1` handoffs, including the rule that scaffold experiments
 may only report `PLACEHOLDER_NOT_EXECUTED` with null results. Writing, Review,
-Experiment, a Full Research Flow preset, Skills/Resources expansion, cloud
-Artifact bytes, and hosted research execution remain unimplemented and closed.
+At F1A, Writing, Review, Experiment, a Full Research Flow preset,
+Skills/Resources expansion, cloud Artifact bytes, and hosted research execution
+remained unimplemented and closed. F1B changes only the first three to
+production scaffold flows.
+
+NIGHT-F1B activates the three downstream product bodies without upgrading
+their research capability. Stable production Definition/Capsule 0.1.0 records
+are `AVAILABLE`, creatable, trusted built-ins and canonically
+`SCAFFOLD_CORE`. Exact dependencies flow through B6 verified materialization;
+the generic local Harness publishes content-addressed manuscript, review and
+experiment placeholder Artifacts plus real Progress and memory continuity.
+Writing and Review cannot claim substantive work, while Experiment is limited
+to an unexecuted Idea Experiment skeleton with null results. The Full Research
+Flow preset and complete cross-Workflow setup/next-action UX remain F1C scope.
 
 R2A now reconciles the v0.1 mismatch without rewriting history. Native v0.2
 uses deterministic non-cyclic report identity and exact context-before/context-

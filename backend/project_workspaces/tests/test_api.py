@@ -68,12 +68,15 @@ def test_catalog_is_repository_backed_ordered_and_planned_is_not_creatable(tmp_p
         "idea-discovery-local-experimental",
         "idea-discovery-planned",
         LITERATURE_SEARCH_DEFINITION_ID,
+        "reproduction-experiment-local-experimental",
+        "review-local-experimental",
+        "writing-local-experimental",
     ]
     assert items[0]["lifecycle"] == "AVAILABLE"
     assert items[0]["creatable"] is True
     assert items[1]["lifecycle"] == "PLANNED"
     assert items[1]["creatable"] is False
-    assert items[2]["creatable"] is True
+    assert all(item["creatable"] is True for item in items[2:])
     detail = client.get(f"/workflow-definitions/{LITERATURE_SEARCH_DEFINITION_ID}")
     assert detail.status_code == 200
     assert detail.json()["recommended_version"]["version"] == "0.4.0"

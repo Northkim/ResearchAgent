@@ -151,6 +151,7 @@ def _artifact_document(*, project_id, producer, checksum, size):
         "producer_execution_round": 1,
         "producer_capsule_id": producer["capsule_id"],
         "producer_capsule_version": producer["capsule_version"],
+        "producer_core_capability_maturity": "REVIEWED_CORE",
         "artifact_type": ARTIFACT_TYPE,
         "artifact_schema_version": ARTIFACT_SCHEMA,
         "media_type": "application/json",

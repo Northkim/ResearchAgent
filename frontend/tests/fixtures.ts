@@ -249,6 +249,7 @@ export const projectProgressFixture: ProjectProgress = {
     workflow_instance_id: workflowInstanceId,
     workflow_definition_id: "literature-search-local-experimental",
     workflow_definition_version: "0.3.0",
+    core_capability_maturity: "REVIEWED_CORE",
     workflow_display_name: "Literature Search",
     instance_display_name: "Literature Search",
     lifecycle: "ACTIVE",

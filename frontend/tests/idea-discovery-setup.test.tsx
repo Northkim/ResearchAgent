@@ -31,6 +31,7 @@ function artifact(id: string, producer: string, checksumCharacter: string): Cano
     producer_execution_round: 1,
     producer_capsule_id: `capsule-${"1".repeat(32)}`,
     producer_capsule_version: "0.6.0",
+    producer_core_capability_maturity: "REVIEWED_CORE",
     artifact_type: "selected-paper-library/v1",
     artifact_schema_version: "selected-paper-library/v1",
     media_type: "application/json",

@@ -249,7 +249,7 @@ class _Connection:
 
 
 class _ReadyEngine:
-    def __init__(self, revision: str = "20260806_0014") -> None:
+    def __init__(self, revision: str = "20260806_0015") -> None:
         self.connection = _Connection(revision)
 
     def connect(self):
@@ -271,7 +271,7 @@ def test_readiness_requires_exact_migration_and_production_registry() -> None:
     assert ready.ready
     assert ready.checks == {
         "database": "ok",
-        "migration": "20260806_0014",
+        "migration": "20260806_0015",
         "production_registry": "ok",
     }
     assert not mismatch.ready

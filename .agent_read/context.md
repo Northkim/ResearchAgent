@@ -2,6 +2,39 @@
 
 Last updated: 2026-08-09
 
+## Completed milestone — NIGHT-F1B Full Research Flow scaffold Workflows
+
+NIGHT-F1B is **PASS — OWNER REVIEW READY** from clean F1A baseline
+`349538631bed4767880b8024afcc32e3aae7fa06`. Migration `20260806_0015`
+publishes stable production Writing, Review, and Reproduction & Experiment
+Definition/Capsule 0.1.0 records as `AVAILABLE`, creatable,
+`TRUSTED_BUILT_IN_UNSIGNED`, and canonically `SCAFFOLD_CORE`.
+
+Registry, Desired Manifest, independent sync/Installed Lock, exact B6 binding
+and verified materialization, generic local Harness run/preflight, immutable
+content-addressed output Artifact, B5 Progress, memory continuity and frontend
+maturity warnings are real. Writing emits only a visibly marked structural
+placeholder; Review returns `INSUFFICIENT_EVIDENCE`; Experiment supports only
+an unexecuted `IDEA_EXPERIMENT` skeleton with null actual results. Revision
+qualification uses a new Writing Instance B and exact Draft A/Review A inputs.
+
+Final qualification passed: focused backend `36 passed`; isolated PostgreSQL
+full backend `734 passed, 11 skipped`; the F1B migration plus SQL-backed full
+scaffold chain `1 passed`; Alembic sole head/current/check at 0015; PostgreSQL
+restart; frontend Vitest 16 files/32 tests, TypeScript, ESLint and production
+build; Playwright 5/5 with the fake provider; Python compileall and git diff
+check. All 11 skips are pre-existing explicit historical-migration,
+destructive-integration, or live-provider gates; `F1B_NEW_SKIP = 0`.
+
+The interruption caused no repository damage. The only recovery correction was
+the already-recorded maturity-projection N+1 fix, implemented as one bulk
+Workflow Instance/Definition Version authority query, plus stronger SQL-backed
+qualification fixtures. F1A versions and Capsule checksums remain unchanged.
+No live Provider, credential, owner database, owner Workspace, Full Flow preset,
+Skill/Resource platform, paper reproduction, or real experiment execution was
+used or added. ADR 0031 governs immutable production scaffold policy. Do not
+start NIGHT-F1C without a new owner instruction.
+
 ## Current governing route — Phase R0 teacher-aligned boundary freeze
 
 The owner accepted the committed Teacher Design Alignment Audit verdict:

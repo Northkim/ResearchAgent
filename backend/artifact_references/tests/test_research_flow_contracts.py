@@ -360,7 +360,7 @@ def test_reviewed_experiment_accepts_real_result_shape_and_rejects_bad_metric() 
         validate_experiment_record(value)
 
 
-def test_future_dependency_map_is_contract_only_and_exact() -> None:
+def test_downstream_dependency_map_is_production_seeded_and_exact() -> None:
     assert set(FUTURE_WORKFLOW_CONTRACTS) == {
         "writing", "review", "reproduction-experiment"
     }
@@ -380,5 +380,10 @@ def test_future_dependency_map_is_contract_only_and_exact() -> None:
         for contract in FUTURE_WORKFLOW_CONTRACTS.values()
         for dependency in contract.inputs
     )
-    assert all(not contract.production_seeded for contract in FUTURE_WORKFLOW_CONTRACTS.values())
-    assert not ARTIFACT_CONTRACTS["manuscript-draft/v1"].production_producer_available
+    assert all(contract.production_seeded for contract in FUTURE_WORKFLOW_CONTRACTS.values())
+    assert all(
+        ARTIFACT_CONTRACTS[artifact_type].production_producer_available
+        for artifact_type in (
+            "manuscript-draft/v1", "review-report/v1", "experiment-record/v1"
+        )
+    )

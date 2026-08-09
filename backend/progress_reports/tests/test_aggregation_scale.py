@@ -132,6 +132,10 @@ def test_fixed_query_aggregation_handles_twenty_instances_and_one_thousand_repor
     assert projection.history_total == 1_000
     assert len(projection.history) == 100
     assert all(item.report_count == 50 for item in projection.instances)
+    assert all(
+        item.core_capability_maturity == "REVIEWED_CORE"
+        for item in projection.instances
+    )
     assert len({item.workflow_instance_id for item in projection.instances}) == 20
     assert projection.latest_project_activity_at == (
         start + timedelta(minutes=999)

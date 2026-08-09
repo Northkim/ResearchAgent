@@ -47,6 +47,9 @@ def test_catalog_exposes_reviewed_maturity_and_recommends_new_idea_version(
     assert set(database.workflow_definitions) == {
         "literature-search-local-experimental",
         "idea-discovery-local-experimental",
+        "writing-local-experimental",
+        "review-local-experimental",
+        "reproduction-experiment-local-experimental",
     }
 
 
