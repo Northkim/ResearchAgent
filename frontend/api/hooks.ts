@@ -164,6 +164,42 @@ export function useBindArtifactDependency(projectId: string, workflowInstanceId:
   });
 }
 
+export function useProjectResources(projectId: string) {
+  return useQuery({
+    queryKey: queryKeys.projectResources(projectId),
+    queryFn: () => apiClient.listProjectResources(projectId),
+    retry: false,
+  });
+}
+
+export function useWorkflowResourceBindings(projectId: string, workflowInstanceId: string) {
+  return useQuery({
+    queryKey: queryKeys.resourceBindings(projectId, workflowInstanceId),
+    queryFn: () => apiClient.listWorkflowResourceBindings(projectId, workflowInstanceId),
+    retry: false,
+  });
+}
+
+export function useCreateProjectResource(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof apiClient.createProjectResource>[1]) =>
+      apiClient.createProjectResource(projectId, payload),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: queryKeys.projectResources(projectId) }),
+  });
+}
+
+export function useBindWorkflowResource(projectId: string, workflowInstanceId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: Parameters<typeof apiClient.bindWorkflowResource>[2]) =>
+      apiClient.bindWorkflowResource(projectId, workflowInstanceId, payload),
+    onSuccess: async () => queryClient.invalidateQueries({
+      queryKey: queryKeys.resourceBindings(projectId, workflowInstanceId),
+    }),
+  });
+}
+
 export function useProgressReports(projectId: string) {
   return useQuery({
     queryKey: queryKeys.projectProgressReports(projectId),

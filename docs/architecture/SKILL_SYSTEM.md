@@ -84,6 +84,6 @@ executable Skills are deferred.
 - A **Resource** is an external repository, dataset, model, checkpoint, or file locator; F1E owns this model.
 - **Memory** is mutable per-Instance/session continuity and never belongs in a Skill.
 
-Skill presence does not change Workflow maturity. Writing, Review, and
-Reproduction & Experiment 0.2.0 remain `SCAFFOLD_CORE`, and their frozen
-placeholder validators remain authoritative.
+Skill presence does not change Workflow maturity. Writing and Review 0.2.0,
+Reproduction & Experiment 0.2.0, and its Resource-aware 0.3.0 successor remain
+`SCAFFOLD_CORE`; the frozen placeholder validators remain authoritative.

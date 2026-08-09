@@ -23,6 +23,10 @@ import type {
   CanonicalArtifactPage,
   ArtifactDependencyBinding,
   ArtifactDependencyPage,
+  ProjectResourcePage,
+  ProjectResourceReference,
+  WorkflowResourceBinding,
+  WorkflowResourceBindingPage,
 } from "@/types/api";
 
 const API_BASE = "/backend";
@@ -207,6 +211,46 @@ export const apiClient = {
     return request(
       `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
       `${encodeURIComponent(workflowInstanceId)}/artifact-dependencies`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  },
+
+  listProjectResources(projectId: string): Promise<ProjectResourcePage> {
+    return request(`/projects/${encodeURIComponent(projectId)}/resources?limit=100`);
+  },
+
+  createProjectResource(projectId: string, payload: {
+    resource_kind: string;
+    provider: string;
+    locator: string;
+    exact_revision: string;
+    expected_content_checksum: string;
+    display_name: string;
+    metadata: Record<string, unknown>;
+  }): Promise<ProjectResourceReference> {
+    return request(`/projects/${encodeURIComponent(projectId)}/resources`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  listWorkflowResourceBindings(
+    projectId: string, workflowInstanceId: string,
+  ): Promise<WorkflowResourceBindingPage> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/resource-bindings`,
+    );
+  },
+
+  bindWorkflowResource(projectId: string, workflowInstanceId: string, payload: {
+    requirement_key: string;
+    resource_id: string;
+    idempotency_key: string;
+  }): Promise<WorkflowResourceBinding> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/resource-bindings`,
       { method: "POST", body: JSON.stringify(payload) },
     );
   },

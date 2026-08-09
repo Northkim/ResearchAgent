@@ -2668,3 +2668,49 @@ database/Workspace, credential, extra worktree, feature branch or push was used.
 Next permitted milestone after owner acceptance is NIGHT-F1E: the strictly
 separate Resource Definition/Binding and deterministic local resolver shell.
 Do not begin F1E automatically.
+
+## NIGHT-F1E External Resource reference and local resolver shell (2026-08-09)
+
+NIGHT-F1E is implemented and qualified on `main` from F1D HEAD
+`1569977bc97c30b18e926edeb52026e86994ee4b`. The original plan did not name a
+separate Resource product, so alignment is
+`PASS_WITH_ARCHITECTURE_EXTENSION`: the accepted hybrid architecture requires
+exact external code/data/model references so Cloud can coordinate metadata
+while the Local Workspace continues to own bytes and execution.
+
+Migration `20260806_0017` adds Project-scoped immutable Resource References,
+exact Workflow Version Resource Requirements, and exact Workflow Instance
+Resource Bindings. Cloud stores only kind/provider, credential-free locator,
+exact immutable revision, expected checksum and bounded metadata. Resource is
+not a Skill, Artifact, Capsule installation or memory state; cross-Project,
+wrong-kind/provider, floating revision, URL/credential and oversized metadata
+paths fail closed.
+
+Reproduction & Experiment gains an immutable Definition/Capsule 0.3.0 with four
+optional Resource requirements and the exact two F1D Skill pins. Old 0.1/0.2
+versions and existing Instances do not upgrade. New Instances and Full Research
+Projects resolve 0.3.0, which remains `SCAFFOLD_CORE`, IDEA_EXPERIMENT-only,
+`PLACEHOLDER_NOT_EXECUTED`, and `actual_results = null`; no Resource byte is
+executed and `experiment-record/v1` is unchanged.
+
+The existing local CLI now lists, reports and resolves exact bindings. Verified
+bytes live under `resources/<resource-id>/`; the independent canonical truth is
+`.reagent/resource-index.json`. The gated deterministic LOCAL_TEST resolver
+qualifies safe staging, links/special files, portable paths, canonical manifest
+checksum, atomic publish/index, recovery and drift. GitHub/Hugging Face remain
+metadata-only and return `RESOURCE_RESOLVER_NOT_IMPLEMENTED` with zero network
+calls. The Workflow-scoped UI exposes exact references and conservative Cloud/
+local status without a top-level Resource shell or fake downloaded state.
+
+Qualification: focused regression `77 passed`; isolated PostgreSQL 18 full
+backend `766 passed, 13 skipped` with the F1E migration cycle enabled; frontend
+Vitest `17 files / 34 tests`; current controlled-product Playwright `3 passed`;
+TypeScript, ESLint, production build, compileall, Alembic sole head/current/check
+at `20260806_0017`, and git diff check passed. Scale qualification used 100
+Resources and 20 Workflow Instances. No F1E skip or GitHub/Hugging Face network
+call occurred. A stale historical F1A temporary PostgreSQL cluster was identified
+and removed; every F1E temporary database/Workspace/report was also removed.
+
+Next permitted phase after owner acceptance is NIGHT-F1F complete product-width
+qualification. It may add no new platform capability. Do not begin F1F
+automatically.

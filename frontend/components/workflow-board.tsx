@@ -23,6 +23,7 @@ import { WorkflowStatusBadge } from "./workflow-status-badge";
 import { IdeaDiscoverySetup } from "./idea-discovery-setup";
 import { WorkflowInputSetup } from "./workflow-input-setup";
 import { CopyCommand } from "./copy-command";
+import { WorkflowResourceSetup } from "./workflow-resource-setup";
 
 const IDEA_DISCOVERY_WORKFLOW_ID = "idea-discovery-local-experimental";
 const INPUT_WORKFLOW_IDS = new Set([
@@ -212,6 +213,13 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                     </div>
                   ) : null}
                   <WorkflowSkills skills={instance.skills ?? []} />
+                  {(instance.resource_requirements ?? []).length ? (
+                    <WorkflowResourceSetup
+                      projectId={projectId}
+                      instance={instance}
+                      requirements={instance.resource_requirements ?? []}
+                    />
+                  ) : null}
                   <p>{state?.latest_summary ?? "No Progress Report has been uploaded for this instance."}</p>
                   <div className="workflow-next-action" data-action={nextAction.code}>
                     <strong>Next: {nextAction.title}</strong>
@@ -286,6 +294,9 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                     <p><strong>Prototype core:</strong> Product flow is functional. Research capability is placeholder.</p>
                   ) : null}
                   <WorkflowSkills skills={item.recommended_version?.skills ?? []} />
+                  {(item.recommended_version?.resource_requirements ?? []).length ? (
+                    <p><strong>Optional external Resources:</strong> exact references are selected per Project. GitHub/Hugging Face resolution is not implemented yet.</p>
+                  ) : null}
                   <p className="section-caption">{item.recommended_version ? `Version ${item.recommended_version.version}` : "No published executable version"}</p>
                   <button className="button button-secondary" disabled={!canAdd || create.isPending} onClick={() => addWorkflow(item)}>
                     {item.lifecycle === "PLANNED" ? "Planned" : "Add workflow"}

@@ -12,6 +12,9 @@ export const queryKeys = {
     ["projects", projectId, "artifact-references", artifactType] as const,
   artifactDependencies: (projectId: string, workflowInstanceId: string) =>
     ["projects", projectId, "workflow-instances", workflowInstanceId, "artifact-dependencies"] as const,
+  projectResources: (projectId: string) => ["projects", projectId, "resources"] as const,
+  resourceBindings: (projectId: string, workflowInstanceId: string) =>
+    ["projects", projectId, "workflow-instances", workflowInstanceId, "resource-bindings"] as const,
   workflows: ["workflows"] as const,
   runs: ["runs"] as const,
   run: (runId: string) => ["runs", runId] as const,

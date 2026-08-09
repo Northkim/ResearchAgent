@@ -53,9 +53,10 @@ curl --fail http://127.0.0.1:18101/ready
 ```
 
 `/health` is liveness only. `/ready` succeeds only when PostgreSQL is
-reachable, the sole revision is `20260806_0014`, and the reviewed Literature
-Search, Idea Discovery, and typed dependency records exist. It never calls a
-live Provider. A gateway should send user traffic only while readiness passes.
+reachable, the sole revision is `20260806_0017`, and the reviewed Workflow,
+Skill, Artifact-dependency, and Experiment Resource-requirement records exist.
+It never calls a live Provider or Resource resolver. A gateway should send user
+traffic only while readiness passes.
 
 The controlled process writes mode-`0600` logs and PID identity records under
 `$REAGENT_LOCAL_RUNTIME_DIR`. Backend request events contain request ID,

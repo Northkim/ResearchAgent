@@ -345,6 +345,56 @@ export interface WorkflowVersionCatalog {
   published_at: string | null;
   artifact_requirements?: WorkflowArtifactRequirement[];
   skills?: WorkflowSkillProjection[];
+  resource_requirements?: WorkflowResourceRequirement[];
+}
+
+export interface WorkflowResourceRequirement {
+  requirement_key: string;
+  resource_kind: "SOURCE_REPOSITORY" | "DATASET" | "MODEL" | "CHECKPOINT" | "GENERIC_FILE";
+  required: boolean;
+  cardinality_min: number;
+  cardinality_max: number;
+  allowed_providers: ("GITHUB" | "HUGGING_FACE" | "LOCAL_TEST")[];
+  usage_description: string;
+}
+
+export interface ProjectResourceReference {
+  resource_id: string;
+  project_id: string;
+  resource_kind: WorkflowResourceRequirement["resource_kind"];
+  provider: "GITHUB" | "HUGGING_FACE" | "LOCAL_TEST";
+  locator: string;
+  exact_revision: string;
+  expected_content_checksum: string;
+  display_name: string;
+  metadata: Record<string, unknown>;
+  lifecycle: "ACTIVE" | "RETIRED";
+  created_at: string;
+}
+
+export interface ProjectResourcePage {
+  items: ProjectResourceReference[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface WorkflowResourceBinding {
+  binding_id: string;
+  project_id: string;
+  workflow_instance_id: string;
+  workflow_definition_id: string;
+  workflow_version: string;
+  requirement_key: string;
+  resource_id: string;
+  expected_content_checksum: string;
+  state: "ACTIVE" | "RETIRED";
+  resource: ProjectResourceReference;
+}
+
+export interface WorkflowResourceBindingPage {
+  items: WorkflowResourceBinding[];
+  total: number;
 }
 
 export interface WorkflowSkillProjection {
@@ -406,6 +456,7 @@ export interface ProjectWorkflowInstance {
   created_at: string;
   updated_at: string;
   skills?: WorkflowSkillProjection[];
+  resource_requirements?: WorkflowResourceRequirement[];
 }
 
 export interface ProjectWorkflowInstancePage {

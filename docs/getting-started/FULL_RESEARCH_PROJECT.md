@@ -49,7 +49,10 @@ The CLI prints friendly ordinal labels for multiple same-type Instances and
 falls back to exact instance selectors when the stable selector is ambiguous.
 No Manifest, UUID, checksum, or receipt JSON editing is required for normal use.
 
-Writing, Review, and Reproduction & Experiment 0.2.0 also bundle exact reviewed
-Skills inside their Capsules. Sync installs these automatically; the Workflow
-Board shows their names and versions. Skill delivery does not change their
-Scaffold Core maturity. See [Skills bundled with Workflows](SKILLS.md).
+Writing and Review 0.2.0 and Reproduction & Experiment 0.3.0 bundle exact
+reviewed Skills inside their Capsules. Experiment 0.3.0 additionally exposes
+optional exact external Resource references; adding one does not download or
+execute it. Sync installs Skills automatically, while Resource bytes remain a
+separate explicit local-resolution concern. Neither capability changes the
+Scaffold Core maturity. See [Skills bundled with Workflows](SKILLS.md) and
+[External Resources](RESOURCES.md).

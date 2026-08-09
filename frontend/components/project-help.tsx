@@ -72,9 +72,16 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
         <p>A Full Research Project preset creates all five independent Workflow Instances in one transaction. It is recommended guidance, not an enforced pipeline: Experiment is optional and Literature, Writing, Review, or Experiment may have additional rounds.</p>
         <p>Skill-backed scaffold versions bundle exact built-in reviewed Skills during local sync. The Workflow Board shows their names and versions; you never install Skills separately, and Skill presence does not upgrade the Scaffold core.</p>
       </section>
+      <section>
+        <p className="eyebrow">5 · External Resources</p>
+        <h2>Exact metadata in Cloud; verified bytes stay local</h2>
+        <p>The Experiment 0.3 scaffold can bind optional repository, dataset, model, and checkpoint references. Resource selectors are separate from Workflow-produced Artifact selectors.</p>
+        <p>Cloud stores only a credential-free locator, exact immutable revision, expected checksum, and binding metadata. It does not store Resource bytes or provider tokens and cannot claim local resolution.</p>
+        <p>GitHub and Hugging Face network resolution is not implemented in this scaffold version. Adding a reference never means it was downloaded. The Experiment core remains a non-executing placeholder.</p>
+      </section>
 
       <section>
-        <p className="eyebrow">5 · Continue later</p>
+        <p className="eyebrow">6 · Continue later</p>
         <h2>Start from the Workspace, not chat history</h2>
         <p>Open a new terminal in the same Local Workspace and run:</p>
         <CopyCommand command="python reagent_local.py workflow list ." label="Workflow continuation command" />
