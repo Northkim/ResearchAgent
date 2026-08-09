@@ -45,6 +45,7 @@ SYNC_PLAN_SCHEMA = "reagent.workspace-sync-plan/v0.1"
 SYNC_ACK_SCHEMA = "reagent.capsule-installation-ack/v0.1"
 SYNC_ACK_RECEIPT_SCHEMA = "reagent.workspace-sync-ack-receipt/v0.1"
 ARTIFACT_INDEX_SCHEMA = "reagent.workspace-artifact-index/v0.1"
+RESOURCE_INDEX_SCHEMA = "reagent.workspace-resource-index/v0.1"
 ARTIFACT_PAGE_SCHEMA = "reagent.artifact-reference-page/v0.1"
 MATERIALIZATION_PLAN_SCHEMA = "reagent.artifact-materialization-plan/v0.1"
 MATERIALIZATION_RECEIPT_SCHEMA = "reagent.artifact-materialization-receipt/v0.1"
@@ -96,6 +97,10 @@ SUPPORTED_CAPSULE_PINS = {
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
+    ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -109,6 +114,8 @@ SYNC_LOCK = ".reagent/runtime/sync.lock"
 ACKNOWLEDGEMENTS_ROOT = ".reagent/acknowledgements"
 INSTALL_RECEIPTS_ROOT = ".reagent/receipts/installations"
 ARTIFACT_INDEX = ".reagent/artifact-index.json"
+RESOURCE_INDEX = ".reagent/resource-index.json"
+RESOURCE_ROOT = "resources"
 MATERIALIZATION_RECEIPTS_ROOT = ".reagent/receipts/materializations"
 WORKFLOW_LIST_SCHEMA = "reagent.workspace-workflow-list/v0.1"
 
@@ -129,6 +136,8 @@ WORKFLOW_INSTANCE_ID = re.compile(r"^wfi-[0-9a-f]{32}$")
 CAPSULE_ID = re.compile(r"^capsule-[0-9a-f]{32}$")
 ARTIFACT_ID = re.compile(r"^artifact-[0-9a-f]{32}$")
 BINDING_ID = re.compile(r"^artifact-binding-[0-9a-f]{32}$")
+RESOURCE_ID = re.compile(r"^resource-[0-9a-f]{32}$")
+RESOURCE_BINDING_ID = re.compile(r"^resource-binding-[0-9a-f]{32}$")
 STABLE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$")
 MAX_FILES = 5_000
@@ -518,6 +527,7 @@ def bootstrap_workspace(
     try:
         (staging / ".reagent").mkdir(mode=0o700)
         (staging / "capsules").mkdir(mode=0o700)
+        (staging / RESOURCE_ROOT).mkdir(mode=0o700)
         _atomic_write_json(staging / BOOTSTRAP_CACHE, bootstrap)
         _atomic_write_json(staging / DESIRED_MANIFEST_CACHE, bootstrap["desired_manifest"])
         _atomic_write_json(staging / CAPSULE_REGISTRY, registry)
@@ -1578,6 +1588,21 @@ class HTTPWorkspaceSyncTransport:
             f"{consumer_workflow_instance_id}/artifact-materialization-plan"
         )
 
+    def list_resources(
+        self, project_id: str, *, offset: int = 0, limit: int = 100
+    ) -> dict[str, Any]:
+        query = urllib.parse.urlencode({"offset": offset, "limit": limit})
+        return self._json_get(f"/projects/{project_id}/resources?{query}")
+
+    def list_resource_bindings(
+        self, project_id: str, workflow_instance_id: str
+    ) -> dict[str, Any]:
+        _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        return self._json_get(
+            f"/projects/{project_id}/workflow-instances/"
+            f"{workflow_instance_id}/resource-bindings"
+        )
+
     def _json_get(self, path: str) -> dict[str, Any]:
         request = urllib.request.Request(self._base_url + path, method="GET")
         try:
@@ -2277,7 +2302,7 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
                 "writing-local-experimental",
                 "review-local-experimental",
                 "reproduction-experiment-local-experimental",
-            } and pin[1:] == ("0.2.0", "0.2.0"):
+            } and pin[1:] in {("0.2.0", "0.2.0"), ("0.3.0", "0.3.0")}:
                 raise _identity(
                     "LOCAL_CAPSULE_DRIFT",
                     "A required built-in Skill is missing or changed. "
@@ -3258,7 +3283,9 @@ def run_workflow(
                 "review-local-experimental",
                 "reproduction-experiment-local-experimental",
             }
-            and pin[1:] in {("0.1.0", "0.1.0"), ("0.2.0", "0.2.0")}
+            and pin[1:] in {
+                ("0.1.0", "0.1.0"), ("0.2.0", "0.2.0"), ("0.3.0", "0.3.0")
+            }
         )
         command = [sys.executable, str(runner)]
         if is_idea:
@@ -3340,6 +3367,15 @@ def run_workflow(
             if codex_executable is not None:
                 command.extend(["--codex-executable", codex_executable])
         elif is_scaffold:
+            if pin == (
+                "reproduction-experiment-local-experimental", "0.3.0", "0.3.0"
+            ):
+                _verify_bound_resources(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    workflow_instance_id=workflow_instance_id,
+                    transport=transport,
+                )
             _prepare_scaffold_input_provenance(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -3601,6 +3637,26 @@ def build_parser() -> argparse.ArgumentParser:
     artifact_materialize_command.add_argument("--api-url", default="http://127.0.0.1:8000")
     artifact_materialize_command.add_argument("--dry-run", action="store_true")
     artifact_materialize_command.add_argument("--json", action="store_true")
+    resource = commands.add_parser("resource", help="inspect and resolve exact external Resource bindings")
+    resource_commands = resource.add_subparsers(dest="resource_command", required=True)
+    resource_list_command = resource_commands.add_parser("list")
+    resource_list_command.add_argument("workspace", type=Path)
+    resource_list_selector = resource_list_command.add_mutually_exclusive_group()
+    resource_list_selector.add_argument("--workflow-instance", dest="workflow_instance_id")
+    resource_list_selector.add_argument("--workflow", dest="workflow_definition_id")
+    resource_list_command.add_argument("--api-url", default="http://127.0.0.1:8000")
+    resource_list_command.add_argument("--json", action="store_true")
+    resource_status_command = resource_commands.add_parser("status")
+    resource_status_command.add_argument("workspace", type=Path)
+    resource_status_command.add_argument("--json", action="store_true")
+    resource_resolve_command = resource_commands.add_parser("resolve")
+    resource_resolve_command.add_argument("workspace", type=Path)
+    resource_resolve_selector = resource_resolve_command.add_mutually_exclusive_group(required=True)
+    resource_resolve_selector.add_argument("--workflow-instance", dest="workflow_instance_id")
+    resource_resolve_selector.add_argument("--workflow", dest="workflow_definition_id")
+    resource_resolve_command.add_argument("--api-url", default="http://127.0.0.1:8000")
+    resource_resolve_command.add_argument("--local-test-fixture-root", type=Path)
+    resource_resolve_command.add_argument("--json", action="store_true")
     run = commands.add_parser("run", help="preflight and run one exact installed Workflow Capsule")
     run.add_argument("workspace", type=Path, help="Local Workspace directory")
     run_selector = run.add_mutually_exclusive_group(required=True)
@@ -3665,6 +3721,33 @@ def main(argv: list[str] | None = None) -> int:
                     transport=HTTPWorkspaceSyncTransport(args.api_url),
                     dry_run=args.dry_run,
                 )
+            json_output = args.json
+        elif args.command == "resource":
+            if args.resource_command == "status":
+                result = resource_status(args.workspace)
+            else:
+                workflow_instance_id = args.workflow_instance_id
+                if workflow_instance_id is None and args.workflow_definition_id is not None:
+                    workflow_instance_id = resolve_workflow_selector(
+                        args.workspace, args.workflow_definition_id
+                    )
+                transport = HTTPWorkspaceSyncTransport(args.api_url)
+                if args.resource_command == "list":
+                    result = resource_list(
+                        workspace_root=args.workspace,
+                        transport=transport,
+                        workflow_instance_id=workflow_instance_id,
+                    )
+                else:
+                    result = resolve_resources(
+                        workspace_root=args.workspace,
+                        workflow_instance_id=workflow_instance_id,
+                        transport=transport,
+                        local_test_fixture_root=args.local_test_fixture_root,
+                        allow_local_test=(
+                            os.environ.get("REAGENT_CONTROLLED_RESOURCE_TEST") == "1"
+                        ),
+                    )
             json_output = args.json
         elif args.command == "run":
             workflow_instance_id = args.workflow_instance_id or resolve_workflow_selector(
@@ -3842,6 +3925,306 @@ def _local_input_state(
     return "LOCALLY_MATERIALIZED" if matched == required_keys else "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
 
 
+def _resource_manifest(root: Path) -> tuple[str, list[dict[str, Any]]]:
+    if root.is_symlink() or not root.is_dir():
+        raise _identity("RESOURCE_DRIFT", "Resolved Resource root is unsafe")
+    entries: list[dict[str, Any]] = []
+    case_paths: dict[str, str] = {}
+    for base, directories, names in os.walk(root, followlinks=False):
+        base_path = Path(base)
+        for name in (*directories, *names):
+            candidate = base_path / name
+            mode = candidate.lstat().st_mode
+            if stat.S_ISLNK(mode) or (
+                not stat.S_ISDIR(mode) and not stat.S_ISREG(mode)
+            ):
+                raise _identity("RESOURCE_UNSAFE_FILE", "Resource contains a link or special file")
+            if stat.S_ISREG(mode) and candidate.stat().st_nlink != 1:
+                raise _identity("RESOURCE_UNSAFE_FILE", "Resource contains a hard-linked file")
+        for name in names:
+            candidate = base_path / name
+            relative = candidate.relative_to(root).as_posix()
+            safe = PurePosixPath(relative)
+            if safe.is_absolute() or any(part in {"", ".", ".."} for part in safe.parts):
+                raise _identity("RESOURCE_UNSAFE_PATH", "Resource path escapes its root")
+            _record_case_path(case_paths, relative)
+            content = candidate.read_bytes()
+            entries.append({
+                "path": relative,
+                "sha256": sha256_bytes(content),
+                "size_bytes": len(content),
+            })
+    entries.sort(key=lambda item: item["path"])
+    return canonical_hash(entries), entries
+
+
+def _read_resource_index(workspace: Path, descriptor: dict[str, Any]) -> dict[str, Any]:
+    path = workspace / RESOURCE_INDEX
+    if not path.exists() and not path.is_symlink():
+        return {
+            "schema_version": RESOURCE_INDEX_SCHEMA,
+            "project_id": descriptor["project_id"],
+            "workspace_id": descriptor["workspace_id"],
+            "resources": [],
+            "updated_at": None,
+        }
+    if path.is_symlink() or not path.is_file():
+        raise _identity("RESOURCE_INDEX_INVALID", "Resource Index path is unsafe")
+    value = _object(_read_json(path), "Resource Index")
+    required = {
+        "schema_version", "project_id", "workspace_id", "resources",
+        "updated_at", "index_checksum",
+    }
+    _exact_fields(value, required, "Resource Index")
+    if value["schema_version"] != RESOURCE_INDEX_SCHEMA or (
+        value["project_id"], value["workspace_id"]
+    ) != (descriptor["project_id"], descriptor["workspace_id"]):
+        raise _identity("RESOURCE_INDEX_INVALID", "Resource Index identity mismatch")
+    entries = value["resources"]
+    if not isinstance(entries, list) or len(entries) > 10_000:
+        raise _identity("RESOURCE_INDEX_INVALID", "Resource Index entries are invalid")
+    ids: list[str] = []
+    for raw in entries:
+        item = _object(raw, "Resource Index entry")
+        _exact_fields(item, {
+            "resource_id", "project_id", "resource_kind", "provider", "locator",
+            "exact_revision", "expected_content_checksum", "verified_content_checksum",
+            "local_relative_path", "resolution_status", "verified_at",
+        }, "Resource Index entry")
+        _match(item["resource_id"], RESOURCE_ID, "resource_id")
+        if item["project_id"] != descriptor["project_id"]:
+            raise _identity("RESOURCE_INDEX_INVALID", "Resource Project identity mismatch")
+        _checksum(item["expected_content_checksum"], "expected_content_checksum")
+        _checksum(item["verified_content_checksum"], "verified_content_checksum")
+        if item["local_relative_path"] != f"{RESOURCE_ROOT}/{item['resource_id']}":
+            raise _identity("RESOURCE_INDEX_INVALID", "Resource local path is non-canonical")
+        if item["resolution_status"] != "RESOLVED_VERIFIED":
+            raise _identity("RESOURCE_INDEX_INVALID", "Resource Index contains an unverified entry")
+        _timestamp(item["verified_at"], "verified_at")
+        ids.append(item["resource_id"])
+    if ids != sorted(set(ids)):
+        raise _identity("RESOURCE_INDEX_INVALID", "Resource Index ordering is invalid")
+    payload = dict(value)
+    checksum = payload.pop("index_checksum")
+    if canonical_hash(payload) != checksum:
+        raise _identity("RESOURCE_INDEX_INVALID", "Resource Index checksum mismatch")
+    return value
+
+
+def _resource_bindings(transport: Any, descriptor: dict[str, Any], instance_id: str):
+    page = _object(
+        transport.list_resource_bindings(descriptor["project_id"], instance_id),
+        "Resource binding page",
+    )
+    items = page.get("items")
+    if not isinstance(items, list) or page.get("total") != len(items):
+        raise _identity("RESOURCE_BINDING_INVALID", "Resource binding response is invalid")
+    return items
+
+
+def resource_list(
+    *, workspace_root: str | Path, transport: Any, workflow_instance_id: str | None = None
+) -> dict[str, Any]:
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    resources: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        page = _object(
+            transport.list_resources(descriptor["project_id"], offset=offset, limit=100),
+            "Resource page",
+        )
+        batch = page.get("items")
+        if not isinstance(batch, list) or len(batch) > 100:
+            raise _identity("RESOURCE_REFERENCE_INVALID", "Resource page is invalid")
+        resources.extend(batch)
+        if len(resources) >= page.get("total", 0):
+            break
+        if not batch:
+            raise _identity("RESOURCE_REFERENCE_INVALID", "Resource pagination made no progress")
+        offset += len(batch)
+    bindings = (
+        _resource_bindings(transport, descriptor, workflow_instance_id)
+        if workflow_instance_id else []
+    )
+    index = _read_resource_index(workspace, descriptor)
+    indexed = {item["resource_id"]: item for item in index["resources"]}
+    return {
+        "schema_version": "reagent.workspace-resource-list/v0.1",
+        "status": "RESOURCES_LISTED",
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "resources": resources,
+        "bindings": bindings,
+        "local_resources": list(indexed.values()),
+    }
+
+
+def resource_status(workspace_root: str | Path) -> dict[str, Any]:
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    index = _read_resource_index(workspace, descriptor)
+    verified = 0
+    drifted = 0
+    entries = []
+    for item in index["resources"]:
+        path = workspace / item["local_relative_path"]
+        try:
+            checksum, _ = _resource_manifest(path)
+            status = (
+                "RESOLVED_VERIFIED"
+                if checksum == item["verified_content_checksum"]
+                else "DRIFTED"
+            )
+        except WorkspaceCLIError:
+            status = "DRIFTED"
+        verified += status == "RESOLVED_VERIFIED"
+        drifted += status == "DRIFTED"
+        entries.append({"resource_id": item["resource_id"], "status": status})
+    return {
+        "schema_version": "reagent.workspace-resource-status/v0.1",
+        "status": "RESOLVED_VERIFIED" if drifted == 0 else "DRIFTED",
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "resource_count": len(entries),
+        "verified_count": verified,
+        "drift_count": drifted,
+        "resources": entries,
+    }
+
+
+def resolve_resources(
+    *, workspace_root: str | Path, workflow_instance_id: str, transport: Any,
+    local_test_fixture_root: Path | None = None, allow_local_test: bool = False,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+    bindings = _resource_bindings(transport, descriptor, workflow_instance_id)
+    timestamp = _utc_text(now or datetime.now(timezone.utc))
+    with _WorkspaceWriteLock(workspace):
+        index = _read_resource_index(workspace, descriptor)
+        indexed = {item["resource_id"]: item for item in index["resources"]}
+        for binding in bindings:
+            resource = _object(binding.get("resource"), "bound Resource")
+            provider = resource.get("provider")
+            if provider in {"GITHUB", "HUGGING_FACE"}:
+                raise WorkspaceCLIError(
+                    "RESOURCE_RESOLVER_NOT_IMPLEMENTED",
+                    f"{provider.replace('_', ' ').title()} resource resolution is not implemented in this scaffold version.",
+                    EXIT_VALIDATION,
+                )
+            if provider != "LOCAL_TEST" or not allow_local_test or local_test_fixture_root is None:
+                raise WorkspaceCLIError(
+                    "RESOURCE_RESOLVER_NOT_IMPLEMENTED",
+                    "LOCAL_TEST resolution is restricted to controlled qualification.",
+                    EXIT_VALIDATION,
+                )
+            fixture_root = local_test_fixture_root.resolve()
+            locator = resource.get("locator")
+            if not isinstance(locator, str) or not locator.startswith("fixture/"):
+                raise _identity("RESOURCE_REFERENCE_INVALID", "LOCAL_TEST locator is invalid")
+            source = fixture_root / locator.removeprefix("fixture/")
+            _assert_within(fixture_root, source)
+            marker = _object(_read_json(source / ".reagent-resource.json"), "Resource fixture marker")
+            if marker != {
+                "schema_version": "reagent.local-test-resource/v0.1",
+                "locator": locator,
+                "exact_revision": resource.get("exact_revision"),
+            }:
+                raise _identity("RESOURCE_REVISION_MISMATCH", "LOCAL_TEST fixture revision mismatch")
+            checksum, _ = _resource_manifest(source)
+            if checksum != resource.get("expected_content_checksum"):
+                raise _identity("RESOURCE_CHECKSUM_MISMATCH", "Resource checksum does not match Cloud metadata")
+            target_root = workspace / RESOURCE_ROOT
+            target_root.mkdir(parents=True, exist_ok=True)
+            if target_root.is_symlink():
+                raise _identity("RESOURCE_UNSAFE_PATH", "Resource root is unsafe")
+            target = target_root / resource["resource_id"]
+            if target.exists():
+                current, _ = _resource_manifest(target)
+                if current != checksum:
+                    raise _identity("RESOURCE_CONFLICT", "Existing Resource bytes conflict")
+            else:
+                staging = Path(tempfile.mkdtemp(prefix=f".{resource['resource_id']}.", dir=target_root))
+                try:
+                    for base, directories, names in os.walk(source, followlinks=False):
+                        relative = Path(base).relative_to(source)
+                        destination = staging / relative
+                        destination.mkdir(parents=True, exist_ok=True)
+                        for name in names:
+                            candidate = Path(base) / name
+                            if candidate.is_symlink() or candidate.stat().st_nlink != 1 or not candidate.is_file():
+                                raise _identity("RESOURCE_UNSAFE_FILE", "Resource fixture contains unsafe bytes")
+                            shutil.copyfile(candidate, destination / name)
+                    copied, _ = _resource_manifest(staging)
+                    if copied != checksum:
+                        raise _identity("RESOURCE_CHECKSUM_MISMATCH", "Staged Resource checksum changed")
+                    os.replace(staging, target)
+                finally:
+                    if staging.exists():
+                        shutil.rmtree(staging)
+            indexed[resource["resource_id"]] = {
+                "resource_id": resource["resource_id"],
+                "project_id": descriptor["project_id"],
+                "resource_kind": resource["resource_kind"],
+                "provider": provider,
+                "locator": locator,
+                "exact_revision": resource["exact_revision"],
+                "expected_content_checksum": checksum,
+                "verified_content_checksum": checksum,
+                "local_relative_path": f"{RESOURCE_ROOT}/{resource['resource_id']}",
+                "resolution_status": "RESOLVED_VERIFIED",
+                "verified_at": timestamp,
+            }
+        payload = {
+            "schema_version": RESOURCE_INDEX_SCHEMA,
+            "project_id": descriptor["project_id"],
+            "workspace_id": descriptor["workspace_id"],
+            "resources": [indexed[key] for key in sorted(indexed)],
+            "updated_at": timestamp,
+        }
+        _atomic_write_json(
+            workspace / RESOURCE_INDEX,
+            {**payload, "index_checksum": canonical_hash(payload)},
+        )
+    return {
+        "schema_version": "reagent.workspace-resource-operation/v0.1",
+        "status": "RESOLVED_VERIFIED",
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "workflow_instance_id": workflow_instance_id,
+        "resource_count": len(bindings),
+    }
+
+
+def _verify_bound_resources(
+    *, workspace: Path, descriptor: dict[str, Any], workflow_instance_id: str,
+    transport: Any,
+) -> None:
+    bindings = _resource_bindings(transport, descriptor, workflow_instance_id)
+    if not bindings:
+        return
+    index = _read_resource_index(workspace, descriptor)
+    indexed = {item["resource_id"]: item for item in index["resources"]}
+    for binding in bindings:
+        resource = binding.get("resource", {})
+        item = indexed.get(binding.get("resource_id"))
+        if item is None:
+            provider = resource.get("provider")
+            code = (
+                "RESOURCE_RESOLVER_NOT_IMPLEMENTED"
+                if provider in {"GITHUB", "HUGGING_FACE"}
+                else "RESOURCE_UNRESOLVED"
+            )
+            raise WorkspaceCLIError(
+                code,
+                "A configured Resource is not resolved locally. Run the Resource resolve command.",
+                EXIT_VALIDATION,
+            )
+        checksum, _ = _resource_manifest(workspace / item["local_relative_path"])
+        if checksum != binding.get("expected_content_checksum"):
+            raise _identity("RESOURCE_DRIFT", "A configured Resource changed after verification")
+
+
 def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
     """List installed Workflow Capsules with safe, user-oriented local readiness."""
 
@@ -4015,6 +4398,24 @@ def _print_result(
                 f"instance …{item['workflow_instance_id'][-8:]}"
             )
         return
+    if value.get("schema_version") == "reagent.workspace-resource-list/v0.1":
+        print(f"Project Resource References ({len(value['resources'])})")
+        for item in value["resources"]:
+            print(
+                f"\n{item['display_name']} · {item['resource_kind'].replace('_', ' ').title()}"
+            )
+            print(f"  Provider: {item['provider'].replace('_', ' ').title()}")
+            print(f"  Revision: {item['exact_revision']}")
+            print("  Cloud stores reference metadata only; resolve bytes locally.")
+        return
+    if value.get("schema_version") == "reagent.workspace-resource-status/v0.1":
+        print(f"Local Resources: {value['status'].replace('_', ' ').title()}")
+        print(f"Verified: {value['verified_count']} · Drifted: {value['drift_count']}")
+        return
+    if value.get("schema_version") == "reagent.workspace-resource-operation/v0.1":
+        print(f"Local Resource resolution: {value['status'].replace('_', ' ').title()}")
+        print(f"Verified Resources: {value['resource_count']}")
+        return
     if value.get("schema_version") == "reagent.workspace-sync-result/v0.1":
         print(f"Local Workspace sync: {value['status'].replace('_', ' ').title()}")
         print(f"Active Workflows: {value['installed_capsules']}")
@@ -4134,6 +4535,18 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
     "LOCAL_CAPSULE_DRIFT": (
         "An installed Workflow's reviewed files no longer match its immutable contract.",
         "Preserve research outputs, inspect the reported file, and restore the original Capsule. Sync will not overwrite user research state.",
+    ),
+    "RESOURCE_RESOLVER_NOT_IMPLEMENTED": (
+        "This Resource provider has metadata support but no network resolver yet.",
+        "Keep the exact reference. GitHub and Hugging Face resolution is deferred; no network request was made.",
+    ),
+    "RESOURCE_UNRESOLVED": (
+        "A configured Resource has not been verified into this Local Workspace.",
+        "Run `python reagent_local.py resource resolve .` with the exact Workflow selector.",
+    ),
+    "RESOURCE_DRIFT": (
+        "A locally resolved Resource no longer matches its verified checksum.",
+        "Do not run the Workflow. Restore the exact Resource bytes and resolve again.",
     ),
     "INTERNAL_FAILURE": (
         "The command stopped before declaring success.",
