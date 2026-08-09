@@ -1358,6 +1358,157 @@ class ArtifactDependencyBindingORM(Base):
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class ProjectResourceReferenceORM(Base):
+    """Project-scoped credential-free metadata for one immutable Resource."""
+
+    __tablename__ = "project_resource_references"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id"], ["projects.project_id"],
+            name="fk_project_resource_references_project",
+        ),
+        UniqueConstraint(
+            "project_id", "resource_id",
+            name="uq_project_resource_references_scope",
+        ),
+        CheckConstraint(
+            "resource_kind IN ('SOURCE_REPOSITORY','DATASET','MODEL','CHECKPOINT','GENERIC_FILE')",
+            name="project_resource_reference_kind",
+        ),
+        CheckConstraint(
+            "provider IN ('GITHUB','HUGGING_FACE','LOCAL_TEST')",
+            name="project_resource_reference_provider",
+        ),
+        CheckConstraint(
+            "lifecycle IN ('ACTIVE','RETIRED')",
+            name="project_resource_reference_lifecycle",
+        ),
+        Index(
+            "ix_project_resource_references_project_created",
+            "project_id", "created_at", "resource_id",
+        ),
+        Index(
+            "ix_project_resource_references_kind_provider",
+            "project_id", "resource_kind", "provider",
+        ),
+    )
+
+    resource_id: Mapped[str] = mapped_column(String(41), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    resource_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    locator: Mapped[str] = mapped_column(String(300), nullable=False)
+    exact_revision: Mapped[str] = mapped_column(String(128), nullable=False)
+    expected_content_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    lifecycle: Mapped[str] = mapped_column(String(20), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowResourceRequirementORM(Base):
+    __tablename__ = "workflow_resource_requirements"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["workflow_definition_id", "workflow_version"],
+            [
+                "local_workflow_definition_versions.workflow_definition_id",
+                "local_workflow_definition_versions.version",
+            ],
+            name="fk_workflow_resource_requirements_definition_version",
+        ),
+        CheckConstraint(
+            "resource_kind IN ('SOURCE_REPOSITORY','DATASET','MODEL','CHECKPOINT','GENERIC_FILE')",
+            name="workflow_resource_requirement_kind",
+        ),
+        CheckConstraint(
+            "cardinality_min >= 0 AND cardinality_max >= cardinality_min AND cardinality_max <= 20",
+            name="workflow_resource_requirement_cardinality",
+        ),
+        Index(
+            "ix_workflow_resource_requirements_kind",
+            "resource_kind", "workflow_definition_id", "workflow_version",
+        ),
+    )
+
+    workflow_definition_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    workflow_version: Mapped[str] = mapped_column(String(100), primary_key=True)
+    requirement_key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    resource_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    cardinality_min: Mapped[int] = mapped_column(Integer, nullable=False)
+    cardinality_max: Mapped[int] = mapped_column(Integer, nullable=False)
+    required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    allowed_providers_json: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    usage_description: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowResourceBindingORM(Base):
+    __tablename__ = "project_workflow_resource_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_workflow_resource_bindings_instance_scope",
+        ),
+        ForeignKeyConstraint(
+            ["workflow_definition_id", "workflow_version", "requirement_key"],
+            [
+                "workflow_resource_requirements.workflow_definition_id",
+                "workflow_resource_requirements.workflow_version",
+                "workflow_resource_requirements.requirement_key",
+            ],
+            name="fk_workflow_resource_bindings_requirement",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "resource_id"],
+            [
+                "project_resource_references.project_id",
+                "project_resource_references.resource_id",
+            ],
+            name="fk_workflow_resource_bindings_resource_scope",
+        ),
+        UniqueConstraint(
+            "project_id", "workflow_instance_id", "idempotency_key",
+            name="uq_workflow_resource_bindings_idempotency",
+        ),
+        CheckConstraint(
+            "state IN ('ACTIVE','RETIRED')",
+            name="workflow_resource_binding_state",
+        ),
+        Index(
+            "uq_workflow_resource_bindings_active_requirement",
+            "project_id", "workflow_instance_id", "requirement_key",
+            unique=True,
+            postgresql_where=text("state = 'ACTIVE'"),
+        ),
+        Index(
+            "ix_workflow_resource_bindings_resource",
+            "project_id", "resource_id",
+        ),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(49), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    workflow_definition_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    workflow_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    requirement_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    resource_id: Mapped[str] = mapped_column(String(41), nullable=False)
+    expected_content_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(36), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ProjectProgressProjectionORM(Base):
     __tablename__ = "project_progress_projections"
 

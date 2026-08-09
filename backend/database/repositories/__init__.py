@@ -12,6 +12,7 @@ from .local_project import SQLAlchemyLocalProjectRepository
 from .workflow import SQLAlchemyWorkflowRepository
 from .workflow_foundation import SQLAlchemyWorkflowFoundationRepository
 from .project_manifest import SQLAlchemyProjectManifestRepository
+from .resource_reference import SQLAlchemyResourceReferenceRepository
 from .workspace_sync import SQLAlchemyWorkspaceSyncRepository
 
 __all__ = [
@@ -27,5 +28,6 @@ __all__ = [
     "SQLAlchemyWorkflowRepository",
     "SQLAlchemyWorkflowFoundationRepository",
     "SQLAlchemyProjectManifestRepository",
+    "SQLAlchemyResourceReferenceRepository",
     "SQLAlchemyWorkspaceSyncRepository",
 ]

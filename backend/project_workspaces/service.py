@@ -13,6 +13,11 @@ from backend.workflow_packages.template import (
     WORKFLOW_ID,
     WORKFLOW_VERSION,
 )
+from backend.resource_references.contracts import (
+    ResourceKind,
+    ResourceProvider,
+    WorkflowResourceRequirement,
+)
 
 from .contracts import (
     CapsuleTrustClassification,
@@ -59,6 +64,13 @@ from .production_workflows import (
     skill_backed_scaffold_capsule,
     skill_backed_scaffold_definition_version,
     skill_backed_scaffold_requirements,
+    experiment_resource_artifact_requirements,
+    experiment_resource_capsule,
+    experiment_resource_definition_version,
+)
+from backend.workflow_packages.production_workflows import (
+    EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+    EXPERIMENT_WORKFLOW_ID,
 )
 from .skills import PRODUCTION_SKILLS, production_skill_pins
 
@@ -286,6 +298,86 @@ def ensure_production_workflow_foundation(
                 raise WorkflowFoundationConflictError(
                     "Scaffold Workflow Artifact requirement immutable-content conflict"
                 )
+    repository.add_definition_version(
+        experiment_resource_definition_version(timestamp)
+    )
+    repository.add_capsule_version(experiment_resource_capsule(timestamp))
+    for pin in production_skill_pins(
+        EXPERIMENT_WORKFLOW_ID, EXPERIMENT_RESOURCE_WORKFLOW_VERSION, timestamp
+    ):
+        repository.add_workflow_skill_pin(pin)
+    for requirement in experiment_resource_artifact_requirements(timestamp):
+        existing_requirement = uow.artifact_references.get_requirement(
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+        )
+        if existing_requirement is None:
+            uow.artifact_references.add_requirement(requirement)
+        elif _requirement_content(existing_requirement) != _requirement_content(
+            requirement
+        ):
+            raise WorkflowFoundationConflictError(
+                "Experiment 0.3 Artifact requirement immutable-content conflict"
+            )
+    resource_requirements = (
+        ("source_repository", ResourceKind.SOURCE_REPOSITORY,
+         (ResourceProvider.GITHUB, ResourceProvider.LOCAL_TEST)),
+        ("dataset", ResourceKind.DATASET,
+         (ResourceProvider.HUGGING_FACE, ResourceProvider.LOCAL_TEST)),
+        ("model", ResourceKind.MODEL,
+         (ResourceProvider.HUGGING_FACE, ResourceProvider.LOCAL_TEST)),
+        ("checkpoint", ResourceKind.CHECKPOINT,
+         (ResourceProvider.HUGGING_FACE, ResourceProvider.LOCAL_TEST)),
+    )
+    for key, kind, providers in resource_requirements:
+        requirement = WorkflowResourceRequirement(
+            workflow_definition_id=EXPERIMENT_WORKFLOW_ID,
+            workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+            requirement_key=key,
+            resource_kind=kind,
+            cardinality_min=0,
+            cardinality_max=1,
+            required=False,
+            allowed_providers=providers,
+            usage_description=(
+                "Optional external asset reference for the non-executing "
+                "Idea Experiment scaffold."
+            ),
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        existing = uow.resource_references.get_requirement(
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+        )
+        if existing is None:
+            uow.resource_references.add_requirement(requirement)
+        elif (
+            existing.workflow_definition_id,
+            existing.workflow_version,
+            existing.requirement_key,
+            existing.resource_kind,
+            existing.cardinality_min,
+            existing.cardinality_max,
+            existing.required,
+            existing.allowed_providers,
+            existing.usage_description,
+        ) != (
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+            requirement.resource_kind,
+            requirement.cardinality_min,
+            requirement.cardinality_max,
+            requirement.required,
+            requirement.allowed_providers,
+            requirement.usage_description,
+        ):
+            raise WorkflowFoundationConflictError(
+                "Experiment Resource requirement immutable-content conflict"
+            )
     return (
         literature_definition,
         literature_version,

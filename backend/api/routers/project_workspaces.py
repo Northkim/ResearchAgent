@@ -13,12 +13,18 @@ from ..dependencies import LocalProductServicesDependency
 from ..schemas.project_workspaces import (
     CapsuleVersionCatalogResponse,
     CreateWorkflowInstanceRequest,
+    CreateProjectResourceRequest,
+    CreateWorkflowResourceBindingRequest,
     DesiredProjectManifestResponse,
     RetireWorkflowInstanceRequest,
     SkillCatalogDetailResponse,
     SkillCatalogPageResponse,
     SkillCatalogResponse,
     SkillVersionResponse,
+    ProjectResourcePageResponse,
+    ProjectResourceResponse,
+    WorkflowResourceBindingPageResponse,
+    WorkflowResourceBindingResponse,
     WorkflowCatalogDetailResponse,
     WorkflowCatalogPageResponse,
     WorkflowCatalogResponse,
@@ -35,7 +41,7 @@ from ..schemas.project_workspaces import (
 router = APIRouter(tags=["project-workspaces"])
 
 
-def _catalog_response(definition, service) -> WorkflowCatalogResponse:
+def _catalog_response(definition, service, resource_service) -> WorkflowCatalogResponse:
     versions = service.versions_for(definition.workflow_definition_id)
     capsules = service.capsules_for(definition.workflow_definition_id)
     published = [
@@ -76,6 +82,9 @@ def _catalog_response(definition, service) -> WorkflowCatalogResponse:
                 service.skill_projections_for(
                     selected_version.workflow_definition_id, selected_version.version
                 ),
+                resource_service.requirements_for(
+                    selected_version.workflow_definition_id, selected_version.version
+                ),
             )
             if selected_version else None
         ),
@@ -92,7 +101,9 @@ async def list_workflow_definitions(
 ) -> WorkflowCatalogPageResponse:
     definitions = services.project_workspaces.list_catalog()
     items = [
-        _catalog_response(definition, services.project_workspaces)
+        _catalog_response(
+            definition, services.project_workspaces, services.resource_references
+        )
         for definition in definitions
     ]
     return WorkflowCatalogPageResponse(items=items, total=len(items))
@@ -177,7 +188,9 @@ async def get_workflow_definition(
     definition = services.project_workspaces.get_catalog_definition(
         workflow_definition_id
     )
-    summary = _catalog_response(definition, services.project_workspaces)
+    summary = _catalog_response(
+        definition, services.project_workspaces, services.resource_references
+    )
     return WorkflowCatalogDetailResponse(
         **summary.model_dump(),
         versions=[
@@ -185,6 +198,8 @@ async def get_workflow_definition(
                 item, services.project_workspaces.requirements_for(
                     item.workflow_definition_id, item.version
                 ), services.project_workspaces.skill_projections_for(
+                    item.workflow_definition_id, item.version
+                ), services.resource_references.requirements_for(
                     item.workflow_definition_id, item.version
                 )
             )
@@ -213,6 +228,9 @@ async def list_workflow_instances(
             services.project_workspaces.skill_projections_for(
                 item.workflow_definition_id, item.workflow_version
             ),
+            services.resource_references.requirements_for(
+                item.workflow_definition_id, item.workflow_version
+            ),
         ) for item in instances],
         total=len(instances),
         manifest_revision=manifest.manifest_revision,
@@ -238,6 +256,9 @@ async def create_workflow_instance(
         services.project_workspaces.skill_projections_for(
             instance.workflow_definition_id, instance.workflow_version
         ),
+        services.resource_references.requirements_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
     )
 
 
@@ -254,6 +275,9 @@ async def get_workflow_instance(
     return WorkflowInstanceResponse.from_contract(
         instance,
         services.project_workspaces.skill_projections_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
+        services.resource_references.requirements_for(
             instance.workflow_definition_id, instance.workflow_version
         ),
     )
@@ -279,7 +303,104 @@ async def retire_workflow_instance(
         services.project_workspaces.skill_projections_for(
             instance.workflow_definition_id, instance.workflow_version
         ),
+        services.resource_references.requirements_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
     )
+
+
+@router.get(
+    "/projects/{project_id}/resources",
+    response_model=ProjectResourcePageResponse,
+)
+async def list_project_resources(
+    project_id: str,
+    services: LocalProductServicesDependency,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> ProjectResourcePageResponse:
+    resources, total = services.resource_references.list_resources(
+        project_id, offset=offset, limit=limit
+    )
+    return ProjectResourcePageResponse(
+        items=[ProjectResourceResponse.from_contract(item) for item in resources],
+        total=total,
+        offset=offset,
+        limit=limit,
+    )
+
+
+@router.post(
+    "/projects/{project_id}/resources",
+    response_model=ProjectResourceResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_project_resource(
+    project_id: str,
+    request: CreateProjectResourceRequest,
+    services: LocalProductServicesDependency,
+) -> ProjectResourceResponse:
+    value = services.resource_references.create_resource(
+        project_id=project_id, **request.model_dump()
+    )
+    return ProjectResourceResponse.from_contract(value)
+
+
+@router.get(
+    "/projects/{project_id}/resources/{resource_id}",
+    response_model=ProjectResourceResponse,
+)
+async def get_project_resource(
+    project_id: str,
+    resource_id: str,
+    services: LocalProductServicesDependency,
+) -> ProjectResourceResponse:
+    return ProjectResourceResponse.from_contract(
+        services.resource_references.get_resource(project_id, resource_id)
+    )
+
+
+def _resource_binding_response(value, service):
+    resource = service.get_resource(value.project_id, value.resource_id)
+    return WorkflowResourceBindingResponse.from_contract(value, resource)
+
+
+@router.get(
+    "/projects/{project_id}/workflow-instances/{instance_id}/resource-bindings",
+    response_model=WorkflowResourceBindingPageResponse,
+)
+async def list_workflow_resource_bindings(
+    project_id: str,
+    instance_id: str,
+    services: LocalProductServicesDependency,
+) -> WorkflowResourceBindingPageResponse:
+    values = services.resource_references.binding_projections(project_id, instance_id)
+    return WorkflowResourceBindingPageResponse(
+        items=[
+            WorkflowResourceBindingResponse.from_contract(binding, resource)
+            for binding, resource in values
+        ],
+        total=len(values),
+    )
+
+
+@router.post(
+    "/projects/{project_id}/workflow-instances/{instance_id}/resource-bindings",
+    response_model=WorkflowResourceBindingResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workflow_resource_binding(
+    project_id: str,
+    instance_id: str,
+    request: CreateWorkflowResourceBindingRequest,
+    services: LocalProductServicesDependency,
+) -> WorkflowResourceBindingResponse:
+    value = services.resource_references.bind_resource(
+        project_id=project_id,
+        workflow_instance_id=instance_id,
+        **request.model_dump(),
+    )
+    return _resource_binding_response(value, services.resource_references)
 
 
 @router.get(

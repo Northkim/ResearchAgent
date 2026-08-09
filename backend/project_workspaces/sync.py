@@ -24,6 +24,8 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     EXPERIMENT_WORKFLOW_ID,
+    EXPERIMENT_RESOURCE_CAPSULE_VERSION,
+    EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
     SCAFFOLD_WORKFLOW_VERSION,
@@ -40,6 +42,7 @@ from backend.workflow_packages.production_workflows import (
     build_writing_scaffold_v0_2_package,
     build_review_scaffold_v0_2_package,
     build_experiment_scaffold_v0_2_package,
+    build_experiment_scaffold_v0_3_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
@@ -565,6 +568,16 @@ class WorkspaceSyncApplicationService:
             package_id = (
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.2"
             )
+        elif (
+            instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
+            and instance.workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION
+            and instance.capsule_version == EXPERIMENT_RESOURCE_CAPSULE_VERSION
+        ):
+            slug = "reproduction-experiment"
+            builder = build_experiment_scaffold_v0_3_package
+            package_id = (
+                f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.3"
+            )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")
         output = (
@@ -596,7 +609,10 @@ class WorkspaceSyncApplicationService:
             instance.workflow_definition_id in {
                 WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID, EXPERIMENT_WORKFLOW_ID,
             }
-            and instance.workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+            and instance.workflow_version in {
+                SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+                EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+            }
         ):
             self._verify_compiled_skill_authority(instance, built.package_root)
         timestamp = manifest.created_at.astimezone(timezone.utc)

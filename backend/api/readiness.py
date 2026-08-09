@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, text
 
 
-EXPECTED_MIGRATION_HEAD = "20260806_0016"
+EXPECTED_MIGRATION_HEAD = "20260806_0017"
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +55,17 @@ def check_postgres_readiness(engine: Engine) -> ReadinessResult:
                           AND requirement_key = 'paper_library'
                           AND artifact_type = 'selected-paper-library/v1'
                       ) AS dependency
+                      ,EXISTS (
+                        SELECT 1 FROM local_workflow_definition_versions
+                        WHERE workflow_definition_id = 'reproduction-experiment-local-experimental'
+                          AND version = '0.3.0' AND review_status = 'REVIEWED'
+                          AND core_capability_maturity = 'SCAFFOLD_CORE'
+                          AND (
+                            SELECT count(*) FROM workflow_resource_requirements r
+                            WHERE r.workflow_definition_id = 'reproduction-experiment-local-experimental'
+                              AND r.workflow_version = '0.3.0' AND r.required = false
+                          ) = 4
+                      ) AS experiment_resource_shell
                       ,(
                         SELECT count(*) = 3
                         FROM local_workflow_definition_versions

@@ -48,7 +48,9 @@ def test_production_registry_has_exactly_five_real_workflow_types(tmp_path) -> N
         assert detail["lifecycle"] == "AVAILABLE"
         assert detail["creatable"] is True
         assert detail["allows_multiple_instances"] is True
-        assert detail["recommended_version"]["version"] == "0.2.0"
+        assert detail["recommended_version"]["version"] == (
+            "0.3.0" if workflow_id == EXPERIMENT_WORKFLOW_ID else "0.2.0"
+        )
         assert detail["recommended_version"]["core_capability_maturity"] == "SCAFFOLD_CORE"
         legacy = next(
             item for item in detail["capsules"]

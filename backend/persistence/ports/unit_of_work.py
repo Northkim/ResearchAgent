@@ -8,6 +8,7 @@ from backend.execution_events.ports import ExecutionEventStore
 from backend.artifact_references.ports import ArtifactReferenceRepository
 from backend.progress_reports.ports import ProgressReportRepository
 from backend.local_projects.ports import LocalProjectRepository
+from backend.resource_references.ports import ResourceReferenceRepository
 from backend.project_workspaces.ports import (
     ProjectManifestRepository,
     WorkflowFoundationRepository,
@@ -82,6 +83,12 @@ class UnitOfWork(ABC):
         """Optional local-product Artifact metadata repository."""
 
         raise NotImplementedError("Artifact Reference persistence is unavailable")
+
+    @property
+    def resource_references(self) -> ResourceReferenceRepository:
+        """Optional Project-scoped external Resource metadata repository."""
+
+        raise NotImplementedError("Resource Reference persistence is unavailable")
 
     @abstractmethod
     def commit(self) -> None:

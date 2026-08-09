@@ -16,6 +16,13 @@ from backend.artifact_references.contracts import (
 )
 from backend.artifact_references.errors import ArtifactReferenceConflictError
 from backend.artifact_references.ports import ArtifactReferenceRepository
+from backend.resource_references.contracts import (
+    ProjectResourceReference,
+    WorkflowResourceBinding,
+    WorkflowResourceRequirement,
+)
+from backend.resource_references.errors import ResourceReferenceConflictError
+from backend.resource_references.ports import ResourceReferenceRepository
 from backend.execution_events import ExecutionEvent, ExecutionEventStore
 from backend.persistence.models import (
     ApprovalRecord,
@@ -119,6 +126,138 @@ class InMemoryDatabase:
     artifact_dependency_bindings: dict[str, ArtifactDependencyBinding] = field(
         default_factory=dict
     )
+    project_resource_references: dict[str, ProjectResourceReference] = field(
+        default_factory=dict
+    )
+    workflow_resource_requirements: dict[
+        tuple[str, str, str], WorkflowResourceRequirement
+    ] = field(default_factory=dict)
+    workflow_resource_bindings: dict[str, WorkflowResourceBinding] = field(
+        default_factory=dict
+    )
+
+
+class InMemoryResourceReferenceRepository(ResourceReferenceRepository):
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def add_resource(self, resource: ProjectResourceReference) -> None:
+        existing = self.get_resource(resource.resource_id)
+        if existing is not None and existing.immutable_identity() != resource.immutable_identity():
+            raise ResourceReferenceConflictError(
+                "Resource immutable identity already exists with different metadata"
+            )
+        if existing is None:
+            self._uow._project_resource_references[resource.resource_id] = resource
+            self._uow._dirty_project_resource_references.add(resource.resource_id)
+
+    def get_resource(self, resource_id: str) -> ProjectResourceReference | None:
+        return self._uow._project_resource_references.get(resource_id)
+
+    def list_resources(
+        self, project_id: str, *, offset: int = 0, limit: int = 100
+    ) -> tuple[ProjectResourceReference, ...]:
+        values = sorted(
+            (
+                item for item in self._uow._project_resource_references.values()
+                if item.project_id == project_id
+            ),
+            key=lambda item: (item.created_at, item.resource_id),
+        )
+        return tuple(values[offset:offset + limit])
+
+    def count_resources(self, project_id: str) -> int:
+        return sum(
+            item.project_id == project_id
+            for item in self._uow._project_resource_references.values()
+        )
+
+    def add_requirement(self, requirement: WorkflowResourceRequirement) -> None:
+        key = (
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+        )
+        existing = self._uow._workflow_resource_requirements.get(key)
+        if existing is not None and existing != requirement:
+            raise ResourceReferenceConflictError(
+                "Workflow Resource Requirement immutable-content conflict"
+            )
+        if existing is None:
+            self._uow._workflow_resource_requirements[key] = requirement
+            self._uow._dirty_workflow_resource_requirements.add(key)
+
+    def get_requirement(
+        self, workflow_definition_id: str, workflow_version: str, requirement_key: str
+    ) -> WorkflowResourceRequirement | None:
+        return self._uow._workflow_resource_requirements.get(
+            (workflow_definition_id, workflow_version, requirement_key)
+        )
+
+    def list_requirements(self) -> tuple[WorkflowResourceRequirement, ...]:
+        return tuple(
+            self._uow._workflow_resource_requirements[key]
+            for key in sorted(self._uow._workflow_resource_requirements)
+        )
+
+    def add_binding(self, binding: WorkflowResourceBinding) -> None:
+        existing = self.get_binding(binding.binding_id)
+        if existing is not None and existing != binding:
+            raise ResourceReferenceConflictError(
+                "Workflow Resource Binding immutable-content conflict"
+            )
+        if existing is None:
+            if any(
+                item.project_id == binding.project_id
+                and item.workflow_instance_id == binding.workflow_instance_id
+                and item.requirement_key == binding.requirement_key
+                and item.state.value == "ACTIVE"
+                for item in self._uow._workflow_resource_bindings.values()
+            ):
+                raise DuplicateEntityError(
+                    "Resource requirement already has an active binding"
+                )
+            self._uow._workflow_resource_bindings[binding.binding_id] = binding
+            self._uow._dirty_workflow_resource_bindings.add(binding.binding_id)
+
+    def get_binding(self, binding_id: str) -> WorkflowResourceBinding | None:
+        return self._uow._workflow_resource_bindings.get(binding_id)
+
+    def get_binding_by_idempotency(
+        self, project_id: str, workflow_instance_id: str, idempotency_key: str
+    ) -> WorkflowResourceBinding | None:
+        return next((
+            item for item in self._uow._workflow_resource_bindings.values()
+            if item.project_id == project_id
+            and item.workflow_instance_id == workflow_instance_id
+            and item.idempotency_key == idempotency_key
+        ), None)
+
+    def list_bindings(
+        self, project_id: str, workflow_instance_id: str, *, offset=0, limit=100
+    ) -> tuple[WorkflowResourceBinding, ...]:
+        values = sorted(
+            (
+                item for item in self._uow._workflow_resource_bindings.values()
+                if item.project_id == project_id
+                and item.workflow_instance_id == workflow_instance_id
+            ),
+            key=lambda item: (item.requirement_key, item.created_at, item.binding_id),
+        )
+        return tuple(values[offset:offset + limit])
+
+    def list_project_bindings(
+        self, project_id: str
+    ) -> tuple[WorkflowResourceBinding, ...]:
+        return tuple(sorted(
+            (
+                item for item in self._uow._workflow_resource_bindings.values()
+                if item.project_id == project_id
+            ),
+            key=lambda item: (
+                item.workflow_instance_id, item.requirement_key, item.binding_id
+            ),
+        ))
 
 
 class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
@@ -1442,6 +1581,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._project_manifest_repository = InMemoryProjectManifestRepository(self)
         self._workspace_sync_repository = InMemoryWorkspaceSyncRepository(self)
         self._artifact_reference_repository = InMemoryArtifactReferenceRepository(self)
+        self._resource_reference_repository = InMemoryResourceReferenceRepository(self)
         self._refresh()
 
     @property
@@ -1495,6 +1635,10 @@ class InMemoryUnitOfWork(UnitOfWork):
     @property
     def artifact_references(self) -> ArtifactReferenceRepository:
         return self._artifact_reference_repository
+
+    @property
+    def resource_references(self) -> ResourceReferenceRepository:
+        return self._resource_reference_repository
 
     def commit(self) -> None:
         self._validate_concurrency()
@@ -1557,6 +1701,18 @@ class InMemoryUnitOfWork(UnitOfWork):
         for binding_id in self._dirty_artifact_dependency_bindings:
             self.database.artifact_dependency_bindings[binding_id] = (
                 self._artifact_dependency_bindings[binding_id]
+            )
+        for resource_id in self._dirty_project_resource_references:
+            self.database.project_resource_references[resource_id] = (
+                self._project_resource_references[resource_id]
+            )
+        for key in self._dirty_workflow_resource_requirements:
+            self.database.workflow_resource_requirements[key] = (
+                self._workflow_resource_requirements[key]
+            )
+        for binding_id in self._dirty_workflow_resource_bindings:
+            self.database.workflow_resource_bindings[binding_id] = (
+                self._workflow_resource_bindings[binding_id]
             )
         self._refresh()
 
@@ -1733,6 +1889,15 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._artifact_dependency_bindings = dict(
             self.database.artifact_dependency_bindings
         )
+        self._project_resource_references = dict(
+            self.database.project_resource_references
+        )
+        self._workflow_resource_requirements = dict(
+            self.database.workflow_resource_requirements
+        )
+        self._workflow_resource_bindings = dict(
+            self.database.workflow_resource_bindings
+        )
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -1769,4 +1934,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_local_artifact_references: set[str] = set()
         self._dirty_workflow_artifact_requirements: set[tuple[str, str, str]] = set()
         self._dirty_artifact_dependency_bindings: set[str] = set()
+        self._dirty_project_resource_references: set[str] = set()
+        self._dirty_workflow_resource_requirements: set[tuple[str, str, str]] = set()
+        self._dirty_workflow_resource_bindings: set[str] = set()
         self._manifest_revision_expected: dict[str, int] = {}

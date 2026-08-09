@@ -56,8 +56,8 @@ def test_skill_catalog_is_read_only_stable_and_projects_exact_pins(tmp_path) -> 
         assert item["trust"] == "BUILT_IN_REVIEWED"
         assert item["current_version"]["version"] == "0.1.0"
         detail = client.get(f"/skills/{item['skill_id']}").json()
-        assert len(detail["workflow_usages"]) == 3
-        assert {use["workflow_version"] for use in detail["workflow_usages"]} == {"0.2.0"}
+        assert len(detail["workflow_usages"]) == 4
+        assert {use["workflow_version"] for use in detail["workflow_usages"]} == {"0.2.0", "0.3.0"}
     assert client.post("/skills", json={}).status_code == 405
     writing = client.get("/workflow-definitions/writing-local-experimental").json()
     skills = writing["recommended_version"]["skills"]
@@ -129,8 +129,13 @@ def test_full_preset_resolves_skill_backed_scaffold_versions(tmp_path) -> None:
     ).json()["items"]
     by_id = {item["workflow_definition_id"]: item for item in instances}
     for workflow_id in SCAFFOLD_WORKFLOWS:
-        assert by_id[workflow_id]["workflow_version"] == "0.2.0"
-        assert by_id[workflow_id]["capsule_version"] == "0.2.0"
+        expected = (
+            "0.3.0"
+            if workflow_id == "reproduction-experiment-local-experimental"
+            else "0.2.0"
+        )
+        assert by_id[workflow_id]["workflow_version"] == expected
+        assert by_id[workflow_id]["capsule_version"] == expected
         assert [item["skill_id"] for item in by_id[workflow_id]["skills"]] == [
             asset.skill_id for asset in PRODUCTION_SKILLS
         ]

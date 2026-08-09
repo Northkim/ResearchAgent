@@ -30,6 +30,7 @@ from backend.database.orm import (
     ProjectManifestEntryORM,
     ProjectORM,
     ProjectWorkflowInstanceORM,
+    ProjectResourceReferenceORM,
     WorkflowCapsuleArtifactORM,
     WorkflowArtifactRequirementORM,
     WorkspaceInstallationAcknowledgementORM,
@@ -37,6 +38,8 @@ from backend.database.orm import (
     UploadedProgressReportORM,
     WorkflowDefinitionORM,
     WorkflowDefinitionVersionSkillPinORM,
+    WorkflowResourceBindingORM,
+    WorkflowResourceRequirementORM,
     WorkflowRunORM,
 )
 from backend.execution_events.ports import ExecutionEventStore
@@ -72,6 +75,7 @@ from .repositories import (
     SQLAlchemyWorkflowRepository,
     SQLAlchemyWorkflowFoundationRepository,
     SQLAlchemyProjectManifestRepository,
+    SQLAlchemyResourceReferenceRepository,
     SQLAlchemyWorkspaceSyncRepository,
 )
 
@@ -107,6 +111,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._project_manifests = SQLAlchemyProjectManifestRepository(self.session)
         self._workspace_sync = SQLAlchemyWorkspaceSyncRepository(self.session)
         self._artifact_references = SQLAlchemyArtifactReferenceRepository(self.session)
+        self._resource_references = SQLAlchemyResourceReferenceRepository(self.session)
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -160,6 +165,10 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     def artifact_references(self):
         return self._artifact_references
 
+    @property
+    def resource_references(self):
+        return self._resource_references
+
     def commit(self) -> None:
         try:
             self._flush_in_dependency_order()
@@ -212,6 +221,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(WorkflowDefinitionVersionSkillPinORM)
         self._flush_type(LocalWorkflowCapsuleVersionORM)
         self._flush_type(ProjectWorkflowInstanceORM)
+        self._flush_type(ProjectResourceReferenceORM)
         self._flush_type(ProjectDesiredManifestORM)
         self._flush_type(ProjectManifestEntryORM)
         self._flush_type(WorkflowCapsuleArtifactORM)
@@ -224,6 +234,8 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(LocalArtifactReferenceORM)
         self._flush_type(WorkflowArtifactRequirementORM)
         self._flush_type(ArtifactDependencyBindingORM)
+        self._flush_type(WorkflowResourceRequirementORM)
+        self._flush_type(WorkflowResourceBindingORM)
         self._flush_type(ProjectProgressProjectionORM)
 
         checkpoints = sorted(

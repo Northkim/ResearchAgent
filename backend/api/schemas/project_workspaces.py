@@ -35,9 +35,13 @@ class WorkflowVersionCatalogResponse(StrictDTO):
     published_at: str | None
     artifact_requirements: list[dict[str, Any]]
     skills: list[dict[str, Any]] = Field(default_factory=list)
+    resource_requirements: list[dict[str, Any]] = Field(default_factory=list)
 
     @classmethod
-    def from_contract(cls, value: WorkflowDefinitionVersion, requirements=(), skills=()):
+    def from_contract(
+        cls, value: WorkflowDefinitionVersion, requirements=(), skills=(),
+        resource_requirements=(),
+    ):
         return cls(
             version=value.version,
             contract_checksum=value.contract_checksum,
@@ -61,7 +65,102 @@ class WorkflowVersionCatalogResponse(StrictDTO):
                 "trust": version.trust_tier.value,
                 "purpose": pin.purpose,
             } for pin, definition, version in skills],
+            resource_requirements=[{
+                "requirement_key": item.requirement_key,
+                "resource_kind": item.resource_kind.value,
+                "required": item.required,
+                "cardinality_min": item.cardinality_min,
+                "cardinality_max": item.cardinality_max,
+                "allowed_providers": [value.value for value in item.allowed_providers],
+                "usage_description": item.usage_description,
+            } for item in resource_requirements],
         )
+
+
+class CreateProjectResourceRequest(StrictDTO):
+    resource_kind: str = Field(min_length=2, max_length=64)
+    provider: str = Field(min_length=2, max_length=64)
+    locator: str = Field(min_length=3, max_length=300)
+    exact_revision: str = Field(min_length=7, max_length=128)
+    expected_content_checksum: str = Field(min_length=71, max_length=71)
+    display_name: str = Field(min_length=1, max_length=160)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ProjectResourceResponse(StrictDTO):
+    resource_id: str
+    project_id: str
+    resource_kind: str
+    provider: str
+    locator: str
+    exact_revision: str
+    expected_content_checksum: str
+    display_name: str
+    metadata: dict[str, Any]
+    lifecycle: str
+    created_at: str
+
+    @classmethod
+    def from_contract(cls, value):
+        return cls(
+            resource_id=value.resource_id,
+            project_id=value.project_id,
+            resource_kind=value.resource_kind.value,
+            provider=value.provider.value,
+            locator=value.locator,
+            exact_revision=value.exact_revision,
+            expected_content_checksum=value.expected_content_checksum,
+            display_name=value.display_name,
+            metadata=to_json_value(value.metadata),
+            lifecycle=value.lifecycle.value,
+            created_at=value.created_at.isoformat(),
+        )
+
+
+class ProjectResourcePageResponse(StrictDTO):
+    items: list[ProjectResourceResponse]
+    total: int
+    offset: int
+    limit: int
+
+
+class CreateWorkflowResourceBindingRequest(StrictDTO):
+    requirement_key: str = Field(min_length=2, max_length=128)
+    resource_id: str = Field(min_length=41, max_length=41)
+    idempotency_key: str = Field(min_length=36, max_length=36)
+
+
+class WorkflowResourceBindingResponse(StrictDTO):
+    binding_id: str
+    project_id: str
+    workflow_instance_id: str
+    workflow_definition_id: str
+    workflow_version: str
+    requirement_key: str
+    resource_id: str
+    expected_content_checksum: str
+    state: str
+    resource: ProjectResourceResponse
+
+    @classmethod
+    def from_contract(cls, value, resource):
+        return cls(
+            binding_id=value.binding_id,
+            project_id=value.project_id,
+            workflow_instance_id=value.workflow_instance_id,
+            workflow_definition_id=value.workflow_definition_id,
+            workflow_version=value.workflow_version,
+            requirement_key=value.requirement_key,
+            resource_id=value.resource_id,
+            expected_content_checksum=value.expected_content_checksum,
+            state=value.state.value,
+            resource=ProjectResourceResponse.from_contract(resource),
+        )
+
+
+class WorkflowResourceBindingPageResponse(StrictDTO):
+    items: list[WorkflowResourceBindingResponse]
+    total: int
 
 
 class SkillVersionResponse(StrictDTO):
@@ -167,9 +266,12 @@ class WorkflowInstanceResponse(StrictDTO):
     created_at: str
     updated_at: str
     skills: list[dict[str, Any]] = Field(default_factory=list)
+    resource_requirements: list[dict[str, Any]] = Field(default_factory=list)
 
     @classmethod
-    def from_contract(cls, value: ProjectWorkflowInstance, skills=()):
+    def from_contract(
+        cls, value: ProjectWorkflowInstance, skills=(), resource_requirements=()
+    ):
         return cls(
             workflow_instance_id=value.workflow_instance_id,
             project_id=value.project_id,
@@ -192,6 +294,15 @@ class WorkflowInstanceResponse(StrictDTO):
                 "trust": version.trust_tier.value,
                 "purpose": pin.purpose,
             } for pin, definition, version in skills],
+            resource_requirements=[{
+                "requirement_key": item.requirement_key,
+                "resource_kind": item.resource_kind.value,
+                "required": item.required,
+                "cardinality_min": item.cardinality_min,
+                "cardinality_max": item.cardinality_max,
+                "allowed_providers": [value.value for value in item.allowed_providers],
+                "usage_description": item.usage_description,
+            } for item in resource_requirements],
         )
 
 

@@ -37,6 +37,7 @@ from backend.domain.models._utils import utc_now
 from backend.persistence.ports import UnitOfWork
 from backend.progress_reports import ProgressReportService
 from backend.artifact_references.service import ArtifactReferenceService
+from backend.resource_references.service import ResourceReferenceService
 from backend.progress_reports.identity import ProgressWorkflowIdentityResolver
 from backend.progress_reports.aggregation import ProjectProgressAggregationService
 from backend.local_projects.service import LocalProjectService
@@ -116,6 +117,7 @@ class LocalProductApplicationServices:
     workspace_sync: WorkspaceSyncApplicationService
     project_progress: ProjectProgressAggregationService
     artifact_references: ArtifactReferenceService
+    resource_references: ResourceReferenceService
 
 
 class ApplicationContainer:
@@ -304,6 +306,9 @@ class ApplicationContainer:
         artifact_references = ArtifactReferenceService(
             unit_of_work=unit_of_work, clock=self.clock
         )
+        resource_references = ResourceReferenceService(
+            unit_of_work=unit_of_work, clock=self.clock
+        )
         workspace_sync = WorkspaceSyncApplicationService(
             unit_of_work=unit_of_work,
             package_root=self.local_package_root,
@@ -333,6 +338,7 @@ class ApplicationContainer:
                 clock=self.clock,
             ),
             artifact_references=artifact_references,
+            resource_references=resource_references,
         )
 
     def _progress_report_service(

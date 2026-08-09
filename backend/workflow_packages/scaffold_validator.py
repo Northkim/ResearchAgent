@@ -322,7 +322,7 @@ def validate(root: str | Path, *, pristine: bool = False) -> dict[str, Any]:
         manifest.get("package_schema_version") != "workflow-package/v0.1"
         or manifest.get("workflow_id") != config.get("workflow_id")
         or manifest.get("workflow_version") != config.get("workflow_version")
-        or manifest.get("package_template_version") not in {"0.1.0", "0.2.0"}
+        or manifest.get("package_template_version") not in {"0.1.0", "0.2.0", "0.3.0"}
     ):
         raise PackageValidationError("scaffold Capsule identity mismatch")
     if config.get("core_capability_maturity") != "SCAFFOLD_CORE":

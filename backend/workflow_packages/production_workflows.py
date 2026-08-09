@@ -72,6 +72,9 @@ SCAFFOLD_SKILL_VERSION = "0.1.0"
 SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION = "0.2.0"
 SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION = "0.2.0"
 SCAFFOLD_SKILL_BACKED_PROMPT_VERSION = "0.2.0"
+EXPERIMENT_RESOURCE_WORKFLOW_VERSION = "0.3.0"
+EXPERIMENT_RESOURCE_CAPSULE_VERSION = "0.3.0"
+EXPERIMENT_RESOURCE_PROMPT_VERSION = "0.3.0"
 WRITING_TEMPLATE_ID = "writing-scaffold-package-experimental"
 REVIEW_TEMPLATE_ID = "review-scaffold-package-experimental"
 EXPERIMENT_TEMPLATE_ID = "reproduction-experiment-scaffold-package-experimental"
@@ -212,6 +215,25 @@ def scaffold_workflow_document(
             "execution_status": "PLACEHOLDER_NOT_EXECUTED",
             "actual_results": None,
         })
+        if workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION:
+            result["resource_requirements"] = [
+                {
+                    "requirement_key": key,
+                    "resource_kind": kind,
+                    "required": False,
+                    "cardinality": "ONE",
+                    "selection_policy": "EXPLICIT_SPECIFIC_RESOURCE",
+                }
+                for key, kind in (
+                    ("source_repository", "SOURCE_REPOSITORY"),
+                    ("dataset", "DATASET"),
+                    ("model", "MODEL"),
+                    ("checkpoint", "CHECKPOINT"),
+                )
+            ]
+            result["resource_execution_policy"] = (
+                "VERIFIED_METADATA_ONLY_NO_RESOURCE_EXECUTION"
+            )
     return result
 
 
@@ -1034,6 +1056,53 @@ def _experiment_v0_2_files(**kwargs) -> dict[str, FileSpec]:
     return _scaffold_v0_2_files(workflow_id=EXPERIMENT_WORKFLOW_ID, **kwargs)
 
 
+def _experiment_v0_3_files(**kwargs) -> dict[str, FileSpec]:
+    """Render Experiment 0.3 without mutating the published 0.2 Capsule."""
+
+    kwargs.pop("research_topic", None)
+    files = _scaffold_v0_2_files(workflow_id=EXPERIMENT_WORKFLOW_ID, **kwargs)
+    workflow = scaffold_workflow_document(
+        EXPERIMENT_WORKFLOW_ID,
+        workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+    )
+    _replace_spec(files, "workflow/workflow.json", _json(workflow))
+    config = json.loads(files["workflow/scaffold.json"].content)
+    config["workflow_version"] = EXPERIMENT_RESOURCE_WORKFLOW_VERSION
+    config["resource_requirements"] = workflow["resource_requirements"]
+    config["resource_execution_policy"] = workflow["resource_execution_policy"]
+    _replace_spec(files, "workflow/scaffold.json", _json(config))
+    files["workflow/resource-requirements.json"] = FileSpec(
+        _json({
+            "schema_version": "reagent.resource-requirements/v0.1",
+            "requirements": workflow["resource_requirements"],
+            "local_index": ".reagent/resource-index.json",
+            "policy": "bound resources must be locally verified; bytes are never executed",
+        }),
+        "application/json",
+        "optional external Resource requirements",
+        False,
+        "CONFIGURATION",
+    )
+    context_text = files["memory/context.md"].content.decode("utf-8")
+    _replace_spec(
+        files,
+        "memory/context.md",
+        context_text.replace(
+            '"workflow_version":"0.2.0"',
+            '"workflow_version":"0.3.0"',
+        ).encode(),
+    )
+    agent = files["AGENT.md"].content.decode("utf-8")
+    resource_contract = """
+17. Read only verified Resource metadata from the Workspace Resource Index; never scan for external assets.
+18. A configured Resource that is unresolved, drifted, or unsupported fails preflight closed.
+19. Resource bytes are external assets, not Skills or Artifacts, and this scaffold must never execute them.
+20. Resource presence does not change `SCAFFOLD_CORE`, `PLACEHOLDER_NOT_EXECUTED`, or `actual_results = null`.
+"""
+    _replace_spec(files, "AGENT.md", (agent.rstrip() + "\n" + resource_contract).encode())
+    return files
+
+
 def _selected_library_schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1192,7 +1261,10 @@ def _make_manifest(
         proxy = "NO PROVIDER CAPABILITY; LOCAL INTERACTIVE HARNESS ONLY"
     else:
         config = json.loads(files["workflow/scaffold.json"].content)
-        if workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION:
+        if workflow_version in {
+            SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+            EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+        }:
             from backend.project_workspaces.skills import PRODUCTION_SKILLS
 
             skills = tuple(
@@ -1230,8 +1302,15 @@ def _make_manifest(
         prompt_path = f"workflow/prompts/{config['workflow_slug']}.md"
         prompt_id = f"{config['workflow_slug']}-scaffold"
         prompt_version = (
-            SCAFFOLD_SKILL_BACKED_PROMPT_VERSION
-            if workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+            (
+                EXPERIMENT_RESOURCE_PROMPT_VERSION
+                if workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION
+                else SCAFFOLD_SKILL_BACKED_PROMPT_VERSION
+            )
+            if workflow_version in {
+                SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+                EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+            }
             else SCAFFOLD_PROMPT_VERSION
         )
         outputs = (PackageOutputContract(
@@ -1569,6 +1648,16 @@ def build_experiment_scaffold_v0_2_package(**kwargs) -> BuildResult:
         workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
         workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
         capsule_version=SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_experiment_scaffold_v0_3_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_experiment_v0_3_files, workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
+        workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+        capsule_version=EXPERIMENT_RESOURCE_CAPSULE_VERSION,
         **kwargs,
     )
 
