@@ -178,6 +178,7 @@ class WorkflowInstanceProgressResponse(StrictDTO):
     workflow_instance_id: str
     workflow_definition_id: str
     workflow_definition_version: str
+    core_capability_maturity: str
     workflow_display_name: str
     instance_display_name: str
     lifecycle: str

@@ -24,6 +24,12 @@ import { IdeaDiscoverySetup } from "./idea-discovery-setup";
 import { CopyCommand } from "./copy-command";
 
 const IDEA_DISCOVERY_WORKFLOW_ID = "idea-discovery-local-experimental";
+const INPUT_WORKFLOW_IDS = new Set([
+  IDEA_DISCOVERY_WORKFLOW_ID,
+  "writing-local-experimental",
+  "review-local-experimental",
+  "reproduction-experiment-local-experimental",
+]);
 
 export function WorkflowBoard({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
@@ -142,7 +148,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
               const nextAction = deriveWorkflowNextAction({
                 instance,
                 progress: state,
-                requiresInput: definition?.stable_workflow_key === IDEA_DISCOVERY_WORKFLOW_ID,
+                requiresInput: INPUT_WORKFLOW_IDS.has(definition?.stable_workflow_key ?? ""),
                 dependencies: dependencyEdges,
               });
               return (
@@ -155,10 +161,19 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                     <WorkflowStatusBadge value={instance.desired_state} dimension="lifecycle" />
                   </div>
                   <div className="workflow-badge-row">
+                    {definition?.recommended_version ? (
+                      <WorkflowStatusBadge value={definition.recommended_version.core_capability_maturity} dimension="maturity" />
+                    ) : null}
                     <WorkflowStatusBadge value={state?.research_status ?? "NOT_STARTED"} dimension="research" />
                     <WorkflowStatusBadge value={state?.desired_state ?? (instance.in_current_manifest ? "DESIRED" : "NOT_DESIRED")} dimension="desired" />
                     <WorkflowStatusBadge value={state?.installation_state ?? "UNKNOWN"} dimension="installation" />
                   </div>
+                  {definition?.recommended_version?.core_capability_maturity === "SCAFFOLD_CORE" ? (
+                    <div className="boundary-callout">
+                      <strong>Scaffold core</strong>
+                      <p>Product flow is functional. Research capability is placeholder.</p>
+                    </div>
+                  ) : null}
                   <p>{state?.latest_summary ?? "No Progress Report has been uploaded for this instance."}</p>
                   <div className="workflow-next-action" data-action={nextAction.code}>
                     <strong>Next: {nextAction.title}</strong>
@@ -216,7 +231,13 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
               return (
                 <article key={item.workflow_definition_id}>
                   <div className="workflow-card-heading"><h3>{item.display_name}</h3><WorkflowStatusBadge value={item.lifecycle} dimension="catalog" /></div>
+                  {item.recommended_version ? (
+                    <div className="workflow-badge-row"><WorkflowStatusBadge value={item.recommended_version.core_capability_maturity} dimension="maturity" /></div>
+                  ) : null}
                   <p>{item.description}</p>
+                  {item.recommended_version?.core_capability_maturity === "SCAFFOLD_CORE" ? (
+                    <p><strong>Prototype core:</strong> Product flow is functional. Research capability is placeholder.</p>
+                  ) : null}
                   <p className="section-caption">{item.recommended_version ? `Version ${item.recommended_version.version}` : "No published executable version"}</p>
                   <button className="button button-secondary" disabled={!canAdd || create.isPending} onClick={() => addWorkflow(item)}>
                     {item.lifecycle === "PLANNED" ? "Planned" : activeAlready ? "Already active" : "Add workflow"}

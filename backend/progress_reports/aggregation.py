@@ -54,6 +54,13 @@ class ProjectProgressAggregationService:
             item.workflow_definition_id: item
             for item in self._uow.workflow_foundation.list_definitions()
         }
+        definition_versions = {
+            (item.workflow_definition_id, item.version): item
+            for definition in definitions.values()
+            for item in self._uow.workflow_foundation.list_definition_versions(
+                definition.workflow_definition_id
+            )
+        }
         reports = self._uow.progress_reports.list_for_project(project_id)
         acknowledgements = self._uow.workspace_sync.list_acknowledgements(project_id)
         dependency_bindings = (
@@ -77,6 +84,9 @@ class ProjectProgressAggregationService:
             self._instance_projection(
                 instance=instance,
                 definition=definitions.get(instance.workflow_definition_id),
+                definition_version=definition_versions.get(
+                    (instance.workflow_definition_id, instance.workflow_version)
+                ),
                 reports=tuple(by_instance.get(instance.workflow_instance_id, ())),
                 current_manifest_revision=project.current_manifest_revision,
                 acknowledgements=acknowledgements,
@@ -148,10 +158,13 @@ class ProjectProgressAggregationService:
         *,
         instance,
         definition,
+        definition_version,
         reports: tuple[UploadedProgressReport, ...],
         current_manifest_revision: int,
         acknowledgements,
     ) -> WorkflowInstanceProgressProjection:
+        if definition_version is None:
+            raise ValueError("Workflow Definition Version authority is missing")
         accepted = tuple(
             item
             for item in reports
@@ -183,6 +196,7 @@ class ProjectProgressAggregationService:
             workflow_instance_id=instance.workflow_instance_id,
             workflow_definition_id=instance.workflow_definition_id,
             workflow_definition_version=instance.workflow_version,
+            core_capability_maturity=definition_version.core_capability_maturity.value,
             workflow_display_name=(
                 definition.display_name if definition is not None else instance.display_name
             ),

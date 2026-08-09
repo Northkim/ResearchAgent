@@ -19,6 +19,7 @@ class ArtifactReferenceResponse(StrictDTO):
     producer_execution_round: int
     producer_capsule_id: str
     producer_capsule_version: str
+    producer_core_capability_maturity: str
     artifact_type: str
     artifact_schema_version: str
     media_type: str

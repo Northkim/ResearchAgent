@@ -45,6 +45,11 @@ class WorkflowFoundationRepository(ABC):
     ) -> tuple[WorkflowDefinitionVersion, ...]: ...
 
     @abstractmethod
+    def get_instance_maturities(
+        self, project_id: str, workflow_instance_ids: tuple[str, ...]
+    ) -> dict[str, str]: ...
+
+    @abstractmethod
     def add_capsule_version(self, capsule: WorkflowCapsuleVersion) -> None: ...
 
     @abstractmethod

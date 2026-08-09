@@ -79,10 +79,14 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
           </div>
           <div className="workflow-badge-row">
             <WorkflowStatusBadge value={selected.lifecycle} dimension="lifecycle" />
+            <WorkflowStatusBadge value={selected.core_capability_maturity} dimension="maturity" />
             <WorkflowStatusBadge value={selected.research_status} dimension="research" />
             <WorkflowStatusBadge value={selected.desired_state} dimension="desired" />
             <WorkflowStatusBadge value={selected.installation_state} dimension="installation" />
           </div>
+          {selected.core_capability_maturity === "SCAFFOLD_CORE" ? (
+            <p className="scaffold-warning">Product flow is functional. Research capability is placeholder.</p>
+          ) : null}
           <p>{selected.latest_summary ?? "No Progress Report has been uploaded for this instance."}</p>
           {selected.next_recommended_action ? <p><strong>Next:</strong> {selected.next_recommended_action}</p> : null}
         </section>

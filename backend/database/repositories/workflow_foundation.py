@@ -111,6 +111,45 @@ class SQLAlchemyWorkflowFoundationRepository(WorkflowFoundationRepository):
         rows.sort(key=lambda row: row.version)
         return tuple(_definition_version(row) for row in rows)
 
+    def get_instance_maturities(
+        self, project_id: str, workflow_instance_ids: tuple[str, ...]
+    ) -> dict[str, str]:
+        if not workflow_instance_ids:
+            return {}
+        rows = self.session.execute(
+            select(
+                ProjectWorkflowInstanceORM.workflow_instance_id,
+                LocalWorkflowDefinitionVersionORM.core_capability_maturity,
+            ).join(
+                LocalWorkflowDefinitionVersionORM,
+                (
+                    LocalWorkflowDefinitionVersionORM.workflow_definition_id
+                    == ProjectWorkflowInstanceORM.workflow_definition_id
+                ) & (
+                    LocalWorkflowDefinitionVersionORM.version
+                    == ProjectWorkflowInstanceORM.workflow_version
+                ),
+            ).where(
+                ProjectWorkflowInstanceORM.workflow_instance_id.in_(workflow_instance_ids),
+                ProjectWorkflowInstanceORM.project_id == project_id,
+            )
+        ).all()
+        result = {instance_id: maturity for instance_id, maturity in rows}
+        for instance in pending_instances(self.session, ProjectWorkflowInstanceORM):
+            if (
+                instance.workflow_instance_id not in workflow_instance_ids
+                or instance.project_id != project_id
+            ):
+                continue
+            version = self.get_definition_version(
+                instance.workflow_definition_id, instance.workflow_version
+            )
+            if version is not None:
+                result[instance.workflow_instance_id] = (
+                    version.core_capability_maturity.value
+                )
+        return result
+
     def add_capsule_version(self, capsule: WorkflowCapsuleVersion) -> None:
         existing = self.get_capsule_version(capsule.capsule_id, capsule.capsule_version)
         if existing is not None:

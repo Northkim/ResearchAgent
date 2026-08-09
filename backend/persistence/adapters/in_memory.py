@@ -358,6 +358,21 @@ class InMemoryWorkflowFoundationRepository(WorkflowFoundationRepository):
             key=lambda item: item.version,
         ))
 
+    def get_instance_maturities(
+        self, project_id: str, workflow_instance_ids: tuple[str, ...]
+    ) -> dict[str, str]:
+        result: dict[str, str] = {}
+        for instance_id in workflow_instance_ids:
+            instance = self._uow._project_workflow_instances.get(instance_id)
+            if instance is None or instance.project_id != project_id:
+                continue
+            version = self._uow._workflow_definition_versions.get(
+                (instance.workflow_definition_id, instance.workflow_version)
+            )
+            if version is not None:
+                result[instance_id] = version.core_capability_maturity.value
+        return result
+
     def add_capsule_version(self, capsule: WorkflowCapsuleVersion) -> None:
         self._add_immutable(
             self._uow._workflow_capsule_versions,

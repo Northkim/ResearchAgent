@@ -272,10 +272,10 @@ class ArtifactReferenceService:
                 "Project not found", code="PROJECT_NOT_FOUND"
             )
         if producer_workflow_instance_id is not None:
-            instance = self._uow.workflow_foundation.get_workflow_instance(
-                producer_workflow_instance_id
+            maturities = self._uow.workflow_foundation.get_instance_maturities(
+                project_id, (producer_workflow_instance_id,)
             )
-            if instance is None or instance.project_id != project_id:
+            if producer_workflow_instance_id not in maturities:
                 raise ApplicationCodedNotFoundError(
                     "Producer Workflow Instance not found",
                     code="WORKFLOW_INSTANCE_NOT_FOUND",
@@ -301,10 +301,26 @@ class ArtifactReferenceService:
             artifact_type=artifact_type,
             state=state,
         )
+        producer_ids = tuple(sorted({item.producer_workflow_instance_id for item in values}))
+        if producer_workflow_instance_id is None:
+            maturities = self._uow.workflow_foundation.get_instance_maturities(
+                project_id, producer_ids
+            )
+        if set(producer_ids) - set(maturities):
+            raise ApplicationCodedValidationError(
+                "Artifact producer Workflow Version is unavailable",
+                code="ARTIFACT_PRODUCER_MISMATCH",
+            )
         return {
             "schema_version": ARTIFACT_PAGE_SCHEMA,
             "project_id": project_id,
-            "artifacts": [_artifact_document(item) for item in values],
+            "artifacts": [
+                _artifact_document(
+                    item,
+                    maturities[item.producer_workflow_instance_id],
+                )
+                for item in values
+            ],
             "offset": offset,
             "limit": limit,
             "total": total,
@@ -645,7 +661,9 @@ def _matches_output_contract(
     return declaration.relative_path == expected
 
 
-def _artifact_document(item: ArtifactReference) -> dict[str, Any]:
+def _artifact_document(
+    item: ArtifactReference, producer_core_capability_maturity: str
+) -> dict[str, Any]:
     return {
         "schema_version": "reagent.artifact-reference/v0.1",
         "artifact_id": item.artifact_id,
@@ -656,6 +674,7 @@ def _artifact_document(item: ArtifactReference) -> dict[str, Any]:
         "producer_execution_round": item.producer_execution_round,
         "producer_capsule_id": item.producer_capsule_id,
         "producer_capsule_version": item.producer_capsule_version,
+        "producer_core_capability_maturity": producer_core_capability_maturity,
         "artifact_type": item.artifact_type,
         "artifact_schema_version": item.artifact_schema_version,
         "media_type": item.media_type,

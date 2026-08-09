@@ -638,6 +638,7 @@ class WorkflowInstanceProgressProjection(SerializableContract):
     workflow_instance_id: str
     workflow_definition_id: str
     workflow_definition_version: str
+    core_capability_maturity: str
     workflow_display_name: str
     instance_display_name: str
     lifecycle: str
@@ -661,6 +662,8 @@ class WorkflowInstanceProgressProjection(SerializableContract):
     def __post_init__(self) -> None:
         if self.schema_version != WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION:
             raise ValueError("invalid Workflow Instance Progress schema")
+        if self.core_capability_maturity not in {"REVIEWED_CORE", "SCAFFOLD_CORE"}:
+            raise ValueError("invalid Workflow Instance core capability maturity")
         if self.report_count < 0:
             raise ValueError("report_count must be non-negative")
         object.__setattr__(self, "artifact_metadata", tuple(self.artifact_metadata))

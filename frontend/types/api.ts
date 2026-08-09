@@ -398,6 +398,7 @@ export interface WorkflowInstanceProgress {
   workflow_instance_id: string;
   workflow_definition_id: string;
   workflow_definition_version: string;
+  core_capability_maturity: "REVIEWED_CORE" | "SCAFFOLD_CORE";
   workflow_display_name: string;
   instance_display_name: string;
   lifecycle: "ACTIVE" | "RETIRED";
@@ -471,6 +472,7 @@ export interface CanonicalArtifactReference {
   producer_execution_round: number;
   producer_capsule_id: string;
   producer_capsule_version: string;
+  producer_core_capability_maturity: "REVIEWED_CORE" | "SCAFFOLD_CORE";
   artifact_type: string;
   artifact_schema_version: string;
   media_type: string;

@@ -292,6 +292,7 @@ summary:focus-visible {
 .workflow-badge-desired { background: var(--forest-soft); border-color: #b8cabf; color: var(--forest); }
 .workflow-badge-installation { background: var(--amber-soft); border-color: #dec39d; color: #7d4b18; }
 .workflow-badge-catalog { background: var(--paper); }
+.workflow-badge-maturity { background: var(--amber-soft); border-color: #c88d3a; color: #6c3f11; }
 .workflow-card-details { border-top: 1px solid var(--line); display: grid; gap: 9px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 18px 0; padding-top: 16px; }
 .workflow-card-details div { min-width: 0; }
 .workflow-card-details dt { color: var(--muted); font-size: 10px; text-transform: uppercase; }

@@ -72,6 +72,18 @@ SUPPORTED_CAPSULE_PINS = {
         "idea-discovery-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.1.0", "0.1.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
+    ("review-local-experimental", "0.1.0", "0.1.0"): (
+        "review-scaffold-package-experimental",
+        False,
+    ),
+    ("reproduction-experiment-local-experimental", "0.1.0", "0.1.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -2802,6 +2814,7 @@ def _validate_cloud_artifact(artifact: Any, workspace: dict[str, Any]) -> None:
         "producer_workflow_instance_id", "producer_progress_receipt_id",
         "producer_progress_report_id", "producer_execution_round",
         "producer_capsule_id", "producer_capsule_version", "artifact_type",
+        "producer_core_capability_maturity",
         "artifact_schema_version", "media_type", "state", "relative_path",
         "content_checksum", "size_bytes", "cloud_metadata_available",
         "produced_at", "retired_at", "created_at", "updated_at",
@@ -2814,6 +2827,10 @@ def _validate_cloud_artifact(artifact: Any, workspace: dict[str, Any]) -> None:
     _match(value["artifact_id"], ARTIFACT_ID, "artifact_id")
     _match(value["producer_workflow_instance_id"], WORKFLOW_INSTANCE_ID, "producer_workflow_instance_id")
     _match(value["producer_capsule_version"], SEMVER, "producer_capsule_version")
+    if value["producer_core_capability_maturity"] not in {
+        "REVIEWED_CORE", "SCAFFOLD_CORE"
+    }:
+        raise _identity("ARTIFACT_INDEX_INVALID", "Artifact producer maturity is invalid")
     _safe_artifact_path(value["relative_path"], root="outputs")
     _checksum(value["content_checksum"], "content_checksum")
     if (
@@ -3210,6 +3227,14 @@ def run_workflow(
             ("idea-discovery-local-experimental", "0.1.0", "0.1.0"),
             ("idea-discovery-local-experimental", "0.2.0", "0.2.0"),
         }
+        is_scaffold = (
+            pin[0] in {
+                "writing-local-experimental",
+                "review-local-experimental",
+                "reproduction-experiment-local-experimental",
+            }
+            and pin[1:] == ("0.1.0", "0.1.0")
+        )
         command = [sys.executable, str(runner)]
         if is_idea:
             plan = validate_materialization_plan(
@@ -3289,6 +3314,22 @@ def run_workflow(
                 command.append("--preflight-only")
             if codex_executable is not None:
                 command.extend(["--codex-executable", codex_executable])
+        elif is_scaffold:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
         elif preflight_only:
             namespace = runpy.run_path(str(capsule / "validate_package.py"))
             try:
@@ -3309,7 +3350,11 @@ def run_workflow(
         else:
             command.extend(["run", "."])
         environment = dict(os.environ)
-        environment.pop("REAGENT_DATABASE_URL", None)
+        for key in (
+            "REAGENT_DATABASE_URL", "REAGENT_PROXY_TOKEN",
+            "REAGENT_LOCAL_SESSION_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+        ):
+            environment.pop(key, None)
         completed = subprocess.run(
             command,
             cwd=capsule,
@@ -3376,6 +3421,102 @@ def _prepare_idea_output_provenance(
             "ideas": [],
         },
     )
+
+
+def _prepare_scaffold_input_provenance(
+    *, workspace: Path, descriptor: dict[str, Any], capsule: Path,
+    workflow_instance_id: str, transport: Any,
+) -> None:
+    config = _read_json(capsule / "workflow/scaffold.json")
+    if (
+        config.get("core_capability_maturity") != "SCAFFOLD_CORE"
+        or config.get("workflow_id") not in {
+            "writing-local-experimental", "review-local-experimental",
+            "reproduction-experiment-local-experimental",
+        }
+    ):
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT", "Scaffold Workflow maturity contract is invalid"
+        )
+    requirements = config.get("input_requirements")
+    if not isinstance(requirements, list):
+        raise _identity("LOCAL_CAPSULE_DRIFT", "Scaffold requirements are invalid")
+    plan = validate_materialization_plan(
+        transport.materialization_plan(descriptor["project_id"], workflow_instance_id),
+        descriptor,
+    )
+    planned = {item["requirement_key"]: item for item in plan["artifacts"]}
+    expected_keys = {item.get("requirement_key") for item in requirements}
+    if set(planned) - expected_keys:
+        raise _identity(
+            "MATERIALIZATION_PLAN_INVALID", "Scaffold plan has an unknown requirement"
+        )
+    records: dict[str, dict[str, str]] = {}
+    for requirement in requirements:
+        key = requirement.get("requirement_key")
+        item = planned.get(key)
+        if item is None:
+            if requirement.get("required") is True:
+                raise WorkspaceCLIError(
+                    "DEPENDENCY_UNRESOLVED",
+                    f"Required scaffold input {key} must be explicitly bound",
+                    EXIT_VALIDATION,
+                )
+            continue
+        if (
+            item["artifact_type"] != requirement.get("artifact_type")
+            or item["target_relative_path"] != requirement.get("target_relative_path")
+        ):
+            raise _identity(
+                "MATERIALIZATION_PLAN_INVALID", "Scaffold requirement contract drifted"
+            )
+        receipt_path = workspace / MATERIALIZATION_RECEIPTS_ROOT / f"{item['binding_id']}.json"
+        if receipt_path.is_symlink() or not receipt_path.is_file():
+            raise WorkspaceCLIError(
+                "DEPENDENCY_UNRESOLVED",
+                f"Scaffold input {key} has not been explicitly materialized",
+                EXIT_VALIDATION,
+            )
+        receipt = _validate_materialization_receipt(_read_json(receipt_path), descriptor)
+        expected_target = (
+            f"{item['target_capsule_relative_path']}/{item['target_relative_path']}"
+        )
+        expected_receipt = {
+            "consumer_workflow_instance_id": workflow_instance_id,
+            "binding_id": item["binding_id"],
+            "artifact_id": item["artifact_id"],
+            "source_checksum": item["expected_checksum"],
+            "target_checksum": item["expected_checksum"],
+            "target_relative_path": expected_target,
+        }
+        if any(receipt[field] != value for field, value in expected_receipt.items()):
+            raise WorkspaceCLIError(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                f"Scaffold input {key} receipt differs from the exact Cloud binding",
+                EXIT_VALIDATION,
+            )
+        target = workspace / expected_target
+        checksum, size = _verified_regular_file(
+            target, allowed_root=capsule,
+            missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
+        )
+        if checksum != item["expected_checksum"] or size != item["expected_size_bytes"]:
+            raise WorkspaceCLIError(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                f"Scaffold input {key} checksum drifted",
+                EXIT_VALIDATION,
+            )
+        records[key] = {
+            "artifact_id": item["artifact_id"],
+            "artifact_type": item["artifact_type"],
+            "sha256": item["expected_checksum"],
+            "relative_path": item["target_relative_path"],
+        }
+    _atomic_write_json(capsule / "memory/input-provenance.json", {
+        "schema_version": "reagent.scaffold-input-provenance/v0.1",
+        "workflow_instance_id": workflow_instance_id,
+        "artifacts": records,
+    })
 
 
 def build_parser() -> argparse.ArgumentParser:

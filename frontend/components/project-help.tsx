@@ -65,7 +65,15 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
       </section>
 
       <section>
-        <p className="eyebrow">4 · Continue later</p>
+        <p className="eyebrow">4 · Scaffold Workflows</p>
+        <h2>Writing, Review, and Experiment validate the flow—not the science</h2>
+        <p>These three available Workflows have a <strong>Scaffold core</strong>. Their Registry, Capsule, exact inputs, local execution, immutable Artifact provenance, Progress, and continuity are functional, but their research capability is a visible placeholder.</p>
+        <ul><li>Writing produces a marked structural manuscript placeholder.</li><li>Review produces no substantive issues, score, acceptance prediction, or peer-review claim.</li><li>Reproduction &amp; Experiment supports only an Idea Experiment skeleton and never executes an experiment.</li></ul>
+        <p>Add each Workflow separately, sync locally, bind exact Artifact IDs, and materialize them. There is no Full Research Flow preset yet.</p>
+      </section>
+
+      <section>
+        <p className="eyebrow">5 · Continue later</p>
         <h2>Start from the Workspace, not chat history</h2>
         <p>Open a new terminal in the same Local Workspace and run:</p>
         <CopyCommand command="python reagent_local.py workflow list ." label="Workflow continuation command" />
@@ -94,7 +102,7 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
         <summary>Technical model and current limits</summary>
         <p>Cloud Desired Manifest, Capsule pins, Installed Lock, installation acknowledgement, Artifact checksum, and materialization receipts remain available for diagnostics. Normal use does not require editing them.</p>
         <p>A Workspace bootstrapped before H1 keeps its original self-contained CLI. Its existing exact <code>--workflow-instance</code> commands remain supported and are shown under the Idea Discovery card&apos;s technical details; sync never silently overwrites the Workspace tool.</p>
-        <ul><li>Writing, Review, and Experiment production Workflows are not available.</li><li>There is no automatic input selection, materialization, or background sync.</li><li>Cloud does not store Artifact bytes or provide complete Workspace backup.</li></ul>
+        <ul><li>Writing, Review, and Experiment are production flow scaffolds, not substantive research agents.</li><li>There is no automatic input selection, materialization, background sync, or Full Research Flow preset.</li><li>Cloud does not store Artifact bytes or provide complete Workspace backup.</li></ul>
       </details>
     </div>
   );
