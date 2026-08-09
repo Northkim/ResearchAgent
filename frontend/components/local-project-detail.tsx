@@ -35,14 +35,14 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
       action: deriveWorkflowNextAction({
         instance: { desired_state: item.lifecycle },
         progress: item,
-        requiresInput: item.workflow_definition_id === "idea-discovery-local-experimental",
+        requiresInput: (item.missing_required_inputs?.length ?? 0) > 0 || (item.bound_required_inputs?.length ?? 0) > 0,
         dependencies: projection.dependency_edges.filter(
           (edge) => edge.consumer_workflow_instance_id === item.workflow_instance_id,
         ),
       }),
     }))
     .sort((left, right) => left.action.priority - right.action.priority);
-  const recommended = actions[0];
+  const recommended = actions.find(({ instance }) => instance.workflow_instance_id === projection.recommended_workflow_instance_id) ?? actions[0];
   const bootstrapCommand = "python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json";
 
   return (
@@ -120,7 +120,7 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
             {recent.map((item) => (
               <article className="workflow-card" key={item.workflow_instance_id}>
                 <div className="workflow-card-heading">
-                  <div><h3>{item.instance_display_name}</h3></div>
+                  <div><h3>{item.friendly_instance_label ?? item.instance_display_name}</h3></div>
                   <WorkflowStatusBadge value={item.research_status} dimension="research" />
                 </div>
                 <p>{item.latest_summary ?? "No summary reported."}</p>

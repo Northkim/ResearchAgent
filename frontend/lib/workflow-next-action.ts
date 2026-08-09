@@ -6,11 +6,13 @@ import type {
 
 export type WorkflowNextActionCode =
   | "SYNC"
+  | "WAIT_FOR_UPSTREAM"
   | "SELECT_INPUT"
   | "MATERIALIZE"
   | "RUN"
   | "CONTINUE"
-  | "REVIEW_RESULT";
+  | "REVIEW_RESULT"
+  | "REVISE_MANUSCRIPT";
 
 export interface WorkflowNextAction {
   code: WorkflowNextActionCode;
@@ -30,6 +32,20 @@ export function deriveWorkflowNextAction({
   requiresInput: boolean;
   dependencies: ArtifactDependencyEdge[];
 }): WorkflowNextAction {
+  if (progress?.next_action) {
+    const content: Record<string, [string, string, number]> = {
+      SYNC: ["Set up or sync your Local Workspace", "Cloud has not confirmed the current local installation.", 10],
+      WAIT_FOR_UPSTREAM: ["Complete an upstream workflow", `Required results are not available yet: ${(progress.missing_required_inputs ?? []).join(", ")}.`, 20],
+      SELECT_INPUT: ["Select exact inputs", "Choose specific compatible results. ReAgent never selects the latest result implicitly.", 30],
+      MATERIALIZE: ["Prepare selected inputs locally", "Materialize verified copies in the Local Workspace. The browser cannot verify local bytes.", 40],
+      RUN: ["Run this Workflow locally", "Open the Local Workspace to start this independent Workflow.", 50],
+      CONTINUE: ["Continue this Workflow", progress.latest_summary ?? "Continue from its saved local memory.", 60],
+      REVIEW_RESULT: ["Review the latest result", "Inspect the immutable result and choose the next workflow explicitly.", 80],
+      REVISE_MANUSCRIPT: ["Create a new Writing round", "Use this review and its source manuscript as explicit inputs to a new Writing instance.", 70],
+    };
+    const [title, description, priority] = content[progress.next_action];
+    return { code: progress.next_action, title, description, priority };
+  }
   if (instance.desired_state === "RETIRED") {
     return {
       code: "REVIEW_RESULT",

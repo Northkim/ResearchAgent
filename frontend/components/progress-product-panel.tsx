@@ -63,7 +63,7 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
           <option value="">All workflows</option>
           {data.instances.map((instance) => (
             <option key={instance.workflow_instance_id} value={instance.workflow_instance_id}>
-              {instance.instance_display_name} · {instance.workflow_instance_id.slice(-8)}
+              {instance.friendly_instance_label ?? instance.instance_display_name} · {instance.workflow_instance_id.slice(-8)}
             </option>
           ))}
         </select>
@@ -74,7 +74,7 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
         <section className="selected-progress-card">
           <div>
             <p className="eyebrow">Selected Workflow Instance</p>
-            <h2>{selected.instance_display_name}</h2>
+            <h2>{selected.friendly_instance_label ?? selected.instance_display_name}</h2>
             <code>{selected.workflow_instance_id}</code>
           </div>
           <div className="workflow-badge-row">
@@ -106,7 +106,7 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
                   <div className="progress-history-heading">
                     <div>
                       <p className="eyebrow">{instance?.workflow_display_name ?? "Workflow"}</p>
-                      <h3>{instance?.instance_display_name ?? report.workflow_instance_id}</h3>
+                      <h3>{instance?.friendly_instance_label ?? instance?.instance_display_name ?? report.workflow_instance_id}</h3>
                       <code>Instance {report.workflow_instance_id.slice(-8)}</code>
                     </div>
                     <WorkflowStatusBadge value={report.normalized_record?.status ?? report.validation_status} dimension="research" />

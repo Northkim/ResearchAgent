@@ -292,6 +292,8 @@ export interface CreateLocalProjectRequest {
   name: string;
   research_topic: string;
   selected_workflow: LocalWorkflow;
+  workflow_setup?: "literature-only" | "literature-and-idea" | "full-research" | "custom";
+  custom_workflow_definition_ids?: string[];
 }
 
 export interface NormalizedProgressRecord {
@@ -341,6 +343,15 @@ export interface WorkflowVersionCatalog {
   review_status: string;
   core_capability_maturity: "REVIEWED_CORE" | "SCAFFOLD_CORE";
   published_at: string | null;
+  artifact_requirements?: WorkflowArtifactRequirement[];
+}
+
+export interface WorkflowArtifactRequirement {
+  requirement_key: string;
+  artifact_type: string;
+  schema_constraint: string;
+  required: boolean;
+  target_relative_path: string;
 }
 
 export interface CapsuleVersionCatalog {
@@ -401,6 +412,7 @@ export interface WorkflowInstanceProgress {
   core_capability_maturity: "REVIEWED_CORE" | "SCAFFOLD_CORE";
   workflow_display_name: string;
   instance_display_name: string;
+  friendly_instance_label?: string;
   lifecycle: "ACTIVE" | "RETIRED";
   desired_state: "DESIRED" | "NOT_DESIRED";
   capsule_id: string | null;
@@ -418,6 +430,12 @@ export interface WorkflowInstanceProgress {
   installation_state: string;
   installation_manifest_revision: number | null;
   sync_uncertainty: string;
+  readiness?: string;
+  next_action?: "SYNC" | "WAIT_FOR_UPSTREAM" | "SELECT_INPUT" | "MATERIALIZE" | "RUN" | "CONTINUE" | "REVIEW_RESULT" | "REVISE_MANUSCRIPT";
+  missing_required_inputs?: string[];
+  compatible_input_counts?: Record<string, number>;
+  bound_required_inputs?: string[];
+  result_count?: number;
 }
 
 export interface ProjectProgress {
@@ -439,6 +457,8 @@ export interface ProjectProgress {
   history_total: number;
   has_more_history: boolean;
   dependency_edges: ArtifactDependencyEdge[];
+  recommended_workflow_instance_id?: string | null;
+  recommended_next_action?: string;
   latest_status: string | null;
   latest_execution_round: number | null;
   current_state_summary: string | null;

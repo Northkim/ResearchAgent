@@ -144,8 +144,9 @@ export function useBindArtifactDependency(projectId: string, workflowInstanceId:
       artifactId: string;
       replaceBindingId?: string;
       idempotencyKey: string;
+      requirementKey?: string;
     }) => apiClient.bindArtifactDependency(projectId, workflowInstanceId, {
-      requirement_key: "paper_library",
+      requirement_key: payload.requirementKey ?? "paper_library",
       artifact_id: payload.artifactId,
       idempotency_key: payload.idempotencyKey,
       replace_binding_id: payload.replaceBindingId,

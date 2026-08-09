@@ -42,6 +42,9 @@ class LocalProjectService:
         clock: Callable[[], datetime] | None = None,
         project_id_factory: Callable[[], str] | None = None,
         workspace_initializer: Callable[[LocalProject], None] | None = None,
+        project_setup_initializer: Callable[
+            [LocalProject, str, tuple[str, ...]], None
+        ] | None = None,
         package_pin_resolver: Callable[[str], tuple[str, str, str] | None]
         | None = None,
         package_artifact_registrar: Callable[
@@ -57,6 +60,7 @@ class LocalProjectService:
             lambda: f"project-{uuid.uuid4().hex}"
         )
         self._workspace_initializer = workspace_initializer
+        self._project_setup_initializer = project_setup_initializer
         self._package_pin_resolver = package_pin_resolver
         self._package_artifact_registrar = package_artifact_registrar
         self._rollback = rollback_callback
@@ -67,6 +71,8 @@ class LocalProjectService:
         name: str,
         research_topic: str,
         selected_workflow: str,
+        workflow_setup: str = "literature-only",
+        custom_workflow_definition_ids: list[str] | tuple[str, ...] = (),
     ) -> LocalProject:
         timestamp = self._timestamp(self._clock())
         try:
@@ -82,7 +88,13 @@ class LocalProjectService:
             raise ApplicationValidationError(str(error)) from error
         self._repository.add(project)
         try:
-            if self._workspace_initializer is not None:
+            if self._project_setup_initializer is not None:
+                self._project_setup_initializer(
+                    project,
+                    workflow_setup,
+                    tuple(custom_workflow_definition_ids),
+                )
+            elif self._workspace_initializer is not None:
                 self._workspace_initializer(project)
             self._commit()
         except Exception:

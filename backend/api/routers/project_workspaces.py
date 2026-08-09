@@ -64,7 +64,12 @@ def _catalog_response(definition, service) -> WorkflowCatalogResponse:
         creatable=creatable,
         allows_multiple_instances=definition.allows_multiple_instances,
         recommended_version=(
-            WorkflowVersionCatalogResponse.from_contract(selected_version)
+            WorkflowVersionCatalogResponse.from_contract(
+                selected_version,
+                service.requirements_for(
+                    selected_version.workflow_definition_id, selected_version.version
+                ),
+            )
             if selected_version else None
         ),
         recommended_capsule=(
@@ -101,7 +106,11 @@ async def get_workflow_definition(
     return WorkflowCatalogDetailResponse(
         **summary.model_dump(),
         versions=[
-            WorkflowVersionCatalogResponse.from_contract(item)
+            WorkflowVersionCatalogResponse.from_contract(
+                item, services.project_workspaces.requirements_for(
+                    item.workflow_definition_id, item.version
+                )
+            )
             for item in services.project_workspaces.versions_for(workflow_definition_id)
         ],
         capsules=[

@@ -316,7 +316,7 @@ class ApplicationContainer:
                 package_root=self.local_package_root,
                 clock=self.clock,
                 project_id_factory=self.project_id_factory,
-                workspace_initializer=project_workspaces.initialize_new_project,
+                project_setup_initializer=project_workspaces.initialize_project_setup,
                 package_pin_resolver=workspace_sync.standalone_literature_package_pin,
                 package_artifact_registrar=(
                     workspace_sync.register_standalone_package_artifact

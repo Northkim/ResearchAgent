@@ -33,9 +33,10 @@ class WorkflowVersionCatalogResponse(StrictDTO):
     review_status: str
     core_capability_maturity: str
     published_at: str | None
+    artifact_requirements: list[dict[str, Any]]
 
     @classmethod
-    def from_contract(cls, value: WorkflowDefinitionVersion):
+    def from_contract(cls, value: WorkflowDefinitionVersion, requirements=()):
         return cls(
             version=value.version,
             contract_checksum=value.contract_checksum,
@@ -44,6 +45,13 @@ class WorkflowVersionCatalogResponse(StrictDTO):
             review_status=value.review_status.value,
             core_capability_maturity=value.core_capability_maturity.value,
             published_at=value.published_at.isoformat() if value.published_at else None,
+            artifact_requirements=[{
+                "requirement_key": item.requirement_key,
+                "artifact_type": item.artifact_type,
+                "schema_constraint": item.schema_constraint,
+                "required": item.required,
+                "target_relative_path": item.target_relative_path,
+            } for item in requirements],
         )
 
 

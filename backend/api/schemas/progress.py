@@ -181,6 +181,7 @@ class WorkflowInstanceProgressResponse(StrictDTO):
     core_capability_maturity: str
     workflow_display_name: str
     instance_display_name: str
+    friendly_instance_label: str
     lifecycle: str
     desired_state: str
     capsule_id: str | None
@@ -198,6 +199,12 @@ class WorkflowInstanceProgressResponse(StrictDTO):
     installation_state: str
     installation_manifest_revision: int | None
     sync_uncertainty: str
+    readiness: str
+    next_action: str
+    missing_required_inputs: list[str]
+    compatible_input_counts: dict[str, int]
+    bound_required_inputs: list[str]
+    result_count: int
 
 
 class ProjectWorkflowProgressResponse(StrictDTO):
@@ -219,6 +226,8 @@ class ProjectWorkflowProgressResponse(StrictDTO):
     history_total: int
     has_more_history: bool
     dependency_edges: list[dict[str, Any]]
+    recommended_workflow_instance_id: str | None
+    recommended_next_action: str
     # V0.x Literature Search compatibility projection. New clients use
     # ``instances``; these additive fields keep the accepted result view alive.
     package_id: str | None = None
@@ -278,6 +287,8 @@ class ProjectWorkflowProgressResponse(StrictDTO):
             history_total=projection.history_total,
             has_more_history=projection.has_more_history,
             dependency_edges=[dict(item) for item in projection.dependency_edges],
+            recommended_workflow_instance_id=projection.recommended_workflow_instance_id,
+            recommended_next_action=projection.recommended_next_action,
             **legacy,
         )
 

@@ -52,6 +52,9 @@ class ArtifactReferenceRepository(ABC):
     ) -> WorkflowArtifactRequirement | None: ...
 
     @abstractmethod
+    def list_requirements(self) -> tuple[WorkflowArtifactRequirement, ...]: ...
+
+    @abstractmethod
     def add_binding(self, binding: ArtifactDependencyBinding) -> None: ...
 
     @abstractmethod

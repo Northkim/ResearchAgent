@@ -641,6 +641,7 @@ class WorkflowInstanceProgressProjection(SerializableContract):
     core_capability_maturity: str
     workflow_display_name: str
     instance_display_name: str
+    friendly_instance_label: str
     lifecycle: str
     desired_state: str
     capsule_id: str | None
@@ -658,6 +659,12 @@ class WorkflowInstanceProgressProjection(SerializableContract):
     installation_state: str
     installation_manifest_revision: int | None
     sync_uncertainty: str
+    readiness: str
+    next_action: str
+    missing_required_inputs: tuple[str, ...]
+    compatible_input_counts: Mapping[str, int]
+    bound_required_inputs: tuple[str, ...]
+    result_count: int
 
     def __post_init__(self) -> None:
         if self.schema_version != WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION:
@@ -666,7 +673,16 @@ class WorkflowInstanceProgressProjection(SerializableContract):
             raise ValueError("invalid Workflow Instance core capability maturity")
         if self.report_count < 0:
             raise ValueError("report_count must be non-negative")
+        if self.result_count < 0:
+            raise ValueError("result_count must be non-negative")
         object.__setattr__(self, "artifact_metadata", tuple(self.artifact_metadata))
+        object.__setattr__(self, "missing_required_inputs", tuple(self.missing_required_inputs))
+        object.__setattr__(self, "bound_required_inputs", tuple(self.bound_required_inputs))
+        object.__setattr__(
+            self,
+            "compatible_input_counts",
+            _freeze_json(self.compatible_input_counts, path="compatible_input_counts"),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -691,6 +707,8 @@ class ProjectWorkflowProgressProjection(SerializableContract):
     history_total: int
     has_more_history: bool
     dependency_edges: tuple[Mapping[str, Any], ...]
+    recommended_workflow_instance_id: str | None
+    recommended_next_action: str
 
     def __post_init__(self) -> None:
         if self.schema_version != PROJECT_WORKFLOW_PROGRESS_SCHEMA_VERSION:

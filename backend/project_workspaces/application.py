@@ -37,6 +37,7 @@ from .legacy import (
     workspace_id_for_project,
 )
 from .manifest import build_desired_manifest, mutation_idempotency_key
+from .presets import resolve_project_setup
 from .bootstrap import build_workspace_bootstrap_descriptor
 from .service import (
     ensure_literature_search_foundation,
@@ -76,6 +77,78 @@ class ProjectWorkspaceApplicationService:
             self._uow, now=now
         )
         self._initialize_project_with_pin(project, definition, version, capsule)
+
+    def initialize_project_setup(
+        self,
+        project: LocalProject,
+        setup: str,
+        custom_workflow_definition_ids: tuple[str, ...],
+    ) -> None:
+        """Atomically translate one product setup into revision-1 instances."""
+
+        now = _parse_timestamp(project.created_at)
+        ensure_production_workflow_foundation(self._uow, now=now)
+        try:
+            workflow_ids = resolve_project_setup(
+                setup, custom_workflow_definition_ids
+            )
+        except ValueError as error:
+            raise ApplicationCodedValidationError(
+                str(error), code="PROJECT_WORKFLOW_SETUP_INVALID"
+            ) from error
+        pins = tuple(self._current_creatable_pin(item) for item in workflow_ids)
+        canonical = CloudProject(
+            project_id=project.project_id,
+            workspace_id=workspace_id_for_project(project.project_id),
+            name=project.name,
+            research_topic=project.research_topic,
+            status=CloudProjectStatus.ACTIVE,
+            current_manifest_revision=1,
+            legacy_local_project_id=project.project_id,
+            created_at=now,
+            updated_at=now,
+        )
+        instances = tuple(
+            ProjectWorkflowInstance(
+                workflow_instance_id=(
+                    legacy_workflow_instance_id(project.project_id)
+                    if index == 0 and definition.workflow_definition_id
+                    == "literature-search-local-experimental"
+                    else self._instance_id_factory()
+                ),
+                project_id=project.project_id,
+                workflow_definition_id=definition.workflow_definition_id,
+                workflow_version=version.version,
+                capsule_id=capsule.capsule_id,
+                capsule_version=capsule.capsule_version,
+                desired_state=WorkflowInstanceDesiredState.ACTIVE,
+                display_name=definition.display_name,
+                created_manifest_revision=1,
+                retired_manifest_revision=None,
+                legacy_package_id=None,
+                created_at=now,
+                updated_at=now,
+            )
+            for index, (definition, version, capsule) in enumerate(pins)
+        )
+        capsules = {
+            (capsule.capsule_id, capsule.capsule_version): capsule
+            for _, _, capsule in pins
+        }
+        manifest, entries = build_desired_manifest(
+            project=canonical,
+            instances=instances,
+            capsules=capsules,
+            revision=1,
+            base_revision=0,
+            idempotency_key=initial_manifest_idempotency_key(project.project_id),
+            now=now,
+        )
+        self._uow.project_manifests.add_project(canonical)
+        for instance in instances:
+            self._uow.workflow_foundation.add_workflow_instance(instance)
+        self._uow.project_manifests.add_manifest(manifest)
+        self._uow.project_manifests.add_manifest_entries(entries)
 
     def _initialize_project_with_pin(
         self,
@@ -150,6 +223,13 @@ class ProjectWorkspaceApplicationService:
     ) -> tuple[WorkflowCapsuleVersion, ...]:
         return self._uow.workflow_foundation.list_capsule_versions(
             workflow_definition_id
+        )
+
+    def requirements_for(self, workflow_definition_id: str, workflow_version: str):
+        return tuple(
+            item for item in self._uow.artifact_references.list_requirements()
+            if item.workflow_definition_id == workflow_definition_id
+            and item.workflow_version == workflow_version
         )
 
     def list_instances(self, project_id: str) -> tuple[ProjectWorkflowInstance, ...]:
@@ -376,6 +456,44 @@ class ProjectWorkspaceApplicationService:
             )
         return definition, version, capsule
 
+    def _current_creatable_pin(
+        self, workflow_definition_id: str
+    ) -> tuple[WorkflowDefinition, WorkflowDefinitionVersion, WorkflowCapsuleVersion]:
+        definition = self.get_catalog_definition(workflow_definition_id)
+        if definition.lifecycle is not WorkflowDefinitionLifecycle.AVAILABLE:
+            raise ApplicationCodedConflictError(
+                "Workflow Definition is not available for Project setup",
+                code="WORKFLOW_UNAVAILABLE",
+            )
+        versions = sorted(
+            (
+                item for item in self.versions_for(workflow_definition_id)
+                if item.review_status is WorkflowReviewStatus.REVIEWED
+                and item.published_at is not None
+            ),
+            key=lambda item: _semver_key(item.version),
+        )
+        if not versions:
+            raise ApplicationCodedConflictError(
+                "Workflow has no published current version",
+                code="WORKFLOW_VERSION_UNAVAILABLE",
+            )
+        version = versions[-1]
+        capsules = sorted(
+            (
+                item for item in self.capsules_for(workflow_definition_id)
+                if item.workflow_version == version.version
+                and item.review_status is WorkflowReviewStatus.REVIEWED
+            ),
+            key=lambda item: (_semver_key(item.capsule_version), item.capsule_id),
+        )
+        if not capsules:
+            raise ApplicationCodedConflictError(
+                "Workflow has no published current Capsule",
+                code="CAPSULE_UNAVAILABLE",
+            )
+        return definition, version, capsules[-1]
+
     def _build_mutation_manifest(
         self,
         *,
@@ -433,3 +551,9 @@ def _utc(value: datetime) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("clock must be timezone-aware")
     return value.astimezone(timezone.utc)
+
+
+def _semver_key(value: str) -> tuple[int, int, int, str]:
+    core, _, suffix = value.partition("-")
+    major, minor, patch = core.split(".")
+    return int(major), int(minor), int(patch), suffix

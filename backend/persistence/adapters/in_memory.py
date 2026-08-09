@@ -207,6 +207,12 @@ class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
             (workflow_definition_id, workflow_version, requirement_key)
         )
 
+    def list_requirements(self) -> tuple[WorkflowArtifactRequirement, ...]:
+        return tuple(
+            self._uow._workflow_artifact_requirements[key]
+            for key in sorted(self._uow._workflow_artifact_requirements)
+        )
+
     def add_binding(self, binding: ArtifactDependencyBinding) -> None:
         existing = self.get_binding(binding.binding_id)
         if existing is not None and existing != binding:

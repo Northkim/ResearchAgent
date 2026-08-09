@@ -17,6 +17,12 @@ class CreateLocalProjectRequest(StrictDTO):
     name: str = Field(min_length=1, max_length=160)
     research_topic: str = Field(min_length=1, max_length=500)
     selected_workflow: Literal["LITERATURE_SEARCH"]
+    workflow_setup: Literal[
+        "literature-only", "literature-and-idea", "full-research", "custom"
+    ] = "literature-only"
+    custom_workflow_definition_ids: list[str] = Field(
+        default_factory=list, max_length=20
+    )
 
 
 class LocalPackageResponse(StrictDTO):

@@ -3785,20 +3785,24 @@ def _local_input_state(
     descriptor: dict[str, Any],
     capsule: Path,
     workflow_instance_id: str,
+    required_keys: set[str],
 ) -> str:
     receipts_root = workspace / MATERIALIZATION_RECEIPTS_ROOT
     if not receipts_root.exists():
         return "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
     if receipts_root.is_symlink() or not receipts_root.is_dir():
         raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt directory is unsafe")
-    matched = False
+    matched: set[str] = set()
     for path in sorted(receipts_root.glob("artifact-binding-*.json")):
         if path.is_symlink() or not path.is_file():
             raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt is unsafe")
         receipt = _validate_materialization_receipt(_read_json(path), descriptor)
         if receipt["consumer_workflow_instance_id"] != workflow_instance_id:
             continue
-        matched = True
+        requirement_key = receipt.get("requirement_key")
+        if requirement_key not in required_keys:
+            continue
+        matched.add(requirement_key)
         target = workspace / receipt["target_relative_path"]
         try:
             checksum, _ = _verified_regular_file(
@@ -3810,7 +3814,7 @@ def _local_input_state(
             return "INPUT_DRIFT"
         if checksum != receipt["target_checksum"]:
             return "INPUT_DRIFT"
-    return "LOCALLY_MATERIALIZED" if matched else "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
+    return "LOCALLY_MATERIALIZED" if matched == required_keys else "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
 
 
 def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
@@ -3829,10 +3833,14 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
     lock = _require_installed_lock(workspace, descriptor)
     _verify_locked_capsules(workspace, lock, bootstrap)
     active_counts: dict[str, int] = {}
+    all_counts: dict[str, int] = {}
     for item in lock["installed_capsules"]:
         if item["lifecycle"] == "ACTIVE":
             definition_id = item["workflow_definition_id"]
             active_counts[definition_id] = active_counts.get(definition_id, 0) + 1
+        definition_id = item["workflow_definition_id"]
+        all_counts[definition_id] = all_counts.get(definition_id, 0) + 1
+    seen_counts: dict[str, int] = {}
     workflows: list[dict[str, Any]] = []
     for item in lock["installed_capsules"]:
         capsule = workspace / item["relative_path"]
@@ -3851,6 +3859,19 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         requirements = document.get("input_requirements", [])
         if not isinstance(requirements, list):
             raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow input contract is invalid")
+        required_keys = {
+            requirement.get("requirement_key")
+            for requirement in requirements
+            if isinstance(requirement, dict) and requirement.get("required", True) is True
+            and isinstance(requirement.get("requirement_key"), str)
+        }
+        definition_id = item["workflow_definition_id"]
+        seen_counts[definition_id] = seen_counts.get(definition_id, 0) + 1
+        friendly_label = (
+            document["workflow_type"]
+            if all_counts[definition_id] == 1
+            else f"{document['workflow_type']} #{seen_counts[definition_id]}"
+        )
         if item["lifecycle"] != "ACTIVE":
             readiness = "RETAINED"
             next_action = "REVIEW_RESULT"
@@ -3860,9 +3881,9 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         elif report_count:
             readiness = "IN_PROGRESS"
             next_action = "CONTINUE"
-        elif requirements:
+        elif required_keys:
             readiness = _local_input_state(
-                workspace, descriptor, capsule, item["workflow_instance_id"]
+                workspace, descriptor, capsule, item["workflow_instance_id"], required_keys
             )
             next_action = (
                 "RUN" if readiness == "LOCALLY_MATERIALIZED" else "MATERIALIZE_INPUT"
@@ -3890,6 +3911,8 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             "workflow_instance_id": item["workflow_instance_id"],
             "workflow_definition_id": item["workflow_definition_id"],
             "display_name": document["workflow_type"],
+            "instance_label": friendly_label,
+            "core_capability_maturity": document.get("core_capability_maturity", "REVIEWED_CORE"),
             "workflow_version": item["workflow_definition_version"],
             "capsule_version": item["capsule_version"],
             "lifecycle": item["lifecycle"],
@@ -3956,7 +3979,8 @@ def _print_result(
             return
         print(f"Installed Workflows ({len(workflows)})")
         for item in workflows:
-            print(f"\n{item['display_name']} · {item['local_readiness'].replace('_', ' ').title()}")
+            print(f"\n{item.get('instance_label', item['display_name'])} · {item['local_readiness'].replace('_', ' ').title()}")
+            print(f"  Core: {item.get('core_capability_maturity', 'REVIEWED_CORE').replace('_CORE', '').title()}")
             print(f"  Next: {item['next_action'].replace('_', ' ').title()}")
             if item["next_command"] is not None:
                 print(f"  Command: {item['next_command']}")

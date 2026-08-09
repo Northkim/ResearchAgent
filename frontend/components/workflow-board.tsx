@@ -21,6 +21,7 @@ import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
 import { IdeaDiscoverySetup } from "./idea-discovery-setup";
+import { WorkflowInputSetup } from "./workflow-input-setup";
 import { CopyCommand } from "./copy-command";
 
 const IDEA_DISCOVERY_WORKFLOW_ID = "idea-discovery-local-experimental";
@@ -58,12 +59,20 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
   const projections = new Map(
     progress.data.instances.map((item) => [item.workflow_instance_id, item]),
   );
-  const activeDefinitions = new Set(
-    instances.data.items
-      .filter((item) => item.desired_state === "ACTIVE")
-      .map((item) => item.workflow_definition_id),
-  );
   const operationError = create.error ?? retire.error;
+  const relationships = catalog.data.items.flatMap((consumer) =>
+    (consumer.recommended_version?.artifact_requirements ?? []).map((requirement) => {
+      const producer = catalog.data!.items.find(
+        (candidate) => candidate.recommended_version?.output_schema_id === requirement.artifact_type,
+      );
+      return {
+        key: `${consumer.workflow_definition_id}-${requirement.requirement_key}`,
+        producer: producer?.display_name ?? requirement.artifact_type,
+        consumer: consumer.display_name,
+        required: requirement.required,
+      };
+    }),
+  );
 
   async function addWorkflow(item: WorkflowCatalogItem) {
     if (!item.recommended_version || !item.recommended_capsule) return;
@@ -130,6 +139,16 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
         </div>
       ) : null}
 
+      <section className="boundary-callout" aria-labelledby="research-relationships-title">
+        <strong id="research-relationships-title">Research relationships · guidance, not a pipeline</strong>
+        <p>Each Workflow remains independent. These links come from the current immutable Artifact requirement contracts.</p>
+        <ul>
+          {relationships.map((item) => (
+            <li key={item.key}>{item.producer} → {item.consumer}{item.required ? " · required" : " · optional"}</li>
+          ))}
+        </ul>
+      </section>
+
       <section aria-labelledby="current-workflows-title">
         <div className="section-heading">
           <div><p className="eyebrow">Current Workflows</p><h2 id="current-workflows-title">Your Project workflows</h2></div>
@@ -156,7 +175,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                   <div className="workflow-card-heading">
                     <div>
                       <p className="eyebrow">{definition?.display_name ?? instance.workflow_definition_id}</p>
-                      <h3>{instance.display_name}</h3>
+                      <h3>{state?.friendly_instance_label ?? instance.display_name}</h3>
                     </div>
                     <WorkflowStatusBadge value={instance.desired_state} dimension="lifecycle" />
                   </div>
@@ -167,6 +186,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                     <WorkflowStatusBadge value={state?.research_status ?? "NOT_STARTED"} dimension="research" />
                     <WorkflowStatusBadge value={state?.desired_state ?? (instance.in_current_manifest ? "DESIRED" : "NOT_DESIRED")} dimension="desired" />
                     <WorkflowStatusBadge value={state?.installation_state ?? "UNKNOWN"} dimension="installation" />
+                    {state?.readiness ? <WorkflowStatusBadge value={state.readiness} dimension="readiness" /> : null}
                   </div>
                   {definition?.recommended_version?.core_capability_maturity === "SCAFFOLD_CORE" ? (
                     <div className="boundary-callout">
@@ -189,6 +209,16 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                       instance={instance}
                       instances={instances.data.items}
                       installationState={state?.installation_state ?? "UNKNOWN"}
+                      dependencies={dependencyEdges}
+                    />
+                  ) : null}
+                  {instance.workflow_definition_id !== IDEA_DISCOVERY_WORKFLOW_ID ? (
+                    <WorkflowInputSetup
+                      projectId={projectId}
+                      instance={instance}
+                      instances={instances.data.items}
+                      projections={progress.data.instances}
+                      requirements={definition?.recommended_version?.artifact_requirements ?? []}
                       dependencies={dependencyEdges}
                     />
                   ) : null}
@@ -226,8 +256,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
         {catalog.data.items.length ? (
           <div className="workflow-catalog-grid">
             {catalog.data.items.map((item) => {
-              const activeAlready = activeDefinitions.has(item.workflow_definition_id);
-              const canAdd = item.creatable && item.lifecycle === "AVAILABLE" && !activeAlready && item.recommended_version && item.recommended_capsule;
+              const canAdd = item.creatable && item.lifecycle === "AVAILABLE" && item.recommended_version && item.recommended_capsule;
               return (
                 <article key={item.workflow_definition_id}>
                   <div className="workflow-card-heading"><h3>{item.display_name}</h3><WorkflowStatusBadge value={item.lifecycle} dimension="catalog" /></div>
@@ -240,7 +269,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
                   ) : null}
                   <p className="section-caption">{item.recommended_version ? `Version ${item.recommended_version.version}` : "No published executable version"}</p>
                   <button className="button button-secondary" disabled={!canAdd || create.isPending} onClick={() => addWorkflow(item)}>
-                    {item.lifecycle === "PLANNED" ? "Planned" : activeAlready ? "Already active" : "Add workflow"}
+                    {item.lifecycle === "PLANNED" ? "Planned" : "Add workflow"}
                   </button>
                 </article>
               );

@@ -69,7 +69,7 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
         <h2>Writing, Review, and Experiment validate the flow—not the science</h2>
         <p>These three available Workflows have a <strong>Scaffold core</strong>. Their Registry, Capsule, exact inputs, local execution, immutable Artifact provenance, Progress, and continuity are functional, but their research capability is a visible placeholder.</p>
         <ul><li>Writing produces a marked structural manuscript placeholder.</li><li>Review produces no substantive issues, score, acceptance prediction, or peer-review claim.</li><li>Reproduction &amp; Experiment supports only an Idea Experiment skeleton and never executes an experiment.</li></ul>
-        <p>Add each Workflow separately, sync locally, bind exact Artifact IDs, and materialize them. There is no Full Research Flow preset yet.</p>
+        <p>A Full Research Project preset creates all five independent Workflow Instances in one transaction. It is recommended guidance, not an enforced pipeline: Experiment is optional and Literature, Writing, Review, or Experiment may have additional rounds.</p>
       </section>
 
       <section>
@@ -102,7 +102,7 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
         <summary>Technical model and current limits</summary>
         <p>Cloud Desired Manifest, Capsule pins, Installed Lock, installation acknowledgement, Artifact checksum, and materialization receipts remain available for diagnostics. Normal use does not require editing them.</p>
         <p>A Workspace bootstrapped before H1 keeps its original self-contained CLI. Its existing exact <code>--workflow-instance</code> commands remain supported and are shown under the Idea Discovery card&apos;s technical details; sync never silently overwrites the Workspace tool.</p>
-        <ul><li>Writing, Review, and Experiment are production flow scaffolds, not substantive research agents.</li><li>There is no automatic input selection, materialization, background sync, or Full Research Flow preset.</li><li>Cloud does not store Artifact bytes or provide complete Workspace backup.</li></ul>
+        <ul><li>Writing, Review, and Experiment are production flow scaffolds, not substantive research agents.</li><li>The Full Research Project preset does not automatically select inputs, materialize files, sync, or execute Workflows.</li><li>Cloud does not store Artifact bytes or provide complete Workspace backup.</li></ul>
       </details>
     </div>
   );

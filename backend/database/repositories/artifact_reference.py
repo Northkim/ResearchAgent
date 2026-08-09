@@ -200,6 +200,17 @@ class SQLAlchemyArtifactReferenceRepository(ArtifactReferenceRepository):
         ) or self.session.get(WorkflowArtifactRequirementORM, key)
         return None if row is None else _requirement(row)
 
+    def list_requirements(self) -> tuple[WorkflowArtifactRequirement, ...]:
+        rows = list(self.session.scalars(select(WorkflowArtifactRequirementORM)))
+        rows.extend(
+            row for row in pending_instances(self.session, WorkflowArtifactRequirementORM)
+            if row not in rows
+        )
+        rows.sort(key=lambda row: (
+            row.workflow_definition_id, row.workflow_version, row.requirement_key
+        ))
+        return tuple(_requirement(row) for row in rows)
+
     def add_binding(self, binding: ArtifactDependencyBinding) -> None:
         existing = self.get_binding(binding.binding_id)
         if existing is not None:

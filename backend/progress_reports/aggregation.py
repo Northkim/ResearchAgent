@@ -77,22 +77,33 @@ class ProjectProgressAggregationService:
                 limit=max(artifact_total, 1),
             )
         }
+        friendly_labels = _friendly_labels(instances, definitions)
         by_instance: dict[str, list[UploadedProgressReport]] = defaultdict(list)
         for report in reports:
             by_instance[report.workflow_instance_id].append(report)
-        projections = tuple(
-            self._instance_projection(
+        all_requirements = self._uow.artifact_references.list_requirements()
+        projection_items = []
+        for instance in instances:
+            definition_version = definition_versions.get(
+                (instance.workflow_definition_id, instance.workflow_version)
+            )
+            projection_items.append(self._instance_projection(
                 instance=instance,
                 definition=definitions.get(instance.workflow_definition_id),
-                definition_version=definition_versions.get(
-                    (instance.workflow_definition_id, instance.workflow_version)
-                ),
+                definition_version=definition_version,
                 reports=tuple(by_instance.get(instance.workflow_instance_id, ())),
                 current_manifest_revision=project.current_manifest_revision,
                 acknowledgements=acknowledgements,
-            )
-            for instance in instances
-        )
+                requirements=tuple(
+                    item for item in all_requirements
+                    if item.workflow_definition_id == instance.workflow_definition_id
+                    and item.workflow_version == instance.workflow_version
+                ),
+                dependency_bindings=dependency_bindings,
+                artifacts=tuple(artifacts.values()),
+                friendly_label=friendly_labels[instance.workflow_instance_id],
+            ))
+        projections = tuple(projection_items)
         selected_history = tuple(
             report
             for report in reports
@@ -106,6 +117,11 @@ class ProjectProgressAggregationService:
         status_counts = Counter(item.research_status for item in projections)
         latest_activity = max(
             (item.latest_activity_at for item in projections if item.latest_activity_at),
+            default=None,
+        )
+        recommended = min(
+            (item for item in projections if item.lifecycle == "ACTIVE"),
+            key=lambda item: (_next_action_priority(item.next_action), _workflow_path_priority(item.workflow_definition_id), item.friendly_instance_label),
             default=None,
         )
         return ProjectWorkflowProgressProjection(
@@ -136,6 +152,8 @@ class ProjectProgressAggregationService:
                 _dependency_edge(binding, artifacts.get(binding.artifact_id))
                 for binding in dependency_bindings
             ),
+            recommended_workflow_instance_id=(recommended.workflow_instance_id if recommended else None),
+            recommended_next_action=(recommended.next_action if recommended else "REVIEW_RESULT"),
         )
 
     def instance_progress(
@@ -162,6 +180,10 @@ class ProjectProgressAggregationService:
         reports: tuple[UploadedProgressReport, ...],
         current_manifest_revision: int,
         acknowledgements,
+        requirements,
+        dependency_bindings,
+        artifacts,
+        friendly_label: str,
     ) -> WorkflowInstanceProgressProjection:
         if definition_version is None:
             raise ValueError("Workflow Definition Version authority is missing")
@@ -190,6 +212,47 @@ class ProjectProgressAggregationService:
             installation_state = "UNKNOWN"
             installation_revision = None
         activity = tuple(_report_activity_text(item) for item in accepted)
+        active_bindings = {
+            item.requirement_key: item
+            for item in dependency_bindings
+            if item.consumer_workflow_instance_id == instance.workflow_instance_id
+            and item.state.value == "ACTIVE"
+        }
+        required = tuple(item for item in requirements if item.required)
+        compatible_counts = {
+            item.requirement_key: sum(
+                artifact.artifact_type == item.artifact_type
+                and artifact.artifact_schema_version == item.schema_constraint
+                and artifact.state.value in {"LOCAL_AVAILABLE", "EXTERNAL_AVAILABLE"}
+                for artifact in artifacts
+            )
+            for item in required
+        }
+        missing = tuple(
+            item.requirement_key
+            for item in required
+            if item.requirement_key not in active_bindings
+        )
+        bound = tuple(
+            item.requirement_key
+            for item in required
+            if item.requirement_key in active_bindings
+        )
+        result_count = sum(
+            artifact.producer_workflow_instance_id == instance.workflow_instance_id
+            and artifact.state.value not in {"MISSING", "INCOMPATIBLE"}
+            for artifact in artifacts
+        )
+        readiness, next_action = _readiness(
+            lifecycle=instance.desired_state.value,
+            installation_state=installation_state,
+            missing=missing,
+            compatible_counts=compatible_counts,
+            report_count=len(accepted),
+            research_status=(record.status.value if record is not None else "NOT_STARTED"),
+            result_count=result_count,
+            stable_key=(definition.workflow_definition_id if definition is not None else ""),
+        )
         return WorkflowInstanceProgressProjection(
             schema_version=WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION,
             project_id=instance.project_id,
@@ -201,6 +264,7 @@ class ProjectProgressAggregationService:
                 definition.display_name if definition is not None else instance.display_name
             ),
             instance_display_name=instance.display_name,
+            friendly_instance_label=friendly_label,
             lifecycle=instance.desired_state.value,
             desired_state=(
                 "DESIRED"
@@ -224,7 +288,64 @@ class ProjectProgressAggregationService:
             installation_state=installation_state,
             installation_manifest_revision=installation_revision,
             sync_uncertainty="LOCAL_STATE_UNKNOWN",
+            readiness=readiness,
+            next_action=next_action,
+            missing_required_inputs=missing,
+            compatible_input_counts=compatible_counts,
+            bound_required_inputs=bound,
+            result_count=result_count,
         )
+
+
+def _readiness(*, lifecycle, installation_state, missing, compatible_counts, report_count, research_status, result_count, stable_key):
+    if lifecycle == "RETIRED":
+        return "RETIRED", "REVIEW_RESULT"
+    if installation_state != "ACKNOWLEDGED_CURRENT":
+        return "NOT_INSTALLED", "SYNC"
+    unavailable = tuple(key for key in missing if compatible_counts.get(key, 0) == 0)
+    if unavailable:
+        return "WAITING_FOR_INPUT", "WAIT_FOR_UPSTREAM"
+    if missing:
+        return "WAITING_FOR_INPUT", "SELECT_INPUT"
+    if research_status == "COMPLETED" or result_count:
+        return (
+            "RESULT_READY",
+            "REVISE_MANUSCRIPT" if stable_key == "review-local-experimental" else "REVIEW_RESULT",
+        )
+    if report_count:
+        return "IN_PROGRESS", "CONTINUE"
+    if compatible_counts:
+        # Cloud knows the exact bindings, but local materialization remains local truth.
+        return "NEEDS_MATERIALIZATION", "MATERIALIZE"
+    return "READY_TO_RUN", "RUN"
+
+
+def _friendly_labels(instances, definitions) -> dict[str, str]:
+    grouped = defaultdict(list)
+    for item in instances:
+        grouped[item.workflow_definition_id].append(item)
+    result = {}
+    for definition_id, values in grouped.items():
+        values.sort(key=lambda item: (item.created_at, item.workflow_instance_id))
+        base = definitions.get(definition_id).display_name if definitions.get(definition_id) else values[0].display_name
+        for index, item in enumerate(values, 1):
+            result[item.workflow_instance_id] = base if len(values) == 1 else f"{base} #{index}"
+    return result
+
+
+def _next_action_priority(value: str) -> int:
+    # Project guidance prefers one actionable step over cards that are waiting.
+    return {"SYNC": 10, "SELECT_INPUT": 20, "MATERIALIZE": 30, "RUN": 40, "CONTINUE": 50, "REVISE_MANUSCRIPT": 60, "REVIEW_RESULT": 70, "WAIT_FOR_UPSTREAM": 90}.get(value, 99)
+
+
+def _workflow_path_priority(definition_id: str) -> int:
+    return {
+        "literature-search-local-experimental": 10,
+        "idea-discovery-local-experimental": 20,
+        "writing-local-experimental": 30,
+        "reproduction-experiment-local-experimental": 40,
+        "review-local-experimental": 50,
+    }.get(definition_id, 90)
 
 
 def _report_activity_key(report: UploadedProgressReport) -> tuple[datetime, datetime, str, str]:
