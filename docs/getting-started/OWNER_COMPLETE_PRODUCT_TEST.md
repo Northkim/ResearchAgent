@@ -161,4 +161,3 @@ chat history, Project recreation, database access, or internal JSON edit is
 required.
 
 Record observations in [`OWNER_TEST_OBSERVATIONS.md`](OWNER_TEST_OBSERVATIONS.md).
-
