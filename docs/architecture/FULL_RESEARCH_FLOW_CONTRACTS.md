@@ -1,11 +1,13 @@
 # Full Research Flow contracts
 
-Status: production scaffold flow implemented (NIGHT-F1B)
+Status: complete production skeleton implemented through NIGHT-F1E
 
 ReAgent composes five independent Workflows. Literature Search and Idea
 Discovery have reviewed production research cores. Writing, Review, and
-Reproduction & Experiment are real production Workflows whose version 0.1.0
-research cores are explicitly `SCAFFOLD_CORE`.
+Reproduction & Experiment are real production Workflows whose published
+versions remain explicitly `SCAFFOLD_CORE`. The current Skill-backed Writing
+and Review versions are 0.2.0; the current Skill- and Resource-aware Experiment
+version is 0.3.0. Their immutable 0.1.0 predecessors remain published history.
 
 ```text
 Literature Search
@@ -147,6 +149,10 @@ Workspace sync, Installed Lock, verified materialization, local run, Progress
 and Artifact promotion paths are real. Their deterministic outputs are visibly
 marked placeholders. Reproduction & Experiment supports only
 `IDEA_EXPERIMENT`; paper reproduction and all real execution remain disabled.
+Migration `20260806_0016` adds exact built-in Skill pins through new 0.2.0
+scaffold versions. Migration `20260806_0017` adds the metadata-only Resource
+shell and Experiment 0.3.0 without changing the frozen Artifact contracts or
+performing external resolution/execution.
 
 F1C adds `full-research` as a server-resolved Project creation preset. It
 atomically creates five ordinary Workflow Instances and one revision-1 Desired

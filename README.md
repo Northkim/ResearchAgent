@@ -101,6 +101,10 @@ See [Full Research Project](docs/getting-started/FULL_RESEARCH_PROJECT.md) for
 readiness, exact input selection, scaffold boundaries, and revision rounds.
 Skill-backed scaffold Capsules install reviewed instructions automatically; see
 [Skills bundled with Workflows](docs/getting-started/SKILLS.md).
+The owner-facing end-to-end handoff is
+[Owner Complete Product Test](docs/getting-started/OWNER_COMPLETE_PRODUCT_TEST.md),
+with a separate
+[observation sheet](docs/getting-started/OWNER_TEST_OBSERVATIONS.md).
 
 ## Legacy Package compatibility
 

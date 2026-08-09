@@ -2,6 +2,44 @@
 
 Last updated: 2026-08-09
 
+## Completed milestone — NIGHT-F1F complete product-width qualification
+
+NIGHT-F1F is **PASS — READY FOR OWNER COMPLETE PRODUCT TEST** from clean F1E
+baseline `ceeaa19eee4b0c2ac68dee367a113298537a1afa`. The sole migration head
+remains `20260806_0017`; F1F adds no persistence or product capability.
+
+The deterministic complete-width qualifier now uses only real API, PostgreSQL,
+Workspace bootstrap/sync, Capsule, Skill, Artifact, Resource, Progress and
+filesystem paths. It creates a Full Research Project, produces reviewed
+Literature and selected Idea Artifacts, resolves a controlled LOCAL_TEST
+Resource, safely produces Experiment placeholder, Draft A, Review A and Draft
+B, preserves exact immutable provenance, distinguishes Writing #1/#2, checks
+fresh-session continuity and reloads all Cloud metadata through fresh
+PostgreSQL sessions. GitHub/Hugging Face remain metadata-only and instrumented
+tests confirm zero resolver network calls.
+
+One P1 integration defect was corrected without changing product semantics:
+post-result sync now recognizes only the already-declared scaffold dynamic
+input targets, content-addressed `outputs/artifacts/`, and current Artifact
+metadata. Previously a legitimate Draft A/Review A followed by adding Writing
+#2 failed Capsule verification. Immutable file/Skill checks, traversal/link/
+special-file bounds and checksum enforcement remain fail closed.
+
+Qualification passed isolated-PostgreSQL full backend `767 passed, 14 skipped`
+with `F1F_NEW_SKIP = 0`; frontend Vitest `17 files / 34 tests`; the five
+existing Playwright flows plus the new F1F product-width browser flow;
+TypeScript, ESLint, production build, compileall, Alembic head/current/check,
+performance and security regression. The 14 skips are ten explicit historical
+migration gates, three isolated integration gates and one live-Provider gate.
+
+`FULL_PRODUCT_SKELETON = PASS`, `PRODUCT_WIDTH_COMPLETE = YES`, and
+`READY_FOR_OWNER_COMPLETE_PRODUCT_TEST = YES`. Reviewed cores remain Literature
+Search and Idea Discovery. Writing, Review and Experiment remain unmistakable
+Scaffold Core; GitHub/Hugging Face remain metadata-only. Owner instructions and
+observation sheet are in `docs/getting-started/OWNER_COMPLETE_PRODUCT_TEST.md`
+and `OWNER_TEST_OBSERVATIONS.md`. The next action is owner manual testing; do
+not start another feature phase without a new owner decision.
+
 ## Completed milestone — NIGHT-F1B Full Research Flow scaffold Workflows
 
 NIGHT-F1B is **PASS — OWNER REVIEW READY** from clean F1A baseline

@@ -6,7 +6,9 @@ with placeholder research cores. Their Registry cards and Progress state show
 
 ## What is real
 
-Each Workflow has an immutable Definition and Capsule version 0.1.0, a Desired
+The published 0.1.0 Capsules remain immutable. New Writing and Review
+Instances use the Skill-backed Definition/Capsule 0.2.0; new Reproduction &
+Experiment Instances use Resource-aware Definition/Capsule 0.3.0. Each has a Desired
 Manifest entry, independent sync/install state, exact Artifact requirements,
 verified local materialization, a generic local Harness run, memory, Progress,
 and a content-addressed output Artifact. Cloud stores metadata and provenance;
@@ -45,6 +47,6 @@ null`; no code, dataset, model, metric or benchmark is executed or fabricated.
 
 ## Replacement policy
 
-Published 0.1.0 scaffold Capsules never become reviewed cores in place. A
+Published scaffold Capsules never become reviewed cores in place. A
 future substantive implementation requires a new immutable Definition and
 Capsule version, new checksums, and an explicit Project adoption decision.
