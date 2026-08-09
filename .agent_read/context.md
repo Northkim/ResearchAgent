@@ -2594,3 +2594,35 @@ calibration unless separately authorized.
 Historical next milestone was approval/revision of ADR 0006. Current route is
 governed by the Phase 9C-0 section at the top of this file; bounded calibration
 remains deferred and may not execute.
+## NIGHT-F1C full research preset and readiness UX (2026-08-09)
+
+NIGHT-F1C is implemented and qualified on `main` from F1B HEAD
+`f9eba63ef201916daf30cedddf004c1b187a93e6`. New Project creation accepts
+server-resolved `literature-only`, `literature-and-idea`, `full-research`, and
+Registry-validated `custom` setup. The existing transaction creates all
+selected ordinary Workflow Instances and revision-1 Desired Manifest or rolls
+the entire Local/Cloud Project back. Omitted setup remains Literature-only.
+
+Project Progress now derives readiness, exact missing/compatible/bound input
+facts, result count and next action from the immutable version requirement
+rows, Artifact metadata, active bindings, Progress, lifecycle and installation
+acknowledgement. Readiness is not persisted and remains separate from research
+status and core maturity. Cloud conservatively returns MATERIALIZE after exact
+binding; it never claims to know local bytes. The project-level recommendation
+selects one actionable upstream step instead of presenting five equal CTAs.
+
+The frontend exposes four setup choices, scaffold disclosure before Full
+creation, Registry-driven Custom requirements, readiness badges, generic exact
+Artifact selection, same-definition multiplicity, Writing #1/#2 labels and
+Review-to-new-Writing guidance. The CLI verifies every required input receipt,
+prints maturity and ordinal labels, and retains exact selector fallback.
+No pipeline persistence, DB migration, automatic binding/latest selection,
+browser-local write, Skill/Resource shell, or new research core was added.
+
+Qualification: focused preset/readiness/F1A-F1B/B3-B7 tests passed; isolated
+PostgreSQL 18 full backend `742 passed, 11 skipped`; frontend Vitest `16 files / 33 tests`,
+TypeScript, ESLint and production build passed; deterministic fake-provider
+Playwright `5 passed`; compileall, Alembic sole head/current/check at
+`20260806_0015`, and git diff check passed. The isolated PostgreSQL cluster,
+E2E files and Playwright reports were removed. No live Provider, `.env`, owner
+database, owner Workspace, credentials, worktree, branch or push was used.

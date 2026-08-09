@@ -148,9 +148,16 @@ and Artifact promotion paths are real. Their deterministic outputs are visibly
 marked placeholders. Reproduction & Experiment supports only
 `IDEA_EXPERIMENT`; paper reproduction and all real execution remain disabled.
 
-F1B deliberately does not add a Full Research Flow preset. Users add each
-Workflow independently. Revision qualification uses a new Writing Instance so
-Draft A and Review A remain immutable and Draft B binds both explicitly.
+F1C adds `full-research` as a server-resolved Project creation preset. It
+atomically creates five ordinary Workflow Instances and one revision-1 Desired
+Manifest. The preset is not stored as a pipeline and does not enforce order.
+Readiness and next action are derived from Desired state, installation
+acknowledgement, immutable requirement contracts, exact bindings, compatible
+Artifact metadata and Progress. Local materialization remains local truth.
+
+Revision guidance creates a new Writing Instance so Draft A and Review A remain
+immutable and Draft B binds both explicitly. Same-definition Instances remain
+visible separately with friendly ordinal labels.
 
 ## Cloud/local and version boundaries
 

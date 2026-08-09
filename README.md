@@ -46,13 +46,15 @@ credential. Do not put project-specific configuration in `~/.zshrc`.
 The complete owner flow, one-round command, and recovery behavior are in
 [`docs/getting-started/LOCAL_V0_1.md`](docs/getting-started/LOCAL_V0_1.md).
 
-## Product quick start: Literature Search to Idea Discovery
+## Product quick start: Full Research Project
 
 This is the normal long-lived Project flow. It needs no manual editing of
 `project.json`, locks, indexes, receipts, or Progress JSON.
 
-1. Open <http://127.0.0.1:3000/projects>, create a Project, and open its Help
-   page.
+1. Open <http://127.0.0.1:3000/projects>, create a Project, and choose
+   **Full Research Project**. The confirmation identifies Writing, Review, and
+   Experiment as prototype cores. Literature-only and Literature + Idea remain
+   available, and Custom choices come from the production Registry.
 2. Download **Workspace setup**, keep the filename
    `workspace-bootstrap.json`, and run the copyable command shown in Help:
 
@@ -67,8 +69,8 @@ This is the normal long-lived Project flow. It needs no manual editing of
    the search plan and paper selection interactively, then type `finish` only
    when the selected set is ready. A successful finish creates the reusable
    selected paper library and uploads bounded Progress metadata.
-4. In the Workflow Board, add **Idea Discovery**. The browser changes Cloud
-   configuration only. Back in the Local Workspace, run:
+4. In the Workflow Board, explicitly select compatible inputs when requested.
+   The browser changes Cloud metadata only. Back in the Local Workspace, run:
 
    ```bash
    python reagent_local.py sync .
@@ -91,6 +93,12 @@ The friendly `--workflow` selector is accepted only when exactly one active
 local instance of that Workflow exists. If a Project deliberately has multiple
 instances of the same type, `workflow list` fails closed to exact
 `--workflow-instance` commands. Existing exact-ID commands remain supported.
+The preset is not a pipeline: Experiment is optional, additional rounds remain
+independent, and Review suggests a new Writing Instance without silently
+binding any Artifact.
+
+See [Full Research Project](docs/getting-started/FULL_RESEARCH_PROJECT.md) for
+readiness, exact input selection, scaffold boundaries, and revision rounds.
 
 ## Legacy Package compatibility
 

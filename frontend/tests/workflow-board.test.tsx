@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, test, vi } from "vitest";
 
@@ -33,7 +33,7 @@ test("renders Registry-driven Workflow cards and keeps planned definitions disab
   expect(screen.getByText("Cloud desired")).toBeVisible();
   expect(screen.getByText("Installed · current")).toBeVisible();
   expect(screen.getByRole("button", { name: "Planned" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Already active" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Add workflow" })).toBeEnabled();
   expect(screen.getByRole("link", { name: "Workflows" })).toHaveAttribute("aria-current", "page");
 });
 
@@ -127,7 +127,8 @@ test("refreshes on Manifest revision conflict and never attempts a browser-local
   const localWrite = vi.spyOn(window, "open");
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
 
-  await userEvent.click(await screen.findByRole("button", { name: "Add workflow" }));
+  const availableCard = (await screen.findByRole("heading", { name: "Fixture Available Workflow" })).closest("article");
+  await userEvent.click(within(availableCard!).getByRole("button", { name: "Add workflow" }));
   expect(await screen.findByText(/Project changed elsewhere/)).toBeVisible();
   expect(create).toHaveBeenCalledWith(
     localProjectFixture.project_id,
