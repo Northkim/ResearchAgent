@@ -3304,9 +3304,7 @@ def run_workflow(
                 EXIT_VALIDATION,
             )
         capsule = workspace / installed["relative_path"]
-        runner = capsule / "reagent_local.py"
-        if runner.is_symlink() or not runner.is_file():
-            raise _identity("LOCAL_CAPSULE_DRIFT", "Workflow runner is unavailable")
+        command = _capsule_runner_command(capsule)
         pin = (
             installed["workflow_definition_id"],
             installed["workflow_definition_version"],
@@ -3326,7 +3324,6 @@ def run_workflow(
                 ("0.1.0", "0.1.0"), ("0.2.0", "0.2.0"), ("0.3.0", "0.3.0")
             }
         )
-        command = [sys.executable, str(runner)]
         if is_idea:
             plan = validate_materialization_plan(
                 transport.materialization_plan(
@@ -3474,6 +3471,15 @@ def run_workflow(
             workflow_instance_id=workflow_instance_id,
             capsule_relative_path=installed["relative_path"],
         )
+
+
+def _capsule_runner_command(capsule: Path) -> list[str]:
+    """Build a launcher command interpreted exactly once from its Capsule cwd."""
+
+    runner = capsule / "reagent_local.py"
+    if runner.is_symlink() or not runner.is_file():
+        raise _identity("LOCAL_CAPSULE_DRIFT", "Workflow runner is unavailable")
+    return [sys.executable, runner.name]
 
 
 def _prepare_idea_output_provenance(
@@ -4564,8 +4570,8 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
         "Nothing was copied. Refresh the Workflow Board and local Artifact Index, then retry explicit materialization.",
     ),
     "WORKFLOW_RUN_FAILED": (
-        "The local Agent Harness stopped before completing the requested round.",
-        "Keep the Workflow files, run `python reagent_local.py workflow list .`, and continue from local memory.",
+        "The Workflow launcher or local Agent Harness stopped before completing the requested round.",
+        "Keep the Workflow files and inspect the terminal error. If the launcher did not start or a path/file error appeared, stop and report code WORKFLOW_RUN_FAILED to the operator instead of repeatedly retrying. If the Harness started and wrote local state, run `python reagent_local.py workflow list .` to inspect continuity before an explicit retry.",
     ),
     "WORKSPACE_DESCRIPTOR_INVALID": (
         "This directory is not a valid ReAgent Local Workspace.",

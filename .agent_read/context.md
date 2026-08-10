@@ -1,6 +1,27 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-09
+Last updated: 2026-08-10
+
+## Owner-test defect repair — relative Workspace launcher path
+
+The owner-discovered F1F defect
+`LOCAL_RELATIVE_WORKSPACE_LAUNCH_PATH` is repaired. The copyable command
+`python reagent_local.py run . --workflow literature-search-local-experimental`
+previously combined a relative Capsule-prefixed launcher argv with the same
+relative Capsule as subprocess cwd, so Python interpreted the Capsule path
+twice and failed before Codex launched. Capsule verification and cwd remain
+unchanged; the subprocess now receives the Capsule-local `reagent_local.py`
+basename, which is interpreted exactly once from the verified Capsule cwd.
+
+Regression covers dot, absolute, named-relative, spaces and Unicode Workspace
+paths; Literature, Idea and all scaffold launcher pins; preflight-only;
+tamper fail-closed; the copied generic Workspace launcher; and bounded recovery
+guidance. Workflow Package tests passed 103, Project Workspace tests passed 83,
+the isolated PostgreSQL F1F complete-width test passed, and full backend passed
+`777 passed, 14 skipped`. The isolated test database was removed. No owner
+Workspace/Project/database, Provider, migration, product contract or
+architecture changed. Owner manual F1F testing may resume with the same
+copyable command after this repair is delivered.
 
 ## Completed milestone — NIGHT-F1F complete product-width qualification
 

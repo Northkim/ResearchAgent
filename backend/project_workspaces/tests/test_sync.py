@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import runpy
 import shutil
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,6 +80,35 @@ class _ClientTransport:
             error = response.json()["error"]
             raise WorkspaceCLIError(error["code"], error["message"], workspace_cli.EXIT_CLOUD)
         return response.json()
+
+
+def _synced_full_research_workspace(tmp_path: Path):
+    database = InMemoryDatabase()
+    package_root = tmp_path / "cloud-packages"
+    client = TestClient(create_app(ApplicationContainer(
+        unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
+        local_package_root=str(package_root),
+    )))
+    created = client.post("/projects", json={
+        "name": "F1F relative launcher regression",
+        "research_topic": "Synthetic fixture",
+        "selected_workflow": "LITERATURE_SEARCH",
+        "workflow_setup": "full-research",
+    })
+    assert created.status_code == 201, created.text
+    project_id = created.json()["project_id"]
+    descriptor = client.get(
+        f"/projects/{project_id}/workspace-bootstrap"
+    ).json()
+    workspace = tmp_path / "workspace"
+    workspace_cli.bootstrap_workspace(target=workspace, descriptor=descriptor)
+    transport = _ClientTransport(client)
+    synced = workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=transport,
+    )
+    assert synced.status == "SYNCED"
+    return workspace, descriptor, transport
 
 
 def test_cloud_sync_plan_artifact_download_and_acknowledgement_are_bound(sync_fixture):
@@ -556,3 +587,205 @@ def test_h1_human_error_explains_what_why_and_next(capsys):
     assert "Why it matters:" in error
     assert "Next:" in error
     assert "Code: WORKSPACE_DESCRIPTOR_INVALID" in error
+
+
+@pytest.mark.parametrize(
+    ("workspace_form", "workspace_name"),
+    [
+        ("dot", None),
+        ("absolute", None),
+        ("relative", "named-workspace"),
+        ("relative", "workspace with spaces"),
+        ("relative", "研究工作区"),
+    ],
+)
+def test_capsule_launcher_path_is_interpreted_once_for_supported_workspace_forms(
+    sync_fixture,
+    monkeypatch,
+    workspace_form,
+    workspace_name,
+):
+    workspace = sync_fixture["workspace"]
+    workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=_ClientTransport(sync_fixture["client"]),
+    )
+    if workspace_name is not None:
+        renamed = workspace.parent / workspace_name
+        workspace.rename(renamed)
+        workspace = renamed
+    if workspace_form == "dot":
+        monkeypatch.chdir(workspace)
+        workspace_argument = Path(".")
+    elif workspace_form == "absolute":
+        monkeypatch.chdir(workspace.parent)
+        workspace_argument = workspace.absolute()
+    else:
+        monkeypatch.chdir(workspace.parent)
+        workspace_argument = Path(workspace.name)
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    installed = lock["installed_capsules"][0]
+    captured = {}
+
+    def launch(command, *, cwd, env, check):
+        captured.update(command=command, cwd=Path(cwd), env=env, check=check)
+        target = Path(cwd) / command[1]
+        if not target.is_absolute():
+            target = Path.cwd() / target
+        assert target.is_file()
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(workspace_cli.subprocess, "run", launch)
+    result = workspace_cli.run_workflow(
+        workspace_root=workspace_argument,
+        workflow_instance_id=installed["workflow_instance_id"],
+        transport=_ClientTransport(sync_fixture["client"]),
+        api_url="http://127.0.0.1:8000",
+    )
+
+    assert result.status == "RUN_COMPLETED"
+    assert captured["command"][1:] == ["reagent_local.py", "run", "."]
+    assert "capsules" not in captured["command"][1]
+    assert captured["cwd"] == workspace_argument / installed["relative_path"]
+
+
+def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    workspace, _, _ = _synced_full_research_workspace(tmp_path)
+    listing = workspace_cli.workflow_list(workspace)
+    assert len(listing["workflows"]) == 5
+    literature = next(
+        item for item in listing["workflows"]
+        if item["workflow_definition_id"]
+        == "literature-search-local-experimental"
+    )
+    assert literature["run_command"] == (
+        "python reagent_local.py run . "
+        "--workflow literature-search-local-experimental"
+    )
+    copied_cli = workspace / "reagent_local.py"
+    namespace = runpy.run_path(str(copied_cli))
+    captured = {}
+
+    def launch(command, *, cwd, env, check):
+        target = Path(cwd) / command[1]
+        if not target.is_absolute():
+            target = Path.cwd() / target
+        captured.update(command=command, cwd=Path(cwd), target=target)
+        assert target.is_file()
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(subprocess, "run", launch)
+    monkeypatch.chdir(workspace)
+    exit_code = namespace["main"]([
+        "run",
+        ".",
+        "--workflow",
+        "literature-search-local-experimental",
+    ])
+
+    assert exit_code == workspace_cli.EXIT_SUCCESS
+    assert captured["command"][1:] == ["reagent_local.py", "run", "."]
+    assert captured["target"] == (
+        Path.cwd() / captured["cwd"] / "reagent_local.py"
+    )
+    capsule_text = captured["cwd"].as_posix()
+    assert captured["target"].as_posix().count(capsule_text) == 1
+    assert "Local Workspace operation: Run Completed" in capsys.readouterr().out
+
+
+def test_all_f1f_capsule_types_share_capsule_relative_launcher_rule(tmp_path):
+    workspace, _, _ = _synced_full_research_workspace(tmp_path)
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    commands = {}
+    for installed in lock["installed_capsules"]:
+        capsule = workspace / installed["relative_path"]
+        commands[installed["workflow_definition_id"]] = (
+            workspace_cli._capsule_runner_command(capsule)
+        )
+
+    assert set(commands) == {
+        "literature-search-local-experimental",
+        "idea-discovery-local-experimental",
+        "writing-local-experimental",
+        "review-local-experimental",
+        "reproduction-experiment-local-experimental",
+    }
+    assert all(command[1] == "reagent_local.py" for command in commands.values())
+
+
+def test_dot_preflight_only_succeeds_without_starting_launcher(
+    sync_fixture,
+    monkeypatch,
+):
+    workspace = sync_fixture["workspace"]
+    workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=_ClientTransport(sync_fixture["client"]),
+    )
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    installed = lock["installed_capsules"][0]
+    monkeypatch.chdir(workspace)
+
+    def unexpected_launch(*args, **kwargs):
+        raise AssertionError("preflight-only must not start the Literature launcher")
+
+    monkeypatch.setattr(workspace_cli.subprocess, "run", unexpected_launch)
+    result = workspace_cli.run_workflow(
+        workspace_root=Path("."),
+        workflow_instance_id=installed["workflow_instance_id"],
+        transport=_ClientTransport(sync_fixture["client"]),
+        api_url="http://127.0.0.1:8000",
+        preflight_only=True,
+    )
+    assert result.status == "PREFLIGHT_READY"
+
+
+def test_tampered_capsule_fails_closed_before_launcher_start(
+    sync_fixture,
+    monkeypatch,
+):
+    workspace = sync_fixture["workspace"]
+    workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=_ClientTransport(sync_fixture["client"]),
+    )
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    installed = lock["installed_capsules"][0]
+    runner = workspace / installed["relative_path"] / "reagent_local.py"
+    runner.write_text(runner.read_text() + "\n# local tamper\n")
+    monkeypatch.chdir(workspace)
+
+    def unexpected_launch(*args, **kwargs):
+        raise AssertionError("tampered Capsule must fail before subprocess launch")
+
+    monkeypatch.setattr(workspace_cli.subprocess, "run", unexpected_launch)
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as raised:
+        workspace_cli.run_workflow(
+            workspace_root=Path("."),
+            workflow_instance_id=installed["workflow_instance_id"],
+            transport=_ClientTransport(sync_fixture["client"]),
+            api_url="http://127.0.0.1:8000",
+        )
+    assert raised.value.code in {
+        "LOCAL_CAPSULE_DRIFT",
+        "LEGACY_PACKAGE_CHECKSUM_MISMATCH",
+    }
+
+
+def test_workflow_run_failure_guidance_stops_launcher_path_retry_loop(capsys):
+    workspace_cli._print_human_error(
+        "run",
+        workspace_cli.WorkspaceCLIError(
+            "WORKFLOW_RUN_FAILED",
+            "Workflow local Harness did not complete successfully",
+            workspace_cli.EXIT_VALIDATION,
+        ),
+    )
+    error = capsys.readouterr().err
+    assert "path/file error" in error
+    assert "instead of repeatedly retrying" in error
+    assert "report code WORKFLOW_RUN_FAILED" in error
