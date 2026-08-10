@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import ApplicationContainer, create_app
+from backend.api.deployment import DeploymentSettings
 from backend.cloud_api_proxy import (
     CloudAPIProxyService,
     DeterministicFakePaperSearchAdapter,
@@ -212,6 +213,86 @@ def test_local_session_is_exact_package_scoped_and_revokeable(session_client) ->
     assert database.executions == {}
     assert database.execution_events == {}
     assert database.provider_operations == {}
+
+
+def test_controlled_mode_projection_and_live_attempt_fail_closed(
+    tmp_path,
+) -> None:
+    database = InMemoryDatabase()
+    container = ApplicationContainer(
+        unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
+        artifact_storage=LocalFilesystemArtifactStorage(tmp_path / "artifacts"),
+        local_package_root=str(tmp_path / "packages"),
+        project_id_factory=lambda: "project-fedcba9876543210fedcba9876543210",
+    )
+    proxy_database = InMemoryProxyDatabase()
+    fake = DeterministicFakePaperSearchAdapter()
+    proxy_service = CloudAPIProxyService(
+        unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(proxy_database),
+        adapter=fake,
+    )
+    app = create_app(
+        container,
+        proxy_container=ProxyApplicationContainer(service=proxy_service),
+        enable_experimental_proxy=True,
+        enable_local_workflow_sessions=True,
+        deployment_settings=DeploymentSettings.isolated_test_defaults(),
+    )
+    with TestClient(
+        app,
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 50000),
+    ) as client:
+        project = _create(client)
+        package = client.post(f"/projects/{project['project_id']}/packages").json()
+        identity = {
+            key: package[key]
+            for key in (
+                "package_id", "package_checksum", "workflow_id",
+                "workflow_version", "workflow_checksum",
+            )
+        }
+        projected = client.get(
+            f"/projects/{project['project_id']}/local-sessions/execution-mode",
+            params=identity,
+        )
+        spoofed_projection = client.get(
+            f"/projects/{project['project_id']}/local-sessions/execution-mode",
+            params={**identity, "mode": "NORMAL"},
+        )
+        demo = client.post(
+            f"/projects/{project['project_id']}/local-sessions",
+            json={**identity, "mode": "DEMO"},
+        )
+        live_attempt = client.post(
+            f"/projects/{project['project_id']}/local-sessions",
+            json={**identity, "mode": "NORMAL"},
+        )
+        tampered = client.get(
+            f"/projects/{project['project_id']}/local-sessions/execution-mode",
+            params={**identity, "package_checksum": "sha256:" + "f" * 64},
+        )
+        proxy_service.adapters.clear()
+        fixture_unavailable = client.get(
+            f"/projects/{project['project_id']}/local-sessions/execution-mode",
+            params=identity,
+        )
+
+    assert projected.status_code == 200
+    assert projected.headers["cache-control"] == "no-store"
+    assert projected.json() == {**identity, "mode": "DEMO"}
+    assert spoofed_projection.status_code == 200
+    assert spoofed_projection.json() == {**identity, "mode": "DEMO"}
+    assert demo.status_code == 201
+    assert demo.json()["mode"] == "DEMO"
+    assert live_attempt.status_code == 422
+    assert "controlled server" in live_attempt.json()["error"]["message"]
+    assert tampered.status_code == 422
+    assert fixture_unavailable.status_code == 503
+    assert fixture_unavailable.json()["error"]["code"] == (
+        "CONTROLLED_LITERATURE_PROVIDER_UNAVAILABLE"
+    )
+    assert fake.invocation_count == 0
 
 
 def test_report_bound_upload_session_accepts_only_its_exact_report(session_client) -> None:

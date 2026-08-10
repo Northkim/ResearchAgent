@@ -59,13 +59,41 @@ class LocalWorkflowSessionService:
         *,
         local_projects: LocalProjectService,
         proxy: CloudAPIProxyService,
+        enforced_search_mode: LocalSessionMode | None = None,
         package_identity_resolver: Callable[
             [str, str], tuple[str, str, str, str, str] | None
         ] | None = None,
     ) -> None:
         self._projects = local_projects
         self._proxy = proxy
+        if enforced_search_mode is LocalSessionMode.UPLOAD_ONLY:
+            raise ValueError("Upload-only cannot be the enforced search mode")
+        self._enforced_search_mode = enforced_search_mode
         self._package_identity_resolver = package_identity_resolver
+
+    def search_mode(
+        self,
+        *,
+        project_id: str,
+        package_id: str,
+        package_checksum: str,
+        workflow_id: str,
+        workflow_version: str,
+        workflow_checksum: str,
+    ) -> LocalSessionMode:
+        """Return the server-authorized search mode for one exact Package."""
+
+        self._validate_package_identity(
+            project_id=project_id,
+            package_id=package_id,
+            package_checksum=package_checksum,
+            workflow_id=workflow_id,
+            workflow_version=workflow_version,
+            workflow_checksum=workflow_checksum,
+        )
+        mode = self._enforced_search_mode or LocalSessionMode.NORMAL
+        self._require_search_adapter(mode)
+        return mode
 
     def open(
         self,
@@ -81,34 +109,23 @@ class LocalWorkflowSessionService:
         report_id: str | None = None,
         report_content_checksum: str | None = None,
     ) -> LocalWorkflowSession:
-        project = self._projects.get(project_id)
-        supplied = (
-            package_id,
-            package_checksum,
-            workflow_id,
-            workflow_version,
-            workflow_checksum,
+        self._validate_package_identity(
+            project_id=project_id,
+            package_id=package_id,
+            package_checksum=package_checksum,
+            workflow_id=workflow_id,
+            workflow_version=workflow_version,
+            workflow_checksum=workflow_checksum,
         )
-        package = project.current_package
-        expected = None
-        if package is not None and package.package_id == package_id:
-            expected = (
-                package.package_id,
-                package.package_checksum,
-                package.workflow_id,
-                package.workflow_version,
-                package.workflow_checksum,
-            )
-        elif self._package_identity_resolver is not None:
-            expected = self._package_identity_resolver(project_id, package_id)
-        if expected is None:
+        if (
+            mode is not LocalSessionMode.UPLOAD_ONLY
+            and self._enforced_search_mode is not None
+            and mode is not self._enforced_search_mode
+        ):
             raise ApplicationValidationError(
-                "Workflow Package or Capsule artifact is not registered for this Project"
+                "The controlled server only permits its deterministic Literature mode"
             )
-        if supplied != expected:
-            raise ApplicationValidationError(
-                "Local session identity does not match the project's current Package"
-            )
+
         supplied_report_scope = (
             execution_round,
             report_id,
@@ -150,14 +167,8 @@ class LocalWorkflowSessionService:
                 report_id=report_id,
                 report_content_checksum=report_content_checksum,
             )
-        if mode is not LocalSessionMode.UPLOAD_ONLY and adapter_id not in self._proxy.adapters:
-            if mode is LocalSessionMode.NORMAL:
-                raise ApplicationUnavailableError(
-                    "Normal Literature Search requires the explicitly enabled OpenAlex Proxy"
-                )
-            raise ApplicationUnavailableError(
-                "The local fake Proxy scope required for this session is unavailable"
-            )
+        if mode is not LocalSessionMode.UPLOAD_ONLY:
+            self._require_search_adapter(mode)
 
         token, plaintext = self._proxy.issue_token(
             tenant_id="local-v0-1",
@@ -196,6 +207,59 @@ class LocalWorkflowSessionService:
             ),
             maximum_provider_calls=scope.maximum_provider_calls,
             maximum_provider_cost_microusd=scope.maximum_provider_cost_microusd,
+        )
+
+    def _validate_package_identity(
+        self,
+        *,
+        project_id: str,
+        package_id: str,
+        package_checksum: str,
+        workflow_id: str,
+        workflow_version: str,
+        workflow_checksum: str,
+    ) -> None:
+        project = self._projects.get(project_id)
+        supplied = (
+            package_id,
+            package_checksum,
+            workflow_id,
+            workflow_version,
+            workflow_checksum,
+        )
+        package = project.current_package
+        expected = None
+        if package is not None and package.package_id == package_id:
+            expected = (
+                package.package_id,
+                package.package_checksum,
+                package.workflow_id,
+                package.workflow_version,
+                package.workflow_checksum,
+            )
+        elif self._package_identity_resolver is not None:
+            expected = self._package_identity_resolver(project_id, package_id)
+        if expected is None:
+            raise ApplicationValidationError(
+                "Workflow Package or Capsule artifact is not registered for this Project"
+            )
+        if supplied != expected:
+            raise ApplicationValidationError(
+                "Local session identity does not match the project's current Package"
+            )
+
+    def _require_search_adapter(self, mode: LocalSessionMode) -> None:
+        adapter_id = (
+            OPENALEX_ADAPTER_ID if mode is LocalSessionMode.NORMAL else ADAPTER_ID
+        )
+        if adapter_id in self._proxy.adapters:
+            return
+        if mode is LocalSessionMode.NORMAL:
+            raise ApplicationUnavailableError(
+                "Normal Literature Search requires the explicitly enabled OpenAlex Proxy"
+            )
+        raise ApplicationUnavailableError(
+            "The local fake Proxy scope required for this session is unavailable"
         )
 
     def authorize(

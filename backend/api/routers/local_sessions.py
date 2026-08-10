@@ -12,6 +12,7 @@ from backend.application.errors import (
     ApplicationCodedAuthenticationError,
     ApplicationCodedAuthorizationError,
     ApplicationConflictError,
+    ApplicationCodedUnavailableError,
     ApplicationNotFoundError,
     ApplicationUnavailableError,
     ApplicationValidationError,
@@ -28,6 +29,7 @@ from backend.progress_reports import ChainState, ValidationStatus
 from ..dependencies import LocalProductServicesDependency
 from ..schemas import (
     CreateLocalWorkflowSessionRequest,
+    LocalLiteratureExecutionModeResponse,
     LocalWorkflowSessionResponse,
     ProgressReportUploadRequest,
     ProgressUploadReceiptResponse,
@@ -79,9 +81,14 @@ def _bearer(request: Request) -> str:
 
 
 def _service(request: Request, services) -> LocalWorkflowSessionService:
+    controlled = (
+        getattr(request.app.state, "deployment_profile", None)
+        == "isolated-controlled-test"
+    )
     return LocalWorkflowSessionService(
         local_projects=services.local_projects,
         proxy=_proxy(request),
+        enforced_search_mode=(LocalSessionMode.DEMO if controlled else None),
         package_identity_resolver=services.workspace_sync.local_session_package_identity,
     )
 
@@ -177,6 +184,57 @@ async def create_local_workflow_session(
         raise ApplicationValidationError("Local Workflow session could not be issued") from error
     response.headers["Cache-Control"] = "no-store"
     return LocalWorkflowSessionResponse.from_contract(session)
+
+
+@router.get(
+    "/execution-mode",
+    response_model=LocalLiteratureExecutionModeResponse,
+)
+async def get_local_literature_execution_mode(
+    project_id: str,
+    request: Request,
+    response: Response,
+    services: LocalProductServicesDependency,
+    package_id: str = Query(...),
+    package_checksum: str = Query(...),
+    workflow_id: str = Query(...),
+    workflow_version: str = Query(...),
+    workflow_checksum: str = Query(...),
+) -> LocalLiteratureExecutionModeResponse:
+    """Project the server-authorized mode for one checksum-bound Package."""
+
+    _require_loopback(request)
+    try:
+        mode = _service(request, services).search_mode(
+            project_id=project_id,
+            package_id=package_id,
+            package_checksum=package_checksum,
+            workflow_id=workflow_id,
+            workflow_version=workflow_version,
+            workflow_checksum=workflow_checksum,
+        )
+    except ApplicationUnavailableError as error:
+        controlled = (
+            getattr(request.app.state, "deployment_profile", None)
+            == "isolated-controlled-test"
+        )
+        raise ApplicationCodedUnavailableError(
+            str(error),
+            code=(
+                "CONTROLLED_LITERATURE_PROVIDER_UNAVAILABLE"
+                if controlled
+                else "OPENALEX_PROXY_UNAVAILABLE"
+            ),
+        ) from error
+    response.headers["Cache-Control"] = "no-store"
+    return LocalLiteratureExecutionModeResponse(
+        package_id=package_id,
+        package_checksum=package_checksum,
+        workflow_id=workflow_id,
+        workflow_version=workflow_version,
+        workflow_checksum=workflow_checksum,
+        mode=mode.value,
+    )
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)

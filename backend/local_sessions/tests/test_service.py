@@ -4,7 +4,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from backend.application.errors import ApplicationUnavailableError
+from backend.application.errors import (
+    ApplicationUnavailableError,
+    ApplicationValidationError,
+)
 from backend.cloud_api_proxy import (
     DeterministicFakePaperSearchAdapter,
     InMemoryProxyDatabase,
@@ -79,6 +82,7 @@ def _setup(tmp_path, *, include_openalex: bool = True):
 
 def test_normal_demo_and_upload_only_sessions_are_bounded(tmp_path) -> None:
     sessions, database, fake, canary, _, identity, package_root = _setup(tmp_path)
+    assert sessions.search_mode(**identity) is LocalSessionMode.NORMAL
     normal = sessions.open(mode=LocalSessionMode.NORMAL, **identity)
     demo = sessions.open(mode=LocalSessionMode.DEMO, **identity)
     upload = sessions.open(
@@ -123,6 +127,26 @@ def test_normal_mode_never_falls_back_to_fake(tmp_path) -> None:
     with pytest.raises(ApplicationUnavailableError, match="OpenAlex Proxy"):
         sessions.open(mode=LocalSessionMode.NORMAL, **identity)
     assert fake.invocation_count == 0
+
+
+def test_controlled_search_mode_is_server_enforced_and_checksum_bound(tmp_path) -> None:
+    sessions, _, fake, canary, _, identity, _ = _setup(tmp_path)
+    controlled = LocalWorkflowSessionService(
+        local_projects=sessions._projects,
+        proxy=sessions._proxy,
+        enforced_search_mode=LocalSessionMode.DEMO,
+    )
+
+    assert controlled.search_mode(**identity) is LocalSessionMode.DEMO
+    demo = controlled.open(mode=LocalSessionMode.DEMO, **identity)
+    assert demo.mode is LocalSessionMode.DEMO
+    with pytest.raises(ApplicationValidationError, match="controlled server"):
+        controlled.open(mode=LocalSessionMode.NORMAL, **identity)
+    with pytest.raises(ApplicationValidationError, match="identity"):
+        controlled.search_mode(
+            **{**identity, "workflow_checksum": "sha256:" + "f" * 64}
+        )
+    assert fake.invocation_count == canary.invocation_count == 0
 
 
 def test_exact_scope_expiry_revocation_and_cross_project_denial(tmp_path) -> None:

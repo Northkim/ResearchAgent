@@ -2,6 +2,38 @@
 
 Last updated: 2026-08-10
 
+## Owner-test defect repair — controlled Literature provider mode
+
+The owner-discovered F1F defect
+`CONTROLLED_LITERATURE_PROVIDER_MODE_MISMATCH` is repaired. The controlled
+backend already enforced `isolated-controlled-test`, deterministic fake
+Provider/Proxy, disabled live OpenAlex and prohibited its key, but the generic
+Workspace runner launched Literature without a mode argument. The immutable
+Capsule therefore used its normal-mode default and asked the fake-only backend
+for an OpenAlex-scoped session.
+
+The backend now projects its server-authorized Literature mode only for an
+exact Project/Package/Workflow checksum identity. The generic Workspace runner
+uses that bounded response to select the Capsule's existing `--mode demo` in
+the controlled profile. Session creation independently enforces the same
+server policy, so a client cannot request NORMAL/live behavior from a
+controlled server. Local-development normal mode still requires the separately
+enabled OpenAlex Proxy; no silent fake fallback was added.
+
+The real downloaded-client route passed `make controlled-start`, bootstrap,
+five-Capsule sync, workflow list and the unchanged copyable `run . --workflow
+literature-search-local-experimental` command. It crossed stage 3, entered the
+interactive deterministic Harness, performed two fake query slots, finalized
+labelled DEMO outputs, uploaded Progress and returned `ROUND_COMPLETED`.
+Targeted qualification passed `151 passed, 0 skipped`; the full backend passed
+`780 passed, 14 existing skips`; compileall and diff checks passed. The
+temporary database, Project, Workspace and runtime were removed. No migration,
+Capsule version/content, owner state, live Provider, credential, Workflow,
+Artifact, Skill, Resource or Progress contract changed. Owner recovery requires
+only a backend restart and a fresh download/replacement of the Workspace-root
+`reagent_local.py`; Capsule sync, re-bootstrap and Project recreation are not
+required.
+
 ## Owner-test defect repair — relative Workspace launcher path
 
 The owner-discovered F1F defect

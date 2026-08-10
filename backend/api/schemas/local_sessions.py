@@ -52,3 +52,12 @@ class LocalWorkflowSessionResponse(StrictDTO):
             maximum_provider_calls=session.maximum_provider_calls,
             maximum_provider_cost_microusd=session.maximum_provider_cost_microusd,
         )
+
+
+class LocalLiteratureExecutionModeResponse(StrictDTO):
+    package_id: str
+    package_checksum: str
+    workflow_id: str
+    workflow_version: str
+    workflow_checksum: str
+    mode: Literal["NORMAL", "DEMO"]

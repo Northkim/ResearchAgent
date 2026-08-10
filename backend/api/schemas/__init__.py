@@ -40,6 +40,7 @@ from .local_projects import (
 )
 from .local_sessions import (
     CreateLocalWorkflowSessionRequest,
+    LocalLiteratureExecutionModeResponse,
     LocalWorkflowSessionResponse,
 )
 from .project_workspaces import (
@@ -87,6 +88,7 @@ __all__ = [
     "HealthResponse",
     "ReadinessResponse",
     "LocalPackageResponse",
+    "LocalLiteratureExecutionModeResponse",
     "LocalProjectResponse",
     "LocalWorkflowSessionResponse",
     "RejectRequest",

@@ -14,6 +14,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import ApplicationContainer, create_app
+from backend.api.deployment import DeploymentSettings
+from backend.cloud_api_proxy import (
+    CloudAPIProxyService,
+    DeterministicFakePaperSearchAdapter,
+    InMemoryProxyDatabase,
+    InMemoryProxyUnitOfWork,
+)
+from backend.cloud_api_proxy.composition import ProxyApplicationContainer
 from backend.local_projects.contracts import LocalProject
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import LITERATURE_SEARCH_CAPSULE_ID, LITERATURE_SEARCH_DEFINITION_ID
@@ -79,6 +87,20 @@ class _ClientTransport:
         if response.status_code not in {200, 201}:
             error = response.json()["error"]
             raise WorkspaceCLIError(error["code"], error["message"], workspace_cli.EXIT_CLOUD)
+        return response.json()
+
+    def literature_execution_mode(self, project_id, package_identity):
+        del project_id
+        return {**package_identity, "mode": "NORMAL"}
+
+
+class _ControlledClientTransport(_ClientTransport):
+    def literature_execution_mode(self, project_id, package_identity):
+        response = self.client.get(
+            f"/projects/{project_id}/local-sessions/execution-mode",
+            params=package_identity,
+        )
+        assert response.status_code == 200, response.text
         return response.json()
 
 
@@ -654,7 +676,7 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
     monkeypatch,
     capsys,
 ):
-    workspace, _, _ = _synced_full_research_workspace(tmp_path)
+    workspace, _, transport = _synced_full_research_workspace(tmp_path)
     listing = workspace_cli.workflow_list(workspace)
     assert len(listing["workflows"]) == 5
     literature = next(
@@ -668,6 +690,9 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
     )
     copied_cli = workspace / "reagent_local.py"
     namespace = runpy.run_path(str(copied_cli))
+    namespace["main"].__globals__["HTTPWorkspaceSyncTransport"] = (
+        lambda _api_url: transport
+    )
     captured = {}
 
     def launch(command, *, cwd, env, check):
@@ -695,6 +720,79 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
     capsule_text = captured["cwd"].as_posix()
     assert captured["target"].as_posix().count(capsule_text) == 1
     assert "Local Workspace operation: Run Completed" in capsys.readouterr().out
+
+
+def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
+    tmp_path,
+    monkeypatch,
+):
+    database = InMemoryDatabase()
+    container = ApplicationContainer(
+        unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
+        local_package_root=str(tmp_path / "cloud-packages"),
+    )
+    proxy_database = InMemoryProxyDatabase()
+    fake = DeterministicFakePaperSearchAdapter()
+    proxy = CloudAPIProxyService(
+        unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(proxy_database),
+        adapter=fake,
+    )
+    app = create_app(
+        container,
+        proxy_container=ProxyApplicationContainer(service=proxy),
+        enable_experimental_proxy=True,
+        enable_local_workflow_sessions=True,
+        deployment_settings=DeploymentSettings.isolated_test_defaults(),
+    )
+    with TestClient(
+        app,
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 50000),
+    ) as client:
+        created = client.post("/projects", json={
+            "name": "Controlled owner route",
+            "research_topic": "Deterministic fixture",
+            "selected_workflow": "LITERATURE_SEARCH",
+            "workflow_setup": "full-research",
+        })
+        assert created.status_code == 201, created.text
+        project_id = created.json()["project_id"]
+        descriptor = client.get(
+            f"/projects/{project_id}/workspace-bootstrap"
+        ).json()
+        downloaded = client.get("/local-client/reagent_local.py")
+        assert downloaded.status_code == 200
+        workspace = tmp_path / "controlled workspace"
+        workspace_cli.bootstrap_workspace(
+            target=workspace,
+            descriptor=descriptor,
+            cli_source=downloaded.content,
+        )
+        transport = _ControlledClientTransport(client)
+        workspace_cli.sync_workspace(workspace_root=workspace, transport=transport)
+        namespace = runpy.run_path(str(workspace / "reagent_local.py"))
+        namespace["main"].__globals__["HTTPWorkspaceSyncTransport"] = (
+            lambda _api_url: transport
+        )
+        captured = {}
+
+        def launch(command, *, cwd, env, check):
+            captured.update(command=command, cwd=Path(cwd), env=env, check=check)
+            return subprocess.CompletedProcess(command, 0)
+
+        monkeypatch.setattr(subprocess, "run", launch)
+        monkeypatch.chdir(workspace)
+        exit_code = namespace["main"]([
+            "run", ".", "--workflow",
+            "literature-search-local-experimental",
+        ])
+
+    assert exit_code == workspace_cli.EXIT_SUCCESS
+    assert captured["command"][1:] == [
+        "reagent_local.py", "run", ".", "--mode", "demo",
+    ]
+    assert captured["cwd"].name == "0.6.0"
+    assert fake.invocation_count == 0
 
 
 def test_all_f1f_capsule_types_share_capsule_relative_launcher_rule(tmp_path):

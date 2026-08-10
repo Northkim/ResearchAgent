@@ -1642,6 +1642,24 @@ class HTTPWorkspaceSyncTransport:
             f"{workflow_instance_id}/resource-bindings"
         )
 
+    def literature_execution_mode(
+        self, project_id: str, package_identity: dict[str, str]
+    ) -> dict[str, Any]:
+        """Fetch the server-authorized mode bound to one exact Package."""
+
+        fields = {
+            "package_id", "package_checksum", "workflow_id",
+            "workflow_version", "workflow_checksum",
+        }
+        if set(package_identity) != fields:
+            raise _identity(
+                "LOCAL_CAPSULE_DRIFT", "Literature Package identity is incomplete"
+            )
+        query = urllib.parse.urlencode(package_identity)
+        return self._json_get(
+            f"/projects/{project_id}/local-sessions/execution-mode?{query}"
+        )
+
     def _json_get(self, path: str) -> dict[str, Any]:
         request = urllib.request.Request(self._base_url + path, method="GET")
         try:
@@ -3324,6 +3342,7 @@ def run_workflow(
                 ("0.1.0", "0.1.0"), ("0.2.0", "0.2.0"), ("0.3.0", "0.3.0")
             }
         )
+        is_literature = pin[0] == WORKFLOW_ID
         if is_idea:
             plan = validate_materialization_plan(
                 transport.materialization_plan(
@@ -3446,6 +3465,23 @@ def run_workflow(
             )
         else:
             command.extend(["run", "."])
+            if is_literature:
+                manifest = _read_package_json(capsule / "package-manifest.json")
+                package_identity = {
+                    "package_id": manifest["package_id"],
+                    "package_checksum": manifest["package_checksum"],
+                    "workflow_id": manifest["workflow_id"],
+                    "workflow_version": manifest["workflow_version"],
+                    "workflow_checksum": manifest["workflow_checksum"],
+                }
+                mode_response = _validate_literature_execution_mode(
+                    transport.literature_execution_mode(
+                        descriptor["project_id"], package_identity
+                    ),
+                    package_identity,
+                )
+                if mode_response["mode"] == "DEMO":
+                    command.extend(["--mode", "demo"])
         environment = dict(os.environ)
         for key in (
             "REAGENT_DATABASE_URL", "REAGENT_PROXY_TOKEN",
@@ -3480,6 +3516,26 @@ def _capsule_runner_command(capsule: Path) -> list[str]:
     if runner.is_symlink() or not runner.is_file():
         raise _identity("LOCAL_CAPSULE_DRIFT", "Workflow runner is unavailable")
     return [sys.executable, runner.name]
+
+
+def _validate_literature_execution_mode(
+    document: Any, package_identity: dict[str, str]
+) -> dict[str, Any]:
+    value = _object(document, "Literature execution mode response")
+    expected_fields = set(package_identity) | {"mode"}
+    if set(value) != expected_fields:
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT", "Literature execution mode response is invalid"
+        )
+    if any(value[field] != expected for field, expected in package_identity.items()):
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT", "Literature execution mode identity mismatch"
+        )
+    if value["mode"] not in {"NORMAL", "DEMO"}:
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT", "Literature execution mode is unsupported"
+        )
+    return value
 
 
 def _prepare_idea_output_provenance(
@@ -4572,6 +4628,14 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
     "WORKFLOW_RUN_FAILED": (
         "The Workflow launcher or local Agent Harness stopped before completing the requested round.",
         "Keep the Workflow files and inspect the terminal error. If the launcher did not start or a path/file error appeared, stop and report code WORKFLOW_RUN_FAILED to the operator instead of repeatedly retrying. If the Harness started and wrote local state, run `python reagent_local.py workflow list .` to inspect continuity before an explicit retry.",
+    ),
+    "CONTROLLED_LITERATURE_PROVIDER_UNAVAILABLE": (
+        "The controlled deterministic Literature provider is unavailable.",
+        "Keep the Workspace unchanged and ask the operator to restore the controlled backend fixture before retrying.",
+    ),
+    "OPENALEX_PROXY_UNAVAILABLE": (
+        "Normal Literature Search is not enabled on this backend.",
+        "Keep the Workspace unchanged. Live Provider use requires separate owner authorization and backend configuration.",
     ),
     "WORKSPACE_DESCRIPTOR_INVALID": (
         "This directory is not a valid ReAgent Local Workspace.",
