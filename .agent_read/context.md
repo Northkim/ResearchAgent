@@ -1,6 +1,44 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-10
+Last updated: 2026-08-11
+
+## Owner-test defect repair — Literature interrupted finalization recovery
+
+The owner-discovered F1F defect
+`LITERATURE_INTERRUPTED_FINALIZATION_RECOVERY` is repaired at the generic
+Workspace integration boundary. Literature Capsule 0.6.0 already had a
+checksum-bound `--resume` path from `PLAN_CONFIRMED`, `SEARCH_COMPLETED`,
+`INTERRUPTED`, `FAILED`, and `FINALIZED`, but Workspace `run` never selected it
+and `workflow list` ignored `memory/round-control.json`. A second generic run
+therefore failed closed on partial work, while list misleadingly said
+`Ready / Run`.
+
+The Workspace client now validates the complete Capsule through its immutable
+bundled validator before projecting continuity. A valid unfinished Literature
+round is displayed as `Interrupted`, `In Progress`, or `Finalization Pending`
+with `Next: Resume`; the unchanged copyable generic command automatically adds
+the Capsule's existing `--resume`. A nonzero attached Harness exit records only
+`HARNESS_SESSION_STOPPED`, a bounded stage, and the last valid state. It never
+infers candidate review or explicit finish. Existing query results are reused,
+so recovery spends zero additional Provider calls. Completed Progress remains
+authoritative over stale local fixture control.
+
+Controlled PTY qualification used the real downloaded generic client. Session
+A completed two deterministic searches and stopped after owner `finish` but
+before final outputs. Session B was a fresh Harness with no chat history; it
+loaded local memory, repeated the screening/finalization confirmations, made
+zero Provider calls, and produced/validated selected-paper-library/v1,
+Progress, Cloud acknowledgement, and downstream Idea consumption. Full backend
+on isolated PostgreSQL passed `783 passed, 14 existing skips`; frontend Vitest
+`17 files / 34 tests`, lint, build, and targeted Playwright passed. Alembic
+remains sole head `20260806_0017`; the temporary database and controlled
+services were removed. No Capsule version/content, migration, Workflow,
+Artifact, Skill, Resource, Progress contract, owner Workspace/Project/database,
+live Provider, or credential changed.
+
+Owner recovery requires a controlled backend/frontend restart and a fresh
+download/replacement of only the Workspace-root `reagent_local.py`. No sync,
+re-bootstrap, Project recreation, search replay, or JSON edit is required.
 
 ## Owner-test defect repair — controlled Literature provider mode
 

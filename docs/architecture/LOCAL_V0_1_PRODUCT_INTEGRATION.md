@@ -90,12 +90,19 @@ never sufficient evidence of completion.
 - valid report but no receipt: upload-only idempotent recovery;
 - verified receipt: report already uploaded, no second round;
 - interrupted/partial outputs without a valid report: fail closed without
-  overwrite and require explicit `--resume` or confirmed `--restart-round`.
+  overwrite; the Capsule requires explicit `--resume`, while the verified
+  Workspace generic launcher selects that existing path when local
+  round-control proves a resumable checkpoint. Direct Package recovery still
+  requires explicit `--resume` or confirmed `--restart-round`.
 
 Default and explicit `--auto` paths converge at the same artifact validation,
 report-chain finalization, fresh upload-session issuance, receipt/projection
 verification, and session-revocation boundary. Signals are forwarded to the child; bounded cleanup reaps
 it, marks an interruption safely, revokes the session, and performs no upload.
+For the Workspace product route, a nonzero attached Harness exit also records a
+bounded interruption around the last Capsule-validator-approved state. The
+Workspace list combines Cloud readiness with that local state and presents
+Resume without uploading local research bytes.
 
 The cloud receives a bounded summary through the unchanged Progress Report
 v0.2 contract. Complete candidates, selections, query text, local context, and

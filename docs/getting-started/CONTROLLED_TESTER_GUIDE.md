@@ -78,11 +78,22 @@ python3 reagent_local.py workflow list .
 Read the displayed next action. Capsule `AGENT.md`, local memory, outputs, and
 Progress carry the context; chat history is not required.
 
+If an attached Literature Search session stops after saving a valid checkpoint,
+`workflow list` reports **Interrupted** or **Finalization Pending** and
+**Next: Resume**. Run the exact same Workspace command it displays. The generic
+launcher selects the Capsule's verified resume path automatically, preserves
+the confirmed plan and normalized Provider results, and asks again for any
+screening/finalization consent that was not durably recorded. Do not edit JSON,
+re-bootstrap, or repeat the Provider search manually.
+
 ## Recovery
 
 - **Cloud cannot be reached / ACK pending:** leave the Workspace unchanged and
   retry the same `sync` command later.
 - **Workflow not installed:** run `sync`, then `workflow list`.
+- **Literature Harness stopped or timed out:** keep the Workspace unchanged,
+  run `workflow list`, and use its command only when it reports **Resume**.
+  A valid completed search is reused; explicit `finish` may be requested again.
 - **Input not selected:** return to the Workflow Board and explicitly choose a
   result.
 - **Input not materialized:** run the copyable materialization command.

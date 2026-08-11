@@ -21,6 +21,7 @@ from backend.cloud_api_proxy import (
     InMemoryProxyDatabase,
     InMemoryProxyUnitOfWork,
 )
+from backend.cloud_api_proxy.contracts import PaperSearchV01Request
 from backend.cloud_api_proxy.composition import ProxyApplicationContainer
 from backend.local_projects.contracts import LocalProject
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
@@ -28,6 +29,7 @@ from backend.project_workspaces import LITERATURE_SEARCH_CAPSULE_ID, LITERATURE_
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces import workspace_cli
 from backend.project_workspaces.workspace_cli import WorkspaceCLIError
+from backend.workflow_packages.tests.fake_codex_cli import plan as fixture_plan
 
 
 @pytest.fixture
@@ -102,6 +104,67 @@ class _ControlledClientTransport(_ClientTransport):
         )
         assert response.status_code == 200, response.text
         return response.json()
+
+
+class _DemoClientTransport(_ClientTransport):
+    def literature_execution_mode(self, project_id, package_identity):
+        del project_id
+        return {**package_identity, "mode": "DEMO"}
+
+
+def _literature_capsule(workspace: Path) -> tuple[Path, dict]:
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    installed = next(
+        item
+        for item in lock["installed_capsules"]
+        if item["workflow_definition_id"]
+        == "literature-search-local-experimental"
+    )
+    return workspace / installed["relative_path"], installed
+
+
+def _reach_search_completed(capsule: Path) -> tuple[dict, int]:
+    """Use the installed Capsule state-machine helpers to reach owner state."""
+
+    namespace = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    manifest = json.loads((capsule / "package-manifest.json").read_text())
+    namespace["_initialize_control"](
+        root=capsule,
+        manifest=manifest,
+        mode="DEMO",
+        execution_style="INTERACTIVE",
+    )
+    fixture_plan(capsule)
+    namespace["_mark_plan_confirmed"](capsule)
+    topic = json.loads((capsule / "inputs/research_request.json").read_text())["topic"]
+    queries = namespace["_validate_query_plan"](capsule, topic)
+    fake = DeterministicFakePaperSearchAdapter()
+    for query in queries:
+        provider_data = fake.search(
+            PaperSearchV01Request(query=query["query"], max_results=5)
+        )
+        namespace["_write_atomic"](
+            capsule
+            / "memory/search/operations"
+            / f"{query['query_id']}.result.json",
+            {
+                "schema_version": "literature-search-normalized-query-result/v0.1",
+                "mode": "DEMO",
+                "query_id": query["query_id"],
+                "issued_query": query["query"],
+                "operation_id": f"fixture-{query['query_id']}",
+                "request_content_checksum": "sha256:" + "a" * 64,
+                "provider_data_checksum": "sha256:" + "b" * 64,
+                "response_content_checksum": "sha256:" + "c" * 64,
+                "provider_adapter": {"adapter_id": fake.adapter_id},
+                "usage": {"provider_calls": 1},
+                "provider_data": provider_data,
+            },
+        )
+    namespace["_mark_search_completed"](capsule)
+    control = json.loads((capsule / "memory/round-control.json").read_text())
+    assert control["state"] == "SEARCH_COMPLETED"
+    return control, fake.invocation_count
 
 
 def _synced_full_research_workspace(tmp_path: Path):
@@ -793,6 +856,106 @@ def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
     ]
     assert captured["cwd"].name == "0.6.0"
     assert fake.invocation_count == 0
+
+
+def test_owner_search_completed_state_projects_resume_and_generic_run_uses_it(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    workspace, _, transport = _synced_full_research_workspace(tmp_path)
+    capsule, installed = _literature_capsule(workspace)
+    initial_control, initial_calls = _reach_search_completed(capsule)
+    result_checksums = initial_control["search_result_checksums"]
+
+    listed = workspace_cli.workflow_list(workspace)
+    literature = next(
+        item for item in listed["workflows"]
+        if item["workflow_instance_id"] == installed["workflow_instance_id"]
+    )
+    assert literature["local_readiness"] == "FINALIZATION_PENDING"
+    assert literature["next_action"] == "RESUME"
+    assert literature["next_command"] == literature["run_command"]
+    workspace_cli._print_result(listed, json_output=False)
+    human = capsys.readouterr().out
+    assert "Literature Search · Finalization Pending" in human
+    assert "Next: Resume" in human
+
+    captured = {}
+
+    def launch(command, *, cwd, env, check):
+        captured.update(command=command, cwd=Path(cwd), env=env, check=check)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(workspace_cli.subprocess, "run", launch)
+    monkeypatch.chdir(workspace)
+    result = workspace_cli.run_workflow(
+        workspace_root=Path("."),
+        workflow_instance_id=installed["workflow_instance_id"],
+        transport=_DemoClientTransport(transport.client),
+        api_url="http://127.0.0.1:8000",
+    )
+    assert result.status == "RUN_COMPLETED"
+    assert captured["command"][1:] == [
+        "reagent_local.py", "run", ".", "--mode", "demo", "--resume",
+    ]
+    current = json.loads((capsule / "memory/round-control.json").read_text())
+    assert current["search_result_checksums"] == result_checksums
+    assert initial_calls == 2
+
+
+def test_failed_generic_harness_marks_valid_post_search_interruption(
+    tmp_path,
+    monkeypatch,
+):
+    workspace, _, transport = _synced_full_research_workspace(tmp_path)
+    capsule, installed = _literature_capsule(workspace)
+    initial_control, _ = _reach_search_completed(capsule)
+    checksums = initial_control["search_result_checksums"]
+
+    monkeypatch.setattr(
+        workspace_cli.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(command, 2),
+    )
+    with pytest.raises(WorkspaceCLIError) as raised:
+        workspace_cli.run_workflow(
+            workspace_root=workspace,
+            workflow_instance_id=installed["workflow_instance_id"],
+            transport=_DemoClientTransport(transport.client),
+            api_url="http://127.0.0.1:8000",
+        )
+    assert raised.value.code == "WORKFLOW_RUN_FAILED"
+    control = json.loads((capsule / "memory/round-control.json").read_text())
+    assert control["state"] == "INTERRUPTED"
+    assert control["last_completed_state"] == "SEARCH_COMPLETED"
+    assert control["interrupted_stage"] == "POST_SEARCH_INTERACTION"
+    assert control["failure_code"] == "HARNESS_SESSION_STOPPED"
+    assert control["candidate_review_confirmed"] is False
+    assert control["finalization_confirmed"] is False
+    assert control["search_result_checksums"] == checksums
+
+    literature = next(
+        item
+        for item in workspace_cli.workflow_list(workspace)["workflows"]
+        if item["workflow_instance_id"] == installed["workflow_instance_id"]
+    )
+    assert literature["local_readiness"] == "INTERRUPTED"
+    assert literature["next_action"] == "RESUME"
+
+
+def test_tampered_search_result_blocks_continuity_projection_and_resume(
+    tmp_path,
+):
+    workspace, _, _ = _synced_full_research_workspace(tmp_path)
+    capsule, _ = _literature_capsule(workspace)
+    _reach_search_completed(capsule)
+    result = capsule / "memory/search/operations/query-1.result.json"
+    result.write_text(result.read_text() + " ", encoding="utf-8")
+
+    with pytest.raises(WorkspaceCLIError) as raised:
+        workspace_cli.workflow_list(workspace)
+    assert raised.value.code == "LOCAL_CAPSULE_DRIFT"
 
 
 def test_all_f1f_capsule_types_share_capsule_relative_launcher_rule(tmp_path):

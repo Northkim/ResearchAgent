@@ -52,6 +52,15 @@ Expected: `selected-paper-library/v1` is produced, Progress appears in the Web,
 and Literature Search remains marked **Reviewed Core**. The fixture content is
 test evidence, not a real literature conclusion.
 
+Recovery check: if the interactive Harness is interrupted after a validated
+search checkpoint but before Artifact publication, run
+`python3 reagent_local.py workflow list .`. Expected: Literature Search says
+**Interrupted** or **Finalization Pending**, with **Next: Resume**. Run the same
+displayed Workspace command in a fresh terminal/Harness session. It must reuse
+the checksum-bound query results without another Provider search and require
+explicit finalization again when prior consent was not durably committed. Do
+not re-bootstrap, edit round-control JSON, or recreate the Project.
+
 ## 5. Run Idea Discovery — Web, then Terminal
 
 On the Idea Discovery card, select the exact Literature result. Then run:

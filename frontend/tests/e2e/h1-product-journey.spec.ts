@@ -116,14 +116,72 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
       fakeLiteratureCodex,
     );
     chmodSync(fakeLiteratureCodex, 0o700);
-    const literatureOutput = execFileSync(
+    const driver = resolve(
+      repoRoot,
+      "backend/workflow_packages/tests/interactive_e2e_driver.py",
+    );
+    const interruptedOutput = execFileSync(
       "python3",
       [
-        resolve(repoRoot, "backend/workflow_packages/tests/interactive_e2e_driver.py"),
-        "--package-root",
+        driver,
+        "--workspace-root",
+        workspace,
+        "--capsule-root",
         literature.root,
         "--base-url",
         backendUrl,
+        "--expect-exit",
+        "50",
+      ],
+      {
+        env: {
+          ...process.env,
+          REAGENT_CODEX_EXECUTABLE: fakeLiteratureCodex,
+          REAGENT_FAKE_CODEX_NONZERO: "1",
+          PYTHONDONTWRITEBYTECODE: "1",
+        },
+        encoding: "utf8",
+      },
+    );
+    expect(interruptedOutput).toContain("CHECKPOINT: FINALIZATION");
+    const interruptedControl = JSON.parse(
+      readFileSync(join(literature.root, "memory/round-control.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(interruptedControl.state).toBe("INTERRUPTED");
+    expect(interruptedControl.last_completed_state).toBe("SEARCH_COMPLETED");
+    expect(interruptedControl.finalization_confirmed).toBe(false);
+    const interruptedList = workspaceCommand(workspace, ["workflow", "list", workspace]);
+    const interruptedLiterature = (
+      interruptedList.workflows as Array<Record<string, unknown>>
+    ).find(
+      (item) => item.workflow_definition_id === "literature-search-local-experimental",
+    );
+    expect(interruptedLiterature?.next_action).toBe("RESUME");
+    const searchResultHashes = readdirSync(
+      join(literature.root, "memory/search/operations"),
+    )
+      .filter((name) => name.endsWith(".result.json"))
+      .sort()
+      .map((name) =>
+        createHash("sha256")
+          .update(readFileSync(join(literature.root, "memory/search/operations", name)))
+          .digest("hex"),
+      );
+    expect(searchResultHashes).toHaveLength(2);
+
+    // Session B has no chat history. The generic Workspace command selects
+    // the existing Capsule resume path from validator-approved local state.
+    const literatureOutput = execFileSync(
+      "python3",
+      [
+        driver,
+        "--workspace-root",
+        workspace,
+        "--capsule-root",
+        literature.root,
+        "--base-url",
+        backendUrl,
+        "--resume",
       ],
       {
         env: {
@@ -134,7 +192,19 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
         encoding: "utf8",
       },
     );
+    expect(literatureOutput).toContain("RESUME: persisted search plan");
     expect(literatureOutput).toContain("CHECKPOINT: FINALIZATION");
+    const resumedSearchResultHashes = readdirSync(
+      join(literature.root, "memory/search/operations"),
+    )
+      .filter((name) => name.endsWith(".result.json"))
+      .sort()
+      .map((name) =>
+        createHash("sha256")
+          .update(readFileSync(join(literature.root, "memory/search/operations", name)))
+          .digest("hex"),
+      );
+    expect(resumedSearchResultHashes).toEqual(searchResultHashes);
     expect(existsSync(join(literature.root, "outputs/artifacts/selected-paper-library"))).toBe(true);
 
     await page.goto(`/projects/${projectId}/progress`);

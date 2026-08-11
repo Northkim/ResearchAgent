@@ -3482,6 +3482,8 @@ def run_workflow(
                 )
                 if mode_response["mode"] == "DEMO":
                     command.extend(["--mode", "demo"])
+                if _literature_resume_required(capsule):
+                    command.append("--resume")
         environment = dict(os.environ)
         for key in (
             "REAGENT_DATABASE_URL", "REAGENT_PROXY_TOKEN",
@@ -3495,6 +3497,8 @@ def run_workflow(
             check=False,
         )
         if completed.returncode != 0:
+            if is_literature:
+                _record_literature_harness_stop(capsule)
             raise WorkspaceCLIError(
                 "WORKFLOW_RUN_PREFLIGHT_FAILED" if preflight_only else "WORKFLOW_RUN_FAILED",
                 "Workflow local Harness did not complete successfully",
@@ -3536,6 +3540,156 @@ def _validate_literature_execution_mode(
             "LOCAL_CAPSULE_DRIFT", "Literature execution mode is unsupported"
         )
     return value
+
+
+def _validated_literature_control(capsule: Path) -> dict[str, Any]:
+    """Return validator-approved local Literature continuity state.
+
+    The installed Capsule remains the state-machine authority.  The generic
+    Workspace launcher only projects its already-versioned round-control
+    contract after the Capsule's immutable validator has accepted the complete
+    local tree.  This keeps automatic resume from becoming a weaker alternate
+    validation path.
+    """
+
+    validator_path = capsule / "validate_package.py"
+    control_path = capsule / "memory/round-control.json"
+    try:
+        validator = runpy.run_path(str(validator_path))
+        result = validator["validate"](capsule, pristine=False)
+        if result.get("valid") is not True:
+            raise ValueError("Capsule validator did not accept local state")
+        metadata = control_path.stat(follow_symlinks=False)
+        if (
+            control_path.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or metadata.st_size > MAX_CONTROL_JSON_BYTES
+        ):
+            raise ValueError("round-control is not a bounded regular file")
+        control = _read_package_json(control_path)
+        manifest = _read_package_json(capsule / "package-manifest.json")
+        if (
+            control.get("schema_version")
+            != "literature-search-round-control/v0.1"
+            or control.get("project_id")
+            != manifest.get("experimental_project_identity")
+            or control.get("package_id") != manifest.get("package_id")
+            or control.get("package_checksum") != manifest.get("package_checksum")
+            or control.get("workflow_id") != manifest.get("workflow_id")
+            or control.get("workflow_version") != manifest.get("workflow_version")
+            or control.get("workflow_checksum") != manifest.get("workflow_checksum")
+        ):
+            raise ValueError("round-control identity mismatch")
+        return control
+    except WorkspaceCLIError:
+        raise
+    except Exception as error:
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT",
+            "Literature Search continuity state failed Capsule validation",
+        ) from error
+
+
+def _literature_partial_files_exist(capsule: Path) -> bool:
+    outputs = capsule / "outputs"
+    operations = capsule / "memory/search/operations"
+    try:
+        output_files = [
+            path
+            for path in outputs.iterdir()
+            if path.is_file() and not path.is_symlink() and path.name != "README.md"
+        ]
+        operation_files = [
+            path
+            for path in operations.glob("*.json")
+            if path.is_file() and not path.is_symlink()
+        ]
+        plan = _read_package_json(capsule / "memory/search/query_plan.json")
+    except (OSError, WorkspaceCLIError) as error:
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT",
+            "Literature Search continuity files are unavailable",
+        ) from error
+    return bool(
+        output_files
+        or operation_files
+        or plan.get("status") != "PENDING"
+    )
+
+
+def _literature_resume_required(
+    capsule: Path, control: dict[str, Any] | None = None
+) -> bool:
+    control = control or _validated_literature_control(capsule)
+    reports = list((capsule / "memory/progress/reports").glob("prv2-*.json"))
+    receipts = list((capsule / "memory/progress/receipts").glob("*.json"))
+    if reports or receipts or control["state"] == "UPLOADED":
+        # The Capsule's existing upload-only/already-uploaded paths do not use
+        # --resume and remain authoritative.
+        return False
+    effective = (
+        control["last_completed_state"]
+        if control["state"] in {"INTERRUPTED", "FAILED"}
+        else control["state"]
+    )
+    return effective != "NOT_STARTED" or _literature_partial_files_exist(capsule)
+
+
+def _literature_continuity_projection(
+    capsule: Path,
+) -> tuple[str, str] | None:
+    """Map verified local state to friendly Workspace readiness/next action."""
+
+    control = _validated_literature_control(capsule)
+    state = control["state"]
+    effective = (
+        control["last_completed_state"]
+        if state in {"INTERRUPTED", "FAILED"}
+        else state
+    )
+    if state == "UPLOADED":
+        return None
+    if state == "REPORT_FINALIZED":
+        return "UPLOAD_PENDING", "CONTINUE"
+    if state in {"INTERRUPTED", "FAILED"}:
+        return "INTERRUPTED", "RESUME"
+    if effective in {"SEARCH_COMPLETED", "FINALIZED"}:
+        return "FINALIZATION_PENDING", "RESUME"
+    if effective == "PLAN_CONFIRMED" or _literature_partial_files_exist(capsule):
+        return "IN_PROGRESS", "RESUME"
+    return None
+
+
+def _record_literature_harness_stop(capsule: Path) -> None:
+    """Persist a bounded interruption after a failed generic Harness process.
+
+    A child exit does not prove completion or owner consent.  It does prove the
+    attached execution stopped.  Preserve the last validator-approved state and
+    never infer candidate review or finalization confirmation.
+    """
+
+    control = _validated_literature_control(capsule)
+    state = control["state"]
+    if state in {"INTERRUPTED", "FAILED", "FINALIZED", "REPORT_FINALIZED", "UPLOADED"}:
+        return
+    if not _literature_resume_required(capsule, control):
+        return
+    stage = {
+        "NOT_STARTED": "SEARCH_PLAN",
+        "PLAN_CONFIRMED": "PROVIDER_SEARCH_OR_SCREENING",
+        "SEARCH_COMPLETED": "POST_SEARCH_INTERACTION",
+    }[state]
+    updated = {
+        **control,
+        "state": "INTERRUPTED",
+        "last_completed_state": state,
+        "interrupted_stage": stage,
+        "failure_code": "HARNESS_SESSION_STOPPED",
+        "updated_at": _utc_text(datetime.now(timezone.utc)),
+    }
+    _atomic_write_json(capsule / "memory/round-control.json", updated)
+    _validated_literature_control(capsule)
 
 
 def _prepare_idea_output_provenance(
@@ -4375,6 +4529,11 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             and isinstance(requirement.get("requirement_key"), str)
         }
         definition_id = item["workflow_definition_id"]
+        continuity = (
+            _literature_continuity_projection(capsule)
+            if definition_id == WORKFLOW_ID and item["lifecycle"] == "ACTIVE"
+            else None
+        )
         seen_counts[definition_id] = seen_counts.get(definition_id, 0) + 1
         friendly_label = (
             document["workflow_type"]
@@ -4387,6 +4546,8 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         elif latest_status == "COMPLETED":
             readiness = "COMPLETED"
             next_action = "REVIEW_RESULT"
+        elif continuity is not None:
+            readiness, next_action = continuity
         elif report_count:
             readiness = "IN_PROGRESS"
             next_action = "CONTINUE"
@@ -4409,7 +4570,7 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         selector_flag = "--workflow" if selector == item["workflow_definition_id"] else "--workflow-instance"
         run_command = f"python reagent_local.py run . {selector_flag} {selector}"
         next_command = None
-        if next_action in {"RUN", "CONTINUE"}:
+        if next_action in {"RUN", "CONTINUE", "RESUME"}:
             next_command = run_command
         elif next_action == "MATERIALIZE_INPUT":
             next_command = (
@@ -4627,7 +4788,7 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
     ),
     "WORKFLOW_RUN_FAILED": (
         "The Workflow launcher or local Agent Harness stopped before completing the requested round.",
-        "Keep the Workflow files and inspect the terminal error. If the launcher did not start or a path/file error appeared, stop and report code WORKFLOW_RUN_FAILED to the operator instead of repeatedly retrying. If the Harness started and wrote local state, run `python reagent_local.py workflow list .` to inspect continuity before an explicit retry.",
+        "Keep the Workflow files and inspect the terminal error. If the launcher did not start or a path/file error appeared, stop and report code WORKFLOW_RUN_FAILED to the operator instead of repeatedly retrying. If the Harness started and wrote local state, run `python reagent_local.py workflow list .`; retry only when it reports Resume and use the exact displayed command.",
     ),
     "CONTROLLED_LITERATURE_PROVIDER_UNAVAILABLE": (
         "The controlled deterministic Literature provider is unavailable.",

@@ -261,16 +261,30 @@ def wait_for_state(root: Path, expected: str) -> None:
 
 def interactive(root: Path) -> None:
     delay = float(os.environ.get("REAGENT_FAKE_CODEX_DELAY_SECONDS", "0"))
-    print("CHECKPOINT: SEARCH PLAN", flush=True)
-    print("Interpretation, two bounded queries, screening rules, metadata/abstract-only.", flush=True)
-    print("Type proceed, request a revision, or abort safely.", flush=True)
-    read_until("proceed")
-    if delay:
-        time.sleep(delay)
-    plan(root)
-    mark_plan_confirmed(root)
-    print("Search plan confirmed; waiting for bounded Provider metadata.", flush=True)
-    wait_for_state(root, "SEARCH_COMPLETED")
+    control = json.loads((root / "memory/round-control.json").read_text())
+    state = (
+        control["last_completed_state"]
+        if control["state"] in {"INTERRUPTED", "FAILED"}
+        else control["state"]
+    )
+    if state == "NOT_STARTED":
+        print("CHECKPOINT: SEARCH PLAN", flush=True)
+        print("Interpretation, two bounded queries, screening rules, metadata/abstract-only.", flush=True)
+        print("Type proceed, request a revision, or abort safely.", flush=True)
+        read_until("proceed")
+        if delay:
+            time.sleep(delay)
+        plan(root)
+        mark_plan_confirmed(root)
+        print("Search plan confirmed; waiting for bounded Provider metadata.", flush=True)
+        wait_for_state(root, "SEARCH_COMPLETED")
+    elif state == "PLAN_CONFIRMED":
+        print("RESUME: confirmed plan preserved; waiting for bounded Provider metadata.", flush=True)
+        wait_for_state(root, "SEARCH_COMPLETED")
+    elif state == "SEARCH_COMPLETED":
+        print("RESUME: persisted search plan and Provider results loaded without chat history.", flush=True)
+    else:
+        raise RuntimeError(f"fixture cannot resume from {state}")
     print("CHECKPOINT: CANDIDATE SCREENING", flush=True)
     print("Retrieved 10; deduplicated 5; likely relevant 3; uncertain 1; excluded 1.", flush=True)
     print("Themes: transparent continuity and portable local state. Type continue.", flush=True)
