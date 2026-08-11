@@ -23,6 +23,7 @@ from backend.cloud_api_proxy.contracts import (
 from backend.cloud_api_proxy.errors import ProxyError
 from backend.cloud_api_proxy.sql import SQLProxyUnitOfWork
 from backend.database import create_postgres_engine, create_session_factory
+from backend.database.disposable import require_disposable_database
 from backend.database.orm import Base
 
 from backend.cloud_api_proxy.tests.conftest import CHECKSUM_A, CHECKSUM_B, NOW, make_request
@@ -35,6 +36,11 @@ def r3b_engine():
     if not database_url:
         pytest.fail("R3B PostgreSQL tests require REAGENT_TEST_DATABASE_URL and may not skip")
     engine = create_postgres_engine(database_url)
+    require_disposable_database(
+        engine,
+        database_url=database_url,
+        expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
+    )
     with engine.connect() as connection:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
     if revision != "20260806_0017":

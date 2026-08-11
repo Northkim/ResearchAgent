@@ -164,6 +164,12 @@ def test_database_safety_checks_remain_after_dotenv_resolution(
         validate_database_url(resolved.value)
 
 
+def test_owner_manual_controlled_database_remains_allowed() -> None:
+    validate_database_url(
+        "postgresql+psycopg://owner@127.0.0.1:5432/reagent_local_v01"
+    )
+
+
 def test_repository_env_remains_ignored() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     result = subprocess.run(

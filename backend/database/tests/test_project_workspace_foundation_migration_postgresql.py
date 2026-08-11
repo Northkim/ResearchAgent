@@ -9,6 +9,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
+from backend.database.disposable import require_disposable_database
 from backend.project_workspaces import legacy_workflow_instance_id
 
 
@@ -16,13 +17,15 @@ def test_empty_populated_downgrade_and_reupgrade() -> None:
     database_url = os.environ.get("REAGENT_NIGHT_B1_MIGRATION_DATABASE_URL")
     if not database_url:
         pytest.skip("dedicated NIGHT-B1 migration database URL is required")
-    if "reagent_night_b1" not in database_url:
-        pytest.fail("migration qualification refuses a non-NIGHT-B1 database")
-
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", database_url)
     engine = create_engine(database_url)
     try:
+        require_disposable_database(
+            engine,
+            database_url=database_url,
+            expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
+        )
         command.downgrade(config, "base")
         command.upgrade(config, "20260806_0008")
         assert _revision(engine) == "20260806_0008"

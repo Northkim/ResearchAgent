@@ -6,6 +6,10 @@ import { join, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { requireIsolatedQualification } from "./qualification-safety";
+
+test.beforeAll(() => requireIsolatedQualification());
+
 function resultFrom(output: string): Record<string, unknown> {
   const line = output.replaceAll("\r", "").trim().split("\n").reverse().find((item) => item.startsWith("{"));
   if (!line) throw new Error("launcher did not print a final JSON result");

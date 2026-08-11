@@ -4,8 +4,9 @@ SHELL := /bin/bash
 COMPOSE := docker compose --env-file .env
 
 .PHONY: dev controlled-start stop demo-configure demo-config-check demo-start demo-stop demo-reset \
-	demo-seed demo-status demo-logs test-backend compile-backend \
-	test-frontend lint-frontend build-frontend test-integration test-e2e test-all
+	demo-seed demo-status demo-logs test-backend test-backend-postgres compile-backend \
+	test-frontend lint-frontend build-frontend test-integration test-e2e \
+	test-controlled-e2e test-all
 
 dev:
 	./scripts/dev-start.sh
@@ -49,6 +50,10 @@ demo-logs: demo-config-check
 test-backend:
 	conda run --no-capture-output -n reagent-dev pytest -q backend
 
+test-backend-postgres:
+	conda run --no-capture-output -n reagent-dev python \
+		-m scripts.run_isolated_qualification backend-tests backend
+
 compile-backend:
 	conda run --no-capture-output -n reagent-dev python -m compileall -q backend
 
@@ -66,7 +71,12 @@ test-integration: demo-config-check
 	$(COMPOSE) --profile test run --rm integration-test
 
 test-e2e:
-	cd frontend && npm run test:e2e
+	conda run --no-capture-output -n reagent-dev python \
+		-m scripts.run_isolated_qualification controlled-e2e
+
+test-controlled-e2e:
+	conda run --no-capture-output -n reagent-dev python \
+		-m scripts.run_isolated_qualification controlled-e2e
 
 test-all: test-backend compile-backend test-frontend lint-frontend \
 	build-frontend test-integration test-e2e

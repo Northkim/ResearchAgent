@@ -12,6 +12,7 @@ from sqlalchemy import bindparam, create_engine, text
 
 from backend.api import ApplicationContainer, create_app
 from backend.database import SQLAlchemyUnitOfWork, create_session_factory
+from backend.database.disposable import require_disposable_database
 from backend.database.orm import Base
 from backend.project_workspaces.tests.test_f1b_full_scaffold_flow import (
     qualify_full_scaffold_chain,
@@ -31,13 +32,16 @@ def test_f1b_empty_populated_downgrade_reupgrade_is_deterministic(
     database_url = os.environ.get("REAGENT_NIGHT_F1B_MIGRATION_DATABASE_URL")
     if not database_url:
         pytest.skip("dedicated NIGHT-F1B migration database URL is required")
-    if "reagent_night_f1b" not in database_url:
-        pytest.fail("migration qualification refuses a non-NIGHT-F1B database")
     monkeypatch.setenv("REAGENT_DATABASE_URL", database_url)
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", database_url)
     engine = create_engine(database_url)
     try:
+        require_disposable_database(
+            engine,
+            database_url=database_url,
+            expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
+        )
         _truncate_qualification_database(engine)
         command.downgrade(config, "base")
         command.upgrade(config, "20260806_0014")

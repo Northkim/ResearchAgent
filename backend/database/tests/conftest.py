@@ -14,6 +14,10 @@ from backend.database import (
     create_session_factory,
 )
 from backend.database.orm import Base
+from backend.database.disposable import (
+    DisposableDatabaseError,
+    require_disposable_database,
+)
 
 
 @pytest.fixture(scope="session")
@@ -22,8 +26,17 @@ def postgres_engine() -> Iterator[Engine]:
     if not database_url:
         pytest.skip("REAGENT_TEST_DATABASE_URL is required for PostgreSQL tests")
     engine = create_postgres_engine(database_url)
-    with engine.connect() as connection:
-        revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
+    try:
+        require_disposable_database(
+            engine,
+            database_url=database_url,
+            expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
+        )
+        with engine.connect() as connection:
+            revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
+    except DisposableDatabaseError as error:
+        engine.dispose()
+        pytest.fail(f"PostgreSQL destructive fixture rejected database: {error}")
     if revision != "20260806_0017":
         engine.dispose()
         pytest.fail(

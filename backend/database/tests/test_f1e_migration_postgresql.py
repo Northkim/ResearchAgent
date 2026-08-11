@@ -9,6 +9,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 
+from backend.database.disposable import require_disposable_database
+
 
 def test_f1e_resource_seed_downgrade_reupgrade_is_deterministic(
     monkeypatch: pytest.MonkeyPatch,
@@ -16,13 +18,16 @@ def test_f1e_resource_seed_downgrade_reupgrade_is_deterministic(
     database_url = os.environ.get("REAGENT_NIGHT_F1E_MIGRATION_DATABASE_URL")
     if not database_url:
         pytest.skip("dedicated NIGHT-F1E migration database URL is required")
-    if "reagent_night_f1e" not in database_url:
-        pytest.fail("migration qualification refuses a non-NIGHT-F1E database")
     monkeypatch.setenv("REAGENT_DATABASE_URL", database_url)
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", database_url)
     engine = create_engine(database_url)
     try:
+        require_disposable_database(
+            engine,
+            database_url=database_url,
+            expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
+        )
         command.downgrade(config, "base")
         command.upgrade(config, "20260806_0016")
         f1d = _f1d_identity(engine)

@@ -10,6 +10,14 @@ Do not use owner research data, a live Provider key, GitHub credentials, or a
 Hugging Face token for this test. Use one isolated controlled PostgreSQL
 database and a temporary or dedicated test Workspace.
 
+This guide is a manual owner test. Its `REAGENT_DATABASE_URL` may intentionally
+select the owner's persistent continuity database. Do not run H1/F1F
+Playwright qualification against that manual server. Automated qualification
+uses `make test-controlled-e2e`, which creates, marks, migrates, verifies, and
+drops a separate generated database. Destructive PostgreSQL fixtures will fail
+closed if given `reagent_local_v01`, `ProjectDB`, `reagent`, an unmarked
+database, or a mismatched generated identity.
+
 ## 1. Start the controlled environment — Terminal
 
 Follow the operator steps in

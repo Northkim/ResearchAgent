@@ -7,6 +7,8 @@ task_backend_port="${REAGENT_BACKEND_PORT:-8000}"
 task_frontend_port="${REAGENT_FRONTEND_PORT:-3000}"
 task_openalex_enabled="${REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED:-0}"
 task_startup_mode="${REAGENT_STARTUP_MODE:-development}"
+task_automated_qualification="${REAGENT_AUTOMATED_QUALIFICATION:-0}"
+task_frontend_root="${REAGENT_FRONTEND_ROOT:-${task_repo_root}/frontend}"
 
 fail() {
   echo "ReAgent V0.1 startup failed: $1" >&2
@@ -19,8 +21,12 @@ fail() {
 [[ "${task_frontend_port}" =~ ^[0-9]+$ ]] || fail "REAGENT_FRONTEND_PORT must be numeric"
 [[ "${task_openalex_enabled}" == "0" || "${task_openalex_enabled}" == "1" ]] \
   || fail "REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED must be 0 or 1"
+[[ "${task_automated_qualification}" == "0" || "${task_automated_qualification}" == "1" ]] \
+  || fail "REAGENT_AUTOMATED_QUALIFICATION must be 0 or 1"
 [[ "${task_startup_mode}" == "development" || "${task_startup_mode}" == "controlled" ]] \
   || fail "REAGENT_STARTUP_MODE must be development or controlled"
+[[ "${task_frontend_root}" == /* && -f "${task_frontend_root}/package.json" ]] \
+  || fail "REAGENT_FRONTEND_ROOT must select an absolute frontend source directory"
 if [[ "${task_startup_mode}" == "controlled" && "${task_openalex_enabled}" != "0" ]]; then
   fail "controlled startup is deterministic and cannot enable live OpenAlex"
 fi
@@ -65,6 +71,18 @@ fi
 conda run --no-capture-output -n reagent-dev python \
   "${task_repo_root}/scripts/local_startup_config.py" validate \
   >/dev/null || fail "REAGENT_DATABASE_URL must select a loopback PostgreSQL database other than ProjectDB"
+if [[ "${task_automated_qualification}" == "1" ]]; then
+  [[ "${task_startup_mode}" == "controlled" ]] \
+    || fail "automated qualification requires controlled startup"
+  [[ -n "${REAGENT_TEST_DATABASE_URL:-}" && -n "${REAGENT_TEST_DATABASE_IDENTITY:-}" ]] \
+    || fail "automated qualification requires an explicit disposable database URL and identity"
+  (
+    cd "${task_repo_root}"
+    conda run --no-capture-output -n reagent-dev python \
+      -m backend.database.disposable
+  ) >/dev/null \
+    || fail "automated qualification database failed disposable identity validation"
+fi
 
 for task_port in "${task_backend_port}" "${task_frontend_port}"; do
   if lsof -nP -iTCP:"${task_port}" -sTCP:LISTEN >/dev/null 2>&1; then
@@ -102,22 +120,22 @@ conda run --no-capture-output -n reagent-dev alembic upgrade head
 
 if [[ "${task_startup_mode}" == "controlled" ]]; then
   (
-    cd "${task_repo_root}/frontend"
+    cd "${task_frontend_root}"
     env REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" npm run build
   ) >"${task_runtime_dir}/frontend-build.log" 2>&1 \
     || fail "Next.js production build failed; inspect ${task_runtime_dir}/frontend-build.log"
   chmod 600 "${task_runtime_dir}/frontend-build.log"
-  [[ -d "${task_repo_root}/frontend/.next/standalone" ]] \
+  [[ -d "${task_frontend_root}/.next/standalone" ]] \
     || fail "Next.js standalone output is missing"
-  mkdir -p "${task_repo_root}/frontend/.next/standalone/.next"
-  [[ ! -e "${task_repo_root}/frontend/.next/standalone/.next/static" ]] \
+  mkdir -p "${task_frontend_root}/.next/standalone/.next"
+  [[ ! -e "${task_frontend_root}/.next/standalone/.next/static" ]] \
     || fail "Next.js standalone static target is unexpectedly present"
-  [[ ! -e "${task_repo_root}/frontend/.next/standalone/public" ]] \
+  [[ ! -e "${task_frontend_root}/.next/standalone/public" ]] \
     || fail "Next.js standalone public target is unexpectedly present"
-  cp -R "${task_repo_root}/frontend/.next/static" \
-    "${task_repo_root}/frontend/.next/standalone/.next/static"
-  cp -R "${task_repo_root}/frontend/public" \
-    "${task_repo_root}/frontend/.next/standalone/public"
+  cp -R "${task_frontend_root}/.next/static" \
+    "${task_frontend_root}/.next/standalone/.next/static"
+  cp -R "${task_frontend_root}/public" \
+    "${task_frontend_root}/.next/standalone/public"
 fi
 
 task_cleanup_needed=1
@@ -170,7 +188,7 @@ curl --fail --silent --show-error "http://127.0.0.1:${task_backend_port}/${task_
   || fail "FastAPI did not become ready"
 
 (
-  cd "${task_repo_root}/frontend"
+  cd "${task_frontend_root}"
   if [[ "${task_startup_mode}" == "controlled" ]]; then
     cd .next/standalone
     env HOSTNAME=127.0.0.1 PORT="${task_frontend_port}" \

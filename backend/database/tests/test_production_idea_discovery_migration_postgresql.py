@@ -9,6 +9,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 
+from backend.database.disposable import require_disposable_database
+
 LS_ID = "literature-search-local-experimental"
 IDEA_ID = "idea-discovery-local-experimental"
 
@@ -19,13 +21,16 @@ def test_b7_empty_b6_populated_downgrade_reupgrade_and_conflict_rollback(
     database_url = os.environ.get("REAGENT_NIGHT_B7_MIGRATION_DATABASE_URL")
     if not database_url:
         pytest.skip("dedicated NIGHT-B7 migration database URL is required")
-    if "reagent_night_b7" not in database_url:
-        pytest.fail("migration qualification refuses a non-NIGHT-B7 database")
     monkeypatch.setenv("REAGENT_DATABASE_URL", database_url)
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", database_url)
     engine = create_engine(database_url)
     try:
+        require_disposable_database(
+            engine,
+            database_url=database_url,
+            expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
+        )
         command.downgrade(config, "base")
         command.upgrade(config, "20260806_0013")
         assert _revision(engine) == "20260806_0013"

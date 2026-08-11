@@ -15,10 +15,14 @@ import { join, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { requireIsolatedQualification } from "./qualification-safety";
+
 type JsonObject = Record<string, unknown>;
 
 const backendUrl = process.env.REAGENT_E2E_BACKEND_URL ?? "http://127.0.0.1:8000";
 const repoRoot = resolve(process.cwd(), "..");
+
+test.beforeAll(() => requireIsolatedQualification());
 
 function commandJson(command: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
   const output = execFileSync(command, args, {

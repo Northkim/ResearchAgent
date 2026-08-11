@@ -2,6 +2,38 @@
 
 Last updated: 2026-08-11
 
+## Owner-test infrastructure defect repair — controlled database isolation
+
+The confirmed owner-test defect `CONTROLLED_TEST_DATABASE_ISOLATION` is
+repaired without changing product or persistence contracts. Manual
+`make controlled-start` remains allowed to use the owner-selected persistent
+`REAGENT_DATABASE_URL`. Current mutating automated qualification instead
+requires a loopback PostgreSQL administrative URL and creates a uniquely named
+`reagent_qualification_<uuid>` database with a separate random identity marker.
+Runtime startup, Playwright preflight, and destructive PostgreSQL fixtures all
+verify the exact generated name, connected database, marker schema, and
+per-execution identity before mutation. Protected `reagent_local_v01`,
+`ProjectDB`, and `reagent` identities, merely test-looking names, absent
+markers, and identity mismatches fail closed.
+
+`make test-e2e` / `make test-controlled-e2e` now run current local, H1, and F1F
+journeys only against this generated database; `make test-backend-postgres`
+does the same for the full backend suite. Cleanup revalidates the marker,
+terminates only connections to that exact database, then drops it. The owner
+database was checked read-only before and after: eight Projects both times,
+the exact owner Project present both times, and the two existing H1 forensic
+markers retained. No generated qualification database remained.
+
+Qualification passed backend `789 passed, 14 existing skips`, current-product
+Playwright `4 passed`, frontend Vitest `17 files / 34 tests`, ESLint,
+compileall, shell syntax, Alembic head, and diff checks. Migration remains sole
+head `20260806_0017`; no migration is required. The owner controlled service
+restart reached readiness after qualification, then the tool-managed process
+session was stopped cleanly; the owner should perform the normal
+`make controlled-start` restart before resuming. No owner Project/Workspace
+row, existing H1 marker, Workflow, Artifact, Skill, Resource, Progress
+contract, Provider, or credential changed.
+
 ## Owner-test defect repair — Literature interrupted finalization recovery
 
 The owner-discovered F1F defect

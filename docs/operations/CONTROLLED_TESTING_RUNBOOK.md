@@ -24,6 +24,44 @@ CLI, and disk space for the Local Workspace. The downloaded
 `reagent_local.py` uses only the Python standard library. A tester receives no
 ReAgent Provider or database credential.
 
+Keep owner/manual testing and automated qualification databases separate:
+
+- `REAGENT_DATABASE_URL` selects the persistent database for one manually
+  operated controlled instance. It may intentionally be an owner continuity
+  database such as `reagent_local_v01`.
+- Automated H1/F1F qualification must use `make test-controlled-e2e`. That
+  harness creates a uniquely named temporary database, writes an exact
+  per-execution disposable marker, migrates it, starts controlled services
+  with an explicit database override, runs the browser tests, and drops only
+  that verified database afterward.
+- `REAGENT_TEST_DATABASE_URL` is destructive-test configuration, never a
+  fallback for an owner database. PostgreSQL fixtures reject protected names,
+  merely test-looking names, missing markers, and marker/identity mismatches
+  before `TRUNCATE`, downgrade, or other destructive setup.
+
+Do not run mutating Playwright product journeys against an already running
+manual instance. Stop that application's frontend/backend first; automated
+qualification fails closed if the frozen loopback ports are occupied and
+never stops a manual instance automatically. For local automated qualification, supply only a loopback
+administrative connection to PostgreSQL's `postgres` or `template1` database;
+the harness generates the test database URL itself:
+
+```bash
+export REAGENT_TEST_ADMIN_DATABASE_URL=postgresql+psycopg://operator@127.0.0.1:5432/postgres
+make test-controlled-e2e
+```
+
+The same generated marker lifecycle protects the complete PostgreSQL backend
+suite:
+
+```bash
+make test-backend-postgres
+```
+
+Do not manually copy `REAGENT_DATABASE_URL` into
+`REAGENT_TEST_DATABASE_URL`. The generated identity marker is intentionally
+not present in persistent owner/manual databases.
+
 Example operator allocation (replace names and paths; do not copy secrets into
 Git):
 
@@ -51,6 +89,9 @@ make controlled-start
 curl --fail http://127.0.0.1:18101/health
 curl --fail http://127.0.0.1:18101/ready
 ```
+
+This owner/manual command remains valid with an explicitly supplied persistent
+`REAGENT_DATABASE_URL`; it is not the automated qualification entry point.
 
 `/health` is liveness only. `/ready` succeeds only when PostgreSQL is
 reachable, the sole revision is `20260806_0017`, and the reviewed Workflow,

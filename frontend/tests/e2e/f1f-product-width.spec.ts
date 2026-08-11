@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
 
+import { requireIsolatedQualification } from "./qualification-safety";
+
+test.beforeAll(() => requireIsolatedQualification());
 
 test("exposes the complete product skeleton without hiding scaffold boundaries", async ({ page }) => {
   await page.goto("/projects/new");

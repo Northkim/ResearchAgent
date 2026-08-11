@@ -327,16 +327,20 @@ resets only that database:
 make test-integration
 ```
 
-With the complete Compose stack healthy, run the real browser flow:
+Current mutating owner/H1/F1F browser qualification does not reuse the Compose
+database or a running manual backend. Stop the serving stack, provide the
+loopback PostgreSQL administrative URL, and run the isolated entry point:
 
 ```bash
+make demo-stop
+export REAGENT_TEST_ADMIN_DATABASE_URL='postgresql+psycopg://USER@127.0.0.1:5432/postgres'
 make test-e2e
 ```
 
-The Playwright test does not mock HTTP. It retains traces, screenshots, and
-video on failure and attaches screenshots of the workflow catalog, waiting run,
-approval center, completed persisted run, and mobile dashboard to the HTML
-report. Open `frontend/playwright-report/index.html` after a run.
+The harness creates and marks a unique database, migrates it, runs the current
+mutating Playwright journeys over real HTTP, and removes only that verified
+database. It retains traces, screenshots, and video on failure. Open
+`frontend/playwright-report/index.html` after a run.
 
 Local 9A-2 acceptance must use an isolated database, never `ProjectDB`:
 
@@ -347,17 +351,17 @@ conda run --no-capture-output -n reagent-dev pytest -q \
   backend/integration/tests/test_http_postgresql_research_v2.py
 ```
 
-To use an isolated local PostgreSQL database instead of Compose for the real
-backend suite, explicitly opt into destructive reset of that database:
+To run the real backend suite against PostgreSQL, let the qualification helper
+create, mark, migrate, and remove one unique disposable database:
 
 ```bash
-export REAGENT_TEST_DATABASE_URL="$REAGENT_DATABASE_URL"
-export REAGENT_E2E_DATABASE_URL="$REAGENT_DATABASE_URL"
-export REAGENT_ALLOW_DATABASE_RESET=1
-conda run --no-capture-output -n reagent-dev python -m pytest -q backend
+export REAGENT_TEST_ADMIN_DATABASE_URL='postgresql+psycopg://USER@127.0.0.1:5432/postgres'
+make test-backend-postgres
 ```
 
-Never point those three variables at a shared or production database.
+Never copy `REAGENT_DATABASE_URL` into destructive test configuration. The
+test fixture requires the helper's generated database name and exact identity
+marker, and fails closed for persistent database identities.
 
 ## 10. Phase 9B-1 supervised OpenAlex discovery
 
