@@ -2,6 +2,42 @@
 
 Last updated: 2026-08-11
 
+## Owner-local real research gate — safe NORMAL Literature and Idea
+
+The owner-local real Provider safety repair is complete without changing
+Workflow research semantics, immutable Capsule versions, Artifact/Skill/
+Resource/Progress contracts, or the database schema. `make dev` remains the
+canonical loopback owner real-research entry. The exported OpenAlex credential
+is scoped to the Backend child; frontend build/server, generic Workspace,
+Capsule, Literature, Idea, scaffold and Codex children receive a scrubbed
+environment. OpenAlex credential-like assignments fail Package and delivered
+Capsule validation.
+
+NORMAL Literature now requires the visible third-party disclosure and exact
+`continue-real-search` confirmation. The Backend records a two-minute,
+checksum-bound, one-time in-memory grant and consumes it before issuing the
+matching NORMAL scoped session. Controlled remains DEMO-only; no client mode or
+consent boolean can authorize live behavior. No migration or durable consent
+domain was added.
+
+Offline qualification used the real generic Full Research Project route,
+real OpenAlex adapter with a scripted no-network transport, interactive
+Literature state machine, selected-paper-library/v1 promotion, exact Idea
+binding/materialization, explicit Idea selection and
+selected-research-idea/v1. NORMAL resume reused completed queries with zero
+repeat Provider calls. Full Backend passed `799 passed, 14 existing skips`,
+Playwright `4 passed`, frontend `17 files / 34 tests`, TypeScript, ESLint,
+scrubbed production build, compileall and Alembic check. Owner DB stayed at
+eight Projects with the owner Project present; the running owner service was
+not stopped.
+
+`OWNER_LOCAL_REAL_RESEARCH_GATE = OPEN` for a single owner/local machine.
+`R3D_PRODUCTION_PROVIDER_GATE = CLOSED`; arbitrary Harness egress, public auth,
+production secret management/rotation, formal retention/privacy UX and public
+Provider acceptance remain deferred. The owner guide is
+`docs/getting-started/OWNER_REAL_RESEARCH_TEST.md`. Next action: owner creates a
+new Full Research Project and manually runs real Literature then real Idea.
+
 ## Owner-test infrastructure defect repair — controlled database isolation
 
 The confirmed owner-test defect `CONTROLLED_TEST_DATABASE_ISOLATION` is

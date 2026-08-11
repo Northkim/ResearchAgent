@@ -40,8 +40,10 @@ from .local_projects import (
 )
 from .local_sessions import (
     CreateLocalWorkflowSessionRequest,
+    CreateRealProviderConsentRequest,
     LocalLiteratureExecutionModeResponse,
     LocalWorkflowSessionResponse,
+    RealProviderConsentResponse,
 )
 from .project_workspaces import (
     CreateWorkflowInstanceRequest,
@@ -77,6 +79,7 @@ __all__ = [
     "CreateCatalogRunRequest",
     "CreateLocalProjectRequest",
     "CreateLocalWorkflowSessionRequest",
+    "CreateRealProviderConsentRequest",
     "ArtifactResponse",
     "ProviderOperationResponse",
     "ProgressReportUploadRequest",
@@ -91,6 +94,7 @@ __all__ = [
     "LocalLiteratureExecutionModeResponse",
     "LocalProjectResponse",
     "LocalWorkflowSessionResponse",
+    "RealProviderConsentResponse",
     "RejectRequest",
     "WorkflowDefinitionResponse",
     "WorkflowRunPageResponse",

@@ -17,9 +17,22 @@ from backend.cloud_api_proxy import (
     InMemoryProxyUnitOfWork,
 )
 from backend.cloud_api_proxy.composition import ProxyApplicationContainer
+from backend.cloud_api_proxy.contracts import OPENALEX_ADAPTER_ID
+from backend.local_sessions import (
+    REAL_PROVIDER_CONFIRMATION,
+    REAL_PROVIDER_DISCLOSURE_VERSION,
+)
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.progress_reports.tests.factories import native_report, upload_envelope
 from backend.research.adapters import LocalFilesystemArtifactStorage
+
+
+class NetworkCanaryOpenAlexAdapter:
+    adapter_id = OPENALEX_ADAPTER_ID
+    invocation_count = 0
+
+    def search(self, request):
+        raise AssertionError("consent/session setup must not call OpenAlex")
 
 
 @pytest.fixture
@@ -55,7 +68,10 @@ def session_client(tmp_path) -> Iterator[tuple[TestClient, InMemoryDatabase]]:
     adapter = DeterministicFakePaperSearchAdapter()
     proxy_service = CloudAPIProxyService(
         unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(proxy_database),
-        adapter=adapter,
+        adapters={
+            adapter.adapter_id: adapter,
+            OPENALEX_ADAPTER_ID: NetworkCanaryOpenAlexAdapter(),
+        },
         clock=lambda: datetime(2026, 8, 5, 11, 0, tzinfo=UTC),
     )
     proxy_container = ProxyApplicationContainer(service=proxy_service)
@@ -215,6 +231,55 @@ def test_local_session_is_exact_package_scoped_and_revokeable(session_client) ->
     assert database.provider_operations == {}
 
 
+def test_normal_session_requires_exact_one_time_owner_consent(session_client) -> None:
+    client, _ = session_client
+    project = _create(client)
+    package = client.post(f"/projects/{project['project_id']}/packages").json()
+    identity = {
+        key: package[key]
+        for key in (
+            "package_id", "package_checksum", "workflow_id",
+            "workflow_version", "workflow_checksum",
+        )
+    }
+    session_path = f"/projects/{project['project_id']}/local-sessions"
+    consent_path = session_path + "/real-provider-consent"
+
+    missing = client.post(session_path, json={**identity, "mode": "NORMAL"})
+    cancelled = client.post(
+        consent_path,
+        json={
+            **identity,
+            "disclosure_version": REAL_PROVIDER_DISCLOSURE_VERSION,
+            "confirmation": "cancel",
+        },
+    )
+    consent = client.post(
+        consent_path,
+        json={
+            **identity,
+            "disclosure_version": REAL_PROVIDER_DISCLOSURE_VERSION,
+            "confirmation": REAL_PROVIDER_CONFIRMATION,
+        },
+    )
+    opened = client.post(session_path, json={**identity, "mode": "NORMAL"})
+    replay_without_new_consent = client.post(
+        session_path, json={**identity, "mode": "NORMAL"}
+    )
+
+    assert missing.status_code == 403
+    assert missing.json()["error"]["code"] == "REAL_PROVIDER_CONSENT_REQUIRED"
+    assert cancelled.status_code == 403
+    assert cancelled.json()["error"]["code"] == "REAL_PROVIDER_CONSENT_NOT_CONFIRMED"
+    assert consent.status_code == 201
+    assert consent.headers["cache-control"] == "no-store"
+    assert consent.json()["status"] == "CONSENT_RECORDED"
+    assert opened.status_code == 201
+    assert opened.json()["mode"] == "NORMAL"
+    assert replay_without_new_consent.status_code == 403
+    assert NetworkCanaryOpenAlexAdapter.invocation_count == 0
+
+
 def test_controlled_mode_projection_and_live_attempt_fail_closed(
     tmp_path,
 ) -> None:
@@ -268,6 +333,14 @@ def test_controlled_mode_projection_and_live_attempt_fail_closed(
             f"/projects/{project['project_id']}/local-sessions",
             json={**identity, "mode": "NORMAL"},
         )
+        consent_attempt = client.post(
+            f"/projects/{project['project_id']}/local-sessions/real-provider-consent",
+            json={
+                **identity,
+                "disclosure_version": REAL_PROVIDER_DISCLOSURE_VERSION,
+                "confirmation": REAL_PROVIDER_CONFIRMATION,
+            },
+        )
         tampered = client.get(
             f"/projects/{project['project_id']}/local-sessions/execution-mode",
             params={**identity, "package_checksum": "sha256:" + "f" * 64},
@@ -287,6 +360,8 @@ def test_controlled_mode_projection_and_live_attempt_fail_closed(
     assert demo.json()["mode"] == "DEMO"
     assert live_attempt.status_code == 422
     assert "controlled server" in live_attempt.json()["error"]["message"]
+    assert consent_attempt.status_code == 403
+    assert consent_attempt.json()["error"]["code"] == "CONTROLLED_REAL_PROVIDER_FORBIDDEN"
     assert tampered.status_code == 422
     assert fixture_unavailable.status_code == 503
     assert fixture_unavailable.json()["error"]["code"] == (

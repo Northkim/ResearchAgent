@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from backend.application.errors import (
+    ApplicationCodedAuthorizationError,
     ApplicationUnavailableError,
     ApplicationValidationError,
 )
@@ -23,7 +24,13 @@ from backend.cloud_api_proxy.errors import ProxyError
 from backend.cloud_api_proxy.service import CloudAPIProxyService
 from backend.local_projects import LITERATURE_SEARCH_WORKFLOW
 from backend.local_projects.service import LocalProjectService
-from backend.local_sessions import LocalSessionMode, LocalWorkflowSessionService
+from backend.local_sessions import (
+    REAL_PROVIDER_CONFIRMATION,
+    REAL_PROVIDER_DISCLOSURE_VERSION,
+    LocalSessionMode,
+    LocalWorkflowSessionService,
+    RealProviderConsentRegistry,
+)
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 
 
@@ -60,6 +67,7 @@ def _setup(tmp_path, *, include_openalex: bool = True):
     if include_openalex:
         adapters[canary.adapter_id] = canary
     now = [datetime(2026, 8, 6, 8, 0, tzinfo=UTC)]
+    consents = RealProviderConsentRegistry(clock=lambda: now[0])
     proxy = CloudAPIProxyService(
         unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(proxy_db),
         adapters=adapters,
@@ -68,6 +76,7 @@ def _setup(tmp_path, *, include_openalex: bool = True):
     sessions = LocalWorkflowSessionService(
         local_projects=project_service,
         proxy=proxy,
+        normal_consent_consumer=consents.consume,
     )
     identity = {
         "project_id": project.project_id,
@@ -77,12 +86,17 @@ def _setup(tmp_path, *, include_openalex: bool = True):
         "workflow_version": package.workflow_version,
         "workflow_checksum": package.workflow_checksum,
     }
-    return sessions, proxy_db, fake, canary, now, identity, tmp_path / "packages"
+    return sessions, proxy_db, fake, canary, now, identity, tmp_path / "packages", consents
 
 
 def test_normal_demo_and_upload_only_sessions_are_bounded(tmp_path) -> None:
-    sessions, database, fake, canary, _, identity, package_root = _setup(tmp_path)
+    sessions, database, fake, canary, _, identity, package_root, consents = _setup(tmp_path)
     assert sessions.search_mode(**identity) is LocalSessionMode.NORMAL
+    consents.grant(
+        **identity,
+        disclosure_version=REAL_PROVIDER_DISCLOSURE_VERSION,
+        confirmation=REAL_PROVIDER_CONFIRMATION,
+    )
     normal = sessions.open(mode=LocalSessionMode.NORMAL, **identity)
     demo = sessions.open(mode=LocalSessionMode.DEMO, **identity)
     upload = sessions.open(
@@ -121,7 +135,7 @@ def test_normal_demo_and_upload_only_sessions_are_bounded(tmp_path) -> None:
 
 
 def test_normal_mode_never_falls_back_to_fake(tmp_path) -> None:
-    sessions, _, fake, _, _, identity, _ = _setup(
+    sessions, _, fake, _, _, identity, _, _ = _setup(
         tmp_path, include_openalex=False
     )
     with pytest.raises(ApplicationUnavailableError, match="OpenAlex Proxy"):
@@ -129,8 +143,41 @@ def test_normal_mode_never_falls_back_to_fake(tmp_path) -> None:
     assert fake.invocation_count == 0
 
 
+def test_normal_consent_is_exact_short_lived_and_single_use(tmp_path) -> None:
+    sessions, database, fake, canary, now, identity, _, consents = _setup(tmp_path)
+    with pytest.raises(ApplicationCodedAuthorizationError) as missing:
+        sessions.open(mode=LocalSessionMode.NORMAL, **identity)
+    assert missing.value.code == "REAL_PROVIDER_CONSENT_REQUIRED"
+    assert database.tokens == {}
+
+    consents.grant(
+        **identity,
+        disclosure_version=REAL_PROVIDER_DISCLOSURE_VERSION,
+        confirmation=REAL_PROVIDER_CONFIRMATION,
+    )
+    with pytest.raises(ApplicationValidationError):
+        sessions.open(
+            mode=LocalSessionMode.NORMAL,
+            **{**identity, "workflow_checksum": "sha256:" + "f" * 64},
+        )
+    opened = sessions.open(mode=LocalSessionMode.NORMAL, **identity)
+    assert opened.mode is LocalSessionMode.NORMAL
+    with pytest.raises(ApplicationCodedAuthorizationError):
+        sessions.open(mode=LocalSessionMode.NORMAL, **identity)
+
+    consents.grant(
+        **identity,
+        disclosure_version=REAL_PROVIDER_DISCLOSURE_VERSION,
+        confirmation=REAL_PROVIDER_CONFIRMATION,
+    )
+    now[0] += timedelta(minutes=3)
+    with pytest.raises(ApplicationCodedAuthorizationError):
+        sessions.open(mode=LocalSessionMode.NORMAL, **identity)
+    assert fake.invocation_count == canary.invocation_count == 0
+
+
 def test_controlled_search_mode_is_server_enforced_and_checksum_bound(tmp_path) -> None:
-    sessions, _, fake, canary, _, identity, _ = _setup(tmp_path)
+    sessions, _, fake, canary, _, identity, _, _ = _setup(tmp_path)
     controlled = LocalWorkflowSessionService(
         local_projects=sessions._projects,
         proxy=sessions._proxy,
@@ -150,7 +197,7 @@ def test_controlled_search_mode_is_server_enforced_and_checksum_bound(tmp_path) 
 
 
 def test_exact_scope_expiry_revocation_and_cross_project_denial(tmp_path) -> None:
-    sessions, _, _, _, now, identity, _ = _setup(tmp_path)
+    sessions, _, _, _, now, identity, _, _ = _setup(tmp_path)
     session = sessions.open(
         mode=LocalSessionMode.UPLOAD_ONLY,
         execution_round=1,
@@ -203,7 +250,7 @@ def test_exact_scope_expiry_revocation_and_cross_project_denial(tmp_path) -> Non
 
 
 def test_search_session_has_no_progress_capability_but_can_be_revoked(tmp_path) -> None:
-    sessions, _, _, _, _, identity, _ = _setup(tmp_path)
+    sessions, _, _, _, _, identity, _, _ = _setup(tmp_path)
     search = sessions.open(mode=LocalSessionMode.DEMO, **identity)
     with pytest.raises(ProxyError) as denied:
         sessions.authorize(

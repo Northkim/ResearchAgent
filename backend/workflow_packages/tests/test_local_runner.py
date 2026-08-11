@@ -573,16 +573,18 @@ def test_explicit_restart_removes_only_round_mutable_artifacts(
     assert sha256_bytes((root / "inputs/research_request.json").read_bytes()) == immutable
 
 
+@pytest.mark.parametrize("mode", ("DEMO", "NORMAL"))
 def test_explicit_resume_preserves_plan_and_completes_same_round(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    mode: str,
 ) -> None:
     root = _package(tmp_path)
     manifest = json.loads((root / "package-manifest.json").read_text())
     local_runner._initialize_control(
         root=root,
         manifest=manifest,
-        mode="DEMO",
+        mode=mode,
         execution_style="INTERACTIVE",
     )
     _planning(root)
@@ -591,7 +593,7 @@ def test_explicit_resume_preserves_plan_and_completes_same_round(
         root,
         json.loads((root / "inputs/research_request.json").read_text())["topic"],
     )
-    _record_results(root, "DEMO", queries)
+    _record_results(root, mode, queries)
     local_runner._mark_search_completed(root)
     local_runner._mark_interrupted(root, "CANDIDATE_SCREENING")
     plan_checksum = sha256_bytes((root / "outputs/search_plan.md").read_bytes())
@@ -599,10 +601,17 @@ def test_explicit_resume_preserves_plan_and_completes_same_round(
     monkeypatch.setattr(local_runner, "_check_backend", lambda base_url: None)
     monkeypatch.setattr(local_runner, "_open_session", lambda **kwargs: _session(kwargs["mode"]))
     monkeypatch.setattr(local_runner, "_close_session", lambda **kwargs: None)
+    monkeypatch.setattr(
+        local_runner,
+        "_execute_queries",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("resume repeated completed Provider queries")
+        ),
+    )
 
     def resume_codex(**kwargs) -> None:
         observed["resume"] = kwargs["resume"]
-        _synthesis(kwargs["root"], "DEMO")
+        _synthesis(kwargs["root"], mode)
         local_runner._mark_finalized(kwargs["root"])
 
     monkeypatch.setattr(local_runner, "_run_interactive_codex", resume_codex)
@@ -614,7 +623,7 @@ def test_explicit_resume_preserves_plan_and_completes_same_round(
     result = local_runner.run_round(
         package_root=root,
         base_url="http://127.0.0.1:8000",
-        mode="DEMO",
+        mode=mode,
         resume=True,
     )
     assert result["status"] == "ROUND_COMPLETED"

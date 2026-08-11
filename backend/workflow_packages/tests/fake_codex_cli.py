@@ -38,23 +38,44 @@ def update_control(root: Path, **changes) -> None:
     write_json(path, control)
 
 
+def execution_mode(root: Path) -> str:
+    control = json.loads((root / "memory/round-control.json").read_text())
+    return control.get("mode") or "DEMO"
+
+
 def plan(root: Path) -> None:
     topic = json.loads((root / "inputs/research_request.json").read_text())["topic"]
+    mode = execution_mode(root)
+    evidence_label = (
+        "FICTIONAL DEMO EVIDENCE"
+        if mode == "DEMO"
+        else "REAL PROVIDER METADATA"
+    )
+    evidence_limit = (
+        "Fictional metadata and available abstracts only; no full text."
+        if mode == "DEMO"
+        else "OpenAlex metadata and available abstracts only; no full text or PDFs."
+    )
+    query_description = (
+        "Two bounded fictional variants."
+        if mode == "DEMO"
+        else "Two bounded OpenAlex search variants."
+    )
     (root / "outputs/search_plan.md").write_text(
-        f"""# Search plan — FICTIONAL DEMO EVIDENCE
+        f"""# Search plan — {evidence_label}
 
 ## Interpreted topic
 {topic}
 ## Concepts and synonyms
 transparent continuity; portable local state
 ## Query variants
-Two bounded fictional variants.
+{query_description}
 ## Search bounds
 Two calls; five results per call; fifteen retained maximum.
 ## Screening rules
 Include direct topical connection; record every exclusion.
 ## Evidence limitations
-Fictional metadata and available abstracts only; no full text.
+{evidence_limit}
 """,
         encoding="utf-8",
     )
@@ -73,6 +94,7 @@ Fictional metadata and available abstracts only; no full text.
 
 
 def synthesize(root: Path) -> None:
+    mode = execution_mode(root)
     sources = [
         json.loads(path.read_text())
         for path in sorted((root / "memory/search/operations").glob("*.result.json"))
@@ -86,7 +108,9 @@ def synthesize(root: Path) -> None:
                 {
                     "candidate_id": "candidate-" + hashlib.sha256(provider_id.encode()).hexdigest()[:16],
                     "provider_id": provider_id,
-                    "openalex_id": None,
+                    "openalex_id": (
+                        paper["provider_id"] if mode == "NORMAL" else None
+                    ),
                     "title": paper["title"],
                     "authors": [author["name"] for author in paper["authors"]],
                     "publication_year": paper["publication_year"],
@@ -105,20 +129,24 @@ def synthesize(root: Path) -> None:
     candidates = list(merged.values())
     write_json(
         root / "outputs/candidate_papers.json",
-        {"schema_version": "candidate-papers/v0.2", "mode": "DEMO", "candidates": candidates},
+        {"schema_version": "candidate-papers/v0.2", "mode": mode, "candidates": candidates},
     )
     selected = candidates[:3]
     write_json(
         root / "outputs/selected_papers.json",
         {
             "schema_version": "selected-papers/v0.2",
-            "mode": "DEMO",
+            "mode": mode,
             "selection_status": "SUFFICIENT",
             "selected": [
                 {
                     "candidate_id": item["candidate_id"],
                     "relevance_decision": "INCLUDE",
-                    "inclusion_reason": "Fictional metadata directly matches the demonstration topic.",
+                    "inclusion_reason": (
+                        "Normalized OpenAlex metadata directly matches the research topic."
+                        if mode == "NORMAL"
+                        else "Fictional metadata directly matches the demonstration topic."
+                    ),
                     "evidence_availability": "METADATA_ONLY",
                 }
                 for item in selected
@@ -127,32 +155,42 @@ def synthesize(root: Path) -> None:
                 {"candidate_id": item["candidate_id"], "reason": "Outside the bounded representative set."}
                 for item in candidates[3:]
             ],
-            "exclusion_summary": "Two fictional duplicates were screened outside the representative set.",
+            "exclusion_summary": "Records outside the bounded representative set were excluded.",
         },
     )
+    evidence_heading = (
+        "REAL PROVIDER METADATA"
+        if mode == "NORMAL"
+        else "FICTIONAL DEMO EVIDENCE"
+    )
+    evidence_summary = (
+        "Three normalized OpenAlex records support the bounded local analysis."
+        if mode == "NORMAL"
+        else "Three fictional records illustrate the completed local flow."
+    )
     (root / "outputs/literature_search_report.md").write_text(
-        """# FICTIONAL DEMO EVIDENCE — Literature search report
+        f"""# {evidence_heading} — Literature search report
 
 ## Executive summary
-Three fictional records illustrate the completed local flow.
+{evidence_summary}
 ## Search coverage
-Two bounded fictional queries returned five deduplicated candidates.
+Two bounded queries returned normalized, deduplicated candidates.
 ## Main research themes
 Transparent continuity and portable research state.
 ## Common methods
 Metadata-only comparison.
 ## Representative works
-Three fictional demonstration records.
+Three bounded representative records.
 ## Trends
 Local-first research handoffs.
 ## Limitations
-Fictional metadata and abstract-only scope; no full text was read.
+Metadata and available-abstract evidence only; no full text or PDFs were read.
 ## Potential research gaps
 Real topical evidence remains necessary in normal mode.
 ## Recommended next research action
-Run a separately authorized normal OpenAlex round.
+Validate novelty and feasibility with broader evidence and full-paper review.
 ## Selected-paper references
-The first three fictional candidate identities in selected_papers.json.
+The first three bounded candidate identities in selected_papers.json.
 """,
         encoding="utf-8",
     )
@@ -169,7 +207,7 @@ The first three fictional candidate identities in selected_papers.json.
                 "outputs/selected_papers.json",
                 "outputs/literature_search_report.md",
             ],
-            "next_action": "Review fictional demo outputs.",
+            "next_action": "Review the bounded metadata outputs.",
             "updated_at": "2026-08-06T02:02:00Z",
             "context_checksum": None,
         }
@@ -192,9 +230,11 @@ The first three fictional candidate identities in selected_papers.json.
                 "Papers selected: 3",
                 "Outputs generated: 4",
             ],
-            "current_state": "FICTIONAL DEMO EVIDENCE: three representative records selected.",
-            "next_recommended_action": "Review local outputs; use normal mode only with explicit authorization.",
-            "warnings": ["FICTIONAL DEMO EVIDENCE; metadata and abstract-only scope; no full text."],
+            "current_state": f"{evidence_heading}: three representative records selected.",
+            "next_recommended_action": "Review local outputs and validate the bounded evidence.",
+            "warnings": [
+                f"{evidence_heading}; metadata and available-abstract scope; no full text or PDFs."
+            ],
         }
     )
     write_json(draft_path, draft)
@@ -238,6 +278,9 @@ def mark_finalized(root: Path) -> None:
 
 
 def read_until(expected: str) -> None:
+    if os.environ.get("REAGENT_FAKE_CODEX_AUTO_CONFIRM") == "1":
+        print(f"Owner input received: {expected}", flush=True)
+        return
     while True:
         line = sys.stdin.readline()
         if not line:

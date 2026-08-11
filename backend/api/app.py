@@ -20,6 +20,7 @@ from backend.application.errors import (
     ApplicationUnavailableError,
     ApplicationValidationError,
 )
+from backend.local_sessions import RealProviderConsentRegistry
 
 from .composition import ApplicationContainer
 from .routers import (
@@ -52,6 +53,7 @@ def create_app(
     enable_experimental_proxy: bool | None = None,
     enable_local_workflow_sessions: bool | None = None,
     deployment_settings: DeploymentSettings | None = None,
+    real_provider_consents: RealProviderConsentRegistry | None = None,
 ) -> FastAPI:
     settings = deployment_settings or DeploymentSettings.from_environment()
     composition = container or ApplicationContainer.from_environment()
@@ -90,6 +92,9 @@ def create_app(
     application.state.container = composition
     application.state.proxy_container = proxy_composition
     application.state.deployment_profile = settings.profile.value
+    application.state.real_provider_consents = (
+        real_provider_consents or RealProviderConsentRegistry()
+    )
     if settings.cors_allowed_origins:
         application.add_middleware(
             CORSMiddleware,

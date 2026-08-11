@@ -7,6 +7,7 @@ from enum import Enum
 from collections.abc import Callable
 
 from backend.application.errors import (
+    ApplicationCodedAuthorizationError,
     ApplicationUnavailableError,
     ApplicationValidationError,
 )
@@ -63,6 +64,7 @@ class LocalWorkflowSessionService:
         package_identity_resolver: Callable[
             [str, str], tuple[str, str, str, str, str] | None
         ] | None = None,
+        normal_consent_consumer: Callable[..., bool] | None = None,
     ) -> None:
         self._projects = local_projects
         self._proxy = proxy
@@ -70,6 +72,7 @@ class LocalWorkflowSessionService:
             raise ValueError("Upload-only cannot be the enforced search mode")
         self._enforced_search_mode = enforced_search_mode
         self._package_identity_resolver = package_identity_resolver
+        self._normal_consent_consumer = normal_consent_consumer
 
     def search_mode(
         self,
@@ -169,6 +172,22 @@ class LocalWorkflowSessionService:
             )
         if mode is not LocalSessionMode.UPLOAD_ONLY:
             self._require_search_adapter(mode)
+        if mode is LocalSessionMode.NORMAL and (
+            self._normal_consent_consumer is None
+            or not self._normal_consent_consumer(
+                project_id=project_id,
+                package_id=package_id,
+                package_checksum=package_checksum,
+                workflow_id=workflow_id,
+                workflow_version=workflow_version,
+                workflow_checksum=workflow_checksum,
+            )
+        ):
+            raise ApplicationCodedAuthorizationError(
+                "Real Literature Search requires explicit owner consent before "
+                "a Provider session can open",
+                code="REAL_PROVIDER_CONSENT_REQUIRED",
+            )
 
         token, plaintext = self._proxy.issue_token(
             tenant_id="local-v0-1",

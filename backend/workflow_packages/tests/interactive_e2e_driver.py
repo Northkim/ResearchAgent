@@ -19,6 +19,7 @@ RESPONSES = (
     (b"CHECKPOINT: CANDIDATE SCREENING", b"continue\n"),
     (b"CHECKPOINT: FINALIZATION", b"finish\n"),
 )
+REAL_PROVIDER_CONSENT_MARKER = b"Type continue-real-search"
 
 
 def drive(
@@ -37,6 +38,7 @@ def drive(
     buffer = b""
     responses = RESPONSES[1:] if resume else RESPONSES
     next_response = 0
+    real_provider_consent_sent = False
     deadline = time.monotonic() + timeout
     try:
         while time.monotonic() < deadline:
@@ -52,6 +54,13 @@ def drive(
                     break
                 os.write(sys.stdout.fileno(), chunk)
                 buffer = (buffer + chunk)[-262144:]
+                if (
+                    not real_provider_consent_sent
+                    and REAL_PROVIDER_CONSENT_MARKER in buffer
+                ):
+                    os.write(descriptor, b"continue-real-search\n")
+                    real_provider_consent_sent = True
+                    buffer = b""
                 if next_response < len(responses):
                     marker, response = responses[next_response]
                     if marker in buffer:

@@ -11,6 +11,9 @@ _SECRET_PATTERNS = (
     re.compile(b"sk-" + rb"proj-[A-Za-z0-9_-]{8,}"),
     re.compile(b"-----BEGIN " + rb"(?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(rb"(?:ANTHROPIC|OPENAI)" + rb"_API_KEY\s*=[^\s<]+"),
+    re.compile(
+        rb"(?:REAGENT_)?OPENALEX_API_KEY\s*=\s*(?!['\"]?<)[^\s]+"
+    ),
     re.compile(b"postgres" + rb"(?:ql)?://[^\s/:]+:[^\s/@]+@"),
 )
 _MACHINE_PATH_PATTERNS = (

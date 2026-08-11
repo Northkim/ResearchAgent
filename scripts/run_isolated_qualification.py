@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -154,6 +155,12 @@ def _migrate(database_url: str, environment: dict[str, str]) -> None:
     )
 
 
+def _available_loopback_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return int(listener.getsockname()[1])
+
+
 def _controlled_e2e(specs: tuple[str, ...]) -> int:
     with _disposable_database() as (database_url, database_name, identity):
         with tempfile.TemporaryDirectory(
@@ -163,12 +170,13 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
             runtime = root / "runtime"
             frontend = root / "frontend"
             _copy_frontend(frontend)
-            # The published Literature Capsule currently uses the frozen
-            # loopback defaults after generic mode projection. Qualification
-            # therefore requires the manual instance to be stopped first;
-            # dev-start fails closed if either port is occupied.
-            backend_port = 8000
-            frontend_port = 3000
+            # The generic launcher projects this exact loopback origin into
+            # the Capsule environment. Automated qualification therefore does
+            # not stop or share ports with an owner's manual local runtime.
+            backend_port = _available_loopback_port()
+            frontend_port = _available_loopback_port()
+            while frontend_port == backend_port:
+                frontend_port = _available_loopback_port()
             environment = {
                 **os.environ,
                 "REAGENT_AUTOMATED_QUALIFICATION": "1",
@@ -181,6 +189,7 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
                 "REAGENT_FRONTEND_PORT": str(frontend_port),
                 "REAGENT_E2E_BACKEND_URL": f"http://127.0.0.1:{backend_port}",
                 "REAGENT_E2E_BASE_URL": f"http://127.0.0.1:{frontend_port}",
+                "REAGENT_LOCAL_BASE_URL": f"http://127.0.0.1:{backend_port}",
                 "REAGENT_E2E_QUALIFICATION_IDENTITY": identity,
                 "PYTHONDONTWRITEBYTECODE": "1",
             }

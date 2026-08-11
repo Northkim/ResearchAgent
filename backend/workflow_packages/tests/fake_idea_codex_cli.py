@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 
 
@@ -19,6 +21,18 @@ def canonical(value: object) -> str:
 
 
 def main() -> int:
+    if any(
+        key in os.environ
+        for key in (
+            "REAGENT_OPENALEX_API_KEY",
+            "OPENALEX_API_KEY",
+            "REAGENT_PROXY_TOKEN",
+            "REAGENT_LOCAL_SESSION_TOKEN",
+            "REAGENT_DATABASE_URL",
+        )
+    ):
+        print("Idea fixture received a prohibited secret environment", file=sys.stderr)
+        return 9
     root = Path.cwd()
     input_path = root / "inputs/selected-paper-library.json"
     library = json.loads(input_path.read_text(encoding="utf-8"))
@@ -26,6 +40,7 @@ def main() -> int:
     output = json.loads(output_path.read_text(encoding="utf-8"))
     reports = sorted((root / "memory/progress/reports").glob("prv2-*.json"))
     round_number = len(reports) + 1
+    explicit_selection = os.environ.get("REAGENT_FAKE_IDEA_EXPLICIT_SELECTION") == "1"
     candidate_id = library["papers"][0]["candidate_id"]
     output["ideas"] = [
         {
@@ -50,18 +65,22 @@ def main() -> int:
             "assumptions": ["The supplied metadata is sufficient for this candidate direction."],
             "risks": ["Global novelty is not established by the supplied set."],
             "validation_needed": ["Broader literature and empirical validation are required."],
-            "status": "candidate" if round_number == 1 else "shortlisted",
+            "status": (
+                "selected"
+                if explicit_selection
+                else ("candidate" if round_number == 1 else "shortlisted")
+            ),
         }
     ]
     output_path.write_text(canonical(output) + "\n", encoding="utf-8")
 
     (root / "outputs/idea_discovery_report.md").write_text(
         "# Idea Discovery report\n\n"
-        "## Literature landscape\nThe supplied fictional records describe local research continuity.\n\n"
+        "## Literature landscape\nThe supplied bounded records describe local research continuity.\n\n"
         "## Observed patterns\nEvidence records favor explicit, inspectable state.\n\n"
         "## Gaps / tensions\nA potential gap remains in independently verified session continuation.\n\n"
         "## Candidate research directions\nTest checksum-bound local memory with user-confirmed decisions.\n\n"
-        f"## User choices\n{'Candidate retained for review.' if round_number == 1 else 'Candidate shortlisted after a new session.'}\n\n"
+        f"## User choices\n{('The owner explicitly selected idea-001.' if explicit_selection else ('Candidate retained for review.' if round_number == 1 else 'Candidate shortlisted after a new session.'))}\n\n"
         "## Uncertainties\nGlobal novelty is not proven; this is a bounded inference.\n\n"
         "## Next validation needs\nBroader literature search and empirical evaluation.\n",
         encoding="utf-8",
@@ -81,15 +100,24 @@ def main() -> int:
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     draft.update(
         {
-            "current_state": "CANDIDATE_IDEAS" if round_number == 1 else "USER_REVIEW",
+            "status": "COMPLETED" if explicit_selection else "IN_PROGRESS",
+            "current_state": (
+                "COMPLETED"
+                if explicit_selection
+                else ("CANDIDATE_IDEAS" if round_number == 1 else "USER_REVIEW")
+            ),
             "completed_work": [
                 "Reviewed the materialized paper library",
                 "Recorded one evidence-grounded candidate direction",
             ],
             "next_recommended_action": (
-                "Review the candidate direction with the user"
-                if round_number == 1
-                else "Refine the shortlisted direction with broader validation"
+                "Validate novelty and feasibility beyond the bounded supplied evidence"
+                if explicit_selection
+                else (
+                    "Review the candidate direction with the user"
+                    if round_number == 1
+                    else "Refine the shortlisted direction with broader validation"
+                )
             ),
             "continuation_instructions": [
                 "Read AGENT.md, memory/context.md, and existing outputs before continuing."

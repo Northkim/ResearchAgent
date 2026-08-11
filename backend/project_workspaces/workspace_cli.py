@@ -144,12 +144,23 @@ MAX_FILES = 5_000
 MAX_PACKAGE_BYTES = 536_870_912
 MAX_FILE_BYTES = 134_217_728
 MAX_CONTROL_JSON_BYTES = 2_097_152
+REAL_PROVIDER_DISCLOSURE_VERSION = "reagent.openalex-owner-disclosure/v0.1"
+REAL_PROVIDER_CONFIRMATION = "continue-real-search"
+PROVIDER_CREDENTIAL_ENV_VARS = (
+    "REAGENT_OPENALEX_API_KEY",
+    "OPENALEX_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+)
 
 _SECRET_PATTERNS = (
     re.compile(b"sk-" + rb"ant-[A-Za-z0-9_-]{8,}"),
     re.compile(b"sk-" + rb"proj-[A-Za-z0-9_-]{8,}"),
     re.compile(b"-----BEGIN " + rb"(?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(rb"(?:ANTHROPIC|OPENAI)_API_KEY\s*=[^\s<]+"),
+    re.compile(
+        rb"(?:REAGENT_)?OPENALEX_API_KEY\s*=\s*(?!['\"]?<)[^\s]+"
+    ),
     re.compile(b"postgres" + rb"(?:ql)?://[^\s/:]+:[^\s/@]+@"),
     re.compile(b"/" + b"Users/"),
     re.compile(b"/" + b"Volumes/"),
@@ -1658,6 +1669,23 @@ class HTTPWorkspaceSyncTransport:
         query = urllib.parse.urlencode(package_identity)
         return self._json_get(
             f"/projects/{project_id}/local-sessions/execution-mode?{query}"
+        )
+
+    def grant_real_provider_consent(
+        self,
+        project_id: str,
+        package_identity: dict[str, str],
+        *,
+        confirmation: str,
+    ) -> dict[str, Any]:
+        return self._json_request(
+            "POST",
+            f"/projects/{project_id}/local-sessions/real-provider-consent",
+            {
+                **package_identity,
+                "disclosure_version": REAL_PROVIDER_DISCLOSURE_VERSION,
+                "confirmation": confirmation,
+            },
         )
 
     def _json_get(self, path: str) -> dict[str, Any]:
@@ -3298,6 +3326,7 @@ def run_workflow(
     api_url: str,
     preflight_only: bool = False,
     codex_executable: str | None = None,
+    consent_input: Callable[[str], str] = input,
 ) -> WorkflowRunResult:
     """Explicitly preflight and enter one exact installed Workflow Capsule."""
 
@@ -3322,6 +3351,7 @@ def run_workflow(
                 EXIT_VALIDATION,
             )
         capsule = workspace / installed["relative_path"]
+        _scan_capsule_for_credentials(capsule)
         command = _capsule_runner_command(capsule)
         pin = (
             installed["workflow_definition_id"],
@@ -3403,6 +3433,7 @@ def run_workflow(
                     "Idea Discovery materialized input checksum drifted",
                     EXIT_VALIDATION,
                 )
+            _require_nonempty_selected_library(target)
             if not preflight_only:
                 _prepare_idea_output_provenance(
                     capsule=capsule,
@@ -3482,14 +3513,21 @@ def run_workflow(
                 )
                 if mode_response["mode"] == "DEMO":
                     command.extend(["--mode", "demo"])
+                else:
+                    confirmation = _confirm_real_provider_disclosure(consent_input)
+                    consent_response = transport.grant_real_provider_consent(
+                        descriptor["project_id"],
+                        package_identity,
+                        confirmation=confirmation,
+                    )
+                    _validate_real_provider_consent(
+                        consent_response,
+                        project_id=descriptor["project_id"],
+                        package_identity=package_identity,
+                    )
                 if _literature_resume_required(capsule):
                     command.append("--resume")
-        environment = dict(os.environ)
-        for key in (
-            "REAGENT_DATABASE_URL", "REAGENT_PROXY_TOKEN",
-            "REAGENT_LOCAL_SESSION_TOKEN", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
-        ):
-            environment.pop(key, None)
+        environment = _capsule_child_environment()
         completed = subprocess.run(
             command,
             cwd=capsule,
@@ -3520,6 +3558,110 @@ def _capsule_runner_command(capsule: Path) -> list[str]:
     if runner.is_symlink() or not runner.is_file():
         raise _identity("LOCAL_CAPSULE_DRIFT", "Workflow runner is unavailable")
     return [sys.executable, runner.name]
+
+
+def _require_nonempty_selected_library(path: Path) -> None:
+    value = _read_json(path)
+    if value.get("schema") != "selected-paper-library/v1":
+        raise WorkspaceCLIError(
+            "MATERIALIZED_ARTIFACT_DRIFT",
+            "Idea Discovery selected Literature input has an invalid schema",
+            EXIT_VALIDATION,
+        )
+    papers = value.get("papers")
+    if not isinstance(papers, list):
+        raise WorkspaceCLIError(
+            "MATERIALIZED_ARTIFACT_DRIFT",
+            "Idea Discovery selected Literature input is invalid",
+            EXIT_VALIDATION,
+        )
+    if not papers:
+        raise WorkspaceCLIError(
+            "DEPENDENCY_UNRESOLVED",
+            "The selected Literature Search result contains no included papers; "
+            "Idea Discovery requires at least one selected paper",
+            EXIT_VALIDATION,
+        )
+
+
+def _capsule_child_environment() -> dict[str, str]:
+    """Build the environment shared by every untrusted Capsule child."""
+
+    environment = dict(os.environ)
+    for key in (
+        "REAGENT_DATABASE_URL",
+        "REAGENT_ENV_FILE",
+        "REAGENT_PROXY_TOKEN",
+        "REAGENT_LOCAL_SESSION_TOKEN",
+        *PROVIDER_CREDENTIAL_ENV_VARS,
+    ):
+        environment.pop(key, None)
+    return environment
+
+
+def _scan_capsule_for_credentials(capsule: Path) -> None:
+    """Reject credential assignments in immutable or mutable Capsule files."""
+
+    for path in capsule.rglob("*"):
+        if path.is_symlink() or not path.is_file():
+            continue
+        _reject_secrets(path.read_bytes())
+
+
+def _confirm_real_provider_disclosure(
+    reader: Callable[[str], str],
+) -> str:
+    print("Real Literature Search uses OpenAlex through the ReAgent backend.")
+    print("OpenAlex is a third-party service and receives your search queries")
+    print("plus standard network request metadata.")
+    print("ReAgent retrieves publication metadata and available abstracts only;")
+    print("it does not retrieve full paper text or PDFs.")
+    print("The owner-controlled ReAgent database stores query checksums/lengths,")
+    print("call/cost/rate metadata, and normalized Provider records. The complete")
+    print("query plan, research memory, outputs, and Artifact bytes stay local.")
+    print("This is not a private or offline search.")
+    try:
+        confirmation = reader(
+            f"Type {REAL_PROVIDER_CONFIRMATION} to continue, or anything else to cancel: "
+        ).strip()
+    except (EOFError, KeyboardInterrupt) as error:
+        raise WorkspaceCLIError(
+            "REAL_PROVIDER_CONSENT_CANCELLED",
+            "Real Literature Search was cancelled before any Provider session opened",
+            EXIT_VALIDATION,
+        ) from error
+    if confirmation != REAL_PROVIDER_CONFIRMATION:
+        raise WorkspaceCLIError(
+            "REAL_PROVIDER_CONSENT_CANCELLED",
+            "Real Literature Search was cancelled before any Provider session opened",
+            EXIT_VALIDATION,
+        )
+    return confirmation
+
+
+def _validate_real_provider_consent(
+    document: Any,
+    *,
+    project_id: str,
+    package_identity: dict[str, str],
+) -> dict[str, Any]:
+    value = _object(document, "Real Provider consent response")
+    expected = {
+        "project_id": project_id,
+        **package_identity,
+        "disclosure_version": REAL_PROVIDER_DISCLOSURE_VERSION,
+        "status": "CONSENT_RECORDED",
+    }
+    if set(value) != set(expected) | {"expires_at"}:
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT", "Real Provider consent response is invalid"
+        )
+    if any(value[field] != expected_value for field, expected_value in expected.items()):
+        raise _identity(
+            "LOCAL_CAPSULE_DRIFT", "Real Provider consent identity mismatch"
+        )
+    _timestamp(value["expires_at"], "expires_at")
+    return value
 
 
 def _validate_literature_execution_mode(
@@ -4797,6 +4939,18 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
     "OPENALEX_PROXY_UNAVAILABLE": (
         "Normal Literature Search is not enabled on this backend.",
         "Keep the Workspace unchanged. Live Provider use requires separate owner authorization and backend configuration.",
+    ),
+    "REAL_PROVIDER_CONSENT_CANCELLED": (
+        "Real Literature Search was cancelled before a Provider session opened.",
+        "No OpenAlex request was made. Run the command again only when you are ready to review and explicitly accept the disclosure.",
+    ),
+    "REAL_PROVIDER_CONSENT_REQUIRED": (
+        "The backend did not find a current one-time owner consent for this real search.",
+        "Run the same command, read the OpenAlex disclosure, and type the exact confirmation when prompted.",
+    ),
+    "REAL_PROVIDER_CONSENT_NOT_CONFIRMED": (
+        "The backend rejected the real Provider consent confirmation.",
+        "No OpenAlex request was made. Keep the Workspace unchanged and repeat the normal run only when ready to confirm.",
     ),
     "WORKSPACE_DESCRIPTOR_INVALID": (
         "This directory is not a valid ReAgent Local Workspace.",

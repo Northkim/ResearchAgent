@@ -9,6 +9,7 @@ task_openalex_enabled="${REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED:-0}"
 task_startup_mode="${REAGENT_STARTUP_MODE:-development}"
 task_automated_qualification="${REAGENT_AUTOMATED_QUALIFICATION:-0}"
 task_frontend_root="${REAGENT_FRONTEND_ROOT:-${task_repo_root}/frontend}"
+task_frontend_launcher="${task_repo_root}/scripts/run-without-provider-secrets.sh"
 
 fail() {
   echo "ReAgent V0.1 startup failed: $1" >&2
@@ -27,6 +28,8 @@ fail() {
   || fail "REAGENT_STARTUP_MODE must be development or controlled"
 [[ "${task_frontend_root}" == /* && -f "${task_frontend_root}/package.json" ]] \
   || fail "REAGENT_FRONTEND_ROOT must select an absolute frontend source directory"
+[[ -x "${task_frontend_launcher}" ]] \
+  || fail "frontend secret-scrubbing launcher is unavailable"
 if [[ "${task_startup_mode}" == "controlled" && "${task_openalex_enabled}" != "0" ]]; then
   fail "controlled startup is deterministic and cannot enable live OpenAlex"
 fi
@@ -121,7 +124,8 @@ conda run --no-capture-output -n reagent-dev alembic upgrade head
 if [[ "${task_startup_mode}" == "controlled" ]]; then
   (
     cd "${task_frontend_root}"
-    env REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" npm run build
+    "${task_frontend_launcher}" \
+      REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" npm run build
   ) >"${task_runtime_dir}/frontend-build.log" 2>&1 \
     || fail "Next.js production build failed; inspect ${task_runtime_dir}/frontend-build.log"
   chmod 600 "${task_runtime_dir}/frontend-build.log"
@@ -191,12 +195,12 @@ curl --fail --silent --show-error "http://127.0.0.1:${task_backend_port}/${task_
   cd "${task_frontend_root}"
   if [[ "${task_startup_mode}" == "controlled" ]]; then
     cd .next/standalone
-    env HOSTNAME=127.0.0.1 PORT="${task_frontend_port}" \
+    "${task_frontend_launcher}" HOSTNAME=127.0.0.1 PORT="${task_frontend_port}" \
       REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" \
       nohup node server.js \
       >"${task_runtime_dir}/frontend.log" 2>&1
   else
-    env REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" \
+    "${task_frontend_launcher}" REAGENT_API_URL="http://127.0.0.1:${task_backend_port}" \
       nohup npm run dev -- --hostname 127.0.0.1 --port "${task_frontend_port}" \
       >"${task_runtime_dir}/frontend.log" 2>&1
   fi

@@ -66,6 +66,7 @@ class _ClientTransport:
         self.fail_ack = fail_ack
         self.downloads = 0
         self.acks = 0
+        self.consents = 0
 
     def create_plan(self, project_id, payload):
         response = self.client.post(f"/projects/{project_id}/workspace/sync-plan", json=payload)
@@ -94,6 +95,19 @@ class _ClientTransport:
     def literature_execution_mode(self, project_id, package_identity):
         del project_id
         return {**package_identity, "mode": "NORMAL"}
+
+    def grant_real_provider_consent(
+        self, project_id, package_identity, *, confirmation
+    ):
+        self.consents += 1
+        assert confirmation == workspace_cli.REAL_PROVIDER_CONFIRMATION
+        return {
+            "project_id": project_id,
+            **package_identity,
+            "disclosure_version": workspace_cli.REAL_PROVIDER_DISCLOSURE_VERSION,
+            "status": "CONSENT_RECORDED",
+            "expires_at": "2026-08-11T12:02:00Z",
+        }
 
 
 class _ControlledClientTransport(_ClientTransport):
@@ -721,17 +735,52 @@ def test_capsule_launcher_path_is_interpreted_once_for_supported_workspace_forms
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(workspace_cli.subprocess, "run", launch)
+    sentinel = "synthetic-secret-sentinel"
+    for key in workspace_cli.PROVIDER_CREDENTIAL_ENV_VARS:
+        monkeypatch.setenv(key, sentinel)
+    transport = _ClientTransport(sync_fixture["client"])
     result = workspace_cli.run_workflow(
         workspace_root=workspace_argument,
         workflow_instance_id=installed["workflow_instance_id"],
-        transport=_ClientTransport(sync_fixture["client"]),
+        transport=transport,
         api_url="http://127.0.0.1:8000",
+        consent_input=lambda _: workspace_cli.REAL_PROVIDER_CONFIRMATION,
     )
 
     assert result.status == "RUN_COMPLETED"
     assert captured["command"][1:] == ["reagent_local.py", "run", "."]
     assert "capsules" not in captured["command"][1]
     assert captured["cwd"] == workspace_argument / installed["relative_path"]
+    assert transport.consents == 1
+    assert all(key not in captured["env"] for key in workspace_cli.PROVIDER_CREDENTIAL_ENV_VARS)
+    assert "REAGENT_DATABASE_URL" not in captured["env"]
+
+
+def test_normal_run_cancelled_consent_never_starts_capsule(sync_fixture, monkeypatch):
+    workspace = sync_fixture["workspace"]
+    transport = _ClientTransport(sync_fixture["client"])
+    workspace_cli.sync_workspace(workspace_root=workspace, transport=transport)
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    installed = lock["installed_capsules"][0]
+    monkeypatch.setattr(
+        workspace_cli.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("cancelled consent must not launch a Capsule")
+        ),
+    )
+
+    with pytest.raises(WorkspaceCLIError) as raised:
+        workspace_cli.run_workflow(
+            workspace_root=workspace,
+            workflow_instance_id=installed["workflow_instance_id"],
+            transport=transport,
+            api_url="http://127.0.0.1:8000",
+            consent_input=lambda _: "cancel",
+        )
+
+    assert raised.value.code == "REAL_PROVIDER_CONSENT_CANCELLED"
+    assert transport.consents == 0
 
 
 def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
@@ -767,6 +816,9 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(subprocess, "run", launch)
+    namespace["run_workflow"].__kwdefaults__["consent_input"] = (
+        lambda _: workspace_cli.REAL_PROVIDER_CONFIRMATION
+    )
     monkeypatch.chdir(workspace)
     exit_code = namespace["main"]([
         "run",

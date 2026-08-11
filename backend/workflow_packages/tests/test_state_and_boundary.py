@@ -210,11 +210,30 @@ def test_demo_mode_is_explicit_and_bundles_no_fictional_evidence(
 
 @pytest.mark.parametrize(
     "content",
-    [b"sk-" + b"ant-examplecredential", b"sk-" + b"proj-examplecredential", b"/" + b"Users/person/project", b'"raw_provider_' + b'response":{}'],
+    [
+        b"sk-" + b"ant-examplecredential",
+        b"sk-" + b"proj-examplecredential",
+        b"/" + b"Users/person/project",
+        b'"raw_provider_' + b'response":{}',
+        b"REAGENT_OPENALEX_API_KEY=synthetic-secret-sentinel",
+        b"OPENALEX_API_KEY='synthetic-secret-sentinel'",
+    ],
 )
 def test_sensitive_content_rejected(content: bytes) -> None:
     with pytest.raises(ValueError):
         reject_sensitive_content(content, path="probe.txt")
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"Set REAGENT_OPENALEX_API_KEY only in the Backend environment.",
+        b"export REAGENT_OPENALEX_API_KEY='<your-key>'",
+        b"OPENALEX_API_KEY is not supported in a Workspace.",
+    ],
+)
+def test_openalex_variable_name_or_placeholder_is_not_a_secret(content: bytes) -> None:
+    reject_sensitive_content(content, path="guide.txt")
 
 
 def test_compiler_source_has_no_hosted_imports() -> None:

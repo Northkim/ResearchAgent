@@ -21,6 +21,28 @@ class CreateLocalWorkflowSessionRequest(StrictDTO):
     report_content_checksum: str | None = None
 
 
+class CreateRealProviderConsentRequest(StrictDTO):
+    package_id: str
+    package_checksum: str
+    workflow_id: str
+    workflow_version: str
+    workflow_checksum: str
+    disclosure_version: str
+    confirmation: str
+
+
+class RealProviderConsentResponse(StrictDTO):
+    project_id: str
+    package_id: str
+    package_checksum: str
+    workflow_id: str
+    workflow_version: str
+    workflow_checksum: str
+    disclosure_version: str
+    status: Literal["CONSENT_RECORDED"]
+    expires_at: str
+
+
 class LocalWorkflowSessionResponse(StrictDTO):
     session_id: str
     session_token: str

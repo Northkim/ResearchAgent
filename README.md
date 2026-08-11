@@ -105,6 +105,8 @@ The owner-facing end-to-end handoff is
 [Owner Complete Product Test](docs/getting-started/OWNER_COMPLETE_PRODUCT_TEST.md),
 with a separate
 [observation sheet](docs/getting-started/OWNER_TEST_OBSERVATIONS.md).
+[Owner Real Research Test](docs/getting-started/OWNER_REAL_RESEARCH_TEST.md)
+documents the separately gated single-owner NORMAL/OpenAlex path.
 
 ## Legacy Package compatibility
 

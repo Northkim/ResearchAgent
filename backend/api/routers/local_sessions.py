@@ -24,16 +24,22 @@ from backend.cloud_api_proxy.contracts import (
 )
 from backend.cloud_api_proxy.errors import ProxyError
 from backend.local_sessions import LocalSessionMode, LocalWorkflowSessionService
+from backend.local_sessions import (
+    REAL_PROVIDER_DISCLOSURE_VERSION,
+    RealProviderConsentRegistry,
+)
 from backend.progress_reports import ChainState, ValidationStatus
 
 from ..dependencies import LocalProductServicesDependency
 from ..schemas import (
     CreateLocalWorkflowSessionRequest,
+    CreateRealProviderConsentRequest,
     LocalLiteratureExecutionModeResponse,
     LocalWorkflowSessionResponse,
     ProgressReportUploadRequest,
     ProgressUploadReceiptResponse,
     ProjectProgressResponse,
+    RealProviderConsentResponse,
     UploadedProgressReportResponse,
 )
 
@@ -70,6 +76,15 @@ def _proxy(request: Request):
     return container.service
 
 
+def _consents(request: Request) -> RealProviderConsentRegistry:
+    registry = getattr(request.app.state, "real_provider_consents", None)
+    if not isinstance(registry, RealProviderConsentRegistry):
+        raise ApplicationUnavailableError(
+            "Real Provider consent service is unavailable"
+        )
+    return registry
+
+
 def _bearer(request: Request) -> str:
     value = request.headers.get("authorization")
     if value is None or not value.startswith("Bearer ") or value.count(" ") != 1:
@@ -90,6 +105,61 @@ def _service(request: Request, services) -> LocalWorkflowSessionService:
         proxy=_proxy(request),
         enforced_search_mode=(LocalSessionMode.DEMO if controlled else None),
         package_identity_resolver=services.workspace_sync.local_session_package_identity,
+        normal_consent_consumer=_consents(request).consume,
+    )
+
+
+@router.post(
+    "/real-provider-consent",
+    response_model=RealProviderConsentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def grant_real_provider_consent(
+    project_id: str,
+    request_body: CreateRealProviderConsentRequest,
+    request: Request,
+    response: Response,
+    services: LocalProductServicesDependency,
+) -> RealProviderConsentResponse:
+    """Record one short-lived, exact-scope consent for the next NORMAL session."""
+
+    _require_loopback(request)
+    identity = request_body.model_dump(
+        exclude={"disclosure_version", "confirmation"}
+    )
+    try:
+        mode = _service(request, services).search_mode(
+            project_id=project_id,
+            **identity,
+        )
+    except ApplicationUnavailableError as error:
+        raise ApplicationCodedUnavailableError(
+            str(error), code="OPENALEX_PROXY_UNAVAILABLE"
+        ) from error
+    if mode is not LocalSessionMode.NORMAL:
+        raise ApplicationCodedAuthorizationError(
+            "Real Provider consent is unavailable in deterministic controlled mode",
+            code="CONTROLLED_REAL_PROVIDER_FORBIDDEN",
+        )
+    try:
+        expires_at = _consents(request).grant(
+            project_id=project_id,
+            disclosure_version=request_body.disclosure_version,
+            confirmation=request_body.confirmation,
+            **identity,
+        )
+    except ValueError as error:
+        raise ApplicationCodedAuthorizationError(
+            "Real Literature Search was not explicitly confirmed",
+            code="REAL_PROVIDER_CONSENT_NOT_CONFIRMED",
+        ) from error
+    response.headers["Cache-Control"] = "no-store"
+    return RealProviderConsentResponse(
+        project_id=project_id,
+        **identity,
+        disclosure_version=REAL_PROVIDER_DISCLOSURE_VERSION,
+        status="CONSENT_RECORDED",
+        expires_at=expires_at.isoformat().replace("+00:00", "Z"),
     )
 
 
