@@ -54,6 +54,7 @@ from .production_workflows import (
     idea_discovery_v0_2_capsule,
     idea_discovery_v0_2_definition_version,
     idea_discovery_v0_2_requirement,
+    idea_discovery_v0_3_capsule,
     literature_search_capsule as production_literature_search_capsule,
     literature_search_definition_version as production_literature_search_version,
     SCAFFOLD_WORKFLOWS,
@@ -198,6 +199,7 @@ def ensure_production_workflow_foundation(
     legacy_idea_capsule = idea_discovery_capsule(timestamp)
     idea_version = idea_discovery_v0_2_definition_version(timestamp)
     idea_capsule = idea_discovery_v0_2_capsule(timestamp)
+    current_idea_capsule = idea_discovery_v0_3_capsule(timestamp)
     repository = uow.workflow_foundation
     repository.add_definition_version(literature_version)
     repository.add_capsule_version(literature_capsule)
@@ -206,6 +208,7 @@ def ensure_production_workflow_foundation(
     repository.add_capsule_version(legacy_idea_capsule)
     repository.add_definition_version(idea_version)
     repository.add_capsule_version(idea_capsule)
+    repository.add_capsule_version(current_idea_capsule)
     for requirement in (
         idea_discovery_requirement(timestamp),
         idea_discovery_v0_2_requirement(timestamp),

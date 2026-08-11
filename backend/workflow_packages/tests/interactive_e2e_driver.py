@@ -30,6 +30,7 @@ def drive(
     timeout: float,
     interrupt_at: str | None,
     resume: bool,
+    expect_marker: bytes | None,
 ) -> int:
     pid, descriptor = pty.fork()
     if pid == 0:
@@ -39,6 +40,7 @@ def drive(
     responses = RESPONSES[1:] if resume else RESPONSES
     next_response = 0
     real_provider_consent_sent = False
+    expected_marker_seen = expect_marker is None
     deadline = time.monotonic() + timeout
     try:
         while time.monotonic() < deadline:
@@ -54,6 +56,8 @@ def drive(
                     break
                 os.write(sys.stdout.fileno(), chunk)
                 buffer = (buffer + chunk)[-262144:]
+                if expect_marker is not None and expect_marker in buffer:
+                    expected_marker_seen = True
                 if (
                     not real_provider_consent_sent
                     and REAL_PROVIDER_CONSENT_MARKER in buffer
@@ -96,6 +100,8 @@ def drive(
                         buffer = b""
             waited, status = os.waitpid(pid, os.WNOHANG)
             if waited == pid:
+                if not expected_marker_seen:
+                    raise AssertionError("expected interactive Workflow marker was not visible")
                 return os.waitstatus_to_exitcode(status)
         else:
             os.kill(pid, 2)
@@ -103,6 +109,8 @@ def drive(
             os.kill(pid, 9)
             raise TimeoutError("interactive E2E driver timed out")
         _, status = os.waitpid(pid, 0)
+        if not expected_marker_seen:
+            raise AssertionError("expected interactive Workflow marker was not visible")
         return os.waitstatus_to_exitcode(status)
     finally:
         os.close(descriptor)
@@ -130,6 +138,10 @@ def main() -> int:
     )
     parser.add_argument("--expect-exit", type=int, default=0)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--expect-marker",
+        help="visible Workflow text that must appear before the child exits",
+    )
     args = parser.parse_args()
     if args.workspace_root is not None:
         if args.capsule_root is None:
@@ -169,6 +181,9 @@ def main() -> int:
         timeout=args.timeout,
         interrupt_at=args.interrupt_at,
         resume=args.resume,
+        expect_marker=(
+            args.expect_marker.encode("utf-8") if args.expect_marker else None
+        ),
     )
     if result != args.expect_exit:
         print(

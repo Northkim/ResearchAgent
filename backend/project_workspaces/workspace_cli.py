@@ -73,6 +73,10 @@ SUPPORTED_CAPSULE_PINS = {
         "idea-discovery-package-experimental",
         False,
     ),
+    ("idea-discovery-local-experimental", "0.2.0", "0.3.0"): (
+        "idea-discovery-package-experimental",
+        False,
+    ),
     ("writing-local-experimental", "0.1.0", "0.1.0"): (
         "writing-scaffold-package-experimental",
         False,
@@ -3361,6 +3365,7 @@ def run_workflow(
         is_idea = pin in {
             ("idea-discovery-local-experimental", "0.1.0", "0.1.0"),
             ("idea-discovery-local-experimental", "0.2.0", "0.2.0"),
+            ("idea-discovery-local-experimental", "0.2.0", "0.3.0"),
         }
         is_scaffold = (
             pin[0] in {

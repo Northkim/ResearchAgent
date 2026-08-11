@@ -94,7 +94,7 @@ This owner/manual command remains valid with an explicitly supplied persistent
 `REAGENT_DATABASE_URL`; it is not the automated qualification entry point.
 
 `/health` is liveness only. `/ready` succeeds only when PostgreSQL is
-reachable, the sole revision is `20260806_0017`, and the reviewed Workflow,
+reachable, the sole revision is `20260811_0018`, and the reviewed Workflow,
 Skill, Artifact-dependency, and Experiment Resource-requirement records exist.
 It never calls a live Provider or Resource resolver. A gateway should send user
 traffic only while readiness passes.

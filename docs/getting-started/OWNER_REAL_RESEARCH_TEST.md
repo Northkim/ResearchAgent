@@ -95,7 +95,7 @@ Expected bounded output is equivalent to:
 ```text
 ReAgent Owner Runtime
 Database: reagent_local_v01 - ready
-Migration: 20260806_0017 - current
+Migration: 20260811_0018 - current
 OpenAlex: configured
 Backend: http://127.0.0.1:8000
 Frontend: http://127.0.0.1:3000
@@ -216,9 +216,14 @@ python reagent_local.py run . \
 
 Idea Discovery uses only the materialized `selected-paper-library/v1`. Review
 the candidate ideas, evidence/inference distinctions, assumptions, risks and
-validation needs. Global novelty is not proven, full text was not reviewed,
-and feasibility requires further validation. Explicitly select exactly one
-idea before completing the round.
+validation needs. The Agent begins automatically at **INPUT_REVIEW**: it reads
+the pinned local Workflow instructions and exact materialized Literature
+Artifact, reports the selected-paper count and metadata/abstract-only boundary,
+summarizes the bounded evidence, and asks for owner priorities and constraints.
+There is no startup phrase such as `start`, `begin`, or `generate ideas`.
+Global novelty is not proven, full text was not reviewed, and feasibility
+requires further validation. Explicitly select exactly one idea before
+completing the round.
 
 Expected output:
 
@@ -226,6 +231,45 @@ Expected output:
 - one explicitly selected idea;
 - content-addressed `selected-research-idea/v1`;
 - bounded Progress and exact source-Literature provenance.
+
+### Existing Idea 0.2 Capsule after this repair
+
+An existing Workflow Instance remains immutably pinned to Capsule 0.2.0 and is
+not silently upgraded. In the same Project, use the Workflow Board to retire
+that Idea Instance, add Idea Discovery again, and bind the **existing** real
+Literature Artifact to the new Instance. Then run:
+
+First stop an older running owner process and apply the approved seed-only
+migration once from the repository root (it publishes Capsule metadata and
+does not delete Project or Artifact data):
+
+```bash
+make stop
+REAGENT_DATABASE_URL='<passwordless loopback owner database URL>' \
+  conda run --no-capture-output -n reagent-dev alembic upgrade head
+make owner-start
+```
+
+The generic client copied into an older Workspace is also versioned startup
+code and does not rewrite itself during sync. Download the current
+`reagent_local.py` again from the Project's Local Guide, replace only the
+Workspace-root client with that reviewed download, and keep the old Workspace
+state/Capsules unchanged. Then retire/add/bind in the browser and, from the
+existing Workspace, run:
+
+```bash
+python reagent_local.py sync .
+python reagent_local.py artifact refresh .
+python reagent_local.py artifact materialize . \
+  --workflow idea-discovery-local-experimental
+python reagent_local.py run . \
+  --workflow idea-discovery-local-experimental
+```
+
+The new Instance resolves Workflow Definition 0.2.0 / Capsule 0.3.0. The old
+Capsule and its local history are retained. Do not rerun OpenAlex, recreate the
+Project, copy an Artifact across Projects, edit the Installed Lock, or replace
+Capsule bytes manually.
 
 ## 11. Inspect and stop
 

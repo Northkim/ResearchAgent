@@ -286,6 +286,15 @@ def _backend_tests(paths: tuple[str, ...]) -> int:
             "PYTHONDONTWRITEBYTECODE": "1",
         }
         _migrate(database_url, environment)
+        subprocess.run(
+            [
+                "conda", "run", "--no-capture-output", "-n", "reagent-dev",
+                "alembic", "check",
+            ],
+            cwd=REPO_ROOT,
+            env=environment,
+            check=True,
+        )
         result = subprocess.run(
             [
                 "conda", "run", "--no-capture-output", "-n", "reagent-dev",
@@ -319,6 +328,19 @@ def _owner_runtime_smoke() -> int:
             prefix="reagent-owner-runtime-qualification-", dir=REPO_ROOT.parent
         ) as root_text:
             root = Path(root_text)
+            shadow_repo = root / "repository"
+            shadow_repo.mkdir(mode=0o700)
+            shutil.copy2(REPO_ROOT / "Makefile", shadow_repo / "Makefile")
+            shutil.copy2(REPO_ROOT / "alembic.ini", shadow_repo / "alembic.ini")
+            os.symlink(REPO_ROOT / "backend", shadow_repo / "backend")
+            shadow_scripts = shadow_repo / "scripts"
+            shadow_scripts.mkdir()
+            for script_name in ("owner_runtime.py", "dev-stop.sh"):
+                shutil.copy2(
+                    REPO_ROOT / "scripts" / script_name,
+                    shadow_scripts / script_name,
+                )
+            _copy_frontend(shadow_repo / "frontend")
             xdg_root = root / "xdg"
             fake_bin = root / "bin"
             fake_bin.mkdir(mode=0o700)
@@ -353,7 +375,7 @@ def _owner_runtime_smoke() -> int:
                 providers=OwnerProviderConfig(openalex_enabled=True),
             )
             config_path = xdg_root / "reagent" / "config.toml"
-            OwnerConfigStore(config_path, repository_root=REPO_ROOT).write(config)
+            OwnerConfigStore(config_path, repository_root=shadow_repo).write(config)
             runtime = owner_runtime_directory(config_path)
             environment = {
                 key: value
@@ -391,7 +413,7 @@ def _owner_runtime_smoke() -> int:
             def invoke(target: str) -> subprocess.CompletedProcess[str]:
                 result = subprocess.run(
                     ["make", target],
-                    cwd=REPO_ROOT,
+                    cwd=shadow_repo,
                     env=environment,
                     capture_output=True,
                     text=True,
@@ -402,6 +424,16 @@ def _owner_runtime_smoke() -> int:
                 if result.returncode != 0:
                     print(result.stdout, file=sys.stderr)
                     print(result.stderr, file=sys.stderr)
+                    for log_name in ("backend.log", "frontend.log"):
+                        log_path = runtime / log_name
+                        if log_path.is_file():
+                            print(
+                                f"--- {log_name} ---\n"
+                                + log_path.read_text(
+                                    encoding="utf-8", errors="replace"
+                                )[-8000:],
+                                file=sys.stderr,
+                            )
                     raise subprocess.CalledProcessError(result.returncode, result.args)
                 return result
 

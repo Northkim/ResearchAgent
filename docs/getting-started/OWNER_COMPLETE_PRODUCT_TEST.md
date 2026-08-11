@@ -82,8 +82,11 @@ python3 reagent_local.py run . \
 ```
 
 Review the candidate ideas, explicitly mark exactly one as selected, and
-finish the round. Expected: `selected-research-idea/v1` has exact Literature
-provenance; no `latest` input is selected automatically.
+finish the round. The Agent must begin automatically at **INPUT_REVIEW**, state
+the selected-paper count and metadata/abstract-only limits, summarize the
+bounded evidence, and ask for owner priorities; no hidden startup phrase is
+required. Expected: `selected-research-idea/v1` has exact Literature provenance;
+no `latest` input is selected automatically.
 
 ## 6. Exercise the Experiment Resource shell — Web, then Terminal
 

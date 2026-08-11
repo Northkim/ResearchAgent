@@ -40,7 +40,7 @@ def test_catalog_exposes_reviewed_maturity_and_recommends_new_idea_version(
     body = detail.json()
     assert body["recommended_version"]["version"] == "0.2.0"
     assert body["recommended_version"]["core_capability_maturity"] == "REVIEWED_CORE"
-    assert body["recommended_capsule"]["capsule_version"] == "0.2.0"
+    assert body["recommended_capsule"]["capsule_version"] == "0.3.0"
     assert [(item["version"], item["core_capability_maturity"]) for item in body["versions"]] == [
         ("0.1.0", "REVIEWED_CORE"), ("0.2.0", "REVIEWED_CORE")
     ]
@@ -83,6 +83,32 @@ def test_existing_idea_instance_remains_pinned_when_new_version_is_seeded(
     assert (old_instance["workflow_version"], old_instance["capsule_version"]) == (
         "0.1.0", "0.1.0"
     )
+
+
+def test_existing_idea_0_2_capsule_is_not_silently_upgraded(tmp_path) -> None:
+    client, _ = _client(tmp_path)
+    project = client.post("/projects", json={
+        "name": "F1F immutable pin fixture",
+        "research_topic": "Synthetic research",
+        "selected_workflow": "LITERATURE_SEARCH",
+    }).json()
+    project_id = project["project_id"]
+    created = client.post(f"/projects/{project_id}/workflow-instances", json={
+        "workflow_definition_id": "idea-discovery-local-experimental",
+        "workflow_version": "0.2.0",
+        "capsule_id": "capsule-6b66289a38895ce0eba2f76cd7725176",
+        "capsule_version": "0.2.0",
+        "base_revision": 1,
+    })
+    assert created.status_code == 201, created.text
+    instance = created.json()
+    assert (instance["workflow_version"], instance["capsule_version"]) == (
+        "0.2.0", "0.2.0"
+    )
+    catalog = client.get(
+        "/workflow-definitions/idea-discovery-local-experimental"
+    ).json()
+    assert catalog["recommended_capsule"]["capsule_version"] == "0.3.0"
 
 
 def test_maturity_is_canonical_and_independent_from_lifecycle() -> None:

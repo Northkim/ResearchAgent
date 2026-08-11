@@ -258,14 +258,29 @@ def test_owner_normal_product_route_is_consent_bound_secret_isolated_and_hands_o
         )
         assert materialized.materialized_count == 1
         monkeypatch.setenv("REAGENT_FAKE_IDEA_EXPLICIT_SELECTION", "1")
-        idea_result = workspace_cli.run_workflow(
-            workspace_root=workspace,
-            workflow_instance_id=idea["workflow_instance_id"],
-            transport=transport,
-            api_url=base_url,
-            codex_executable=str(idea_codex),
+        idea_driven = subprocess.run(
+            [
+                sys.executable,
+                str(repository / "backend/workflow_packages/tests/interactive_e2e_driver.py"),
+                "--workspace-root", str(workspace),
+                "--capsule-root", str(roots[idea["workflow_instance_id"]]),
+                "--workflow", IDEA_DISCOVERY_WORKFLOW_ID,
+                "--base-url", base_url,
+                "--expect-marker", "ReAgent Idea Discovery — INPUT_REVIEW",
+            ],
+            cwd=repository,
+            env=dict(os.environ) | {
+                "REAGENT_CODEX_EXECUTABLE": str(idea_codex),
+                "REAGENT_LOCAL_BASE_URL": base_url,
+                "REAGENT_FAKE_IDEA_EXPLICIT_SELECTION": "1",
+            },
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=90,
         )
-        assert idea_result.status == "RUN_COMPLETED"
+        assert idea_driven.returncode == 0, idea_driven.stdout + idea_driven.stderr
+        assert "ReAgent Idea Discovery — INPUT_REVIEW" in idea_driven.stdout
         selected_idea = _artifact(client, project_id, "selected-research-idea/v1")
         idea_root = roots[idea["workflow_instance_id"]]
         selected_value = json.loads(

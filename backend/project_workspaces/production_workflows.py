@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 
 from backend.artifact_references.contracts import (
@@ -16,6 +17,7 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_WORKFLOW_ID,
     IDEA_DISCOVERY_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_2_CAPSULE_VERSION,
+    IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_INPUT_TARGET,
     EXPERIMENT_RECORD_TYPE,
@@ -154,6 +156,30 @@ IDEA_DISCOVERY_V0_2_CAPSULE_CHECKSUM = canonical_hash(
 )
 IDEA_DISCOVERY_V0_2_CAPSULE_ID = (
     "capsule-" + IDEA_DISCOVERY_V0_2_CAPSULE_CHECKSUM[7:39]
+)
+
+IDEA_DISCOVERY_V0_3_CAPSULE_CHECKSUM = canonical_hash(
+    {
+        "generator_version": "reagent-idea-discovery-local-experimental-compiler/0.3.0",
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": IDEA_DISCOVERY_TEMPLATE_ID,
+        "package_template_version": IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+        "workflow_checksum": idea_discovery_v0_2_contract_checksum(),
+        "artifact_input": {
+            "requirement_key": "paper_library",
+            "artifact_type": SELECTED_PAPER_LIBRARY_TYPE,
+            "artifact_schema": SELECTED_PAPER_LIBRARY_SCHEMA,
+            "target_relative_path": IDEA_INPUT_TARGET,
+            "selection_policy": "EXPLICIT_SPECIFIC_ARTIFACT",
+            "materialization_mode": "VERIFIED_COPY",
+        },
+        "artifact_outputs": [selected_research_idea_output_contract()],
+        "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+        "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
+    }
+)
+IDEA_DISCOVERY_V0_3_CAPSULE_ID = (
+    "capsule-" + IDEA_DISCOVERY_V0_3_CAPSULE_CHECKSUM[7:39]
 )
 
 
@@ -450,6 +476,18 @@ def idea_discovery_v0_2_capsule(now: datetime) -> WorkflowCapsuleVersion:
         legacy_package_compatible=False,
         created_at=now,
         updated_at=now,
+    )
+
+
+def idea_discovery_v0_3_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    """Publish a new Harness integration over the unchanged Workflow 0.2 contract."""
+
+    previous = idea_discovery_v0_2_capsule(now)
+    return replace(
+        previous,
+        capsule_id=IDEA_DISCOVERY_V0_3_CAPSULE_ID,
+        capsule_version=IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+        definition_checksum=IDEA_DISCOVERY_V0_3_CAPSULE_CHECKSUM,
     )
 
 

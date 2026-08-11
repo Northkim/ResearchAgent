@@ -61,6 +61,9 @@ IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION = "0.2.0"
 IDEA_DISCOVERY_V0_2_CAPSULE_VERSION = "0.2.0"
 IDEA_DISCOVERY_V0_2_PROMPT_VERSION = "0.2.0"
 IDEA_DISCOVERY_V0_2_SKILL_VERSION = "0.2.0"
+# Owner-test integration repair: research semantics stay pinned to Workflow 0.2,
+# while the immutable Harness integration is published as Capsule 0.3.
+IDEA_DISCOVERY_V0_3_CAPSULE_VERSION = "0.3.0"
 
 WRITING_WORKFLOW_ID = "writing-local-experimental"
 REVIEW_WORKFLOW_ID = "review-local-experimental"
@@ -460,6 +463,141 @@ def _idea_v0_2_runner_source() -> bytes:
     return source.encode("utf-8")
 
 
+def _idea_v0_3_runner_source() -> bytes:
+    """Publish the bounded interactive bootstrap without changing 0.2 bytes."""
+
+    source = _idea_v0_2_runner_source().decode("utf-8")
+    source = source.replace("import runpy\n", "import runpy\nimport signal\n", 1)
+    source = source.replace(
+        '"client_version": "reagent-local-idea-discovery/0.2.0",',
+        '"client_version": "reagent-local-idea-discovery/0.3.0",',
+        1,
+    )
+    old = '''def _run_harness(root: Path, executable: str) -> None:
+    environment = dict(os.environ)
+    for key in (
+        "REAGENT_PROXY_TOKEN",
+        "REAGENT_LOCAL_SESSION_TOKEN",
+        "REAGENT_DATABASE_URL",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+    ):
+        environment.pop(key, None)
+    result = subprocess.run([executable], cwd=root, env=environment, check=False)
+    if result.returncode != 0:
+        raise IdeaDiscoveryError("Codex exited before Idea Discovery finalization")
+'''
+    new = '''def _initial_instruction() -> str:
+    return """REAGENT IDEA DISCOVERY — INPUT_REVIEW
+
+You are beginning the ReAgent Idea Discovery Workflow. Read and follow the root
+AGENTS.md and AGENT.md, workflow/AGENT.md, the pinned
+workflow/prompts/idea-discovery.md, memory/context.md, and only the exact
+materialized Literature Artifact at inputs/selected-paper-library.json.
+
+Begin at INPUT_REVIEW. Before committing to candidate ideas, report the selected
+paper count, describe the available metadata and abstracts, state that no full
+text was reviewed, summarize the initial bounded literature landscape, and ask
+the owner about priorities, constraints, areas of interest, and acceptable scope.
+An INSUFFICIENT Literature selection still contains evidence when its selected
+paper count is nonzero, but the small evidence base must be stated. Keep evidence,
+inference, and validation needed separate; limited retrieval is never proof of
+global novelty. Follow the pinned Workflow prompt for the remaining method and
+never inspect sibling Capsules or raw Literature Search state."""
+
+
+def _codex_environment() -> dict[str, str]:
+    environment = dict(os.environ)
+    for key in (
+        "REAGENT_PROXY_TOKEN",
+        "REAGENT_LOCAL_SESSION_TOKEN",
+        "REAGENT_DATABASE_URL",
+        "REAGENT_ENV_FILE",
+        "REAGENT_OPENALEX_API_KEY",
+        "OPENALEX_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+    ):
+        environment.pop(key, None)
+    return environment
+
+
+def _codex_preflight(executable: str, environment: dict[str, str]) -> None:
+    checks = (
+        ([executable, "--version"], ()),
+        ([executable, "--help"], ("--sandbox", "--ask-for-approval", "--no-alt-screen", "--cd")),
+        ([executable, "login", "status"], ()),
+    )
+    for command, required in checks:
+        try:
+            result = subprocess.run(
+                command, env=environment, capture_output=True, text=True,
+                check=False, timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise IdeaDiscoveryError("Codex CLI preflight could not be completed") from error
+        if result.returncode != 0 or any(item not in result.stdout for item in required):
+            raise IdeaDiscoveryError("Codex CLI does not satisfy the interactive Harness contract")
+
+
+def _stop_harness(child: subprocess.Popen[Any]) -> None:
+    if child.poll() is not None:
+        return
+    child.send_signal(signal.SIGINT)
+    try:
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        child.terminate()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=5)
+
+
+def _run_harness(root: Path, executable: str) -> None:
+    environment = _codex_environment()
+    _codex_preflight(executable, environment)
+    command = [
+        executable,
+        "--sandbox", "workspace-write",
+        "--ask-for-approval", "on-request",
+        "--no-alt-screen",
+        "-C", str(root),
+        _initial_instruction(),
+    ]
+    child: subprocess.Popen[Any] | None = None
+    previous_handlers: dict[int, Any] = {}
+
+    def terminate_signal(signum: int, frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    try:
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, terminate_signal)
+        child = subprocess.Popen(command, cwd=root, env=environment)
+        returncode = child.wait()
+    except KeyboardInterrupt as error:
+        if child is not None:
+            _stop_harness(child)
+        raise IdeaDiscoveryError(
+            "Owner interrupted Idea Discovery; local memory and outputs were retained"
+        ) from error
+    except OSError as error:
+        raise IdeaDiscoveryError("Codex process could not be started") from error
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+    if returncode != 0:
+        raise IdeaDiscoveryError("Codex exited before Idea Discovery finalization")
+'''
+    if old not in source:
+        raise RuntimeError("accepted Idea Harness extension point is unavailable")
+    source = source.replace(old, new, 1)
+    return source.encode("utf-8")
+
+
 def _idea_v0_2_validator_source() -> bytes:
     source = Path(__file__).with_name("idea_validator.py").read_text(encoding="utf-8")
     source = source.replace(
@@ -493,6 +631,18 @@ def _idea_v0_2_validator_source() -> bytes:
         1,
     )
     return source.encode("utf-8")
+
+
+def _idea_v0_3_validator_source() -> bytes:
+    source = _idea_v0_2_validator_source().decode("utf-8")
+    old = 'manifest.get("package_template_version") != "0.2.0"'
+    if old not in source:
+        raise RuntimeError("accepted Idea 0.2 validator pin is unavailable")
+    return source.replace(
+        old,
+        'manifest.get("package_template_version") != "0.3.0"',
+        1,
+    ).encode("utf-8")
 
 
 def _replace_spec(files: dict[str, FileSpec], path: str, content: bytes) -> None:
@@ -764,6 +914,24 @@ def _idea_v0_2_files(
         "application/schema+json", "selected research idea Artifact schema", False,
         "SCHEMA",
     )
+    return files
+
+
+def _idea_v0_3_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    """Render the immutable 0.3 Harness over unchanged Workflow 0.2 assets."""
+
+    files = dict(_idea_v0_2_files(
+        project_id=project_id,
+        project_name=project_name,
+        package_id=package_id,
+        package_checksum=package_checksum,
+        research_topic=research_topic,
+    ))
+    _replace_spec(files, "reagent_local.py", _idea_v0_3_runner_source())
+    _replace_spec(files, "validate_package.py", _idea_v0_3_validator_source())
     return files
 
 
@@ -1581,6 +1749,22 @@ def build_idea_discovery_v0_2_package(
         workflow_version=IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
         template_id=IDEA_DISCOVERY_TEMPLATE_ID,
         template_version=IDEA_DISCOVERY_V0_2_CAPSULE_VERSION,
+    )
+
+
+def build_idea_discovery_v0_3_package(
+    *, project_id: str, project_name: str, research_topic: str,
+    output_root: str | Path, package_id: str,
+) -> BuildResult:
+    return _build(
+        renderer=_idea_v0_3_files,
+        project_id=project_id, project_name=project_name,
+        research_topic=research_topic, output_root=output_root,
+        package_id=package_id, workflow_type="Idea Discovery",
+        workflow_id=IDEA_DISCOVERY_WORKFLOW_ID,
+        workflow_version=IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
+        template_id=IDEA_DISCOVERY_TEMPLATE_ID,
+        template_version=IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
     )
 
 

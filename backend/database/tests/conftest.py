@@ -37,10 +37,10 @@ def postgres_engine() -> Iterator[Engine]:
     except DisposableDatabaseError as error:
         engine.dispose()
         pytest.fail(f"PostgreSQL destructive fixture rejected database: {error}")
-    if revision != "20260806_0017":
+    if revision != "20260811_0018":
         engine.dispose()
         pytest.fail(
-            "PostgreSQL test database must be migrated to revision 20260806_0017"
+            "PostgreSQL test database must be migrated to revision 20260811_0018"
         )
     yield engine
     engine.dispose()

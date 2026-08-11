@@ -64,7 +64,10 @@ Then:
    ```
 
 The input is a checksum-verified copy. ReAgent does not use a symlink and does
-not let Idea Discovery write Literature Search outputs.
+not let Idea Discovery write Literature Search outputs. After the run command,
+the Agent begins **INPUT_REVIEW** automatically, states the bounded evidence and
+its metadata/abstract-only limits, and asks for your priorities. Do not type a
+hidden `start`, `proceed`, or `generate ideas` phrase; none is required.
 
 ## Continue later
 

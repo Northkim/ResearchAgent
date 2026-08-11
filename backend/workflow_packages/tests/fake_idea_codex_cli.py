@@ -21,6 +21,16 @@ def canonical(value: object) -> str:
 
 
 def main() -> int:
+    arguments = sys.argv[1:]
+    if arguments == ["--version"]:
+        print("codex-cli 0.100.0")
+        return 0
+    if arguments == ["--help"]:
+        print("--sandbox --ask-for-approval --no-alt-screen --cd")
+        return 0
+    if arguments == ["login", "status"]:
+        print("Logged in")
+        return 0
     if any(
         key in os.environ
         for key in (
@@ -33,6 +43,30 @@ def main() -> int:
     ):
         print("Idea fixture received a prohibited secret environment", file=sys.stderr)
         return 9
+    if not arguments or arguments[-1].startswith("-"):
+        print("Idea fixture requires a ReAgent initial prompt", file=sys.stderr)
+        return 10
+    prompt = arguments[-1]
+    required_prompt_terms = (
+        "Idea Discovery", "INPUT_REVIEW", "workflow/prompts/idea-discovery.md",
+        "inputs/selected-paper-library.json", "priorities", "no full",
+    )
+    if any(term not in prompt for term in required_prompt_terms):
+        print("Idea fixture received an incomplete initial prompt", file=sys.stderr)
+        return 11
+    required_options = (
+        "--sandbox", "workspace-write", "--ask-for-approval", "on-request",
+        "--no-alt-screen", "-C",
+    )
+    if any(option not in arguments for option in required_options):
+        print("Idea fixture received an unsafe interactive invocation", file=sys.stderr)
+        return 12
+    print("ReAgent Idea Discovery — INPUT_REVIEW", flush=True)
+    print(
+        "Reviewing the exact materialized Literature evidence before asking "
+        "for owner priorities; metadata/abstract evidence only, no full text.",
+        flush=True,
+    )
     root = Path.cwd()
     input_path = root / "inputs/selected-paper-library.json"
     library = json.loads(input_path.read_text(encoding="utf-8"))

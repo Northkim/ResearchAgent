@@ -44,9 +44,9 @@ def r3ci_engine():
     )
     with engine.connect() as connection:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-    if revision != "20260806_0017":
+    if revision != "20260811_0018":
         engine.dispose()
-        pytest.fail("R3C-I PostgreSQL database must be at 20260806_0017")
+        pytest.fail("R3C-I PostgreSQL database must be at 20260811_0018")
     yield engine
     engine.dispose()
 
