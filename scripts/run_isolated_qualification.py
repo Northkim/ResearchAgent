@@ -9,10 +9,17 @@ import socket
 import subprocess
 import sys
 import tempfile
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
+
+# This file is an executable script; make repository imports deterministic
+# before importing backend modules.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
@@ -25,8 +32,17 @@ from backend.database.disposable import (
     DisposableDatabaseError,
     require_disposable_database,
 )
+from scripts.owner_runtime import (
+    CONFIG_SCHEMA_VERSION,
+    OWNER_PROFILE,
+    OwnerConfigStore,
+    OwnerDatabaseConfig,
+    OwnerEndpointConfig,
+    OwnerProviderConfig,
+    OwnerRuntimeConfig,
+    owner_runtime_directory,
+)
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SPECS = (
     "tests/e2e/local-v0-1.spec.ts",
     "tests/e2e/h1-product-journey.spec.ts",
@@ -284,6 +300,168 @@ def _backend_tests(paths: tuple[str, ...]) -> int:
         return result.returncode
 
 
+def _read_process_environment(pid: int) -> str:
+    result = subprocess.run(
+        ["ps", "eww", "-p", str(pid)],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
+
+
+def _owner_runtime_smoke() -> int:
+    """Exercise the literal fresh-shell Make contract with isolated authorities."""
+
+    sentinel = "owner-openalex-secret-sentinel"
+    with _disposable_database() as (database_url, database_name, identity):
+        with tempfile.TemporaryDirectory(
+            prefix="reagent-owner-runtime-qualification-", dir=REPO_ROOT.parent
+        ) as root_text:
+            root = Path(root_text)
+            xdg_root = root / "xdg"
+            fake_bin = root / "bin"
+            fake_bin.mkdir(mode=0o700)
+            fake_security = fake_bin / "security"
+            fake_security.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = find-generic-password ]; then\n"
+                "  case \" $* \" in *\" -w \"*) "
+                f"printf '%s\\n' '{sentinel}' ;; esac\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+            fake_security.chmod(0o700)
+            backend_port = _available_loopback_port()
+            frontend_port = _available_loopback_port()
+            while frontend_port == backend_port:
+                frontend_port = _available_loopback_port()
+            parsed = make_url(database_url)
+            config = OwnerRuntimeConfig(
+                schema_version=CONFIG_SCHEMA_VERSION,
+                profile=OWNER_PROFILE,
+                database=OwnerDatabaseConfig(
+                    host="127.0.0.1",
+                    port=parsed.port or 5432,
+                    database=database_name,
+                    user=parsed.username or "",
+                ),
+                backend=OwnerEndpointConfig("127.0.0.1", backend_port),
+                frontend=OwnerEndpointConfig("127.0.0.1", frontend_port),
+                providers=OwnerProviderConfig(openalex_enabled=True),
+            )
+            config_path = xdg_root / "reagent" / "config.toml"
+            OwnerConfigStore(config_path, repository_root=REPO_ROOT).write(config)
+            runtime = owner_runtime_directory(config_path)
+            environment = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith("REAGENT_")
+                and key not in {
+                    "OPENALEX_API_KEY",
+                    "OPENAI_API_KEY",
+                    "ANTHROPIC_API_KEY",
+                }
+            }
+            environment.update(
+                {
+                    "PATH": str(fake_bin) + os.pathsep + environment.get("PATH", ""),
+                    "XDG_CONFIG_HOME": str(xdg_root),
+                    "PYTHONDONTWRITEBYTECODE": "1",
+                    # Prevent this qualification's `make stop` from touching a
+                    # separately running developer/controlled runtime.
+                    "REAGENT_LOCAL_RUNTIME_DIR": str(root / "unused-dev-runtime"),
+                }
+            )
+            _migrate(database_url, environment)
+            target_engine = create_postgres_engine(database_url)
+            try:
+                require_disposable_database(
+                    target_engine,
+                    database_url=database_url,
+                    expected_identity=identity,
+                )
+                with target_engine.connect() as connection:
+                    project_count_before = connection.scalar(text("SELECT count(*) FROM local_projects"))
+            finally:
+                target_engine.dispose()
+
+            def invoke(target: str) -> subprocess.CompletedProcess[str]:
+                result = subprocess.run(
+                    ["make", target],
+                    cwd=REPO_ROOT,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if sentinel in result.stdout + result.stderr:
+                    raise RuntimeError("owner runtime secret appeared in command output")
+                if result.returncode != 0:
+                    print(result.stdout, file=sys.stderr)
+                    print(result.stderr, file=sys.stderr)
+                    raise subprocess.CalledProcessError(result.returncode, result.args)
+                return result
+
+            started = False
+            try:
+                for attempt in range(2):
+                    result = invoke("owner-start")
+                    started = True
+                    if "Mode: owner-local real research" not in result.stdout:
+                        raise RuntimeError("owner-start did not report owner real mode")
+                    with urllib.request.urlopen(
+                        f"http://127.0.0.1:{backend_port}/ready", timeout=3
+                    ) as response:
+                        if response.status != 200:
+                            raise RuntimeError("owner Backend was not ready")
+                    with urllib.request.urlopen(
+                        f"http://127.0.0.1:{frontend_port}/projects", timeout=3
+                    ) as response:
+                        if response.status != 200:
+                            raise RuntimeError("owner Frontend was not ready")
+                    backend_pid = int((runtime / "backend.pid").read_text().strip())
+                    frontend_pid = int((runtime / "frontend.pid").read_text().strip())
+                    if sentinel not in _read_process_environment(backend_pid):
+                        raise RuntimeError("owner Backend did not receive the Keychain credential")
+                    if sentinel in _read_process_environment(frontend_pid):
+                        raise RuntimeError("owner Frontend inherited the Provider credential")
+                    for path in (config_path, runtime / "backend.log", runtime / "frontend.log"):
+                        if path.is_file() and sentinel in path.read_text(
+                            encoding="utf-8", errors="replace"
+                        ):
+                            raise RuntimeError(f"owner credential leaked into {path.name}")
+                    invoke("stop")
+                    started = False
+                    if attempt == 0:
+                        print("OWNER_RUNTIME_RESTART_PHASE=READY", flush=True)
+            finally:
+                if started:
+                    invoke("stop")
+                shutil.rmtree(runtime, ignore_errors=True)
+
+            target_engine = create_postgres_engine(database_url)
+            try:
+                require_disposable_database(
+                    target_engine,
+                    database_url=database_url,
+                    expected_identity=identity,
+                )
+                with target_engine.connect() as connection:
+                    project_count_after = connection.scalar(text("SELECT count(*) FROM local_projects"))
+            finally:
+                target_engine.dispose()
+            if project_count_after != project_count_before:
+                raise RuntimeError("owner runtime smoke changed qualification Project count")
+            print(f"OWNER_RUNTIME_DATABASE={database_name}", flush=True)
+            print("OWNER_RUNTIME_FRESH_SHELL_EXPORTS=NONE", flush=True)
+            print("OWNER_RUNTIME_RESTART=PASS", flush=True)
+            print("OWNER_RUNTIME_SECRET_ISOLATION=PASS", flush=True)
+            return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -291,6 +469,7 @@ def _parser() -> argparse.ArgumentParser:
     controlled.add_argument("--spec", action="append", default=[])
     backend = subparsers.add_parser("backend-tests")
     backend.add_argument("paths", nargs="*")
+    subparsers.add_parser("owner-runtime-smoke")
     return parser
 
 
@@ -302,6 +481,8 @@ def main(argv: list[str] | None = None) -> int:
             return _controlled_e2e(specs)
         if arguments.command == "backend-tests":
             return _backend_tests(tuple(arguments.paths))
+        if arguments.command == "owner-runtime-smoke":
+            return _owner_runtime_smoke()
     except (DisposableDatabaseError, OSError, subprocess.SubprocessError) as error:
         print(f"Isolated qualification failed: {error}", file=sys.stderr)
         return 2

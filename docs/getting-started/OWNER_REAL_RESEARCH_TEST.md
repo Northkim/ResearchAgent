@@ -8,7 +8,8 @@ It does not authorize public deployment or production Provider use.
 | Purpose | Start command | Literature Provider | Evidence |
 |---|---|---|---|
 | Controlled product test | `make controlled-start` | deterministic fake | fictional and labelled demo evidence |
-| Owner local real research | `make dev` with the two OpenAlex variables below | real OpenAlex through the ReAgent Backend | publication metadata and available abstracts |
+| Developer debugging | `make dev` with explicit developer configuration | profile-dependent | developer-selected |
+| Owner local real research | `make owner-start` after one-time setup | real OpenAlex through the ReAgent Backend | publication metadata and available abstracts |
 | Public production | not available | not authorized | `R3D_PRODUCTION_PROVIDER_GATE = CLOSED` |
 
 Do not reuse a controlled/demo Project for real research. Create a new Full
@@ -37,32 +38,86 @@ remain in the Local Workspace. There is no automatic retention-expiry or
 deletion promise in this owner-local version; retained database records remain
 until a separately owner-approved cleanup is performed.
 
-## 3. Configure the Backend-only credential
+## 3. First-time owner setup
 
-Keep `REAGENT_OPENALEX_API_KEY` out of the repository `.env`, Workspace,
-Capsules and shell command arguments. In a dedicated macOS `zsh` terminal:
+Owner secure local startup currently supports macOS. PostgreSQL and the Conda
+environment `reagent-dev` must already exist. From the repository root, run:
+
+```zsh
+conda activate reagent-dev
+make owner-setup
+```
+
+The setup asks for the loopback PostgreSQL database name, port and user, checks
+connectivity and reports whether its migration is current. It does not create,
+drop, reset or migrate the database. The current owner defaults are
+`127.0.0.1:5432`, `reagent_local_v01`, and the current macOS account.
+
+The non-secret, versioned configuration is written atomically to
+`~/.config/reagent/config.toml` (or the equivalent absolute
+`$XDG_CONFIG_HOME/reagent/config.toml`). Its directory is owner-only and its
+file mode is `0600`. It contains only profile, loopback database identity,
+loopback ports and whether OpenAlex is enabled. It never contains a database
+password, Provider credential, Project/Workflow identity, or research state.
+
+For OpenAlex, the macOS Keychain command prompts securely. The credential uses
+the ReAgent-specific service `com.reagent.owner-local-real.openalex` and
+account `openalex-api-key`; its value does not appear in shell history, Make
+arguments, argv, stdout, the repository `.env`, or `config.toml`.
+
+Rerun `make owner-setup` to keep or explicitly replace the credential. To
+remove it without changing config or research state:
+
+```zsh
+make owner-secret-remove
+```
+
+Keep the credential out of `workspace-bootstrap.json`, `project.json`, a
+Package, Capsule, memory, output, Artifact and Progress.
+
+## 4. Daily startup and diagnostics
+
+In a fresh terminal, no owner runtime variables need to be exported:
 
 ```zsh
 cd /path/to/ResearchAgent
-conda activate reagent-dev
-read -s "REAGENT_OPENALEX_API_KEY?OpenAlex API key: "
-echo
-export REAGENT_OPENALEX_API_KEY
-export REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED=1
-make dev
+make owner-start
 ```
 
-The startup wrapper passes the key only to FastAPI. It explicitly removes
-Provider credentials from the Next.js build/server process. The Workspace
-launcher also removes Provider credentials before starting every Capsule.
-Never put the key in `workspace-bootstrap.json`, `project.json`, a Package,
-memory, output, Artifact or Progress file.
+The trusted startup helper validates the user config, PostgreSQL identity,
+migration, Keychain item and ports. It retrieves the Keychain credential only
+inside the helper, gives it only to the FastAPI Backend, and launches Next.js
+with a scrubbed environment. It never exports the credential to the parent
+shell and never performs an automatic migration.
 
-`REAGENT_DATABASE_URL` remains the owner/manual runtime database setting. It
-may be exported separately or loaded through the existing ignored database
-dotenv support. That dotenv loader is not a Provider secret loader.
+Expected bounded output is equivalent to:
 
-## 4. Verify the local services
+```text
+ReAgent Owner Runtime
+Database: reagent_local_v01 - ready
+Migration: 20260806_0017 - current
+OpenAlex: configured
+Backend: http://127.0.0.1:8000
+Frontend: http://127.0.0.1:3000
+Mode: owner-local real research
+```
+
+If startup is not ready, use:
+
+```zsh
+make owner-doctor
+```
+
+Doctor reports config validity, PostgreSQL reachability, migration equality,
+Keychain presence and port availability without retrieving or printing the
+credential. A missing setup points to `make owner-setup`; a migration mismatch
+fails closed and requires separately reviewing the approved migration process.
+
+Repository `.env` remains a developer/runtime input for `make dev`; it is not
+owner runtime authority. `make controlled-start` reads neither owner config nor
+the owner Keychain and remains deterministic DEMO-only.
+
+## 5. Verify the local services
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:8000/health
@@ -74,7 +129,7 @@ readiness endpoint. OpenAlex-enabled startup fails closed when the Backend key
 or adapter is missing; the exact Workspace run also verifies that NORMAL is
 server-authorized before asking for consent.
 
-## 5. Create an independent real Project
+## 6. Create an independent real Project
 
 Open <http://127.0.0.1:3000/projects> and create:
 
@@ -85,7 +140,7 @@ Open <http://127.0.0.1:3000/projects> and create:
 Download **Workspace setup** as `workspace-bootstrap.json`. Do not reuse the
 controlled `project1` Workspace.
 
-## 6. Bootstrap and sync
+## 7. Bootstrap and sync
 
 In a normal terminal, from the directory containing the downloaded client and
 descriptor:
@@ -100,7 +155,7 @@ python reagent_local.py workflow list .
 
 Do not edit internal JSON, locks, indexes, receipts or checksums.
 
-## 7. Run real Literature Search
+## 8. Run real Literature Search
 
 ```bash
 python reagent_local.py run . \
@@ -136,7 +191,7 @@ and use the displayed Resume command. Completed query-result checksums are
 reused and are not automatically sent to OpenAlex again. Explicit finish is
 still required.
 
-## 8. Bind and materialize the Literature Artifact
+## 9. Bind and materialize the Literature Artifact
 
 In the browser Workflow Board, select the exact Literature Search Artifact for
 Idea Discovery. Then run:
@@ -152,7 +207,7 @@ python reagent_local.py workflow list .
 Materialization copies the exact checksum-bound Artifact. It never selects
 `latest` automatically and never reads a sibling Capsule directly.
 
-## 9. Run real Idea Discovery
+## 10. Run real Idea Discovery
 
 ```bash
 python reagent_local.py run . \
@@ -172,7 +227,7 @@ Expected output:
 - content-addressed `selected-research-idea/v1`;
 - bounded Progress and exact source-Literature provenance.
 
-## 10. Inspect and stop
+## 11. Inspect and stop
 
 Use the Project Workflow Board, Artifacts and Progress views to inspect bounded
 Cloud metadata. Inspect research bytes only in the Local Workspace.
@@ -182,14 +237,11 @@ make stop
 ```
 
 This stops only the ReAgent Backend and Frontend. It does not stop PostgreSQL.
-Remove the key from the owner shell after shutdown:
+It does not remove the owner config, Keychain item, database, Projects, or
+Workspace. A later `make owner-start` uses the persisted configuration and
+credential again; no setup or export is needed.
 
-```zsh
-unset REAGENT_OPENALEX_API_KEY
-unset REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED
-```
-
-## 11. Owner-local residual risk
+## 12. Owner-local residual risk
 
 Codex remains a general-purpose Agent Harness and may have network capability
 according to the owner's local Codex configuration. This version does not add

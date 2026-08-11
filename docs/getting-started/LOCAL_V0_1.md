@@ -13,7 +13,7 @@ rank, screen, synthesize, or resume the research task.
 - a running PostgreSQL database reachable only through loopback;
 - the current repository checkout.
 
-## One-time database configuration
+## Developer-mode database configuration
 
 Create a persistent dedicated local database using your normal PostgreSQL
 tooling. Do not use ProjectDB. The application never creates, deletes, resets,
@@ -43,7 +43,7 @@ It does not print the database URL. An explicit exported URL overrides any file
 value. `REAGENT_ENV_FILE` is useful for selecting a separate local
 configuration file without changing global shell startup files.
 
-## Start and stop
+## Developer start and stop
 
 ```bash
 make dev
@@ -64,9 +64,11 @@ Stop only those application processes:
 make stop
 ```
 
-Normal use is simply `make dev` and `make stop`. Startup reuses the same
-persistent database and applies pending migrations. The stop command does not
-stop PostgreSQL, delete a database, or remove a downloaded Package.
+This is the developer-mode path: `make dev` and `make stop`. Startup reuses the
+same persistent database and applies pending migrations. The stop command does
+not stop PostgreSQL, delete a database, or remove a downloaded Package. Normal
+owner real-research use instead performs one-time `make owner-setup`, then
+daily `make owner-start`; see [Owner Real Research Test](OWNER_REAL_RESEARCH_TEST.md).
 
 ## Product workflow
 
@@ -159,12 +161,18 @@ not repeated automatically.
 ## Provider boundary
 
 OpenAlex is the only experimentally accepted live Provider and remains disabled
-by default. Before `make dev`, an owner-authorized normal-mode session requires
-the server process to receive both
+by default in developer mode. Before `make dev`, a developer-configured
+normal-mode session requires the server process to receive both
 `REAGENT_EXPERIMENTAL_OPENALEX_PROXY_ENABLED=1` and
 `REAGENT_OPENALEX_API_KEY`. The key stays server-side; it is never passed to
 Codex or the Package. If that capability is absent, normal mode stops
 fail-closed and explains the required startup step.
+
+The canonical owner path does not require these exports. `make owner-setup`
+stores non-secret runtime configuration outside the repository and securely
+prompts macOS Keychain; `make owner-start` injects the credential into only the
+Backend child. Persistent Keychain availability never replaces per-run
+third-party disclosure and explicit consent.
 
 For a deterministic fictional demonstration, use:
 

@@ -18,7 +18,9 @@ Progress Report bytes, not the complete Workspace.
 
 ## Prerequisites
 
-- start the local ReAgent product with `make dev`;
+- start the appropriate local ReAgent mode: `make owner-start` for configured
+  owner real research, `make controlled-start` for deterministic testing, or
+  `make dev` for explicit developer debugging;
 - create a Project and generate its Literature Search Package;
 - keep the downloaded ZIP or extracted Package in a long-term, owner-controlled
   location outside Git;

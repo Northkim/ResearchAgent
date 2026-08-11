@@ -2,12 +2,37 @@
 
 Last updated: 2026-08-11
 
+## Owner-local runtime configuration and secure startup
+
+The owner real-research runtime now has a distinct product startup authority.
+`make owner-setup` stores strict non-secret loopback runtime configuration at
+`~/.config/reagent/config.toml` and securely prompts macOS Keychain for the
+OpenAlex credential. `make owner-start` reads those authorities inside a
+trusted helper, gives the credential only to FastAPI, starts the existing
+local-development/NORMAL-capable Backend plus a scrubbed Next.js Frontend, and
+does not load repository `.env` or perform migrations. `make owner-doctor`
+reports bounded readiness; `make stop` preserves config, Keychain, PostgreSQL,
+Projects and Workspaces.
+
+Controlled (`make controlled-start`), developer (`make dev`) and owner-real
+(`make owner-start`) startup remain semantically distinct. Per-run
+`continue-real-search` consent remains mandatory despite persistent credential
+availability. Fresh-shell isolated smoke qualification passed start/stop/
+restart on a generated disposable database with a fake Keychain and no ReAgent
+exports; only Backend received the sentinel. Migration remains
+`20260806_0017`. Focused tests passed 276, complete Backend passed
+`799 passed, 14 existing skips`, frontend passed 34 tests plus type/lint/build,
+and controlled Playwright passed 4. Owner DB read-only before/after stayed at
+eight Projects with the exact owner Project present. Owner Workspace was not
+accessed, and public production remains closed.
+
 ## Owner-local real research gate — safe NORMAL Literature and Idea
 
 The owner-local real Provider safety repair is complete without changing
 Workflow research semantics, immutable Capsule versions, Artifact/Skill/
-Resource/Progress contracts, or the database schema. `make dev` remains the
-canonical loopback owner real-research entry. The exported OpenAlex credential
+Resource/Progress contracts, or the database schema. ADR 0036 supersedes only
+the startup-command portion: `make owner-start` is now canonical, while
+`make dev` remains developer mode. The OpenAlex credential
 is scoped to the Backend child; frontend build/server, generic Workspace,
 Capsule, Literature, Idea, scaffold and Codex children receive a scrubbed
 environment. OpenAlex credential-like assignments fail Package and delivered

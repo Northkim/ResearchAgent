@@ -3,7 +3,7 @@ SHELL := /bin/bash
 
 COMPOSE := docker compose --env-file .env
 
-.PHONY: dev controlled-start stop demo-configure demo-config-check demo-start demo-stop demo-reset \
+.PHONY: dev owner-setup owner-start owner-doctor owner-secret-remove controlled-start stop demo-configure demo-config-check demo-start demo-stop demo-reset \
 	demo-seed demo-status demo-logs test-backend test-backend-postgres compile-backend \
 	test-frontend lint-frontend build-frontend test-integration test-e2e \
 	test-controlled-e2e test-all
@@ -11,10 +11,23 @@ COMPOSE := docker compose --env-file .env
 dev:
 	./scripts/dev-start.sh
 
+owner-setup:
+	conda run --no-capture-output -n reagent-dev python scripts/owner_runtime.py setup
+
+owner-start:
+	conda run --no-capture-output -n reagent-dev python scripts/owner_runtime.py start
+
+owner-doctor:
+	conda run --no-capture-output -n reagent-dev python scripts/owner_runtime.py doctor
+
+owner-secret-remove:
+	conda run --no-capture-output -n reagent-dev python scripts/owner_runtime.py remove-secret
+
 controlled-start:
 	REAGENT_STARTUP_MODE=controlled ./scripts/dev-start.sh
 
 stop:
+	conda run --no-capture-output -n reagent-dev python scripts/owner_runtime.py stop
 	./scripts/dev-stop.sh
 
 demo-configure:

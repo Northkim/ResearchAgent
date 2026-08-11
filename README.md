@@ -11,39 +11,41 @@ locally.
 ## Start the local V0.1 product
 
 Prerequisites are Conda environment `reagent-dev`, Node/npm, and a running
-loopback PostgreSQL database that is not ProjectDB. One time only, create that
-database and copy the credential-free local template to the ignored root
-`.env`:
+loopback PostgreSQL database that is not ProjectDB. On macOS, configure the
+single-owner real-research runtime once:
 
 ```bash
-cp config/local-v0.1.example .env
-# Edit .env and set REAGENT_DATABASE_URL for the persistent local database.
+make owner-setup
 ```
 
-Normal startup and shutdown then require only:
+Daily owner startup, diagnostics and shutdown then require only:
 
 ```bash
-make dev
+make owner-start
+make owner-doctor
 make stop
 ```
 
-Open <http://127.0.0.1:3000/projects>. The script verifies dependencies and
-the loopback database, applies Alembic migrations, and starts FastAPI and
-Next.js. Logs, generated Package artifacts, and PID files stay under
-`/tmp/reagent-v0-1-$UID` by default.
+Open <http://127.0.0.1:3000/projects>. Owner startup reads strict non-secret
+user configuration and a macOS Keychain OpenAlex item, verifies rather than
+applies migrations, gives the credential only to FastAPI, and starts a
+scrubbed Next.js process. `make stop` stops only recorded application
+processes; it never stops PostgreSQL or removes config, Keychain data,
+Projects, or Workspaces.
 
-`make dev` reuses the database and applies migrations; it never creates,
-deletes, resets, or recreates the database. `make stop` stops only the
-application processes recorded in the runtime directory and never stops or
-deletes PostgreSQL.
+`make dev` remains the separate developer startup and may use an exported
+`REAGENT_DATABASE_URL`, `REAGENT_ENV_FILE`, or ignored repository `.env`.
+`make controlled-start` remains deterministic DEMO-only qualification. Neither
+is the owner runtime configuration authority.
 
-An already exported `REAGENT_DATABASE_URL` overrides `.env`. Set
-`REAGENT_ENV_FILE` to select a different local dotenv file instead. The loader
-parses assignments without executing shell syntax and never prints the URL.
-Tracked `.env.example` and `config/local-v0.1.example` contain no real
-credential. Do not put project-specific configuration in `~/.zshrc`.
+For developer mode only, an exported `REAGENT_DATABASE_URL` overrides `.env`.
+Set `REAGENT_ENV_FILE` to select another local dotenv. The loader never
+executes shell syntax or prints the URL. Do not put an OpenAlex credential in
+repository `.env`, Workspace files, or shell startup files.
 
-The complete owner flow, one-round command, and recovery behavior are in
+The complete real owner setup and research flow are in
+[`docs/getting-started/OWNER_REAL_RESEARCH_TEST.md`](docs/getting-started/OWNER_REAL_RESEARCH_TEST.md).
+Developer and legacy standalone details remain in
 [`docs/getting-started/LOCAL_V0_1.md`](docs/getting-started/LOCAL_V0_1.md).
 
 ## Product quick start: Full Research Project
