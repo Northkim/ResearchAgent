@@ -95,7 +95,7 @@ Expected bounded output is equivalent to:
 ```text
 ReAgent Owner Runtime
 Database: reagent_local_v01 - ready
-Migration: 20260813_0019 - current
+Migration: 20260813_0020 - current
 OpenAlex: configured
 Backend: http://127.0.0.1:8000
 Frontend: http://127.0.0.1:3000
@@ -330,7 +330,27 @@ The new Instance resolves Definition 0.3.0 / Capsule 0.4.0. Do not rerun
 Literature or Idea, copy Artifacts across Projects, edit the Installed Lock, or
 replace Capsule bytes manually.
 
-## 12. Inspect and stop
+## 12. Continue with Writing and Review scaffold UX
+
+Migration `20260813_0020` publishes Writing and Review Capsule 0.3.0 without
+changing either Definition 0.2.0. A new Instance resolves the repaired Capsule
+and automatically begins `INPUT_REVIEW`; it never requires `start`, `write
+paper`, or `review draft`.
+
+If the existing Full Research Project already contains unstarted Writing or
+Review Capsule 0.2.0 Instances, retire only those Instances in the Workflow
+Board and add new Writing/Review Instances. Keep the Project, Workspace,
+Literature, selected Idea, Experiment output, Progress, and Artifact history.
+Then update only the Workspace-root `reagent_local.py` from the Local Guide,
+sync, explicitly bind the required exact Artifacts, materialize, and run the
+printed commands. Do not copy or replace any installed Capsule bytes manually.
+
+For the revision loop, keep Writing #1 and Review #1. Add Writing #2, explicitly
+bind the same Idea and Literature plus Draft A as `prior_manuscript` and Review
+A as `review_feedback`, then run the exact instance-specific command printed by
+`workflow list`. Draft A and Review A remain immutable.
+
+## 13. Inspect and stop
 
 Use the Project Workflow Board, Artifacts and Progress views to inspect bounded
 Cloud metadata. Inspect research bytes only in the Local Workspace.
@@ -344,7 +364,7 @@ It does not remove the owner config, Keychain item, database, Projects, or
 Workspace. A later `make owner-start` uses the persisted configuration and
 credential again; no setup or export is needed.
 
-## 13. Owner-local residual risk
+## 14. Owner-local residual risk
 
 Codex remains a general-purpose Agent Harness and may have network capability
 according to the owner's local Codex configuration. This version does not add

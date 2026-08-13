@@ -2970,6 +2970,26 @@ Next permitted phase after owner acceptance is NIGHT-F1F complete product-width
 qualification. It may add no new platform capability. Do not begin F1F
 automatically.
 
+## Owner Writing and Review interactive bootstrap repair (2026-08-13)
+
+Writing and Review now preserve Definition 0.2.0 and every frozen
+`SCAFFOLD_CORE` contract while new immutable Capsule 0.3.0 versions supply
+independent bounded positional Codex instructions. Both automatically begin at
+INPUT_REVIEW through the generic Workspace launcher; Writing revision Instances
+use the same corrected path and still require explicit exact Artifact binding.
+Historical 0.2 Capsule checksums, shared runner bytes, validators, prompts,
+Artifact/Progress semantics, and Research Artifact Provenance 0.1.0 / Scaffold
+Core Safety 0.1.0 pins remain unchanged.
+
+Seed-only migration `20260813_0020` publishes only the two new Capsule records.
+Prompt-enforcing fake, Workspace-root PTY, real Codex synthetic Writing/Review,
+and Writing #1 -> Review #1 -> Writing #2 qualifications passed. Full isolated
+backend passed `831 passed, 14 existing skips`; frontend, controlled
+Playwright, owner runtime/security, compileall, Alembic and diff gates passed.
+No owner Project/Workspace/database, live Provider, Skill version, schema, or
+historical Capsule byte was changed. Next action is owner Writing/Review
+Scaffold UX testing, not Real Writing/Review.
+
 ## Owner Experiment scaffold interactive bootstrap repair (2026-08-13)
 
 The owner-discovered bare-Codex Experiment startup defect is repaired without

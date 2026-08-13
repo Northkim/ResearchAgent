@@ -65,6 +65,7 @@ from .production_workflows import (
     skill_backed_scaffold_capsule,
     skill_backed_scaffold_definition_version,
     skill_backed_scaffold_requirements,
+    interactive_scaffold_capsule,
     experiment_resource_artifact_requirements,
     experiment_resource_capsule,
     experiment_resource_definition_version,
@@ -261,6 +262,12 @@ def ensure_production_workflow_foundation(
         repository.add_capsule_version(
             skill_backed_scaffold_capsule(workflow_id, timestamp)
         )
+        if workflow_id in {
+            "writing-local-experimental", "review-local-experimental",
+        }:
+            repository.add_capsule_version(
+                interactive_scaffold_capsule(workflow_id, timestamp)
+            )
         for asset in PRODUCTION_SKILLS:
             definition = asset.definition(timestamp)
             version = asset.skill_version(timestamp)

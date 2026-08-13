@@ -49,7 +49,8 @@ The CLI prints friendly ordinal labels for multiple same-type Instances and
 falls back to exact instance selectors when the stable selector is ambiguous.
 No Manifest, UUID, checksum, or receipt JSON editing is required for normal use.
 
-Writing and Review 0.2.0 and Reproduction & Experiment Definition 0.3.0 bundle
+Writing and Review Definition 0.2.0 / Capsule 0.3.0 and Reproduction &
+Experiment Definition 0.3.0 bundle
 exact reviewed Skills inside their Capsules. The current Experiment Capsule is
 0.4.0; immutable Capsule 0.3.0 remains published history. Experiment Definition
 0.3.0 additionally exposes
@@ -58,3 +59,9 @@ execute it. Sync installs Skills automatically, while Resource bytes remain a
 separate explicit local-resolution concern. Neither capability changes the
 Scaffold Core maturity. See [Skills bundled with Workflows](SKILLS.md) and
 [External Resources](RESOURCES.md).
+
+Running the printed Writing or Review Workspace command now supplies its
+bounded initial task automatically and begins `INPUT_REVIEW`. There is no
+hidden `start`, `write paper`, or `review draft` phrase. Existing Writing and
+Review Capsule 0.2.0 Instances remain pinned; add a new current Instance when
+the repaired interactive start is required.

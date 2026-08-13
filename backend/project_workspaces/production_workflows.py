@@ -39,6 +39,7 @@ from backend.workflow_packages.production_workflows import (
     REVIEW_TEMPLATE_ID,
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
+    SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
     SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
     SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
     SCAFFOLD_INPUT_TARGETS,
@@ -243,6 +244,47 @@ SCAFFOLD_V0_2_CAPSULE_CHECKSUMS = {
 SCAFFOLD_V0_2_CAPSULE_IDS = {
     workflow_id: "capsule-" + checksum[7:39]
     for workflow_id, checksum in SCAFFOLD_V0_2_CAPSULE_CHECKSUMS.items()
+}
+
+
+def interactive_scaffold_capsule_checksum(workflow_id: str) -> str:
+    if workflow_id not in {WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID}:
+        raise ValueError("interactive scaffold Capsule supports Writing/Review only")
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return canonical_hash({
+        "generator_version": (
+            f"reagent-{workflow_id}-compiler/"
+            f"{SCAFFOLD_INTERACTIVE_CAPSULE_VERSION}"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": config["template_id"],
+        "package_template_version": SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
+        "workflow_checksum": scaffold_contract_checksum(
+            workflow_id,
+            workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        ),
+        "artifact_requirements": list(config["requirements"]),
+        "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+        "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+        "skill_pins": [
+            {
+                "skill_id": asset.skill_id,
+                "skill_version": asset.version,
+                "content_checksum": asset.content_checksum,
+            }
+            for asset in PRODUCTION_SKILLS
+        ],
+        "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
+    })
+
+
+SCAFFOLD_V0_3_CAPSULE_CHECKSUMS = {
+    workflow_id: interactive_scaffold_capsule_checksum(workflow_id)
+    for workflow_id in (WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID)
+}
+SCAFFOLD_V0_3_CAPSULE_IDS = {
+    workflow_id: "capsule-" + checksum[7:39]
+    for workflow_id, checksum in SCAFFOLD_V0_3_CAPSULE_CHECKSUMS.items()
 }
 
 
@@ -736,6 +778,28 @@ def skill_backed_scaffold_capsule(
         legacy_package_compatible=False,
         created_at=now,
         updated_at=now,
+    )
+
+
+def interactive_scaffold_capsule(
+    workflow_id: str, now: datetime
+) -> WorkflowCapsuleVersion:
+    """Publish only the Writing/Review Harness integration over Definition 0.2."""
+
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    previous = skill_backed_scaffold_capsule(workflow_id, now)
+    return replace(
+        previous,
+        capsule_id=SCAFFOLD_V0_3_CAPSULE_IDS[workflow_id],
+        capsule_version=SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
+        definition_checksum=SCAFFOLD_V0_3_CAPSULE_CHECKSUMS[workflow_id],
+        compatibility={
+            **previous.compatibility,
+            "package_template_id": config["template_id"],
+            "harness_integration": (
+                "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP"
+            ),
+        },
     )
 
 

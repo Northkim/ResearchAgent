@@ -6,7 +6,8 @@ ReAgent composes five independent Workflows. Literature Search and Idea
 Discovery have reviewed production research cores. Writing, Review, and
 Reproduction & Experiment are real production Workflows whose published
 versions remain explicitly `SCAFFOLD_CORE`. The current Skill-backed Writing
-and Review versions are 0.2.0; the current Skill- and Resource-aware Experiment
+and Review Definition versions are 0.2.0 with interactive Capsule 0.3.0; the
+current Skill- and Resource-aware Experiment
 Definition is 0.3.0 with interactive Capsule 0.4.0. Its immutable 0.3.0 Capsule
 and the earlier published versions remain history.
 
@@ -159,6 +160,11 @@ metadata. It keeps Definition 0.3.0 and every Artifact, Progress, Resource,
 Skill, maturity, and execution-safety contract unchanged while adding a bounded
 automatic `INPUT_REVIEW` Harness turn. Existing 0.3.0 Capsule instances remain
 pinned and are never silently upgraded.
+Migration `20260813_0020` likewise publishes only immutable Writing and Review
+Capsule 0.3.0 metadata over unchanged Definition 0.2.0 contracts. Their bounded
+positional Harness instructions automatically begin `INPUT_REVIEW`; historical
+Capsule 0.2.0 bytes, exact Skill pins, validators, Artifact contracts, Progress,
+and `SCAFFOLD_CORE` safety semantics remain unchanged.
 
 F1C adds `full-research` as a server-resolved Project creation preset. It
 atomically creates five ordinary Workflow Instances and one revision-1 Desired

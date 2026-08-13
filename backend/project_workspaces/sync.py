@@ -30,6 +30,7 @@ from backend.workflow_packages.production_workflows import (
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
+    SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
     SCAFFOLD_WORKFLOW_VERSION,
     SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
     SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
@@ -44,6 +45,8 @@ from backend.workflow_packages.production_workflows import (
     build_experiment_scaffold_package,
     build_writing_scaffold_v0_2_package,
     build_review_scaffold_v0_2_package,
+    build_writing_scaffold_v0_3_package,
+    build_review_scaffold_v0_3_package,
     build_experiment_scaffold_v0_2_package,
     build_experiment_scaffold_v0_3_package,
     build_experiment_scaffold_v0_4_package,
@@ -580,6 +583,24 @@ class WorkspaceSyncApplicationService:
             }[instance.workflow_definition_id]
             package_id = (
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.2"
+            )
+        elif (
+            instance.workflow_definition_id in {
+                WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID,
+            }
+            and instance.workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+            and instance.capsule_version == SCAFFOLD_INTERACTIVE_CAPSULE_VERSION
+        ):
+            slug, builder = {
+                WRITING_WORKFLOW_ID: (
+                    "writing", build_writing_scaffold_v0_3_package
+                ),
+                REVIEW_WORKFLOW_ID: (
+                    "review", build_review_scaffold_v0_3_package
+                ),
+            }[instance.workflow_definition_id]
+            package_id = (
+                f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.3"
             )
         elif (
             instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID

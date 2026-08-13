@@ -133,6 +133,8 @@ Experiment record. Refresh, materialize, and use the Writing run command.
 Expected: `manuscript-draft/v1` and `outputs/manuscript.md` visibly say
 `SCAFFOLD PLACEHOLDER`. The provenance lists every selected input. Do not
 expect substantive academic prose, citations, novelty claims, or results.
+The Agent begins automatically at **WRITING — INPUT_REVIEW**; no startup phrase
+is required.
 
 ## 9. Run Review #1 — Web, then Terminal
 
@@ -141,6 +143,8 @@ Explicitly select Draft A, materialize it, and run Review.
 Expected: `review-report/v1` is marked `SCAFFOLD REVIEW PLACEHOLDER` and uses
 `INSUFFICIENT_EVIDENCE`. It is not a substantive peer review and does not
 predict acceptance.
+The Agent begins automatically at **REVIEW — INPUT_REVIEW**; no startup phrase
+is required.
 
 ## 10. Create Writing #2 — Web, then Terminal
 

@@ -75,6 +75,9 @@ SCAFFOLD_SKILL_VERSION = "0.1.0"
 SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION = "0.2.0"
 SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION = "0.2.0"
 SCAFFOLD_SKILL_BACKED_PROMPT_VERSION = "0.2.0"
+# Owner-test Harness integration repair: Writing/Review research semantics stay
+# pinned to Workflow 0.2, while each receives a new immutable Capsule.
+SCAFFOLD_INTERACTIVE_CAPSULE_VERSION = "0.3.0"
 EXPERIMENT_RESOURCE_WORKFLOW_VERSION = "0.3.0"
 EXPERIMENT_RESOURCE_CAPSULE_VERSION = "0.3.0"
 EXPERIMENT_RESOURCE_PROMPT_VERSION = "0.3.0"
@@ -1223,6 +1226,194 @@ def _review_v0_2_files(**kwargs) -> dict[str, FileSpec]:
     return _scaffold_v0_2_files(workflow_id=REVIEW_WORKFLOW_ID, **kwargs)
 
 
+def _scaffold_interactive_instruction(workflow_id: str) -> str:
+    """Return only the bounded first turn; the pinned prompt owns methodology."""
+
+    instructions = {
+        WRITING_WORKFLOW_ID: """REAGENT WRITING — INPUT_REVIEW
+
+You are beginning the ReAgent Writing Workflow. Read and follow the root
+AGENT.md (and root AGENTS.md when present), workflow/AGENT.md, the pinned
+workflow/prompts/writing.md, workflow/scaffold.json, memory/context.md, and
+memory/input-provenance.json. Read only the exact materialized inputs declared
+by the Workflow: the required inputs/selected-research-idea.json and
+inputs/selected-paper-library.json, plus inputs/experiment-record.json,
+inputs/review-report.json, and inputs/prior-manuscript.json only when their
+exact Artifact records are present. Never inspect sibling Capsules or scan the
+Workspace.
+
+Begin at INPUT_REVIEW. Identify every available input by role and preserve its
+exact Artifact ID and checksum. Distinguish the selected Idea and Literature
+evidence from optional Experiment, Review, and prior-manuscript inputs. When
+both prior manuscript and review feedback are present, identify this as a
+revision round; never select either input implicitly.
+
+State the safety boundary before discussing document structure: this version
+is SCAFFOLD_CORE and will not create a real, substantive, publication-quality
+manuscript. Do not fabricate citations, DOI values, papers, experiments,
+results, metrics, significance, novelty, or plausible-looking substantive
+academic prose. Follow the pinned Writing prompt for the remaining frozen
+method. Explain that this flow reviews the available evidence, establishes the
+intended document structure, and produces only outputs/manuscript.md plus a
+content-addressed manuscript-draft/v1 that remain visibly marked SCAFFOLD
+PLACEHOLDER. Begin the Writing interaction automatically; do not ask the owner
+for a hidden start, write, begin, or draft-paper phrase.""",
+        REVIEW_WORKFLOW_ID: """REAGENT REVIEW — INPUT_REVIEW
+
+You are beginning the ReAgent Review Workflow. Read and follow the root
+AGENT.md (and root AGENTS.md when present), workflow/AGENT.md, the pinned
+workflow/prompts/review.md, workflow/scaffold.json, memory/context.md, and
+memory/input-provenance.json. Read only the exact materialized inputs declared
+by the Workflow: the required inputs/manuscript-draft.json, plus
+inputs/selected-paper-library.json and inputs/experiment-record.json only when
+their exact Artifact records are present. Never inspect sibling Capsules or
+scan the Workspace.
+
+Begin at INPUT_REVIEW. Identify the loaded manuscript by its exact Artifact ID
+and checksum, then identify any exact optional Literature or Experiment
+supporting evidence. Preserve all provenance and never select an input
+implicitly.
+
+State the safety boundary before discussing the review record: this version is
+SCAFFOLD_CORE and does not perform real peer review, full scientific
+validation, correctness verification, scoring, reviewer-confidence assessment,
+or acceptance/rejection judgment. Follow the pinned Review prompt for the
+remaining frozen method. Explain that this flow produces only
+outputs/review_report.md and a content-addressed review-report/v1 visibly
+marked SCAFFOLD REVIEW PLACEHOLDER, with empty major/minor issue lists and the
+fixed recommendation INSUFFICIENT_EVIDENCE. Do not fabricate substantive
+revision advice. Begin the Review interaction automatically; do not ask the
+owner for a hidden start-review or review-this-draft phrase.""",
+    }
+    try:
+        return instructions[workflow_id]
+    except KeyError as error:
+        raise ValueError("interactive scaffold bootstrap supports Writing/Review only") from error
+
+
+def _scaffold_interactive_runner_source(workflow_id: str) -> bytes:
+    """Build the future-safe transport used only by new immutable Capsules."""
+
+    source = Path(__file__).with_name("scaffold_runtime.py").read_text(encoding="utf-8")
+    source = source.replace("import runpy\n", "import runpy\nimport signal\n", 1)
+    source = source.replace(
+        '"client_version": "reagent-local-scaffold/0.1.0",',
+        '"client_version": "reagent-local-scaffold/0.3.0",',
+        1,
+    )
+    old = '''def _run_harness(root: Path, executable: str) -> None:
+    environment = {
+        key: os.environ[key]
+        for key in ("PATH", "TMPDIR", "LANG", "LC_ALL", "TERM")
+        if key in os.environ
+    }
+    result = subprocess.run([executable], cwd=root, env=environment, check=False)
+    if result.returncode != 0:
+        raise ScaffoldRuntimeError("Codex exited before scaffold finalization")
+'''
+    label = "Writing" if workflow_id == WRITING_WORKFLOW_ID else "Review"
+    instruction = _scaffold_interactive_instruction(workflow_id)
+    new = f'''def _initial_instruction() -> str:
+    return {instruction!r}
+
+
+def _codex_preflight(executable: str, environment: dict[str, str]) -> None:
+    checks = (
+        ([executable, "--version"], ()),
+        ([executable, "--help"], ("--sandbox", "--ask-for-approval", "--no-alt-screen", "--cd")),
+        ([executable, "login", "status"], ()),
+    )
+    for command, required in checks:
+        try:
+            result = subprocess.run(
+                command, env=environment, capture_output=True, text=True,
+                check=False, timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ScaffoldRuntimeError("Codex CLI preflight could not be completed") from error
+        if result.returncode != 0 or any(item not in result.stdout for item in required):
+            raise ScaffoldRuntimeError("Codex CLI does not satisfy the interactive Harness contract")
+
+
+def _stop_harness(child: subprocess.Popen[Any]) -> None:
+    if child.poll() is not None:
+        return
+    child.send_signal(signal.SIGINT)
+    try:
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        child.terminate()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=5)
+
+
+def _run_harness(root: Path, executable: str) -> None:
+    environment = {{
+        key: os.environ[key]
+        for key in ("PATH", "TMPDIR", "LANG", "LC_ALL", "TERM")
+        if key in os.environ
+    }}
+    _codex_preflight(executable, environment)
+    command = [
+        executable,
+        "--sandbox", "workspace-write",
+        "--ask-for-approval", "on-request",
+        "--no-alt-screen",
+        "-C", str(root),
+        _initial_instruction(),
+    ]
+    child: subprocess.Popen[Any] | None = None
+    previous_handlers: dict[int, Any] = {{}}
+
+    def terminate_signal(signum: int, frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    try:
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, terminate_signal)
+        child = subprocess.Popen(command, cwd=root, env=environment)
+        returncode = child.wait()
+    except KeyboardInterrupt as error:
+        if child is not None:
+            _stop_harness(child)
+        raise ScaffoldRuntimeError(
+            "Owner interrupted the {label} scaffold; local memory and outputs were retained"
+        ) from error
+    except OSError as error:
+        raise ScaffoldRuntimeError("Codex process could not be started") from error
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+    if returncode != 0:
+        raise ScaffoldRuntimeError("Codex exited before {label} scaffold finalization")
+'''
+    if old not in source:
+        raise RuntimeError("historical scaffold runner bootstrap extension point is unavailable")
+    return source.replace(old, new, 1).encode("utf-8")
+
+
+def _scaffold_v0_3_files(*, workflow_id: str, **kwargs) -> dict[str, FileSpec]:
+    """Replace only Harness transport over the immutable Workflow 0.2 body."""
+
+    files = dict(_scaffold_v0_2_files(workflow_id=workflow_id, **kwargs))
+    _replace_spec(files, "reagent_local.py", _scaffold_interactive_runner_source(workflow_id))
+    return files
+
+
+def _writing_v0_3_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_v0_3_files(workflow_id=WRITING_WORKFLOW_ID, **kwargs)
+
+
+def _review_v0_3_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_v0_3_files(workflow_id=REVIEW_WORKFLOW_ID, **kwargs)
+
+
 def _experiment_v0_2_files(**kwargs) -> dict[str, FileSpec]:
     kwargs.pop("research_topic", None)
     return _scaffold_v0_2_files(workflow_id=EXPERIMENT_WORKFLOW_ID, **kwargs)
@@ -2069,6 +2260,26 @@ def build_review_scaffold_v0_2_package(**kwargs) -> BuildResult:
         workflow_type="Review", template_id=REVIEW_TEMPLATE_ID,
         workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
         capsule_version=SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_writing_scaffold_v0_3_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_writing_v0_3_files, workflow_id=WRITING_WORKFLOW_ID,
+        workflow_type="Writing", template_id=WRITING_TEMPLATE_ID,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        capsule_version=SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_review_scaffold_v0_3_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_review_v0_3_files, workflow_id=REVIEW_WORKFLOW_ID,
+        workflow_type="Review", template_id=REVIEW_TEMPLATE_ID,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        capsule_version=SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
         **kwargs,
     )
 

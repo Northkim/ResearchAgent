@@ -57,8 +57,8 @@ def test_server_resolved_presets_create_one_revision_atomically(tmp_path, setup,
     assert versions["literature-search-local-experimental"] == ("0.4.0", "0.6.0")
     if setup == "full-research":
         assert versions["idea-discovery-local-experimental"] == ("0.2.0", "0.3.0")
-        assert versions["writing-local-experimental"] == ("0.2.0", "0.2.0")
-        assert versions["review-local-experimental"] == ("0.2.0", "0.2.0")
+        assert versions["writing-local-experimental"] == ("0.2.0", "0.3.0")
+        assert versions["review-local-experimental"] == ("0.2.0", "0.3.0")
         assert versions["reproduction-experiment-local-experimental"] == ("0.3.0", "0.4.0")
 
 

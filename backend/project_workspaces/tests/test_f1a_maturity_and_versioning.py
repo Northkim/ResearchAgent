@@ -138,6 +138,47 @@ def test_existing_experiment_0_3_capsule_is_not_silently_upgraded(tmp_path) -> N
     assert catalog["recommended_capsule"]["capsule_version"] == "0.4.0"
 
 
+@pytest.mark.parametrize(
+    ("workflow_id", "capsule_id"),
+    (
+        (
+            "writing-local-experimental",
+            "capsule-84896829db7ee1cb6b24a5e10bf6705b",
+        ),
+        (
+            "review-local-experimental",
+            "capsule-9c3e4e8f065914393f5dc786b36d07bb",
+        ),
+    ),
+)
+def test_existing_writing_review_0_2_capsule_is_not_silently_upgraded(
+    tmp_path, workflow_id: str, capsule_id: str,
+) -> None:
+    client, _ = _client(tmp_path)
+    project = client.post("/projects", json={
+        "name": "Writing Review immutable pin fixture",
+        "research_topic": "Synthetic research",
+        "selected_workflow": "LITERATURE_SEARCH",
+    }).json()
+    created = client.post(
+        f"/projects/{project['project_id']}/workflow-instances",
+        json={
+            "workflow_definition_id": workflow_id,
+            "workflow_version": "0.2.0",
+            "capsule_id": capsule_id,
+            "capsule_version": "0.2.0",
+            "base_revision": 1,
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert (
+        created.json()["workflow_version"], created.json()["capsule_version"]
+    ) == ("0.2.0", "0.2.0")
+    catalog = client.get(f"/workflow-definitions/{workflow_id}").json()
+    assert catalog["recommended_version"]["version"] == "0.2.0"
+    assert catalog["recommended_capsule"]["capsule_version"] == "0.3.0"
+
+
 def test_maturity_is_canonical_and_independent_from_lifecycle() -> None:
     now = datetime(2026, 8, 7, tzinfo=UTC)
     reviewed = WorkflowDefinitionVersion(

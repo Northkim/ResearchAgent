@@ -6,8 +6,8 @@ with placeholder research cores. Their Registry cards and Progress state show
 
 ## What is real
 
-The published 0.1.0 Capsules remain immutable. New Writing and Review
-Instances use the Skill-backed Definition/Capsule 0.2.0. New Reproduction &
+The published 0.1.0 and 0.2.0 Capsules remain immutable. New Writing and Review
+Instances use Skill-backed Definition 0.2.0 with interactive Capsule 0.3.0. New Reproduction &
 Experiment Instances use Resource-aware Definition 0.3.0 with interactive
 Capsule 0.4.0; the published 0.3.0 Capsule remains immutable. Each has a Desired
 Manifest entry, independent sync/install state, exact Artifact requirements,
@@ -28,6 +28,11 @@ Experiment, review and prior-manuscript inputs are optional. It publishes
 `SCAFFOLD PLACEHOLDER`. It does not invent citations, results, novelty or a
 publication-quality manuscript.
 
+The printed Writing run command automatically starts at **INPUT_REVIEW**. The
+Agent identifies every exact materialized input, discloses `SCAFFOLD_CORE`, and
+explains the bounded placeholder before following the pinned Writing prompt.
+No `start`, `write`, `begin`, or other hidden first message is required.
+
 For a review loop, create Writing Instance A and Review Instance A. Create a
 new Writing Instance B and explicitly bind Draft A and Review A as
 `prior_manuscript` and `review_feedback`. Draft A and Review A remain immutable.
@@ -38,6 +43,11 @@ Review requires one exact manuscript Artifact. It publishes
 `review-report/v1` with `INSUFFICIENT_EVIDENCE`, no claimed major/minor issues,
 and a visible `SCAFFOLD REVIEW PLACEHOLDER`. It does not score novelty, predict
 acceptance or perform substantive peer review.
+
+The printed Review run command automatically starts at **INPUT_REVIEW**. The
+Agent identifies the exact Draft and optional evidence, discloses
+`SCAFFOLD_CORE`, and explains that no substantive peer review or acceptance
+judgment occurs. No `start review` or other hidden first message is required.
 
 ## Reproduction & Experiment scaffold
 

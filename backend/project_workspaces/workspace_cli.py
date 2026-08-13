@@ -86,11 +86,19 @@ SUPPORTED_CAPSULE_PINS = {
         "writing-scaffold-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.2.0", "0.3.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
     ("review-local-experimental", "0.1.0", "0.1.0"): (
         "review-scaffold-package-experimental",
         False,
     ),
     ("review-local-experimental", "0.2.0", "0.2.0"): (
+        "review-scaffold-package-experimental",
+        False,
+    ),
+    ("review-local-experimental", "0.2.0", "0.3.0"): (
         "review-scaffold-package-experimental",
         False,
     ),
@@ -2555,6 +2563,7 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
                 "reproduction-experiment-local-experimental",
             } and pin[1:] in {
                 ("0.2.0", "0.2.0"),
+                ("0.2.0", "0.3.0"),
                 ("0.3.0", "0.3.0"),
                 ("0.3.0", "0.4.0"),
             }:
@@ -4011,6 +4020,7 @@ def run_workflow(
             }
             and pin[1:] in {
                 ("0.1.0", "0.1.0"), ("0.2.0", "0.2.0"),
+                ("0.2.0", "0.3.0"),
                 ("0.3.0", "0.3.0"), ("0.3.0", "0.4.0"),
             }
         )

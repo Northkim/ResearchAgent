@@ -130,6 +130,7 @@ def main() -> int:
         "--workflow",
         default="literature-search-local-experimental",
     )
+    parser.add_argument("--workflow-instance")
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--timeout", type=float, default=90.0)
     parser.add_argument(
@@ -153,11 +154,12 @@ def main() -> int:
             "reagent_local.py",
             "run",
             ".",
-            "--workflow",
-            args.workflow,
-            "--api-url",
-            args.base_url,
         ]
+        if args.workflow_instance:
+            command.extend(["--workflow-instance", args.workflow_instance])
+        else:
+            command.extend(["--workflow", args.workflow])
+        command.extend(["--api-url", args.base_url])
     else:
         assert args.package_root is not None
         cwd = args.package_root.resolve()
