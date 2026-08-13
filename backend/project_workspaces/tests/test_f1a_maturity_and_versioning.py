@@ -111,6 +111,33 @@ def test_existing_idea_0_2_capsule_is_not_silently_upgraded(tmp_path) -> None:
     assert catalog["recommended_capsule"]["capsule_version"] == "0.3.0"
 
 
+def test_existing_experiment_0_3_capsule_is_not_silently_upgraded(tmp_path) -> None:
+    client, _ = _client(tmp_path)
+    project = client.post("/projects", json={
+        "name": "Experiment immutable pin fixture",
+        "research_topic": "Synthetic research",
+        "selected_workflow": "LITERATURE_SEARCH",
+    }).json()
+    project_id = project["project_id"]
+    created = client.post(f"/projects/{project_id}/workflow-instances", json={
+        "workflow_definition_id": "reproduction-experiment-local-experimental",
+        "workflow_version": "0.3.0",
+        "capsule_id": "capsule-4aa162608aafec3c67db316957f57349",
+        "capsule_version": "0.3.0",
+        "base_revision": 1,
+    })
+    assert created.status_code == 201, created.text
+    instance = created.json()
+    assert (instance["workflow_version"], instance["capsule_version"]) == (
+        "0.3.0", "0.3.0"
+    )
+    catalog = client.get(
+        "/workflow-definitions/reproduction-experiment-local-experimental"
+    ).json()
+    assert catalog["recommended_version"]["version"] == "0.3.0"
+    assert catalog["recommended_capsule"]["capsule_version"] == "0.4.0"
+
+
 def test_maturity_is_canonical_and_independent_from_lifecycle() -> None:
     now = datetime(2026, 8, 7, tzinfo=UTC)
     reviewed = WorkflowDefinitionVersion(

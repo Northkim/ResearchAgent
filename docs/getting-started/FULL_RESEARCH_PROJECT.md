@@ -49,8 +49,10 @@ The CLI prints friendly ordinal labels for multiple same-type Instances and
 falls back to exact instance selectors when the stable selector is ambiguous.
 No Manifest, UUID, checksum, or receipt JSON editing is required for normal use.
 
-Writing and Review 0.2.0 and Reproduction & Experiment 0.3.0 bundle exact
-reviewed Skills inside their Capsules. Experiment 0.3.0 additionally exposes
+Writing and Review 0.2.0 and Reproduction & Experiment Definition 0.3.0 bundle
+exact reviewed Skills inside their Capsules. The current Experiment Capsule is
+0.4.0; immutable Capsule 0.3.0 remains published history. Experiment Definition
+0.3.0 additionally exposes
 optional exact external Resource references; adding one does not download or
 execute it. Sync installs Skills automatically, while Resource bytes remain a
 separate explicit local-resolution concern. Neither capability changes the

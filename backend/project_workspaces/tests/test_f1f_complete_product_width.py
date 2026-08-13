@@ -206,7 +206,7 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
         IDEA_DISCOVERY_WORKFLOW_ID: ("0.2.0", "0.3.0"),
         WRITING_WORKFLOW_ID: ("0.2.0", "0.2.0"),
         REVIEW_WORKFLOW_ID: ("0.2.0", "0.2.0"),
-        EXPERIMENT_WORKFLOW_ID: ("0.3.0", "0.3.0"),
+        EXPERIMENT_WORKFLOW_ID: ("0.3.0", "0.4.0"),
     }
 
     workspace = tmp_path / "workspace"
@@ -319,11 +319,21 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
     # Experiment: bound Resource must verify; Artifact inputs remain explicit.
     _bind(client, project_id, experiment, "research_idea", selected_idea, 2)
     _bind(client, project_id, experiment, "literature_library", library, 3)
-    workspace_cli._verify_bound_resources(
+    resource_projection = workspace_cli._verify_bound_resources(
         workspace=workspace,
         descriptor=json.loads((workspace / workspace_cli.WORKSPACE_DESCRIPTOR).read_text()),
         workflow_instance_id=experiment["workflow_instance_id"],
         transport=transport,
+    )
+    projected = {
+        item["requirement_key"]: item
+        for item in resource_projection["requirements"]
+    }
+    assert projected["dataset"]["configured"] is True
+    assert projected["dataset"]["resolution_status"] == "RESOLVED_VERIFIED"
+    assert all(
+        projected[key]["resolution_status"] == "UNCONFIGURED"
+        for key in ("source_repository", "model", "checkpoint")
     )
     experiment_record = _materialize_finalize(
         client, transport, workspace, roots[experiment["workflow_instance_id"]],

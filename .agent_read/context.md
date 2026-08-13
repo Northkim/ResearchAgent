@@ -2969,3 +2969,23 @@ and removed; every F1E temporary database/Workspace/report was also removed.
 Next permitted phase after owner acceptance is NIGHT-F1F complete product-width
 qualification. It may add no new platform capability. Do not begin F1F
 automatically.
+
+## Owner Experiment scaffold interactive bootstrap repair (2026-08-13)
+
+The owner-discovered bare-Codex Experiment startup defect is repaired without
+changing the frozen Experiment core. Definition 0.3.0 remains `SCAFFOLD_CORE`;
+old Capsule 0.3.0 is immutable; seed-only migration `20260813_0019` publishes
+current Capsule 0.4.0. Its bounded positional Harness prompt automatically
+begins at INPUT_REVIEW, reads only exact materialized Artifact inputs and a
+bounded local Resource-status projection, and discloses IDEA_EXPERIMENT-only,
+paper-reproduction-disabled, no-execution safety. The final Artifact remains
+`PLACEHOLDER_NOT_EXECUTED` with `actual_results = null`.
+
+The exact Workspace-root PTY path and a bounded real Codex synthetic smoke both
+observed the automatic ReAgent initial turn. Full isolated backend, frontend,
+controlled Playwright, owner-runtime, Progress backlog, secret, Artifact,
+Resource, path, compile, Alembic, and diff qualifications passed. No owner
+database/Project/Workspace or live Provider was accessed. Owner recovery uses a
+new same-Project Experiment Instance pinned to Capsule 0.4.0 and the existing
+selected Idea; no Literature or Idea rerun is required. Next action is owner
+Experiment Scaffold UX testing, not Real Experiment Core development.

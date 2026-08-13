@@ -35,7 +35,7 @@ from scripts.owner_runtime import (
 
 
 SENTINEL = "owner-openalex-secret-sentinel"
-HEAD = "20260811_0018"
+HEAD = "20260813_0019"
 
 
 def config(*, backend_port: int = 8000, frontend_port: int = 3000) -> OwnerRuntimeConfig:

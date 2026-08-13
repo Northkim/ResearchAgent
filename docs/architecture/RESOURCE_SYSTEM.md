@@ -71,8 +71,10 @@ cleanup, cross-Project sharing, and large-resource strategies are deferred.
 ## Experiment integration
 
 Reproduction & Experiment Definition/Capsule 0.3.0 adds four optional Resource
-requirements: source repository, dataset, model, and checkpoint. The immutable
-0.1.0 and Skill-backed 0.2.0 versions remain unchanged. Version 0.3.0 remains
+requirements: source repository, dataset, model, and checkpoint. Capsule 0.4.0
+adds only the bounded interactive `INPUT_REVIEW` Harness bootstrap over the
+unchanged Definition 0.3.0 and Resource contract. The immutable 0.1.0, 0.2.0,
+and 0.3.0 Capsules remain unchanged. Definition 0.3.0 remains
 `SCAFFOLD_CORE`, supports only the Idea Experiment skeleton, does not enable
 paper reproduction, never executes Resource bytes, and continues to require
 `PLACEHOLDER_NOT_EXECUTED` with `actual_results = null`.

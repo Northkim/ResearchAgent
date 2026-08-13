@@ -25,6 +25,7 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
     EXPERIMENT_WORKFLOW_ID,
+    EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     REVIEW_WORKFLOW_ID,
@@ -45,6 +46,7 @@ from backend.workflow_packages.production_workflows import (
     build_review_scaffold_v0_2_package,
     build_experiment_scaffold_v0_2_package,
     build_experiment_scaffold_v0_3_package,
+    build_experiment_scaffold_v0_4_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
@@ -588,6 +590,16 @@ class WorkspaceSyncApplicationService:
             builder = build_experiment_scaffold_v0_3_package
             package_id = (
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.3"
+            )
+        elif (
+            instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
+            and instance.workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION
+            and instance.capsule_version == EXPERIMENT_INTERACTIVE_CAPSULE_VERSION
+        ):
+            slug = "reproduction-experiment"
+            builder = build_experiment_scaffold_v0_4_package
+            package_id = (
+                f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.4"
             )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")

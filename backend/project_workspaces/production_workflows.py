@@ -21,6 +21,7 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_INPUT_TARGET,
     EXPERIMENT_RECORD_TYPE,
+    EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     EXPERIMENT_REQUIREMENTS,
@@ -282,6 +283,47 @@ def experiment_resource_capsule_checksum() -> str:
 EXPERIMENT_V0_3_CAPSULE_CHECKSUM = experiment_resource_capsule_checksum()
 EXPERIMENT_V0_3_CAPSULE_ID = (
     "capsule-" + EXPERIMENT_V0_3_CAPSULE_CHECKSUM[7:39]
+)
+
+
+def experiment_interactive_capsule_checksum() -> str:
+    config = SCAFFOLD_WORKFLOWS[EXPERIMENT_WORKFLOW_ID]
+    return canonical_hash({
+        "generator_version": (
+            f"reagent-{EXPERIMENT_WORKFLOW_ID}-compiler/"
+            f"{EXPERIMENT_INTERACTIVE_CAPSULE_VERSION}"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": config["template_id"],
+        "package_template_version": EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
+        "workflow_checksum": scaffold_contract_checksum(
+            EXPERIMENT_WORKFLOW_ID,
+            workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+        ),
+        "artifact_requirements": list(config["requirements"]),
+        "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+        "resource_requirements": [
+            ["source_repository", "SOURCE_REPOSITORY"],
+            ["dataset", "DATASET"],
+            ["model", "MODEL"],
+            ["checkpoint", "CHECKPOINT"],
+        ],
+        "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+        "skill_pins": [
+            {
+                "skill_id": asset.skill_id,
+                "skill_version": asset.version,
+                "content_checksum": asset.content_checksum,
+            }
+            for asset in PRODUCTION_SKILLS
+        ],
+        "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
+    })
+
+
+EXPERIMENT_V0_4_CAPSULE_CHECKSUM = experiment_interactive_capsule_checksum()
+EXPERIMENT_V0_4_CAPSULE_ID = (
+    "capsule-" + EXPERIMENT_V0_4_CAPSULE_CHECKSUM[7:39]
 )
 
 
@@ -795,6 +837,62 @@ def experiment_resource_capsule(now: datetime) -> WorkflowCapsuleVersion:
                 )
             ],
             "resource_delivery": "EXACT_PROJECT_BINDING_LOCAL_RESOLVER",
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def experiment_interactive_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    """Publish the bootstrap integration over the unchanged 0.3 definition."""
+
+    return WorkflowCapsuleVersion(
+        capsule_id=EXPERIMENT_V0_4_CAPSULE_ID,
+        capsule_version=EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
+        workflow_definition_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+        definition_checksum=EXPERIMENT_V0_4_CAPSULE_CHECKSUM,
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=(
+            "memory/context.md", "memory/progress",
+            "memory/input-provenance.json", "memory/resource-provenance.json",
+            "memory/current-artifact.json", "outputs", "inputs",
+        ),
+        capability_requirements=(
+            "progress.upload/v0.2", "artifact.materialize/v0.1",
+            "artifact.publish/v0.1", "resource.index.verify/v0.1",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": EXPERIMENT_TEMPLATE_ID,
+            "trust_classification": (
+                CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value
+            ),
+            "artifact_requirements": list(EXPERIMENT_REQUIREMENTS),
+            "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_TYPE)],
+            "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+            "scaffold_notice": (
+                "Product flow is functional. Research capability is placeholder."
+            ),
+            "skill_delivery": "EXACT_CAPSULE_BUNDLED",
+            "skill_pins": [
+                {
+                    "skill_id": pin.skill_id,
+                    "skill_version": pin.skill_version,
+                    "skill_checksum": pin.skill_checksum,
+                    "trust": "BUILT_IN_REVIEWED",
+                }
+                for pin in production_skill_pins(
+                    EXPERIMENT_WORKFLOW_ID,
+                    EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+                    now,
+                )
+            ],
+            "resource_delivery": "EXACT_PROJECT_BINDING_LOCAL_RESOLVER",
+            "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
         },
         review_status=WorkflowReviewStatus.REVIEWED,
         legacy_package_compatible=False,

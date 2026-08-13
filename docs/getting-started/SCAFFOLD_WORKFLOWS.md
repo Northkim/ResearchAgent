@@ -7,8 +7,9 @@ with placeholder research cores. Their Registry cards and Progress state show
 ## What is real
 
 The published 0.1.0 Capsules remain immutable. New Writing and Review
-Instances use the Skill-backed Definition/Capsule 0.2.0; new Reproduction &
-Experiment Instances use Resource-aware Definition/Capsule 0.3.0. Each has a Desired
+Instances use the Skill-backed Definition/Capsule 0.2.0. New Reproduction &
+Experiment Instances use Resource-aware Definition 0.3.0 with interactive
+Capsule 0.4.0; the published 0.3.0 Capsule remains immutable. Each has a Desired
 Manifest entry, independent sync/install state, exact Artifact requirements,
 verified local materialization, a generic local Harness run, memory, Progress,
 and a content-addressed output Artifact. Cloud stores metadata and provenance;
@@ -44,6 +45,13 @@ The current supported mode is only `IDEA_EXPERIMENT`, an experiment-plan
 skeleton based on a selected research idea. Paper reproduction is not enabled.
 The Artifact is forced to `PLACEHOLDER_NOT_EXECUTED` with `actual_results =
 null`; no code, dataset, model, metric or benchmark is executed or fabricated.
+
+The printed run command automatically starts at **INPUT_REVIEW**. The Agent
+identifies the exact materialized idea and optional Literature input, reports
+which optional Resource categories are configured or unconfigured, and states
+the Scaffold Core boundary before discussing the plan. No `start`, `begin`, or
+other hidden first message is required. Methodology remains authoritative in
+the versioned local Workflow prompt, not in the launcher bootstrap.
 
 ## Replacement policy
 

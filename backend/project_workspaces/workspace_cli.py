@@ -106,6 +106,10 @@ SUPPORTED_CAPSULE_PINS = {
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
+    ("reproduction-experiment-local-experimental", "0.3.0", "0.4.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -2549,7 +2553,11 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
                 "writing-local-experimental",
                 "review-local-experimental",
                 "reproduction-experiment-local-experimental",
-            } and pin[1:] in {("0.2.0", "0.2.0"), ("0.3.0", "0.3.0")}:
+            } and pin[1:] in {
+                ("0.2.0", "0.2.0"),
+                ("0.3.0", "0.3.0"),
+                ("0.3.0", "0.4.0"),
+            }:
                 raise _identity(
                     "LOCAL_CAPSULE_DRIFT",
                     "A required built-in Skill is missing or changed. "
@@ -4002,7 +4010,8 @@ def run_workflow(
                 "reproduction-experiment-local-experimental",
             }
             and pin[1:] in {
-                ("0.1.0", "0.1.0"), ("0.2.0", "0.2.0"), ("0.3.0", "0.3.0")
+                ("0.1.0", "0.1.0"), ("0.2.0", "0.2.0"),
+                ("0.3.0", "0.3.0"), ("0.3.0", "0.4.0"),
             }
         )
         is_literature = pin[0] == WORKFLOW_ID
@@ -4108,15 +4117,22 @@ def run_workflow(
             if codex_executable is not None:
                 command.extend(["--codex-executable", codex_executable])
         elif is_scaffold:
-            if pin == (
-                "reproduction-experiment-local-experimental", "0.3.0", "0.3.0"
-            ):
-                _verify_bound_resources(
+            if pin in {
+                ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"),
+                ("reproduction-experiment-local-experimental", "0.3.0", "0.4.0"),
+            }:
+                resource_projection = _verify_bound_resources(
                     workspace=workspace,
                     descriptor=descriptor,
                     workflow_instance_id=workflow_instance_id,
                     transport=transport,
                 )
+                if pin[2] == "0.4.0":
+                    _prepare_experiment_resource_provenance(
+                        capsule=capsule,
+                        workflow_instance_id=workflow_instance_id,
+                        projection=resource_projection,
+                    )
             _prepare_scaffold_input_provenance(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -5368,13 +5384,99 @@ def resolve_resources(
     }
 
 
+def _experiment_resource_projection(
+    *, descriptor: dict[str, Any], workflow_instance_id: str,
+    bindings: list[dict[str, Any]], indexed: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    categories = (
+        ("source_repository", "SOURCE_REPOSITORY"),
+        ("dataset", "DATASET"),
+        ("model", "MODEL"),
+        ("checkpoint", "CHECKPOINT"),
+    )
+    by_key = {item.get("requirement_key"): item for item in bindings}
+    requirements: list[dict[str, Any]] = []
+    for key, kind in categories:
+        binding = by_key.get(key)
+        if binding is None:
+            requirements.append({
+                "requirement_key": key,
+                "resource_kind": kind,
+                "configured": False,
+                "resource_id": None,
+                "provider": None,
+                "display_name": None,
+                "exact_revision": None,
+                "resolution_status": "UNCONFIGURED",
+            })
+            continue
+        resource = _object(binding.get("resource"), "bound Resource")
+        item = indexed.get(binding.get("resource_id"))
+        requirements.append({
+            "requirement_key": key,
+            "resource_kind": kind,
+            "configured": True,
+            "resource_id": binding["resource_id"],
+            "provider": resource.get("provider"),
+            "display_name": resource.get("display_name"),
+            "exact_revision": resource.get("exact_revision"),
+            "resolution_status": (
+                "RESOLVED_VERIFIED" if item is not None else "UNRESOLVED"
+            ),
+        })
+    return {
+        "schema_version": "reagent.experiment-resource-provenance/v0.1",
+        "workflow_instance_id": workflow_instance_id,
+        "requirements": requirements,
+    }
+
+
+def _prepare_experiment_resource_provenance(
+    *, capsule: Path, workflow_instance_id: str, projection: dict[str, Any]
+) -> None:
+    """Persist only the bounded, credential-free Resource status for Experiment."""
+
+    _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+    if (
+        projection.get("schema_version")
+        != "reagent.experiment-resource-provenance/v0.1"
+        or projection.get("workflow_instance_id") != workflow_instance_id
+    ):
+        raise _identity("RESOURCE_BINDING_INVALID", "Experiment Resource projection is invalid")
+    requirements = projection.get("requirements")
+    expected = (
+        ("source_repository", "SOURCE_REPOSITORY"),
+        ("dataset", "DATASET"),
+        ("model", "MODEL"),
+        ("checkpoint", "CHECKPOINT"),
+    )
+    if not isinstance(requirements, list) or [
+        (item.get("requirement_key"), item.get("resource_kind"))
+        for item in requirements if isinstance(item, dict)
+    ] != list(expected):
+        raise _identity("RESOURCE_BINDING_INVALID", "Experiment Resource projection is invalid")
+    allowed_fields = {
+        "requirement_key", "resource_kind", "configured", "resource_id",
+        "provider", "display_name", "exact_revision", "resolution_status",
+    }
+    for item in requirements:
+        if set(item) != allowed_fields or item.get("configured") not in {True, False}:
+            raise _identity("RESOURCE_BINDING_INVALID", "Experiment Resource projection is invalid")
+        if item["configured"] is False:
+            if any(item[field] is not None for field in (
+                "resource_id", "provider", "display_name", "exact_revision"
+            )) or item["resolution_status"] != "UNCONFIGURED":
+                raise _identity("RESOURCE_BINDING_INVALID", "Unconfigured Resource projection is invalid")
+        elif item["resolution_status"] != "RESOLVED_VERIFIED":
+            raise _identity("RESOURCE_UNRESOLVED", "Configured Experiment Resource is not verified")
+    _atomic_write_json(capsule / "memory/resource-provenance.json", projection)
+
+
 def _verify_bound_resources(
     *, workspace: Path, descriptor: dict[str, Any], workflow_instance_id: str,
     transport: Any,
-) -> None:
+) -> dict[str, Any]:
     bindings = _resource_bindings(transport, descriptor, workflow_instance_id)
-    if not bindings:
-        return
     index = _read_resource_index(workspace, descriptor)
     indexed = {item["resource_id"]: item for item in index["resources"]}
     for binding in bindings:
@@ -5395,6 +5497,12 @@ def _verify_bound_resources(
         checksum, _ = _resource_manifest(workspace / item["local_relative_path"])
         if checksum != binding.get("expected_content_checksum"):
             raise _identity("RESOURCE_DRIFT", "A configured Resource changed after verification")
+    return _experiment_resource_projection(
+        descriptor=descriptor,
+        workflow_instance_id=workflow_instance_id,
+        bindings=bindings,
+        indexed=indexed,
+    )
 
 
 def workflow_list(workspace_root: str | Path) -> dict[str, Any]:

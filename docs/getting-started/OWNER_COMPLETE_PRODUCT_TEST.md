@@ -116,7 +116,11 @@ Select the exact Idea Artifact and any optional Literature input. Resolve every
 Resource you chose, refresh/materialize Artifacts, and use the Experiment run
 command printed by `workflow list`.
 
-Expected: `experiment-record/v1` and `outputs/experiment_plan.md` are marked
+Expected: the Agent begins automatically at **INPUT_REVIEW**, identifies the
+exact inputs and configured/unconfigured Resource categories, and explains
+that this is an `IDEA_EXPERIMENT` Scaffold Core with paper reproduction and all
+real execution disabled. No hidden startup phrase is required.
+`experiment-record/v1` and `outputs/experiment_plan.md` are marked
 `SCAFFOLD EXPERIMENT PLACEHOLDER`; `execution_status` is
 `PLACEHOLDER_NOT_EXECUTED` and `actual_results` is null. No experiment,
 repository code, dataset, model, or checkpoint is executed.

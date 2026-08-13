@@ -95,7 +95,7 @@ Expected bounded output is equivalent to:
 ```text
 ReAgent Owner Runtime
 Database: reagent_local_v01 - ready
-Migration: 20260811_0018 - current
+Migration: 20260813_0019 - current
 OpenAlex: configured
 Backend: http://127.0.0.1:8000
 Frontend: http://127.0.0.1:3000
@@ -279,7 +279,58 @@ Capsule and its local history are retained. Do not rerun OpenAlex, recreate the
 Project, copy an Artifact across Projects, edit the Installed Lock, or replace
 Capsule bytes manually.
 
-## 11. Inspect and stop
+## 11. Continue with the Experiment scaffold
+
+The current Experiment Workflow uses Definition 0.3.0 / Capsule 0.4.0. After
+selecting the exact `selected-research-idea/v1` and any optional exact
+Literature Artifact, refresh and materialize, then use the printed command:
+
+```bash
+python reagent_local.py artifact refresh .
+python reagent_local.py artifact materialize . \
+  --workflow reproduction-experiment-local-experimental
+python reagent_local.py run . \
+  --workflow reproduction-experiment-local-experimental
+```
+
+The Agent begins automatically at **INPUT_REVIEW**. It reports the exact input
+and configured/unconfigured Resource categories, then states that this is an
+`IDEA_EXPERIMENT` Scaffold Core: paper reproduction is not enabled, Resource
+bytes are not executed, and no simulation, training, metric, or scientific
+result is produced. A valid final record remains
+`PLACEHOLDER_NOT_EXECUTED` with `actual_results = null`.
+
+An existing Experiment Instance pinned to Capsule 0.3.0 is never upgraded in
+place. To continue the same Project after this repair, stop the old services,
+apply the approved seed-only migration, and restart:
+
+```bash
+make stop
+REAGENT_DATABASE_URL='<passwordless loopback owner database URL>' \
+  conda run --no-capture-output -n reagent-dev alembic upgrade head
+make owner-start
+```
+
+Download the current `reagent_local.py` from that Project's Local Guide and
+replace only the Workspace-root client. In the Workflow Board, retire the old
+Experiment 0.3.0 Capsule Instance, add Reproduction & Experiment again, bind
+the **existing same-Project** selected Idea (and optional Literature Artifact),
+then run:
+
+```bash
+python reagent_local.py sync .
+python reagent_local.py artifact refresh .
+python reagent_local.py artifact materialize . \
+  --workflow reproduction-experiment-local-experimental
+python reagent_local.py run . \
+  --workflow reproduction-experiment-local-experimental
+```
+
+The new Instance resolves Definition 0.3.0 / Capsule 0.4.0. Do not rerun
+Literature or Idea, copy Artifacts across Projects, edit the Installed Lock, or
+replace Capsule bytes manually.
+
+## 12. Inspect and stop
 
 Use the Project Workflow Board, Artifacts and Progress views to inspect bounded
 Cloud metadata. Inspect research bytes only in the Local Workspace.
@@ -293,7 +344,7 @@ It does not remove the owner config, Keychain item, database, Projects, or
 Workspace. A later `make owner-start` uses the persisted configuration and
 credential again; no setup or export is needed.
 
-## 12. Owner-local residual risk
+## 13. Owner-local residual risk
 
 Codex remains a general-purpose Agent Harness and may have network capability
 according to the owner's local Codex configuration. This version does not add

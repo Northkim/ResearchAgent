@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, text
 
 
-EXPECTED_MIGRATION_HEAD = "20260811_0018"
+EXPECTED_MIGRATION_HEAD = "20260813_0019"
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +73,13 @@ def check_postgres_readiness(engine: Engine) -> ReadinessResult:
                               AND r.workflow_version = '0.3.0' AND r.required = false
                           ) = 4
                       ) AS experiment_resource_shell
+                      ,EXISTS (
+                        SELECT 1 FROM local_workflow_capsule_versions
+                        WHERE workflow_definition_id = 'reproduction-experiment-local-experimental'
+                          AND workflow_version = '0.3.0'
+                          AND capsule_version = '0.4.0'
+                          AND review_status = 'REVIEWED'
+                      ) AS experiment_interactive_capsule
                       ,(
                         SELECT count(*) = 3
                         FROM local_workflow_definition_versions

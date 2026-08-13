@@ -78,6 +78,10 @@ SCAFFOLD_SKILL_BACKED_PROMPT_VERSION = "0.2.0"
 EXPERIMENT_RESOURCE_WORKFLOW_VERSION = "0.3.0"
 EXPERIMENT_RESOURCE_CAPSULE_VERSION = "0.3.0"
 EXPERIMENT_RESOURCE_PROMPT_VERSION = "0.3.0"
+# Owner-test integration repair: Experiment research/resource semantics stay
+# pinned to Workflow 0.3, while the interactive Harness bootstrap is a new
+# immutable Capsule.
+EXPERIMENT_INTERACTIVE_CAPSULE_VERSION = "0.4.0"
 WRITING_TEMPLATE_ID = "writing-scaffold-package-experimental"
 REVIEW_TEMPLATE_ID = "review-scaffold-package-experimental"
 EXPERIMENT_TEMPLATE_ID = "reproduction-experiment-scaffold-package-experimental"
@@ -1271,6 +1275,249 @@ def _experiment_v0_3_files(**kwargs) -> dict[str, FileSpec]:
     return files
 
 
+def _experiment_v0_4_runner_source() -> bytes:
+    """Add only the bounded Experiment INPUT_REVIEW Harness bootstrap."""
+
+    source = Path(__file__).with_name("scaffold_runtime.py").read_text(encoding="utf-8")
+    source = source.replace("import runpy\n", "import runpy\nimport signal\n", 1)
+    source = source.replace(
+        '"client_version": "reagent-local-scaffold/0.1.0",',
+        '"client_version": "reagent-local-scaffold/0.4.0",',
+        1,
+    )
+    preflight_marker = '''def preflight(root: Path) -> dict[str, Any]:
+    _validate_package(root)
+    config = _object(root / "workflow/scaffold.json", "scaffold contract")
+'''
+    preflight_replacement = '''def _validate_experiment_resource_provenance(
+    root: Path, config: dict[str, Any]
+) -> None:
+    if config.get("workflow_kind") != "EXPERIMENT":
+        return
+    value = _object(
+        root / "memory/resource-provenance.json", "Experiment Resource provenance"
+    )
+    if set(value) != {"schema_version", "workflow_instance_id", "requirements"}:
+        raise ScaffoldRuntimeError("Experiment Resource provenance fields mismatch")
+    if value.get("schema_version") != "reagent.experiment-resource-provenance/v0.1":
+        raise ScaffoldRuntimeError("Experiment Resource provenance schema mismatch")
+    instance_id = value.get("workflow_instance_id")
+    if not isinstance(instance_id, str) or not instance_id.startswith("wfi-"):
+        raise ScaffoldRuntimeError("Experiment Resource provenance identity is unavailable")
+    expected = (
+        ("source_repository", "SOURCE_REPOSITORY"),
+        ("dataset", "DATASET"),
+        ("model", "MODEL"),
+        ("checkpoint", "CHECKPOINT"),
+    )
+    requirements = value.get("requirements")
+    if not isinstance(requirements, list) or len(requirements) != len(expected):
+        raise ScaffoldRuntimeError("Experiment Resource provenance requirements mismatch")
+    fields = {
+        "requirement_key", "resource_kind", "configured", "resource_id",
+        "provider", "display_name", "exact_revision", "resolution_status",
+    }
+    for item, identity in zip(requirements, expected, strict=True):
+        if not isinstance(item, dict) or set(item) != fields:
+            raise ScaffoldRuntimeError("Experiment Resource provenance entry mismatch")
+        if (item.get("requirement_key"), item.get("resource_kind")) != identity:
+            raise ScaffoldRuntimeError("Experiment Resource provenance order mismatch")
+        if item.get("configured") is False:
+            if any(item.get(field) is not None for field in (
+                "resource_id", "provider", "display_name", "exact_revision"
+            )) or item.get("resolution_status") != "UNCONFIGURED":
+                raise ScaffoldRuntimeError("Unconfigured Resource provenance is invalid")
+        elif item.get("configured") is True:
+            if (
+                not all(isinstance(item.get(field), str) and item[field].strip() for field in (
+                    "resource_id", "provider", "display_name", "exact_revision"
+                ))
+                or item.get("resolution_status") != "RESOLVED_VERIFIED"
+            ):
+                raise ScaffoldRuntimeError("Configured Resource provenance is invalid")
+        else:
+            raise ScaffoldRuntimeError("Experiment Resource configured state is invalid")
+
+
+def preflight(root: Path) -> dict[str, Any]:
+    _validate_package(root)
+    config = _object(root / "workflow/scaffold.json", "scaffold contract")
+    _validate_experiment_resource_provenance(root, config)
+'''
+    if preflight_marker not in source:
+        raise RuntimeError("accepted scaffold preflight extension point is unavailable")
+    source = source.replace(preflight_marker, preflight_replacement, 1)
+    old = '''def _run_harness(root: Path, executable: str) -> None:
+    environment = {
+        key: os.environ[key]
+        for key in ("PATH", "TMPDIR", "LANG", "LC_ALL", "TERM")
+        if key in os.environ
+    }
+    result = subprocess.run([executable], cwd=root, env=environment, check=False)
+    if result.returncode != 0:
+        raise ScaffoldRuntimeError("Codex exited before scaffold finalization")
+'''
+    new = '''def _initial_instruction() -> str:
+    return """REAGENT REPRODUCTION & EXPERIMENT — INPUT_REVIEW
+
+You are beginning the ReAgent Reproduction & Experiment Workflow. Read and
+follow the root AGENTS.md and AGENT.md, workflow/AGENT.md, the pinned
+workflow/prompts/reproduction-experiment.md, workflow/scaffold.json,
+workflow/resource-requirements.json, memory/context.md,
+memory/input-provenance.json, and memory/resource-provenance.json. Read only
+the exact materialized inputs declared by the Workflow: the required
+inputs/selected-research-idea.json and, when present, the optional
+inputs/selected-paper-library.json. Never inspect sibling Capsules or scan the
+Workspace.
+
+Begin at INPUT_REVIEW. First identify the loaded research inputs and accurately
+summarize the configured versus unconfigured Resource categories from the
+bounded local projection. Explain what each category could support in a future
+real Experiment Core without claiming that an unconfigured Resource exists.
+
+State the safety boundary before discussing the plan: this version is
+SCAFFOLD_CORE, supports only IDEA_EXPERIMENT, and has PAPER_REPRODUCTION not
+enabled. It will not execute Resource bytes, run simulations, train models,
+measure metrics, or produce scientific results. Follow the pinned Workflow
+prompt for the remaining scaffold method. The only valid result is a visibly
+marked scaffold plan and experiment-record/v1 with
+PLACEHOLDER_NOT_EXECUTED and actual_results null. Ask the owner to review the
+intended scaffold plan; never fabricate execution or results."""
+
+
+def _codex_preflight(executable: str, environment: dict[str, str]) -> None:
+    checks = (
+        ([executable, "--version"], ()),
+        ([executable, "--help"], ("--sandbox", "--ask-for-approval", "--no-alt-screen", "--cd")),
+        ([executable, "login", "status"], ()),
+    )
+    for command, required in checks:
+        try:
+            result = subprocess.run(
+                command, env=environment, capture_output=True, text=True,
+                check=False, timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            raise ScaffoldRuntimeError("Codex CLI preflight could not be completed") from error
+        if result.returncode != 0 or any(item not in result.stdout for item in required):
+            raise ScaffoldRuntimeError("Codex CLI does not satisfy the interactive Harness contract")
+
+
+def _stop_harness(child: subprocess.Popen[Any]) -> None:
+    if child.poll() is not None:
+        return
+    child.send_signal(signal.SIGINT)
+    try:
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        child.terminate()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=5)
+
+
+def _run_harness(root: Path, executable: str) -> None:
+    environment = {
+        key: os.environ[key]
+        for key in ("PATH", "TMPDIR", "LANG", "LC_ALL", "TERM")
+        if key in os.environ
+    }
+    _codex_preflight(executable, environment)
+    command = [
+        executable,
+        "--sandbox", "workspace-write",
+        "--ask-for-approval", "on-request",
+        "--no-alt-screen",
+        "-C", str(root),
+        _initial_instruction(),
+    ]
+    child: subprocess.Popen[Any] | None = None
+    previous_handlers: dict[int, Any] = {}
+
+    def terminate_signal(signum: int, frame: Any) -> None:
+        raise KeyboardInterrupt
+
+    try:
+        for signum in (signal.SIGTERM, signal.SIGHUP):
+            previous_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, terminate_signal)
+        child = subprocess.Popen(command, cwd=root, env=environment)
+        returncode = child.wait()
+    except KeyboardInterrupt as error:
+        if child is not None:
+            _stop_harness(child)
+        raise ScaffoldRuntimeError(
+            "Owner interrupted the Experiment scaffold; local inputs and memory were retained"
+        ) from error
+    except OSError as error:
+        raise ScaffoldRuntimeError("Codex process could not be started") from error
+    finally:
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
+    if returncode != 0:
+        raise ScaffoldRuntimeError("Codex exited before scaffold finalization")
+'''
+    if old not in source:
+        raise RuntimeError("accepted scaffold Harness extension point is unavailable")
+    return source.replace(old, new, 1).encode("utf-8")
+
+
+def _experiment_v0_4_validator_source() -> bytes:
+    """Accept the new immutable Capsule identity without changing old bytes."""
+
+    source = Path(__file__).with_name("scaffold_validator.py").read_text(
+        encoding="utf-8"
+    )
+    old = 'manifest.get("package_template_version") not in {"0.1.0", "0.2.0", "0.3.0"}'
+    new = (
+        'manifest.get("package_template_version") not in '
+        '{"0.1.0", "0.2.0", "0.3.0", "0.4.0"}'
+    )
+    if old not in source:
+        raise RuntimeError("accepted scaffold validator extension point is unavailable")
+    return source.replace(old, new, 1).encode("utf-8")
+
+
+def _experiment_v0_4_files(**kwargs) -> dict[str, FileSpec]:
+    """Render Experiment 0.4 without mutating published 0.3 content."""
+
+    files = dict(_experiment_v0_3_files(**kwargs))
+    _replace_spec(files, "reagent_local.py", _experiment_v0_4_runner_source())
+    _replace_spec(files, "validate_package.py", _experiment_v0_4_validator_source())
+    initial_resources = {
+        "schema_version": "reagent.experiment-resource-provenance/v0.1",
+        "workflow_instance_id": None,
+        "requirements": [
+            {
+                "requirement_key": key,
+                "resource_kind": kind,
+                "configured": False,
+                "resource_id": None,
+                "provider": None,
+                "display_name": None,
+                "exact_revision": None,
+                "resolution_status": "UNCONFIGURED",
+            }
+            for key, kind in (
+                ("source_repository", "SOURCE_REPOSITORY"),
+                ("dataset", "DATASET"),
+                ("model", "MODEL"),
+                ("checkpoint", "CHECKPOINT"),
+            )
+        ],
+    }
+    files["memory/resource-provenance.json"] = FileSpec(
+        _json(initial_resources),
+        "application/json",
+        "bounded Experiment Resource status projection",
+        True,
+        "STATE",
+    )
+    return files
+
+
 def _selected_library_schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1842,6 +2089,16 @@ def build_experiment_scaffold_v0_3_package(**kwargs) -> BuildResult:
         workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
         workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
         capsule_version=EXPERIMENT_RESOURCE_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_experiment_scaffold_v0_4_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_experiment_v0_4_files, workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
+        workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+        capsule_version=EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
         **kwargs,
     )
 

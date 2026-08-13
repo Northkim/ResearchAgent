@@ -7,7 +7,8 @@ Discovery have reviewed production research cores. Writing, Review, and
 Reproduction & Experiment are real production Workflows whose published
 versions remain explicitly `SCAFFOLD_CORE`. The current Skill-backed Writing
 and Review versions are 0.2.0; the current Skill- and Resource-aware Experiment
-version is 0.3.0. Their immutable 0.1.0 predecessors remain published history.
+Definition is 0.3.0 with interactive Capsule 0.4.0. Its immutable 0.3.0 Capsule
+and the earlier published versions remain history.
 
 ```text
 Literature Search
@@ -153,6 +154,11 @@ Migration `20260806_0016` adds exact built-in Skill pins through new 0.2.0
 scaffold versions. Migration `20260806_0017` adds the metadata-only Resource
 shell and Experiment 0.3.0 without changing the frozen Artifact contracts or
 performing external resolution/execution.
+Migration `20260813_0019` publishes only immutable Experiment Capsule 0.4.0
+metadata. It keeps Definition 0.3.0 and every Artifact, Progress, Resource,
+Skill, maturity, and execution-safety contract unchanged while adding a bounded
+automatic `INPUT_REVIEW` Harness turn. Existing 0.3.0 Capsule instances remain
+pinned and are never silently upgraded.
 
 F1C adds `full-research` as a server-resolved Project creation preset. It
 atomically creates five ordinary Workflow Instances and one revision-1 Desired
