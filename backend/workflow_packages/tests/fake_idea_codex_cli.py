@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import runpy
 import sys
 from pathlib import Path
 
@@ -159,6 +160,15 @@ def main() -> int:
         }
     )
     draft_path.write_text(canonical(draft) + "\n", encoding="utf-8")
+    if os.environ.get("REAGENT_FAKE_IDEA_FINALIZE_PROGRESS") == "1":
+        progress = runpy.run_path(str(root / "progress_report.py"))
+        progress["finalize"](
+            package_root=root,
+            draft_path="memory/progress/report-draft.json",
+            context_before_checksum="sha256:" + hashlib.sha256(
+                previous.encode("utf-8")
+            ).hexdigest(),
+        )
     return 0
 
 

@@ -232,6 +232,14 @@ Expected output:
 - content-addressed `selected-research-idea/v1`;
 - bounded Progress and exact source-Literature provenance.
 
+If local Idea finalization succeeded but Cloud Progress acknowledgement did
+not, `workflow list` reports **Progress Upload Pending** instead of claiming
+that Cloud completion is current. Run the same printed Idea command again. The
+generic Workspace client validates the existing append-only report chain,
+uploads only the missing execution rounds in order, and exits without starting
+Codex or changing the selected Idea Artifact. Do not rerun Literature Search,
+edit Progress JSON, or recreate the Project/Workspace.
+
 ### Existing Idea 0.2 Capsule after this repair
 
 An existing Workflow Instance remains immutably pinned to Capsule 0.2.0 and is

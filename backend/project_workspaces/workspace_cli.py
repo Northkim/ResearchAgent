@@ -12,6 +12,7 @@ checksum-bound copies without sharing writable files between Capsules.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -121,7 +122,10 @@ ARTIFACT_INDEX = ".reagent/artifact-index.json"
 RESOURCE_INDEX = ".reagent/resource-index.json"
 RESOURCE_ROOT = "resources"
 MATERIALIZATION_RECEIPTS_ROOT = ".reagent/receipts/materializations"
+PROGRESS_RECEIPTS_ROOT = ".reagent/receipts/progress"
 WORKFLOW_LIST_SCHEMA = "reagent.workspace-workflow-list/v0.1"
+PROGRESS_REPORT_SCHEMA = "progress-report/v0.2"
+PROGRESS_RECEIPT_SCHEMA = "reagent.workspace-progress-ack/v0.1"
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 2
@@ -156,6 +160,19 @@ PROVIDER_CREDENTIAL_ENV_VARS = (
     "OPENAI_API_KEY",
     "ANTHROPIC_API_KEY",
 )
+
+PROGRESS_REPORT_FIELDS = {
+    "schema_version", "report_id", "report_content_checksum", "report_checksum",
+    "package_id", "package_schema_version", "package_checksum", "project_id",
+    "workflow_id", "workflow_version", "workflow_checksum", "execution_round",
+    "harness_type", "harness_version", "harness_session_id", "previous_report_id",
+    "previous_report_checksum", "started_at", "completed_at", "status",
+    "completed_work", "current_state", "next_recommended_action",
+    "continuation_reason", "output_artifacts", "context_before_checksum",
+    "context_after_checksum", "warnings", "errors", "unresolved_questions",
+    "continuation_instructions", "skill_pins", "template_pins", "generated_at",
+    "experimental_declaration",
+}
 
 _SECRET_PATTERNS = (
     re.compile(b"sk-" + rb"ant-[A-Za-z0-9_-]{8,}"),
@@ -1692,6 +1709,100 @@ class HTTPWorkspaceSyncTransport:
             },
         )
 
+    def workflow_instance_progress(
+        self, project_id: str, workflow_instance_id: str
+    ) -> dict[str, Any]:
+        """Read one exact Instance history, including accepted predecessor identity."""
+
+        _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        offset = 0
+        history: list[dict[str, Any]] = []
+        first: dict[str, Any] | None = None
+        while True:
+            query = urllib.parse.urlencode({"offset": offset, "limit": 100})
+            page = self._json_get(
+                f"/projects/{project_id}/workflow-instances/"
+                f"{workflow_instance_id}/progress?{query}"
+            )
+            if first is None:
+                first = page
+            items = page.get("history")
+            if not isinstance(items, list) or not all(
+                isinstance(item, dict) for item in items
+            ):
+                raise _identity(
+                    "CLOUD_PROGRESS_INVALID", "Cloud Progress history is invalid"
+                )
+            history.extend(items)
+            if not page.get("has_more_history"):
+                break
+            if not items or len(history) > MAX_FILES:
+                raise _identity(
+                    "CLOUD_PROGRESS_INVALID", "Cloud Progress pagination is invalid"
+                )
+            offset += len(items)
+        assert first is not None
+        return {**first, "history": history, "history_total": len(history)}
+
+    def upload_progress_report(
+        self,
+        project_id: str,
+        workflow_instance_id: str,
+        manifest: dict[str, Any],
+        report: dict[str, Any],
+        envelope: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Use one fresh exact-report upload-only session; never expose its token."""
+
+        _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        identity = {
+            "package_id": manifest["package_id"],
+            "package_checksum": manifest["package_checksum"],
+            "workflow_id": manifest["workflow_id"],
+            "workflow_version": manifest["workflow_version"],
+            "workflow_checksum": manifest["workflow_checksum"],
+        }
+        session = self._json_request(
+            "POST",
+            f"/projects/{project_id}/local-sessions",
+            {
+                **identity,
+                "mode": "UPLOAD_ONLY",
+                "execution_round": report["execution_round"],
+                "report_id": report["report_id"],
+                "report_content_checksum": report["report_content_checksum"],
+            },
+        )
+        if (
+            session.get("mode") != "UPLOAD_ONLY"
+            or not isinstance(session.get("session_id"), str)
+            or not isinstance(session.get("session_token"), str)
+        ):
+            raise _identity(
+                "CLOUD_PROGRESS_INVALID", "Upload-only session response is invalid"
+            )
+        session_id = urllib.parse.quote(session["session_id"], safe="")
+        query = urllib.parse.urlencode({
+            "workflow_id": manifest["workflow_id"],
+            "workflow_version": manifest["workflow_version"],
+            "workflow_checksum": manifest["workflow_checksum"],
+        })
+        try:
+            return self._authenticated_json_request(
+                "POST",
+                f"/projects/{project_id}/local-sessions/{session_id}/"
+                f"progress-reports?{query}",
+                envelope,
+                session["session_token"],
+            )
+        finally:
+            identity_query = urllib.parse.urlencode(identity)
+            self._authenticated_empty_request(
+                "DELETE",
+                f"/projects/{project_id}/local-sessions/{session_id}?{identity_query}",
+                session["session_token"],
+            )
+
     def _json_get(self, path: str) -> dict[str, Any]:
         request = urllib.request.Request(self._base_url + path, method="GET")
         try:
@@ -1770,6 +1881,53 @@ class HTTPWorkspaceSyncTransport:
                 "WORKSPACE_SYNC_NOT_AVAILABLE", "Workspace sync response is invalid", EXIT_CLOUD
             ) from error
         return _object(value, "Workspace sync response")
+
+    def _authenticated_json_request(
+        self, method: str, path: str, payload: dict[str, Any], token: str
+    ) -> dict[str, Any]:
+        data = (canonical_json(payload) + "\n").encode("utf-8")
+        request = urllib.request.Request(
+            self._base_url + path,
+            data=data,
+            method=method,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                content = response.read(1_048_577)
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError) as error:
+            raise WorkspaceCLIError(
+                "PROGRESS_UPLOAD_FAILED",
+                "Cloud Progress upload did not complete",
+                EXIT_CLOUD,
+            ) from error
+        if len(content) > 1_048_576:
+            raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress receipt is too large")
+        try:
+            return _object(json.loads(content.decode("utf-8")), "Cloud Progress receipt")
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise _identity(
+                "CLOUD_PROGRESS_INVALID", "Cloud Progress receipt is invalid"
+            ) from error
+
+    def _authenticated_empty_request(
+        self, method: str, path: str, token: str
+    ) -> None:
+        request = urllib.request.Request(
+            self._base_url + path,
+            method=method,
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                response.read(1)
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError):
+            # Upload-only sessions are short-lived and report-scoped. Cleanup
+            # failure never replaces an already known upload outcome.
+            return
 
 
 class _WorkspaceWriteLock:
@@ -3322,6 +3480,476 @@ def _validate_materialization_receipt(document, descriptor):
     return value
 
 
+def _progress_report_identity(report: dict[str, Any]) -> dict[str, str]:
+    content = {
+        key: value
+        for key, value in report.items()
+        if key not in {"report_id", "report_content_checksum", "report_checksum"}
+    }
+    content_checksum = canonical_hash(content)
+    report_id = "prv2-" + canonical_hash({
+        "package_id": report.get("package_id"),
+        "workflow_id": report.get("workflow_id"),
+        "workflow_version": report.get("workflow_version"),
+        "execution_round": report.get("execution_round"),
+        "previous_report_id": report.get("previous_report_id"),
+        "report_content_checksum": content_checksum,
+    }).split(":", 1)[1]
+    identified = {
+        **report,
+        "report_id": report_id,
+        "report_content_checksum": content_checksum,
+        "report_checksum": None,
+    }
+    return {
+        "report_content_checksum": content_checksum,
+        "report_id": report_id,
+        "report_checksum": canonical_hash(identified),
+    }
+
+
+def _validated_local_progress_reports(
+    capsule: Path, manifest: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Return a strict, semantically ordered, contiguous local report chain."""
+
+    reports_root = capsule / "memory/progress/reports"
+    if reports_root.is_symlink():
+        raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress history path is unsafe")
+    if not reports_root.exists():
+        return []
+    if not reports_root.is_dir():
+        raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress history path is invalid")
+    reports: list[dict[str, Any]] = []
+    paths = list(reports_root.glob("prv2-*.json"))
+    if len(paths) > MAX_FILES:
+        raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress history is too large")
+    for path in paths:
+        metadata = path.stat(follow_symlinks=False)
+        if (
+            path.is_symlink()
+            or not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_nlink != 1
+            or not 0 < metadata.st_size <= MAX_CONTROL_JSON_BYTES
+        ):
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress history contains an unsafe entry")
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress history is invalid") from error
+        if not isinstance(report, dict) or set(report) != PROGRESS_REPORT_FIELDS:
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress Report fields are invalid")
+        identity = _progress_report_identity(report)
+        execution_round = report.get("execution_round")
+        if (
+            report.get("schema_version") != PROGRESS_REPORT_SCHEMA
+            or path.name != f"{report.get('report_id')}.json"
+            or any(report.get(field) != value for field, value in identity.items())
+            or isinstance(execution_round, bool)
+            or not isinstance(execution_round, int)
+            or execution_round < 1
+            or report.get("status") not in {
+                "IN_PROGRESS", "COMPLETED", "BLOCKED", "FAILED", "CANCELLED"
+            }
+        ):
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress identity is invalid")
+        if any(
+            report.get(field) != manifest.get(manifest_field)
+            for field, manifest_field in {
+                "project_id": "experimental_project_identity",
+                "package_id": "package_id",
+                "package_checksum": "package_checksum",
+                "package_schema_version": "package_schema_version",
+                "workflow_id": "workflow_id",
+                "workflow_version": "workflow_version",
+                "workflow_checksum": "workflow_checksum",
+            }.items()
+        ):
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress package identity is invalid")
+        for field in (
+            "report_content_checksum", "report_checksum", "package_checksum",
+            "workflow_checksum", "context_before_checksum", "context_after_checksum",
+        ):
+            _checksum(report.get(field), field)
+        for field in ("started_at", "completed_at", "generated_at"):
+            _timestamp(report.get(field), field)
+        if _timestamp(report["completed_at"], "completed_at") < _timestamp(
+            report["started_at"], "started_at"
+        ):
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress timestamps are invalid")
+        for field in (
+            "completed_work", "warnings", "errors", "unresolved_questions",
+            "continuation_instructions", "skill_pins", "template_pins",
+        ):
+            if not isinstance(report.get(field), list):
+                raise _identity("LOCAL_PROGRESS_INVALID", f"Local Progress {field} is invalid")
+        for field in ("current_state", "next_recommended_action"):
+            if not isinstance(report.get(field), str) or not report[field].strip():
+                raise _identity("LOCAL_PROGRESS_INVALID", f"Local Progress {field} is invalid")
+        outputs = report.get("output_artifacts")
+        if not isinstance(outputs, list) or len(outputs) > 100:
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress outputs are invalid")
+        for output in outputs:
+            if not isinstance(output, dict) or set(output) != {
+                "relative_path", "artifact_kind", "media_type", "checksum", "size"
+            }:
+                raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress output fields are invalid")
+            _safe_artifact_path(output["relative_path"], root="outputs")
+            _checksum(output.get("checksum"), "output checksum")
+            if (
+                isinstance(output.get("size"), bool)
+                or not isinstance(output.get("size"), int)
+                or not 0 <= output["size"] <= MAX_FILE_BYTES
+            ):
+                raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress output size is invalid")
+        if (report.get("previous_report_id") is None) != (
+            report.get("previous_report_checksum") is None
+        ):
+            raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress predecessor identity is invalid")
+        reports.append(report)
+    reports.sort(key=lambda item: (item["execution_round"], item["report_id"]))
+    if not reports:
+        return reports
+    rounds = [item["execution_round"] for item in reports]
+    if len(rounds) != len(set(rounds)):
+        raise _identity("LOCAL_PROGRESS_BRANCHED", "Local Progress contains two reports for one execution round")
+    if rounds != list(range(1, len(reports) + 1)):
+        raise _identity("LOCAL_PROGRESS_GAP", "Local Progress execution rounds are not contiguous from round 1")
+    if reports[0]["previous_report_id"] is not None:
+        raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress round 1 names a predecessor")
+    for previous, current in zip(reports, reports[1:]):
+        if (
+            current["previous_report_id"] != previous["report_id"]
+            or current["previous_report_checksum"] != previous["report_checksum"]
+            or current["context_before_checksum"] != previous["context_after_checksum"]
+        ):
+            raise _identity("LOCAL_PROGRESS_GAP", "Local Progress predecessor chain is invalid")
+    context = capsule / "memory/context.md"
+    context_checksum, _ = _verified_regular_file(
+        context, allowed_root=capsule, missing_code="LOCAL_PROGRESS_INVALID"
+    )
+    if reports[-1]["context_after_checksum"] != context_checksum:
+        raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress does not match current local context")
+    # Mutable Workflow outputs may legitimately differ from earlier rounds.
+    # Only the latest round claims the current output bytes.
+    for output in reports[-1]["output_artifacts"]:
+        relative = _safe_artifact_path(output["relative_path"], root="outputs")
+        checksum, size = _verified_regular_file(
+            capsule / relative,
+            allowed_root=capsule,
+            missing_code="LOCAL_PROGRESS_INVALID",
+        )
+        if checksum != output["checksum"] or size != output["size"]:
+            raise _identity("LOCAL_PROGRESS_INVALID", "Latest local Progress output integrity is invalid")
+    return reports
+
+
+def _accepted_cloud_progress(
+    page: dict[str, Any],
+    *,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    manifest: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if (
+        page.get("schema_version") != "reagent.workflow-instance-progress/v0.1"
+        or page.get("project_id") != descriptor["project_id"]
+        or page.get("workflow_instance_id") != installed["workflow_instance_id"]
+        or not isinstance(page.get("projection"), dict)
+        or not isinstance(page.get("history"), list)
+    ):
+        raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress identity is invalid")
+    projection = page["projection"]
+    if (
+        projection.get("project_id") != descriptor["project_id"]
+        or projection.get("workflow_instance_id") != installed["workflow_instance_id"]
+    ):
+        raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress projection identity is invalid")
+    accepted: list[dict[str, Any]] = []
+    for uploaded in page["history"]:
+        if not isinstance(uploaded, dict):
+            raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress history is invalid")
+        if uploaded.get("accepted_for_projection") is not True:
+            continue
+        normalized = uploaded.get("normalized_record")
+        if not isinstance(normalized, dict):
+            raise _identity("CLOUD_PROGRESS_INVALID", "Accepted Cloud Progress lacks a normalized record")
+        if (
+            uploaded.get("project_id") != descriptor["project_id"]
+            or uploaded.get("workflow_instance_id") != installed["workflow_instance_id"]
+            or uploaded.get("package_id") != manifest["package_id"]
+            or uploaded.get("package_checksum") != manifest["package_checksum"]
+            or normalized.get("project_id") != descriptor["project_id"]
+            or normalized.get("package_id") != manifest["package_id"]
+            or normalized.get("package_checksum") != manifest["package_checksum"]
+            or normalized.get("workflow_id") != manifest["workflow_id"]
+            or normalized.get("workflow_version") != manifest["workflow_version"]
+            or normalized.get("workflow_checksum") != manifest["workflow_checksum"]
+            or normalized.get("report_id") != uploaded.get("report_id")
+            or normalized.get("report_checksum") != uploaded.get("report_checksum")
+        ):
+            raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress package scope is invalid")
+        accepted.append(uploaded)
+    accepted.sort(key=lambda item: (
+        item["normalized_record"]["execution_round"], item["report_id"]
+    ))
+    rounds = [item["normalized_record"]["execution_round"] for item in accepted]
+    if rounds != list(range(1, len(accepted) + 1)):
+        raise _identity("CLOUD_PROGRESS_INVALID", "Accepted Cloud Progress is not a contiguous chain")
+    latest = projection.get("latest_execution_round")
+    if latest != (rounds[-1] if rounds else None):
+        raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress latest round is inconsistent")
+    return accepted
+
+
+def _progress_receipt_payload(
+    *,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    manifest: dict[str, Any],
+    report: dict[str, Any],
+    receipt: dict[str, Any],
+) -> dict[str, Any]:
+    required = {
+        "receipt_id", "project_id", "workflow_instance_id", "package_id",
+        "report_id", "report_checksum", "original_report_checksum",
+        "validation_status", "chain_state", "accepted_for_projection",
+        "uploaded_at", "received_at", "warning_count", "error_count",
+        "receipt_checksum",
+    }
+    if not required.issubset(receipt):
+        raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress receipt is incomplete")
+    if any(
+        receipt.get(field) != value
+        for field, value in {
+            "project_id": descriptor["project_id"],
+            "workflow_instance_id": installed["workflow_instance_id"],
+            "package_id": manifest["package_id"],
+            "report_id": report["report_id"],
+            "report_checksum": report["report_checksum"],
+            "validation_status": "ACCEPTED",
+            "chain_state": "VALID_CHAIN",
+            "accepted_for_projection": True,
+        }.items()
+    ):
+        raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress receipt was not accepted for the exact report")
+    if not isinstance(receipt.get("receipt_id"), str) or not re.fullmatch(
+        r"progress-receipt-[0-9a-f]{64}", receipt["receipt_id"]
+    ):
+        raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress receipt ID is invalid")
+    _timestamp(receipt.get("uploaded_at"), "uploaded_at")
+    _timestamp(receipt.get("received_at"), "received_at")
+    original_report_checksum = receipt.get("original_report_checksum")
+    _checksum(original_report_checksum, "original_report_checksum")
+    _checksum(receipt.get("receipt_checksum"), "receipt_checksum")
+    checksum_payload = {
+        key: receipt[key]
+        for key in (
+            "receipt_id", "project_id", "workflow_instance_id", "package_id",
+            "report_id", "report_checksum", "original_report_checksum",
+            "validation_status", "chain_state", "accepted_for_projection",
+            "uploaded_at", "received_at", "warning_count", "error_count",
+        )
+    }
+    if canonical_hash(checksum_payload) != receipt["receipt_checksum"]:
+        raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress receipt checksum is invalid")
+    payload = {
+        "schema_version": PROGRESS_RECEIPT_SCHEMA,
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "workflow_instance_id": installed["workflow_instance_id"],
+        "package_id": manifest["package_id"],
+        "package_checksum": manifest["package_checksum"],
+        "execution_round": report["execution_round"],
+        "report_id": report["report_id"],
+        "report_checksum": report["report_checksum"],
+        "original_report_checksum": original_report_checksum,
+        "receipt_id": receipt["receipt_id"],
+        "cloud_receipt_checksum": receipt["receipt_checksum"],
+        "acknowledged_at": receipt["received_at"],
+    }
+    return {**payload, "acknowledgement_checksum": canonical_hash(payload)}
+
+
+def _history_receipt(uploaded: dict[str, Any]) -> dict[str, Any]:
+    receipt = {
+        "receipt_id": uploaded.get("receipt_id"),
+        "project_id": uploaded.get("project_id"),
+        "workflow_instance_id": uploaded.get("workflow_instance_id"),
+        "package_id": uploaded.get("package_id"),
+        "report_id": uploaded.get("report_id"),
+        "report_checksum": uploaded.get("report_checksum"),
+        "original_report_checksum": uploaded.get("original_report_checksum"),
+        "validation_status": uploaded.get("validation_status"),
+        "chain_state": uploaded.get("chain_state"),
+        "accepted_for_projection": uploaded.get("accepted_for_projection"),
+        "uploaded_at": uploaded.get("uploaded_at"),
+        "received_at": uploaded.get("received_at"),
+        "warning_count": len(uploaded.get("validation_warnings", [])),
+        "error_count": len(uploaded.get("validation_errors", [])),
+    }
+    return {**receipt, "receipt_checksum": canonical_hash(receipt)}
+
+
+def _progress_receipt_path(
+    workspace: Path, workflow_instance_id: str, report_id: str
+) -> Path:
+    _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+    if not isinstance(report_id, str) or not re.fullmatch(r"prv2-[0-9a-f]{64}", report_id):
+        raise _identity("LOCAL_PROGRESS_INVALID", "Progress Report ID is invalid")
+    return workspace / PROGRESS_RECEIPTS_ROOT / workflow_instance_id / f"{report_id}.json"
+
+
+def _store_progress_acknowledgement(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    manifest: dict[str, Any],
+    report: dict[str, Any],
+    receipt: dict[str, Any],
+) -> None:
+    payload = _progress_receipt_payload(
+        descriptor=descriptor,
+        installed=installed,
+        manifest=manifest,
+        report=report,
+        receipt=receipt,
+    )
+    path = _progress_receipt_path(
+        workspace, installed["workflow_instance_id"], report["report_id"]
+    )
+    if path.is_symlink():
+        raise _identity("LOCAL_PROGRESS_INVALID", "Progress acknowledgement path is unsafe")
+    if path.exists():
+        existing = _read_json(path)
+        if existing != payload:
+            raise _identity("LOCAL_PROGRESS_CONFLICT", "Progress acknowledgement conflicts with Cloud history")
+        return
+    _reject_symlink_chain(path.parent)
+    _atomic_write_json(path, payload)
+
+
+def _progress_upload_envelope(
+    capsule: Path,
+    workflow_instance_id: str,
+    report: dict[str, Any],
+    now: datetime,
+) -> dict[str, Any]:
+    path = capsule / "memory/progress/reports" / f"{report['report_id']}.json"
+    content = path.read_bytes()
+    payload = {
+        "workflow_instance_id": workflow_instance_id,
+        "upload_schema_version": "progress-report-upload/v0.1",
+        "project_id": report["project_id"],
+        "package_id": report["package_id"],
+        "package_checksum": report["package_checksum"],
+        "report_schema_version": report["schema_version"],
+        "report_id": report["report_id"],
+        "report_checksum": report["report_checksum"],
+        "original_report_media_type": "application/json",
+        "original_report_base64": base64.b64encode(content).decode("ascii"),
+        "original_report_checksum": "sha256:" + hashlib.sha256(content).hexdigest(),
+        "original_report_size": len(content),
+        "uploaded_at": _utc_text(now),
+        "uploader_type": "local-cli",
+        "client_version": "reagent-workspace-progress-recovery/0.1.0",
+        "source_path_hint": f"memory/progress/reports/{report['report_id']}.json",
+        "context_snapshot_metadata": None,
+        "artifact_declarations": [],
+        "envelope_checksum": None,
+    }
+    envelope = dict(payload)
+    envelope.pop("workflow_instance_id")
+    envelope.pop("artifact_declarations")
+    payload["envelope_checksum"] = canonical_hash(envelope)
+    return payload
+
+
+def _recover_progress_backlog(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+    manifest: dict[str, Any],
+    reports: list[dict[str, Any]],
+    transport: Any,
+) -> int:
+    """Upload only Cloud-missing reports, in exact execution-round order."""
+
+    page = transport.workflow_instance_progress(
+        descriptor["project_id"], installed["workflow_instance_id"]
+    )
+    accepted = _accepted_cloud_progress(
+        page, descriptor=descriptor, installed=installed, manifest=manifest
+    )
+    if len(accepted) > len(reports):
+        raise _identity("PROGRESS_HISTORY_CONFLICT", "Cloud Progress is ahead of local history")
+    for report, uploaded in zip(reports, accepted):
+        if (
+            report["report_id"] != uploaded.get("report_id")
+            or report["report_checksum"] != uploaded.get("report_checksum")
+            or report["execution_round"]
+            != uploaded.get("normalized_record", {}).get("execution_round")
+        ):
+            raise _identity("PROGRESS_HISTORY_CONFLICT", "Cloud and local Progress histories diverge")
+        _store_progress_acknowledgement(
+            workspace=workspace,
+            descriptor=descriptor,
+            installed=installed,
+            manifest=manifest,
+            report=report,
+            receipt=_history_receipt(uploaded),
+        )
+    uploaded_count = 0
+    for report in reports[len(accepted):]:
+        if report["execution_round"] != len(accepted) + uploaded_count + 1:
+            raise _identity("LOCAL_PROGRESS_GAP", "Pending Progress does not continue Cloud history")
+        receipt = transport.upload_progress_report(
+            descriptor["project_id"],
+            installed["workflow_instance_id"],
+            manifest,
+            report,
+            _progress_upload_envelope(
+                capsule,
+                installed["workflow_instance_id"],
+                report,
+                datetime.now(timezone.utc),
+            ),
+        )
+        # A response alone is not continuity authority. Re-read the exact
+        # Instance projection before persisting local acknowledgement.
+        confirmed = _accepted_cloud_progress(
+            transport.workflow_instance_progress(
+                descriptor["project_id"], installed["workflow_instance_id"]
+            ),
+            descriptor=descriptor,
+            installed=installed,
+            manifest=manifest,
+        )
+        expected_count = len(accepted) + uploaded_count + 1
+        if len(confirmed) != expected_count:
+            raise _identity("CLOUD_PROGRESS_INVALID", "Cloud did not acknowledge the uploaded Progress round")
+        latest = confirmed[-1]
+        if (
+            latest.get("report_id") != report["report_id"]
+            or latest.get("report_checksum") != report["report_checksum"]
+            or receipt.get("receipt_id") != latest.get("receipt_id")
+        ):
+            raise _identity("CLOUD_PROGRESS_INVALID", "Cloud acknowledged a different Progress Report")
+        _store_progress_acknowledgement(
+            workspace=workspace,
+            descriptor=descriptor,
+            installed=installed,
+            manifest=manifest,
+            report=report,
+            receipt=receipt,
+        )
+        uploaded_count += 1
+    return uploaded_count
+
+
 def run_workflow(
     *,
     workspace_root: str | Path,
@@ -3378,6 +4006,28 @@ def run_workflow(
             }
         )
         is_literature = pin[0] == WORKFLOW_ID
+        manifest = _read_package_json(capsule / "package-manifest.json")
+        local_reports: list[dict[str, Any]] = []
+        if not preflight_only and (is_idea or is_scaffold):
+            local_reports = _validated_local_progress_reports(capsule, manifest)
+            if local_reports:
+                _recover_progress_backlog(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    installed=installed,
+                    capsule=capsule,
+                    manifest=manifest,
+                    reports=local_reports,
+                    transport=transport,
+                )
+                if local_reports[-1]["status"] == "COMPLETED":
+                    return WorkflowRunResult(
+                        status="PROGRESS_SYNCHRONIZED",
+                        project_id=descriptor["project_id"],
+                        workspace_id=descriptor["workspace_id"],
+                        workflow_instance_id=workflow_instance_id,
+                        capsule_relative_path=installed["relative_path"],
+                    )
         if is_idea:
             plan = validate_materialization_plan(
                 transport.materialization_plan(
@@ -3502,7 +4152,6 @@ def run_workflow(
         else:
             command.extend(["run", "."])
             if is_literature:
-                manifest = _read_package_json(capsule / "package-manifest.json")
                 package_identity = {
                     "package_id": manifest["package_id"],
                     "package_checksum": manifest["package_checksum"],
@@ -3540,6 +4189,25 @@ def run_workflow(
             check=False,
         )
         if completed.returncode != 0:
+            if not preflight_only and (is_idea or is_scaffold):
+                recovered_reports = _validated_local_progress_reports(capsule, manifest)
+                if len(recovered_reports) > len(local_reports):
+                    _recover_progress_backlog(
+                        workspace=workspace,
+                        descriptor=descriptor,
+                        installed=installed,
+                        capsule=capsule,
+                        manifest=manifest,
+                        reports=recovered_reports,
+                        transport=transport,
+                    )
+                    return WorkflowRunResult(
+                        status="PROGRESS_SYNCHRONIZED",
+                        project_id=descriptor["project_id"],
+                        workspace_id=descriptor["workspace_id"],
+                        workflow_instance_id=workflow_instance_id,
+                        capsule_relative_path=installed["relative_path"],
+                    )
             if is_literature:
                 _record_literature_harness_stop(capsule)
             raise WorkspaceCLIError(
@@ -4244,13 +4912,51 @@ def workspace_status(workspace_root: str | Path) -> dict[str, Any]:
     }
 
 
-def _local_progress_summary(capsule: Path) -> tuple[int, str | None]:
+def _validated_workspace_progress_acknowledgement(
+    path: Path,
+    *,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    manifest: dict[str, Any],
+    report: dict[str, Any],
+) -> bool:
+    if not path.exists() and not path.is_symlink():
+        return False
+    if path.is_symlink() or not path.is_file():
+        raise _identity("LOCAL_PROGRESS_INVALID", "Progress acknowledgement path is unsafe")
+    value = _read_json(path)
+    expected = {
+        "schema_version": PROGRESS_RECEIPT_SCHEMA,
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "workflow_instance_id": installed["workflow_instance_id"],
+        "package_id": manifest["package_id"],
+        "package_checksum": manifest["package_checksum"],
+        "execution_round": report["execution_round"],
+        "report_id": report["report_id"],
+        "report_checksum": report["report_checksum"],
+    }
+    if any(value.get(field) != expected_value for field, expected_value in expected.items()):
+        raise _identity("LOCAL_PROGRESS_CONFLICT", "Progress acknowledgement identity mismatch")
+    payload = dict(value)
+    checksum = payload.pop("acknowledgement_checksum", None)
+    if not isinstance(checksum, str) or canonical_hash(payload) != checksum:
+        raise _identity("LOCAL_PROGRESS_INVALID", "Progress acknowledgement checksum is invalid")
+    return True
+
+
+def _local_progress_summary(
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+) -> tuple[int, str | None, bool]:
     """Read only checksum-self-identifying local reports for status guidance."""
 
     reports_root = capsule / "memory/progress/reports"
     if reports_root.is_symlink() or not reports_root.is_dir():
-        return 0, None
-    reports: list[tuple[int, str, str]] = []
+        return 0, None, False
+    reports: list[tuple[int, str, str, dict[str, Any]]] = []
     for path in sorted(reports_root.glob("prv2-*.json")):
         metadata = path.stat(follow_symlinks=False)
         if (
@@ -4283,11 +4989,75 @@ def _local_progress_summary(capsule: Path) -> tuple[int, str | None]:
             or status not in {"IN_PROGRESS", "COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}
         ):
             raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress identity is invalid")
-        reports.append((execution_round, report_id, status))
+        reports.append((execution_round, report_id, status, report))
     if not reports:
-        return 0, None
+        return 0, None, False
     reports.sort(key=lambda item: (item[0], item[1]))
-    return len(reports), reports[-1][2]
+    latest = reports[-1][3]
+    manifest = _read_package_json(capsule / "package-manifest.json")
+    acknowledgement_path = _progress_receipt_path(
+        workspace, installed["workflow_instance_id"], latest["report_id"]
+    )
+    acknowledged = _validated_workspace_progress_acknowledgement(
+        acknowledgement_path,
+        descriptor=descriptor,
+        installed=installed,
+        manifest=manifest,
+        report=latest,
+    )
+    if not acknowledged:
+        capsule_receipt = (
+            capsule / "memory/progress/receipts" / f"{latest['report_id']}.json"
+        )
+        if capsule_receipt.exists() or capsule_receipt.is_symlink():
+            if capsule_receipt.is_symlink() or not capsule_receipt.is_file():
+                raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt path is unsafe")
+            receipt = _read_json(capsule_receipt)
+            legacy_fields = {
+                "schema_version", "report_id", "report_checksum", "receipt_id",
+                "receipt_checksum", "validation_status", "chain_state",
+                "accepted_for_projection", "idempotent_replay", "projection_checksum",
+                "verified_at",
+            }
+            if receipt.get("schema_version") == "local-progress-upload-receipt/v0.1":
+                if set(receipt) != legacy_fields:
+                    raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt fields are invalid")
+                candidate = receipt
+            else:
+                try:
+                    _progress_receipt_payload(
+                        descriptor=descriptor,
+                        installed=installed,
+                        manifest=manifest,
+                        report=latest,
+                        receipt=receipt,
+                    )
+                    acknowledged = True
+                    candidate = None
+                except WorkspaceCLIError as error:
+                    raise _identity(
+                        "LOCAL_PROGRESS_INVALID",
+                        f"Capsule Progress receipt is invalid: {error}",
+                    ) from error
+            if candidate is not None and (
+                candidate.get("report_id") != latest["report_id"]
+                or candidate.get("report_checksum") != latest["report_checksum"]
+                or candidate.get("validation_status") != "ACCEPTED"
+                or candidate.get("chain_state") != "VALID_CHAIN"
+                or candidate.get("accepted_for_projection") is not True
+                or not isinstance(candidate.get("idempotent_replay"), bool)
+                or not isinstance(candidate.get("receipt_id"), str)
+                or not re.fullmatch(
+                    r"progress-receipt-[0-9a-f]{64}", candidate["receipt_id"]
+                )
+            ):
+                raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt is invalid")
+            if candidate is not None:
+                for field in ("receipt_checksum", "projection_checksum"):
+                    _checksum(candidate.get(field), field)
+                _timestamp(candidate.get("verified_at"), "verified_at")
+                acknowledged = True
+    return len(reports), reports[-1][2], acknowledged
 
 
 def _local_input_state(
@@ -4665,7 +5435,9 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             or not isinstance(document.get("workflow_type"), str)
         ):
             raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow metadata identity is invalid")
-        report_count, latest_status = _local_progress_summary(capsule)
+        report_count, latest_status, progress_acknowledged = _local_progress_summary(
+            workspace, descriptor, item, capsule
+        )
         requirements = document.get("input_requirements", [])
         if not isinstance(requirements, list):
             raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow input contract is invalid")
@@ -4690,6 +5462,13 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         if item["lifecycle"] != "ACTIVE":
             readiness = "RETAINED"
             next_action = "REVIEW_RESULT"
+        elif (
+            latest_status == "COMPLETED"
+            and definition_id != WORKFLOW_ID
+            and not progress_acknowledged
+        ):
+            readiness = "PROGRESS_UPLOAD_PENDING"
+            next_action = "CONTINUE"
         elif latest_status == "COMPLETED":
             readiness = "COMPLETED"
             next_action = "REVIEW_RESULT"
@@ -4932,6 +5711,22 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
     "MATERIALIZATION_PLAN_INVALID": (
         "Cloud and Local Workspace input identities did not agree.",
         "Nothing was copied. Refresh the Workflow Board and local Artifact Index, then retry explicit materialization.",
+    ),
+    "PROGRESS_UPLOAD_FAILED": (
+        "Cloud Progress acknowledgement did not complete.",
+        "Keep the local Workflow and Artifact unchanged, verify the loopback backend, then retry the same printed run command. ReAgent will continue from the Cloud's latest accepted execution round without starting the Agent Harness for a locally completed result.",
+    ),
+    "LOCAL_PROGRESS_GAP": (
+        "The local append-only Progress history is missing or mislinks an execution round.",
+        "Do not edit Progress JSON or rerun research. Preserve the Workspace and report code LOCAL_PROGRESS_GAP for bounded recovery review.",
+    ),
+    "LOCAL_PROGRESS_BRANCHED": (
+        "Two local Progress reports claim the same execution round.",
+        "Nothing was uploaded. Preserve both reports and report code LOCAL_PROGRESS_BRANCHED; ReAgent will not choose one silently.",
+    ),
+    "PROGRESS_HISTORY_CONFLICT": (
+        "Cloud and local Progress histories do not identify the same exact report chain.",
+        "Nothing further was uploaded. Keep the Workspace unchanged and report code PROGRESS_HISTORY_CONFLICT for integrity review.",
     ),
     "WORKFLOW_RUN_FAILED": (
         "The Workflow launcher or local Agent Harness stopped before completing the requested round.",

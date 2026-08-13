@@ -258,6 +258,10 @@ def test_owner_normal_product_route_is_consent_bound_secret_isolated_and_hands_o
         )
         assert materialized.materialized_count == 1
         monkeypatch.setenv("REAGENT_FAKE_IDEA_EXPLICIT_SELECTION", "1")
+        # Reproduce the owner path: real Codex followed AGENT.md and finalized
+        # Progress itself, after which the immutable Capsule runner attempted
+        # to finalize the same draft again before upload.
+        monkeypatch.setenv("REAGENT_FAKE_IDEA_FINALIZE_PROGRESS", "1")
         idea_driven = subprocess.run(
             [
                 sys.executable,
@@ -273,6 +277,7 @@ def test_owner_normal_product_route_is_consent_bound_secret_isolated_and_hands_o
                 "REAGENT_CODEX_EXECUTABLE": str(idea_codex),
                 "REAGENT_LOCAL_BASE_URL": base_url,
                 "REAGENT_FAKE_IDEA_EXPLICIT_SELECTION": "1",
+                "REAGENT_FAKE_IDEA_FINALIZE_PROGRESS": "1",
             },
             check=False,
             capture_output=True,
@@ -281,6 +286,27 @@ def test_owner_normal_product_route_is_consent_bound_secret_isolated_and_hands_o
         )
         assert idea_driven.returncode == 0, idea_driven.stdout + idea_driven.stderr
         assert "ReAgent Idea Discovery — INPUT_REVIEW" in idea_driven.stdout
+        assert "execution round must increment the latest round" in idea_driven.stdout
+        assert "Progress Synchronized" in idea_driven.stdout
+        idea_progress = client.get(
+            f"/projects/{project_id}/workflow-instances/"
+            f"{idea['workflow_instance_id']}/progress"
+        ).json()
+        assert idea_progress["history_total"] == 1
+        assert idea_progress["projection"]["latest_execution_round"] == 1
+        workspace_receipts = list(
+            (
+                workspace
+                / workspace_cli.PROGRESS_RECEIPTS_ROOT
+                / idea["workflow_instance_id"]
+            ).glob("*.json")
+        )
+        assert len(workspace_receipts) == 1
+        listed_after_idea = {
+            item["workflow_definition_id"]: item
+            for item in workspace_cli.workflow_list(workspace)["workflows"]
+        }
+        assert listed_after_idea[IDEA_DISCOVERY_WORKFLOW_ID]["local_readiness"] == "COMPLETED"
         selected_idea = _artifact(client, project_id, "selected-research-idea/v1")
         idea_root = roots[idea["workflow_instance_id"]]
         selected_value = json.loads(

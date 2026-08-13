@@ -1,6 +1,39 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-11
+Last updated: 2026-08-13
+
+## Owner-test defect repair — Progress backlog execution-round recovery
+
+The owner-discovered defect `PROGRESS_BACKLOG_EXECUTION_ROUND_ORDERING` is
+repaired without rerunning research or changing Workflow, Artifact, Skill,
+Resource, Progress, or persistence contracts. The initial filename-order
+hypothesis was rejected: Idea local report discovery already sorted by
+`execution_round`. The actual failure occurred because Codex followed the
+Capsule instruction and finalized round 6 itself; after Codex exited, the
+immutable Idea 0.3 runner attempted to finalize the same round again and failed
+before its single-report upload path. The generic Workspace client had no Idea
+backlog or upload-only recovery path, so Cloud retained zero reports.
+
+The generic Workspace launcher now validates the exact local Progress v0.2
+identity/chain, queries accepted Cloud history for the exact Workflow Instance,
+and uploads only contiguous rounds `N+1...` through fresh checksum-scoped
+UPLOAD_ONLY sessions. Cloud acknowledgement is re-read before a checksummed
+Workspace-level receipt is written. Interrupted uploads restart from Cloud's
+latest accepted round; Cloud/local divergence, gaps, duplicate rounds and
+foreign Instance history fail closed. A locally completed but unacknowledged
+Idea/scaffold now displays `Progress Upload Pending / Continue`; running its
+printed command performs upload-only recovery and never starts Codex or mutates
+the selected Artifact.
+
+Qualification reproduced unordered discovery as `2,4,1,5,6,3`, partial Cloud
+history, process interruption, same-type Instance isolation, and the exact
+owner product route where the immutable runner reports the duplicate-finalize
+error. Full backend on disposable PostgreSQL passed `810 passed, 14 existing
+skips`; the database was dropped. Focused/broad local suites passed 6 and 313,
+controlled Playwright passed 4, frontend passed 34 tests plus type/lint/build,
+compileall and Alembic check passed. Migration remains `20260811_0018`. No
+owner Workspace or owner research data was accessed; no owner database write
+or live Provider call occurred.
 
 ## Owner-local runtime configuration and secure startup
 
