@@ -95,7 +95,7 @@ Expected bounded output is equivalent to:
 ```text
 ReAgent Owner Runtime
 Database: reagent_local_v01 - ready
-Migration: 20260813_0020 - current
+Migration: 20260813_0021 - current
 OpenAlex: configured
 Backend: http://127.0.0.1:8000
 Frontend: http://127.0.0.1:3000
@@ -274,14 +274,14 @@ python reagent_local.py run . \
   --workflow idea-discovery-local-experimental
 ```
 
-The new Instance resolves Workflow Definition 0.2.0 / Capsule 0.3.0. The old
+The new Instance resolves Workflow Definition 0.2.0 / Capsule 0.4.0. The old
 Capsule and its local history are retained. Do not rerun OpenAlex, recreate the
 Project, copy an Artifact across Projects, edit the Installed Lock, or replace
 Capsule bytes manually.
 
 ## 11. Continue with the Experiment scaffold
 
-The current Experiment Workflow uses Definition 0.3.0 / Capsule 0.4.0. After
+The current Experiment Workflow uses Definition 0.3.0 / Capsule 0.5.0. After
 selecting the exact `selected-research-idea/v1` and any optional exact
 Literature Artifact, refresh and materialize, then use the printed command:
 
@@ -326,24 +326,48 @@ python reagent_local.py run . \
   --workflow reproduction-experiment-local-experimental
 ```
 
-The new Instance resolves Definition 0.3.0 / Capsule 0.4.0. Do not rerun
+The new Instance resolves Definition 0.3.0 / Capsule 0.5.0. Do not rerun
 Literature or Idea, copy Artifacts across Projects, edit the Installed Lock, or
 replace Capsule bytes manually.
 
 ## 12. Continue with Writing and Review scaffold UX
 
-Migration `20260813_0020` publishes Writing and Review Capsule 0.3.0 without
+Migration `20260813_0021` publishes Writing and Review Capsule 0.4.0 without
 changing either Definition 0.2.0. A new Instance resolves the repaired Capsule
 and automatically begins `INPUT_REVIEW`; it never requires `start`, `write
 paper`, or `review draft`.
 
-If the existing Full Research Project already contains unstarted Writing or
-Review Capsule 0.2.0 Instances, retire only those Instances in the Workflow
-Board and add new Writing/Review Instances. Keep the Project, Workspace,
+First preserve and synchronize the two already-completed local executions. Do
+not retire them, resume Codex, regenerate either Artifact, or edit Progress or
+context JSON. Stop the older owner runtime, apply migration `0021`, restart,
+then download the current Workspace-root `reagent_local.py` from the Local
+Guide and replace only that root client. In the existing Workspace run:
+
+```bash
+python reagent_local.py sync .
+python reagent_local.py workflow list .
+python reagent_local.py run . \
+  --workflow-instance wfi-38e75d740c6a4b2fbbbacd898e9adc96
+python reagent_local.py run . \
+  --workflow-instance wfi-2219af640f4a4cb58b22a4c7f91b4cc6
+python reagent_local.py workflow list .
+```
+
+For each `Progress Upload Pending` entry, prefer the exact command printed by
+`workflow list`; the explicit commands above identify the evidence-reported
+Writing and Experiment Instances. The repaired root client proves the exact
+historical terminal-context fingerprint, uploads the existing immutable report
+only, verifies the Cloud projection, and stores its acknowledgement. It starts
+no Harness, creates no new round, and changes no Artifact.
+
+If the existing Full Research Project already contains an unstarted Review
+Capsule 0.3.0 Instance, retire only that Instance in the Workflow
+Board and add Review again to receive Capsule 0.4.0. Keep the Project, Workspace,
 Literature, selected Idea, Experiment output, Progress, and Artifact history.
 Then update only the Workspace-root `reagent_local.py` from the Local Guide,
-sync, explicitly bind the required exact Artifacts, materialize, and run the
-printed commands. Do not copy or replace any installed Capsule bytes manually.
+sync, explicitly bind Draft A and the desired Literature/Experiment Artifacts,
+materialize, and run the printed Review command. Do not copy or replace any
+installed Capsule bytes manually, and do not regenerate Draft A.
 
 For the revision loop, keep Writing #1 and Review #1. Add Writing #2, explicitly
 bind the same Idea and Literature plus Draft A as `prior_manuscript` and Review

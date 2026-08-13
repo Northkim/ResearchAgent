@@ -78,6 +78,10 @@ SCAFFOLD_SKILL_BACKED_PROMPT_VERSION = "0.2.0"
 # Owner-test Harness integration repair: Writing/Review research semantics stay
 # pinned to Workflow 0.2, while each receives a new immutable Capsule.
 SCAFFOLD_INTERACTIVE_CAPSULE_VERSION = "0.3.0"
+# Progress lifecycle repair: the Workflow definition and interactive method are
+# unchanged; only new immutable Capsules adopt an Agent-finalized round instead
+# of attempting to finalize the same execution twice.
+SCAFFOLD_COMPLETION_CAPSULE_VERSION = "0.4.0"
 EXPERIMENT_RESOURCE_WORKFLOW_VERSION = "0.3.0"
 EXPERIMENT_RESOURCE_CAPSULE_VERSION = "0.3.0"
 EXPERIMENT_RESOURCE_PROMPT_VERSION = "0.3.0"
@@ -85,6 +89,7 @@ EXPERIMENT_RESOURCE_PROMPT_VERSION = "0.3.0"
 # pinned to Workflow 0.3, while the interactive Harness bootstrap is a new
 # immutable Capsule.
 EXPERIMENT_INTERACTIVE_CAPSULE_VERSION = "0.4.0"
+EXPERIMENT_COMPLETION_CAPSULE_VERSION = "0.5.0"
 WRITING_TEMPLATE_ID = "writing-scaffold-package-experimental"
 REVIEW_TEMPLATE_ID = "review-scaffold-package-experimental"
 EXPERIMENT_TEMPLATE_ID = "reproduction-experiment-scaffold-package-experimental"
@@ -1404,6 +1409,307 @@ def _scaffold_v0_3_files(*, workflow_id: str, **kwargs) -> dict[str, FileSpec]:
     return files
 
 
+def _completion_adoption_runner_source(
+    source: bytes, *, client_version: str
+) -> bytes:
+    """Add strict adopt-or-finalize lifecycle to a future interactive runner.
+
+    This transforms already-rendered new-version source.  It deliberately does
+    not edit ``scaffold_runtime.py`` or any historical renderer.
+    """
+
+    text = source.decode("utf-8")
+    old_client = next(
+        value for value in (
+            "reagent-local-scaffold/0.3.0",
+            "reagent-local-scaffold/0.4.0",
+        ) if value in text
+    )
+    text = text.replace(old_client, client_version, 1)
+    marker = "\ndef main(argv: list[str] | None = None) -> int:\n"
+    if marker not in text:
+        raise RuntimeError("interactive completion extension point is unavailable")
+    helper = r'''
+
+def _report_chain_snapshot(root: Path) -> list[dict[str, Any]]:
+    reports_root = root / "memory/progress/reports"
+    if reports_root.is_symlink() or not reports_root.is_dir():
+        raise ScaffoldRuntimeError("Progress history root is unsafe")
+    paths = sorted(reports_root.glob("*.json"))
+    reports: list[dict[str, Any]] = []
+    namespace = runpy.run_path(str(root / "progress_report.py"))
+    for path in paths:
+        if (
+            path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1
+            or not path.name.startswith("prv2-")
+        ):
+            raise ScaffoldRuntimeError("Progress history contains an unsafe entry")
+        report = _object(path, "Progress Report")
+        try:
+            namespace["verify_identity"](report)
+        except Exception as error:
+            raise ScaffoldRuntimeError("Progress Report identity is invalid") from error
+        if path.name != report["report_id"] + ".json":
+            raise ScaffoldRuntimeError("Progress Report filename is invalid")
+        reports.append(report)
+    reports.sort(key=lambda item: (item["execution_round"], item["report_id"]))
+    if [item["execution_round"] for item in reports] != list(range(1, len(reports) + 1)):
+        raise ScaffoldRuntimeError("Progress history is not one contiguous chain")
+    for previous, current in zip(reports, reports[1:]):
+        if (
+            current.get("previous_report_id") != previous["report_id"]
+            or current.get("previous_report_checksum") != previous["report_checksum"]
+            or current.get("context_before_checksum") != previous["context_after_checksum"]
+        ):
+            raise ScaffoldRuntimeError("Progress predecessor chain is invalid")
+    return reports
+
+
+def _verified_file(root: Path, relative: str) -> tuple[str, int, bytes]:
+    path = root.joinpath(*relative.split("/"))
+    if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+        raise ScaffoldRuntimeError("Agent-finalized output is unsafe")
+    content = path.read_bytes()
+    return sha256_bytes(content), len(content), content
+
+
+def _adopt_agent_finalization(
+    root: Path,
+    config: dict[str, Any],
+    context_before: str,
+    before: list[dict[str, Any]],
+) -> tuple[Path, dict[str, Any]] | None:
+    after = _report_chain_snapshot(root)
+    before_identity = [(item["report_id"], item["report_checksum"]) for item in before]
+    after_prefix = [(item["report_id"], item["report_checksum"]) for item in after[:len(before)]]
+    if after_prefix != before_identity:
+        raise ScaffoldRuntimeError("Harness modified immutable Progress history")
+    delta = after[len(before):]
+    if not delta:
+        return None
+    if len(delta) != 1:
+        raise ScaffoldRuntimeError("Harness created an unexpected Progress delta")
+    report = delta[0]
+    manifest = _object(root / "package-manifest.json", "package manifest")
+    previous = before[-1] if before else None
+    expected_identity = {
+        "project_id": manifest["experimental_project_identity"],
+        "package_id": manifest["package_id"],
+        "package_checksum": manifest["package_checksum"],
+        "package_schema_version": manifest["package_schema_version"],
+        "workflow_id": manifest["workflow_id"],
+        "workflow_version": manifest["workflow_version"],
+        "workflow_checksum": manifest["workflow_checksum"],
+        "execution_round": len(before) + 1,
+        "previous_report_id": None if previous is None else previous["report_id"],
+        "previous_report_checksum": None if previous is None else previous["report_checksum"],
+        "context_before_checksum": context_before,
+        "status": "COMPLETED",
+        "current_state": "COMPLETED",
+    }
+    if any(report.get(field) != value for field, value in expected_identity.items()):
+        raise ScaffoldRuntimeError("Agent-finalized Progress scope or chain is invalid")
+    context_checksum, _, _ = _verified_file(root, "memory/context.md")
+    if report.get("context_after_checksum") != context_checksum:
+        raise ScaffoldRuntimeError("Agent-finalized Progress context transition is invalid")
+
+    current = _object(root / "memory/current-artifact.json", "current Artifact")
+    if set(current) != {"relative_path", "artifact_kind", "media_type", "checksum", "size"}:
+        raise ScaffoldRuntimeError("Agent-finalized Artifact identity is invalid")
+    checksum, size, content = _verified_file(root, current["relative_path"])
+    if (
+        current["artifact_kind"] != config["output_artifact_type"]
+        or current["media_type"] != "application/json"
+        or current["checksum"] != checksum
+        or current["size"] != size
+        or current not in report.get("output_artifacts", [])
+    ):
+        raise ScaffoldRuntimeError("Agent-finalized Artifact provenance is invalid")
+    try:
+        artifact = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ScaffoldRuntimeError("Agent-finalized Artifact is invalid JSON") from error
+    provenance = _object(root / "memory/input-provenance.json", "input provenance")
+    expected_artifact, expected_human = _scaffold_payload(
+        config, provenance["artifacts"], root
+    )
+    if artifact != expected_artifact:
+        raise ScaffoldRuntimeError("Agent-finalized Artifact semantics or provenance drifted")
+    human_checksum, human_size, human = _verified_file(root, config["human_output_path"])
+    if human != expected_human:
+        raise ScaffoldRuntimeError("Agent-finalized human output is not deterministic")
+    contracts = manifest.get("output_contracts", [])
+    human_contract = next(
+        (item for item in contracts
+         if item.get("required_output_path") == config["human_output_path"]),
+        None,
+    )
+    if not isinstance(human_contract, dict):
+        raise ScaffoldRuntimeError("Scaffold human output contract is unavailable")
+    expected_human_output = {
+        "relative_path": config["human_output_path"],
+        "artifact_kind": human_contract["artifact_kind"],
+        "media_type": human_contract["media_type"],
+        "checksum": human_checksum,
+        "size": human_size,
+    }
+    if expected_human_output not in report.get("output_artifacts", []):
+        raise ScaffoldRuntimeError("Agent-finalized human output provenance is invalid")
+    validator = runpy.run_path(str(root / "validate_package.py"))
+    try:
+        validator["validate_scaffold_artifact"](artifact)
+    except Exception as error:
+        raise ScaffoldRuntimeError("Agent-finalized scaffold safety validation failed") from error
+    return root / "memory/progress/reports" / (report["report_id"] + ".json"), current
+
+
+def _agent_finalize(root: Path) -> dict[str, Any]:
+    """Perform the Capsule's deterministic Agent-owned terminal transition."""
+
+    result = preflight(root)
+    config = _object(root / "workflow/scaffold.json", "scaffold contract")
+    history = _report_chain_snapshot(root)
+    draft = _object(root / "memory/progress/report-draft.json", "Progress Report draft")
+    if history and draft.get("execution_round") == history[-1]["execution_round"]:
+        latest = history[-1]
+        context_checksum, _, _ = _verified_file(root, "memory/context.md")
+        if (
+            latest.get("status") != "COMPLETED"
+            or latest.get("current_state") != "COMPLETED"
+            or latest.get("context_after_checksum") != context_checksum
+        ):
+            raise ScaffoldRuntimeError("Existing Agent finalization is not reusable")
+        return {
+            **result,
+            "artifact": _object(root / "memory/current-artifact.json", "current Artifact"),
+            "progress_report": (
+                "memory/progress/reports/" + latest["report_id"] + ".json"
+            ),
+            "idempotent_replay": True,
+        }
+    if draft.get("execution_round") != len(history) + 1:
+        raise ScaffoldRuntimeError("Progress draft does not continue local history")
+    namespace = runpy.run_path(str(root / "progress_report.py"))
+    context_before = namespace["snapshot"](root)["context_before_checksum"]
+    artifact = _publish(root, config)
+    _update_context(root, config, artifact)
+    report_path = _finalize(root, context_before)
+    return {
+        **result,
+        "artifact": artifact,
+        "progress_report": report_path.relative_to(root).as_posix(),
+    }
+'''
+    text = text.replace(marker, helper + marker, 1)
+    parser_old = '''    run_parser.add_argument("--codex-executable")
+    run_parser.add_argument("--preflight-only", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        root = args.root.resolve()
+        result = preflight(root)
+        if not args.preflight_only:
+'''
+    parser_new = '''    run_parser.add_argument("--codex-executable")
+    run_parser.add_argument("--preflight-only", action="store_true")
+    finalize_parser = commands.add_parser("finalize-scaffold")
+    finalize_parser.add_argument("root", nargs="?", default=".", type=Path)
+    args = parser.parse_args(argv)
+    try:
+        root = args.root.resolve()
+        if args.command == "finalize-scaffold":
+            result = _agent_finalize(root)
+        else:
+            result = preflight(root)
+        if args.command == "run" and not args.preflight_only:
+'''
+    if parser_old not in text:
+        raise RuntimeError("interactive completion CLI extension point is unavailable")
+    text = text.replace(parser_old, parser_new, 1)
+    prompt_old = '''        _initial_instruction(),
+    ]
+'''
+    prompt_new = '''        _initial_instruction() + (
+            "\\n\\nAfter the owner-approved scaffold interaction is complete, "
+            "run exactly `PYTHONDONTWRITEBYTECODE=1 python reagent_local.py "
+            "finalize-scaffold .`. This is the bundled deterministic finalizer. "
+            "Do not import reagent_local.py or call its private helpers."
+        ),
+    ]
+'''
+    if prompt_old not in text:
+        raise RuntimeError("interactive completion prompt extension point is unavailable")
+    text = text.replace(prompt_old, prompt_new, 1)
+    old = '''            config = _object(root / "workflow/scaffold.json", "scaffold contract")
+            context_before = _prepare_draft(root, config)
+            _run_harness(root, _codex_executable(args.codex_executable))
+            # The Harness is untrusted with respect to immutable input bytes and
+            # scaffold safety. Re-run the exact preflight before publication.
+            preflight(root)
+            artifact = _publish(root, config)
+            _update_context(root, config, artifact)
+            report_path = _finalize(root, context_before)
+            result = {
+'''
+    new = '''            config = _object(root / "workflow/scaffold.json", "scaffold contract")
+            progress_before = _report_chain_snapshot(root)
+            context_before = _prepare_draft(root, config)
+            _run_harness(root, _codex_executable(args.codex_executable))
+            # The Harness is untrusted with respect to immutable inputs, output
+            # provenance, and Progress.  Adopt exactly one valid next terminal
+            # round, or retain the historical runner-owned finalization path.
+            preflight(root)
+            adopted = _adopt_agent_finalization(
+                root, config, context_before, progress_before
+            )
+            if adopted is None:
+                artifact = _publish(root, config)
+                _update_context(root, config, artifact)
+                report_path = _finalize(root, context_before)
+            else:
+                report_path, artifact = adopted
+            result = {
+'''
+    if old not in text:
+        raise RuntimeError("interactive lifecycle extension point is unavailable")
+    return text.replace(old, new, 1).encode("utf-8")
+
+
+def _future_scaffold_validator_source(*, version: str) -> bytes:
+    source = Path(__file__).with_name("scaffold_validator.py").read_text(encoding="utf-8")
+    old = 'manifest.get("package_template_version") not in {"0.1.0", "0.2.0", "0.3.0"}'
+    new = (
+        'manifest.get("package_template_version") not in '
+        '{"0.1.0", "0.2.0", "0.3.0", ' + repr(version) + '}'
+    )
+    if old not in source:
+        raise RuntimeError("scaffold validator version extension point is unavailable")
+    return source.replace(old, new, 1).encode("utf-8")
+
+
+def _scaffold_v0_4_files(*, workflow_id: str, **kwargs) -> dict[str, FileSpec]:
+    files = dict(_scaffold_v0_3_files(workflow_id=workflow_id, **kwargs))
+    runner = _completion_adoption_runner_source(
+        files["reagent_local.py"].content,
+        client_version="reagent-local-scaffold/0.4.0",
+    )
+    _replace_spec(files, "reagent_local.py", runner)
+    _replace_spec(
+        files, "validate_package.py",
+        _future_scaffold_validator_source(version=SCAFFOLD_COMPLETION_CAPSULE_VERSION),
+    )
+    return files
+
+
+def _writing_v0_4_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_v0_4_files(workflow_id=WRITING_WORKFLOW_ID, **kwargs)
+
+
+def _review_v0_4_files(**kwargs) -> dict[str, FileSpec]:
+    kwargs.pop("research_topic", None)
+    return _scaffold_v0_4_files(workflow_id=REVIEW_WORKFLOW_ID, **kwargs)
+
+
 def _writing_v0_3_files(**kwargs) -> dict[str, FileSpec]:
     kwargs.pop("research_topic", None)
     return _scaffold_v0_3_files(workflow_id=WRITING_WORKFLOW_ID, **kwargs)
@@ -1705,6 +2011,26 @@ def _experiment_v0_4_files(**kwargs) -> dict[str, FileSpec]:
         "bounded Experiment Resource status projection",
         True,
         "STATE",
+    )
+    return files
+
+
+def _experiment_v0_5_files(**kwargs) -> dict[str, FileSpec]:
+    """Render only the Progress lifecycle repair over immutable 0.4 bytes."""
+
+    files = dict(_experiment_v0_4_files(**kwargs))
+    runner = _completion_adoption_runner_source(
+        files["reagent_local.py"].content,
+        client_version="reagent-local-scaffold/0.5.0",
+    )
+    _replace_spec(files, "reagent_local.py", runner)
+    validator = files["validate_package.py"].content.decode("utf-8")
+    old = '{"0.1.0", "0.2.0", "0.3.0", "0.4.0"}'
+    if old not in validator:
+        raise RuntimeError("Experiment validator lifecycle extension point is unavailable")
+    _replace_spec(
+        files, "validate_package.py",
+        validator.replace(old, '{"0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"}', 1).encode(),
     )
     return files
 
@@ -2284,6 +2610,26 @@ def build_review_scaffold_v0_3_package(**kwargs) -> BuildResult:
     )
 
 
+def build_writing_scaffold_v0_4_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_writing_v0_4_files, workflow_id=WRITING_WORKFLOW_ID,
+        workflow_type="Writing", template_id=WRITING_TEMPLATE_ID,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        capsule_version=SCAFFOLD_COMPLETION_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_review_scaffold_v0_4_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_review_v0_4_files, workflow_id=REVIEW_WORKFLOW_ID,
+        workflow_type="Review", template_id=REVIEW_TEMPLATE_ID,
+        workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        capsule_version=SCAFFOLD_COMPLETION_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
 def build_experiment_scaffold_v0_2_package(**kwargs) -> BuildResult:
     return _build_scaffold_package(
         renderer=_experiment_v0_2_files, workflow_id=EXPERIMENT_WORKFLOW_ID,
@@ -2310,6 +2656,16 @@ def build_experiment_scaffold_v0_4_package(**kwargs) -> BuildResult:
         workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
         workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
         capsule_version=EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_experiment_scaffold_v0_5_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_experiment_v0_5_files, workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
+        workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+        capsule_version=EXPERIMENT_COMPLETION_CAPSULE_VERSION,
         **kwargs,
     )
 

@@ -35,7 +35,7 @@ def test_workspace_root_experiment_run_auto_starts_input_review_and_uploads_prog
     ))
     repository = Path(__file__).resolve().parents[3]
     fake = _copy_executable(
-        repository / "backend/workflow_packages/tests/fake_experiment_codex_cli.py",
+        repository / "backend/workflow_packages/tests/fake_completing_scaffold_codex_cli.py",
         tmp_path / "codex-experiment-fixture",
     )
     sentinel = "experiment-secret-must-not-cross-harness"
@@ -59,7 +59,7 @@ def test_workspace_root_experiment_run_auto_starts_input_review_and_uploads_prog
         }
         experiment = instances[EXPERIMENT_WORKFLOW_ID]
         assert (experiment["workflow_version"], experiment["capsule_version"]) == (
-            "0.3.0", "0.4.0"
+            "0.3.0", "0.5.0"
         )
         descriptor = client.get(
             f"/projects/{project_id}/workspace-bootstrap"

@@ -66,10 +66,12 @@ from .production_workflows import (
     skill_backed_scaffold_definition_version,
     skill_backed_scaffold_requirements,
     interactive_scaffold_capsule,
+    completion_scaffold_capsule,
     experiment_resource_artifact_requirements,
     experiment_resource_capsule,
     experiment_resource_definition_version,
     experiment_interactive_capsule,
+    experiment_completion_capsule,
 )
 from backend.workflow_packages.production_workflows import (
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
@@ -268,6 +270,9 @@ def ensure_production_workflow_foundation(
             repository.add_capsule_version(
                 interactive_scaffold_capsule(workflow_id, timestamp)
             )
+            repository.add_capsule_version(
+                completion_scaffold_capsule(workflow_id, timestamp)
+            )
         for asset in PRODUCTION_SKILLS:
             definition = asset.definition(timestamp)
             version = asset.skill_version(timestamp)
@@ -314,6 +319,7 @@ def ensure_production_workflow_foundation(
     )
     repository.add_capsule_version(experiment_resource_capsule(timestamp))
     repository.add_capsule_version(experiment_interactive_capsule(timestamp))
+    repository.add_capsule_version(experiment_completion_capsule(timestamp))
     for pin in production_skill_pins(
         EXPERIMENT_WORKFLOW_ID, EXPERIMENT_RESOURCE_WORKFLOW_VERSION, timestamp
     ):

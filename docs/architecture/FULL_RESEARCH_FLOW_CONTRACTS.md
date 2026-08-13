@@ -6,9 +6,9 @@ ReAgent composes five independent Workflows. Literature Search and Idea
 Discovery have reviewed production research cores. Writing, Review, and
 Reproduction & Experiment are real production Workflows whose published
 versions remain explicitly `SCAFFOLD_CORE`. The current Skill-backed Writing
-and Review Definition versions are 0.2.0 with interactive Capsule 0.3.0; the
+and Review Definition versions are 0.2.0 with interactive Capsule 0.4.0; the
 current Skill- and Resource-aware Experiment
-Definition is 0.3.0 with interactive Capsule 0.4.0. Its immutable 0.3.0 Capsule
+Definition is 0.3.0 with interactive Capsule 0.5.0. Its earlier Capsules
 and the earlier published versions remain history.
 
 ```text
@@ -193,3 +193,9 @@ F1D publishes new scaffold Definition/Capsule 0.2.0 versions without changing
 Core Safety 0.1.0 exactly. Their reviewed declarative bytes are delivered only
 inside the Capsule and do not change Artifact contracts or core maturity. See
 [`SKILL_SYSTEM.md`](SKILL_SYSTEM.md).
+Migration `20260813_0021` adds only new immutable Writing/Review Capsule 0.4.0
+and Experiment Capsule 0.5.0 metadata. These runners adopt exactly one valid
+Agent-finalized terminal Progress round, or perform the existing deterministic
+finalization once when the Harness did not finalize. The generic Workspace
+client uses one fail-closed evaluator for both `workflow list` and upload-only
+`run` recovery, including the exact known historical scaffold context rewrite.

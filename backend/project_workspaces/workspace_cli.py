@@ -90,6 +90,10 @@ SUPPORTED_CAPSULE_PINS = {
         "writing-scaffold-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.2.0", "0.4.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
     ("review-local-experimental", "0.1.0", "0.1.0"): (
         "review-scaffold-package-experimental",
         False,
@@ -99,6 +103,10 @@ SUPPORTED_CAPSULE_PINS = {
         False,
     ),
     ("review-local-experimental", "0.2.0", "0.3.0"): (
+        "review-scaffold-package-experimental",
+        False,
+    ),
+    ("review-local-experimental", "0.2.0", "0.4.0"): (
         "review-scaffold-package-experimental",
         False,
     ),
@@ -115,6 +123,10 @@ SUPPORTED_CAPSULE_PINS = {
         False,
     ),
     ("reproduction-experiment-local-experimental", "0.3.0", "0.4.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
+    ("reproduction-experiment-local-experimental", "0.3.0", "0.5.0"): (
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
@@ -359,6 +371,15 @@ class WorkflowRunResult:
             "workflow_instance_id": self.workflow_instance_id,
             "capsule_relative_path": self.capsule_relative_path,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class LocalProgressReadiness:
+    """One authoritative local upload-readiness decision for list and run."""
+
+    state: str
+    reports: tuple[dict[str, Any], ...]
+    reason: str | None = None
 
 
 def canonical_json(value: Any) -> str:
@@ -2564,8 +2585,10 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
             } and pin[1:] in {
                 ("0.2.0", "0.2.0"),
                 ("0.2.0", "0.3.0"),
+                ("0.2.0", "0.4.0"),
                 ("0.3.0", "0.3.0"),
                 ("0.3.0", "0.4.0"),
+                ("0.3.0", "0.5.0"),
             }:
                 raise _identity(
                     "LOCAL_CAPSULE_DRIFT",
@@ -3526,7 +3549,7 @@ def _progress_report_identity(report: dict[str, Any]) -> dict[str, str]:
 
 
 def _validated_local_progress_reports(
-    capsule: Path, manifest: dict[str, Any]
+    capsule: Path, manifest: dict[str, Any], *, allow_context_mismatch: bool = False
 ) -> list[dict[str, Any]]:
     """Return a strict, semantically ordered, contiguous local report chain."""
 
@@ -3645,7 +3668,10 @@ def _validated_local_progress_reports(
     context_checksum, _ = _verified_regular_file(
         context, allowed_root=capsule, missing_code="LOCAL_PROGRESS_INVALID"
     )
-    if reports[-1]["context_after_checksum"] != context_checksum:
+    if (
+        reports[-1]["context_after_checksum"] != context_checksum
+        and not allow_context_mismatch
+    ):
         raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress does not match current local context")
     # Mutable Workflow outputs may legitimately differ from earlier rounds.
     # Only the latest round claims the current output bytes.
@@ -3659,6 +3685,202 @@ def _validated_local_progress_reports(
         if checksum != output["checksum"] or size != output["size"]:
             raise _identity("LOCAL_PROGRESS_INVALID", "Latest local Progress output integrity is invalid")
     return reports
+
+
+_LEGACY_SCAFFOLD_DRIFT_PINS = {
+    ("writing-local-experimental", "0.2.0", "0.3.0"),
+    ("review-local-experimental", "0.2.0", "0.3.0"),
+    ("reproduction-experiment-local-experimental", "0.3.0", "0.4.0"),
+}
+
+
+def _scaffold_provenance_is_exact(
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+) -> bool:
+    """Validate exact bound input identity using only durable local receipts."""
+
+    config = _read_package_json(capsule / "workflow/scaffold.json")
+    provenance = _read_package_json(capsule / "memory/input-provenance.json")
+    requirements = config.get("input_requirements")
+    records = provenance.get("artifacts")
+    if (
+        config.get("workflow_id") != installed["workflow_definition_id"]
+        or provenance.get("schema_version")
+        != "reagent.scaffold-input-provenance/v0.1"
+        or provenance.get("workflow_instance_id") != installed["workflow_instance_id"]
+        or not isinstance(requirements, list)
+        or not isinstance(records, dict)
+    ):
+        return False
+    contracts = {
+        item.get("requirement_key"): item
+        for item in requirements if isinstance(item, dict)
+    }
+    if None in contracts or set(records) - set(contracts):
+        return False
+    required = {
+        key for key, item in contracts.items() if item.get("required") is True
+    }
+    if not required.issubset(records):
+        return False
+    receipts_root = workspace / MATERIALIZATION_RECEIPTS_ROOT
+    if receipts_root.is_symlink() or not receipts_root.is_dir():
+        return False
+    receipts: dict[str, dict[str, Any]] = {}
+    for path in receipts_root.glob("artifact-binding-*.json"):
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            return False
+        receipt = _validate_materialization_receipt(_read_json(path), descriptor)
+        if receipt["consumer_workflow_instance_id"] != installed["workflow_instance_id"]:
+            continue
+        key = receipt["requirement_key"]
+        if key in receipts:
+            return False
+        receipts[key] = receipt
+    if set(receipts) != set(records):
+        return False
+    for key, record in records.items():
+        contract = contracts[key]
+        receipt = receipts[key]
+        if not isinstance(record, dict) or set(record) != {
+            "artifact_id", "artifact_type", "sha256", "relative_path"
+        }:
+            return False
+        expected_target = f"{installed['relative_path']}/{contract['target_relative_path']}"
+        if (
+            record != {
+                "artifact_id": receipt["artifact_id"],
+                "artifact_type": receipt["artifact_type"],
+                "sha256": receipt["target_checksum"],
+                "relative_path": contract["target_relative_path"],
+            }
+            or receipt["target_relative_path"] != expected_target
+            or receipt["artifact_type"] != contract["artifact_type"]
+        ):
+            return False
+        checksum, _ = _verified_regular_file(
+            workspace / expected_target,
+            allowed_root=capsule,
+            missing_code="LOCAL_PROGRESS_INVALID",
+        )
+        if checksum != receipt["target_checksum"]:
+            return False
+    return True
+
+
+def _legacy_scaffold_context_drift_is_exact(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+    manifest: dict[str, Any],
+    reports: list[dict[str, Any]],
+) -> bool:
+    """Recognize only the deterministic historical post-finalize rewrite.
+
+    Historical interactive runners called ``_update_context`` after the Agent
+    had already finalized.  Since report N then existed, that exact function
+    wrote ``completed_rounds=N+1`` before its duplicate finalize failed.
+    """
+
+    pin = (
+        installed.get("workflow_definition_id", manifest["workflow_id"]),
+        installed.get("workflow_definition_version", manifest["workflow_version"]),
+        installed.get("capsule_version", manifest["package_template_version"]),
+    )
+    if pin not in _LEGACY_SCAFFOLD_DRIFT_PINS or not reports:
+        return False
+    latest = reports[-1]
+    if latest.get("status") != "COMPLETED" or latest.get("current_state") != "COMPLETED":
+        return False
+    context_path = capsule / "memory/context.md"
+    current_checksum, _ = _verified_regular_file(
+        context_path, allowed_root=capsule, missing_code="LOCAL_PROGRESS_INVALID"
+    )
+    if current_checksum == latest["context_after_checksum"]:
+        return False
+    current = _read_package_json(capsule / "memory/current-artifact.json")
+    if set(current) != {"relative_path", "artifact_kind", "media_type", "checksum", "size"}:
+        return False
+    if current not in latest["output_artifacts"]:
+        return False
+    artifact_checksum, artifact_size = _verified_regular_file(
+        capsule / _safe_artifact_path(current["relative_path"], root="outputs"),
+        allowed_root=capsule,
+        missing_code="LOCAL_PROGRESS_INVALID",
+    )
+    if artifact_checksum != current["checksum"] or artifact_size != current["size"]:
+        return False
+    try:
+        validator = runpy.run_path(str(capsule / "validate_package.py"))
+        artifact = _read_package_json(capsule / current["relative_path"])
+        validator["validate_scaffold_artifact"](artifact)
+        runtime = runpy.run_path(str(capsule / "reagent_local.py"))
+        config = _read_package_json(capsule / "workflow/scaffold.json")
+        provenance = _read_package_json(capsule / "memory/input-provenance.json")
+        expected_artifact, expected_human = runtime["_scaffold_payload"](
+            config, provenance["artifacts"], capsule
+        )
+        if artifact != expected_artifact:
+            return False
+        human_path = capsule / _safe_artifact_path(
+            config["human_output_path"], root="outputs"
+        )
+        _human_checksum, _human_size = _verified_regular_file(
+            human_path, allowed_root=capsule, missing_code="LOCAL_PROGRESS_INVALID"
+        )
+        if human_path.read_bytes() != expected_human:
+            return False
+    except Exception:
+        return False
+    try:
+        provenance_exact = _scaffold_provenance_is_exact(
+            workspace, descriptor, installed, capsule
+        )
+    except (OSError, WorkspaceCLIError):
+        provenance_exact = False
+    if not provenance_exact:
+        return False
+    raw = context_path.read_bytes()
+    prefix = b"# Scaffold Workflow Context\n\n```json\n"
+    suffix = b"\n```\n"
+    if not raw.startswith(prefix) or not raw.endswith(suffix):
+        return False
+    try:
+        context = json.loads(raw[len(prefix):-len(suffix)].decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return False
+    expected_fields = {
+        "schema_version", "workflow_id", "core_capability_maturity",
+        "completed_rounds", "latest_artifact", "continuation", "updated_at",
+    }
+    if set(context) != expected_fields:
+        return False
+    if context != {
+        "schema_version": "reagent.scaffold-context/v0.1",
+        "workflow_id": manifest["workflow_id"],
+        "core_capability_maturity": "SCAFFOLD_CORE",
+        "completed_rounds": latest["execution_round"] + 1,
+        "latest_artifact": current,
+        "continuation": "Read local files; prior chat history is not required.",
+        "updated_at": context.get("updated_at"),
+    }:
+        return False
+    try:
+        context_time = _timestamp(context["updated_at"], "updated_at")
+        completed_time = _timestamp(latest["completed_at"], "completed_at")
+    except WorkspaceCLIError:
+        return False
+    if context_time < completed_time:
+        return False
+    canonical = prefix + canonical_json(context).encode("utf-8") + suffix
+    return raw == canonical and current["artifact_kind"] in {
+        "manuscript-draft/v1", "review-report/v1", "experiment-record/v1"
+    }
 
 
 def _accepted_cloud_progress(
@@ -4021,24 +4243,39 @@ def run_workflow(
             and pin[1:] in {
                 ("0.1.0", "0.1.0"), ("0.2.0", "0.2.0"),
                 ("0.2.0", "0.3.0"),
+                ("0.2.0", "0.4.0"),
                 ("0.3.0", "0.3.0"), ("0.3.0", "0.4.0"),
+                ("0.3.0", "0.5.0"),
             }
         )
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
         local_reports: list[dict[str, Any]] = []
         if not preflight_only and (is_idea or is_scaffold):
-            local_reports = _validated_local_progress_reports(capsule, manifest)
-            if local_reports:
-                _recover_progress_backlog(
-                    workspace=workspace,
-                    descriptor=descriptor,
-                    installed=installed,
-                    capsule=capsule,
-                    manifest=manifest,
-                    reports=local_reports,
-                    transport=transport,
+            readiness = _evaluate_local_progress_readiness(
+                workspace=workspace,
+                descriptor=descriptor,
+                installed=installed,
+                capsule=capsule,
+                manifest=manifest,
+            )
+            if readiness.state == "INVALID":
+                raise _identity(
+                    "LOCAL_PROGRESS_INVALID",
+                    readiness.reason or "Local Progress cannot be safely recovered",
                 )
+            local_reports = list(readiness.reports)
+            if local_reports:
+                if readiness.state != "ACKNOWLEDGED":
+                    _recover_progress_backlog(
+                        workspace=workspace,
+                        descriptor=descriptor,
+                        installed=installed,
+                        capsule=capsule,
+                        manifest=manifest,
+                        reports=local_reports,
+                        transport=transport,
+                    )
                 if local_reports[-1]["status"] == "COMPLETED":
                     return WorkflowRunResult(
                         status="PROGRESS_SYNCHRONIZED",
@@ -4130,6 +4367,7 @@ def run_workflow(
             if pin in {
                 ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"),
                 ("reproduction-experiment-local-experimental", "0.3.0", "0.4.0"),
+                ("reproduction-experiment-local-experimental", "0.3.0", "0.5.0"),
             }:
                 resource_projection = _verify_bound_resources(
                     workspace=workspace,
@@ -4137,7 +4375,7 @@ def run_workflow(
                     workflow_instance_id=workflow_instance_id,
                     transport=transport,
                 )
-                if pin[2] == "0.4.0":
+                if pin[2] in {"0.4.0", "0.5.0"}:
                     _prepare_experiment_resource_provenance(
                         capsule=capsule,
                         workflow_instance_id=workflow_instance_id,
@@ -4216,7 +4454,19 @@ def run_workflow(
         )
         if completed.returncode != 0:
             if not preflight_only and (is_idea or is_scaffold):
-                recovered_reports = _validated_local_progress_reports(capsule, manifest)
+                recovered = _evaluate_local_progress_readiness(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    installed=installed,
+                    capsule=capsule,
+                    manifest=manifest,
+                )
+                if recovered.state == "INVALID":
+                    raise _identity(
+                        "LOCAL_PROGRESS_INVALID",
+                        recovered.reason or "Local Progress cannot be safely recovered",
+                    )
+                recovered_reports = list(recovered.reports)
                 if len(recovered_reports) > len(local_reports):
                     _recover_progress_backlog(
                         workspace=workspace,
@@ -4971,119 +5221,153 @@ def _validated_workspace_progress_acknowledgement(
     return True
 
 
-def _local_progress_summary(
+def _local_progress_acknowledged(
     workspace: Path,
     descriptor: dict[str, Any],
     installed: dict[str, Any],
     capsule: Path,
-) -> tuple[int, str | None, bool]:
-    """Read only checksum-self-identifying local reports for status guidance."""
-
-    reports_root = capsule / "memory/progress/reports"
-    if reports_root.is_symlink() or not reports_root.is_dir():
-        return 0, None, False
-    reports: list[tuple[int, str, str, dict[str, Any]]] = []
-    for path in sorted(reports_root.glob("prv2-*.json")):
-        metadata = path.stat(follow_symlinks=False)
-        if (
-            path.is_symlink()
-            or not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_nlink != 1
-            or metadata.st_size > MAX_CONTROL_JSON_BYTES
-        ):
-            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress history contains an unsafe entry")
-        try:
-            report = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress history is invalid") from error
-        if not isinstance(report, dict):
-            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress history is invalid")
-        report_id = report.get("report_id")
-        report_checksum = report.get("report_checksum")
-        execution_round = report.get("execution_round")
-        status = report.get("status")
-        identified = {**report, "report_checksum": None}
-        if (
-            not isinstance(report_id, str)
-            or path.name != f"{report_id}.json"
-            or not isinstance(report_checksum, str)
-            or not SHA256.fullmatch(report_checksum)
-            or canonical_hash(identified) != report_checksum
-            or isinstance(execution_round, bool)
-            or not isinstance(execution_round, int)
-            or execution_round < 1
-            or status not in {"IN_PROGRESS", "COMPLETED", "BLOCKED", "FAILED", "CANCELLED"}
-        ):
-            raise _identity("LOCAL_CAPSULE_DRIFT", "Local Progress identity is invalid")
-        reports.append((execution_round, report_id, status, report))
-    if not reports:
-        return 0, None, False
-    reports.sort(key=lambda item: (item[0], item[1]))
-    latest = reports[-1][3]
-    manifest = _read_package_json(capsule / "package-manifest.json")
+    manifest: dict[str, Any],
+    report: dict[str, Any],
+) -> bool:
     acknowledgement_path = _progress_receipt_path(
-        workspace, installed["workflow_instance_id"], latest["report_id"]
+        workspace, installed["workflow_instance_id"], report["report_id"]
     )
     acknowledged = _validated_workspace_progress_acknowledgement(
         acknowledgement_path,
         descriptor=descriptor,
         installed=installed,
         manifest=manifest,
-        report=latest,
+        report=report,
     )
-    if not acknowledged:
-        capsule_receipt = (
-            capsule / "memory/progress/receipts" / f"{latest['report_id']}.json"
+    if acknowledged:
+        return True
+    capsule_receipt = (
+        capsule / "memory/progress/receipts" / f"{report['report_id']}.json"
+    )
+    if not capsule_receipt.exists() and not capsule_receipt.is_symlink():
+        return False
+    if capsule_receipt.is_symlink() or not capsule_receipt.is_file():
+        raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt path is unsafe")
+    receipt = _read_json(capsule_receipt)
+    legacy_fields = {
+        "schema_version", "report_id", "report_checksum", "receipt_id",
+        "receipt_checksum", "validation_status", "chain_state",
+        "accepted_for_projection", "idempotent_replay", "projection_checksum",
+        "verified_at",
+    }
+    if receipt.get("schema_version") != "local-progress-upload-receipt/v0.1":
+        try:
+            _progress_receipt_payload(
+                descriptor=descriptor, installed=installed, manifest=manifest,
+                report=report, receipt=receipt,
+            )
+        except WorkspaceCLIError as error:
+            raise _identity(
+                "LOCAL_PROGRESS_INVALID", f"Capsule Progress receipt is invalid: {error}"
+            ) from error
+        return True
+    if (
+        set(receipt) != legacy_fields
+        or receipt.get("report_id") != report["report_id"]
+        or receipt.get("report_checksum") != report["report_checksum"]
+        or receipt.get("validation_status") != "ACCEPTED"
+        or receipt.get("chain_state") != "VALID_CHAIN"
+        or receipt.get("accepted_for_projection") is not True
+        or not isinstance(receipt.get("idempotent_replay"), bool)
+        or not isinstance(receipt.get("receipt_id"), str)
+        or not re.fullmatch(r"progress-receipt-[0-9a-f]{64}", receipt["receipt_id"])
+    ):
+        raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt is invalid")
+    for field in ("receipt_checksum", "projection_checksum"):
+        _checksum(receipt.get(field), field)
+    _timestamp(receipt.get("verified_at"), "verified_at")
+    return True
+
+
+def _evaluate_local_progress_readiness(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+    manifest: dict[str, Any],
+) -> LocalProgressReadiness:
+    """Return the shared fail-closed readiness result used by list and run."""
+
+    try:
+        reports = _validated_local_progress_reports(capsule, manifest)
+        state = "RECOVERABLE_EXACT" if reports else "NO_LOCAL_COMPLETION"
+    except WorkspaceCLIError as strict_error:
+        try:
+            reports = _validated_local_progress_reports(
+                capsule, manifest, allow_context_mismatch=True
+            )
+        except WorkspaceCLIError as chain_error:
+            return LocalProgressReadiness("INVALID", (), str(chain_error))
+        if not _legacy_scaffold_context_drift_is_exact(
+            workspace=workspace,
+            descriptor=descriptor,
+            installed=installed,
+            capsule=capsule,
+            manifest=manifest,
+            reports=reports,
+        ):
+            return LocalProgressReadiness("INVALID", tuple(reports), str(strict_error))
+        state = "RECOVERABLE_KNOWN_LEGACY_SCAFFOLD_DRIFT"
+    if not reports:
+        return LocalProgressReadiness("NO_LOCAL_COMPLETION", ())
+    pin = (
+        installed.get("workflow_definition_id", manifest["workflow_id"]),
+        installed.get("workflow_definition_version", manifest["workflow_version"]),
+        installed.get("capsule_version", manifest["package_template_version"]),
+    )
+    provenance_exact = True
+    if pin[0] in {
+        "writing-local-experimental", "review-local-experimental",
+        "reproduction-experiment-local-experimental",
+    }:
+        try:
+            provenance_exact = _scaffold_provenance_is_exact(
+                workspace, descriptor, installed, capsule
+            )
+        except (OSError, WorkspaceCLIError):
+            provenance_exact = False
+    if not provenance_exact:
+        return LocalProgressReadiness(
+            "INVALID", tuple(reports), "Scaffold input provenance is not exact"
         )
-        if capsule_receipt.exists() or capsule_receipt.is_symlink():
-            if capsule_receipt.is_symlink() or not capsule_receipt.is_file():
-                raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt path is unsafe")
-            receipt = _read_json(capsule_receipt)
-            legacy_fields = {
-                "schema_version", "report_id", "report_checksum", "receipt_id",
-                "receipt_checksum", "validation_status", "chain_state",
-                "accepted_for_projection", "idempotent_replay", "projection_checksum",
-                "verified_at",
-            }
-            if receipt.get("schema_version") == "local-progress-upload-receipt/v0.1":
-                if set(receipt) != legacy_fields:
-                    raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt fields are invalid")
-                candidate = receipt
-            else:
-                try:
-                    _progress_receipt_payload(
-                        descriptor=descriptor,
-                        installed=installed,
-                        manifest=manifest,
-                        report=latest,
-                        receipt=receipt,
-                    )
-                    acknowledged = True
-                    candidate = None
-                except WorkspaceCLIError as error:
-                    raise _identity(
-                        "LOCAL_PROGRESS_INVALID",
-                        f"Capsule Progress receipt is invalid: {error}",
-                    ) from error
-            if candidate is not None and (
-                candidate.get("report_id") != latest["report_id"]
-                or candidate.get("report_checksum") != latest["report_checksum"]
-                or candidate.get("validation_status") != "ACCEPTED"
-                or candidate.get("chain_state") != "VALID_CHAIN"
-                or candidate.get("accepted_for_projection") is not True
-                or not isinstance(candidate.get("idempotent_replay"), bool)
-                or not isinstance(candidate.get("receipt_id"), str)
-                or not re.fullmatch(
-                    r"progress-receipt-[0-9a-f]{64}", candidate["receipt_id"]
-                )
-            ):
-                raise _identity("LOCAL_PROGRESS_INVALID", "Capsule Progress receipt is invalid")
-            if candidate is not None:
-                for field in ("receipt_checksum", "projection_checksum"):
-                    _checksum(candidate.get(field), field)
-                _timestamp(candidate.get("verified_at"), "verified_at")
-                acknowledged = True
-    return len(reports), reports[-1][2], acknowledged
+    try:
+        acknowledged = _local_progress_acknowledged(
+            workspace, descriptor, installed, capsule, manifest, reports[-1]
+        )
+    except WorkspaceCLIError as error:
+        return LocalProgressReadiness("INVALID", tuple(reports), str(error))
+    return LocalProgressReadiness(
+        "ACKNOWLEDGED" if acknowledged else state,
+        tuple(reports),
+    )
+
+
+def _local_progress_summary(
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+) -> tuple[int, str | None, bool]:
+    manifest = _read_package_json(capsule / "package-manifest.json")
+    readiness = _evaluate_local_progress_readiness(
+        workspace=workspace,
+        descriptor=descriptor,
+        installed=installed,
+        capsule=capsule,
+        manifest=manifest,
+    )
+    reports = readiness.reports
+    return (
+        len(reports),
+        None if not reports else reports[-1]["status"],
+        readiness.state == "ACKNOWLEDGED",
+    )
 
 
 def _local_input_state(
@@ -5553,9 +5837,18 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             or not isinstance(document.get("workflow_type"), str)
         ):
             raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow metadata identity is invalid")
-        report_count, latest_status, progress_acknowledged = _local_progress_summary(
-            workspace, descriptor, item, capsule
+        manifest = _read_package_json(capsule / "package-manifest.json")
+        progress_readiness = _evaluate_local_progress_readiness(
+            workspace=workspace,
+            descriptor=descriptor,
+            installed=item,
+            capsule=capsule,
+            manifest=manifest,
         )
+        reports = progress_readiness.reports
+        report_count = len(reports)
+        latest_status = None if not reports else reports[-1]["status"]
+        progress_acknowledged = progress_readiness.state == "ACKNOWLEDGED"
         requirements = document.get("input_requirements", [])
         if not isinstance(requirements, list):
             raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Workflow input contract is invalid")
@@ -5580,10 +5873,16 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         if item["lifecycle"] != "ACTIVE":
             readiness = "RETAINED"
             next_action = "REVIEW_RESULT"
+        elif progress_readiness.state == "INVALID":
+            readiness = "LOCAL_PROGRESS_INVALID"
+            next_action = "REPAIR_REQUIRED"
         elif (
             latest_status == "COMPLETED"
             and definition_id != WORKFLOW_ID
-            and not progress_acknowledged
+            and progress_readiness.state in {
+                "RECOVERABLE_EXACT",
+                "RECOVERABLE_KNOWN_LEGACY_SCAFFOLD_DRIFT",
+            }
         ):
             readiness = "PROGRESS_UPLOAD_PENDING"
             next_action = "CONTINUE"

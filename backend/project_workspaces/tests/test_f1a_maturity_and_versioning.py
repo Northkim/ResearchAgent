@@ -135,7 +135,7 @@ def test_existing_experiment_0_3_capsule_is_not_silently_upgraded(tmp_path) -> N
         "/workflow-definitions/reproduction-experiment-local-experimental"
     ).json()
     assert catalog["recommended_version"]["version"] == "0.3.0"
-    assert catalog["recommended_capsule"]["capsule_version"] == "0.4.0"
+    assert catalog["recommended_capsule"]["capsule_version"] == "0.5.0"
 
 
 @pytest.mark.parametrize(
@@ -176,7 +176,7 @@ def test_existing_writing_review_0_2_capsule_is_not_silently_upgraded(
     ) == ("0.2.0", "0.2.0")
     catalog = client.get(f"/workflow-definitions/{workflow_id}").json()
     assert catalog["recommended_version"]["version"] == "0.2.0"
-    assert catalog["recommended_capsule"]["capsule_version"] == "0.3.0"
+    assert catalog["recommended_capsule"]["capsule_version"] == "0.4.0"
 
 
 def test_maturity_is_canonical_and_independent_from_lifecycle() -> None:

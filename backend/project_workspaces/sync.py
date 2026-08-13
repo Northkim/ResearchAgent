@@ -26,11 +26,13 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
     EXPERIMENT_WORKFLOW_ID,
     EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
+    EXPERIMENT_COMPLETION_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
     SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
+    SCAFFOLD_COMPLETION_CAPSULE_VERSION,
     SCAFFOLD_WORKFLOW_VERSION,
     SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
     SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
@@ -47,9 +49,12 @@ from backend.workflow_packages.production_workflows import (
     build_review_scaffold_v0_2_package,
     build_writing_scaffold_v0_3_package,
     build_review_scaffold_v0_3_package,
+    build_writing_scaffold_v0_4_package,
+    build_review_scaffold_v0_4_package,
     build_experiment_scaffold_v0_2_package,
     build_experiment_scaffold_v0_3_package,
     build_experiment_scaffold_v0_4_package,
+    build_experiment_scaffold_v0_5_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
@@ -603,6 +608,24 @@ class WorkspaceSyncApplicationService:
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.3"
             )
         elif (
+            instance.workflow_definition_id in {
+                WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID,
+            }
+            and instance.workflow_version == SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION
+            and instance.capsule_version == SCAFFOLD_COMPLETION_CAPSULE_VERSION
+        ):
+            slug, builder = {
+                WRITING_WORKFLOW_ID: (
+                    "writing", build_writing_scaffold_v0_4_package
+                ),
+                REVIEW_WORKFLOW_ID: (
+                    "review", build_review_scaffold_v0_4_package
+                ),
+            }[instance.workflow_definition_id]
+            package_id = (
+                f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.4"
+            )
+        elif (
             instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
             and instance.workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION
             and instance.capsule_version == EXPERIMENT_RESOURCE_CAPSULE_VERSION
@@ -621,6 +644,16 @@ class WorkspaceSyncApplicationService:
             builder = build_experiment_scaffold_v0_4_package
             package_id = (
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.4"
+            )
+        elif (
+            instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
+            and instance.workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION
+            and instance.capsule_version == EXPERIMENT_COMPLETION_CAPSULE_VERSION
+        ):
+            slug = "reproduction-experiment"
+            builder = build_experiment_scaffold_v0_5_package
+            package_id = (
+                f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.5"
             )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")

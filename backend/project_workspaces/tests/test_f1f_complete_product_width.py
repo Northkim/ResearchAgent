@@ -204,9 +204,9 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
     } == {
         LITERATURE_SEARCH_WORKFLOW_ID: ("0.4.0", "0.6.0"),
         IDEA_DISCOVERY_WORKFLOW_ID: ("0.2.0", "0.3.0"),
-        WRITING_WORKFLOW_ID: ("0.2.0", "0.3.0"),
-        REVIEW_WORKFLOW_ID: ("0.2.0", "0.3.0"),
-        EXPERIMENT_WORKFLOW_ID: ("0.3.0", "0.4.0"),
+        WRITING_WORKFLOW_ID: ("0.2.0", "0.4.0"),
+        REVIEW_WORKFLOW_ID: ("0.2.0", "0.4.0"),
+        EXPERIMENT_WORKFLOW_ID: ("0.3.0", "0.5.0"),
     }
 
     workspace = tmp_path / "workspace"

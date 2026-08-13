@@ -22,6 +22,7 @@ from backend.workflow_packages.production_workflows import (
     IDEA_INPUT_TARGET,
     EXPERIMENT_RECORD_TYPE,
     EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
+    EXPERIMENT_COMPLETION_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     EXPERIMENT_REQUIREMENTS,
@@ -40,6 +41,7 @@ from backend.workflow_packages.production_workflows import (
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
     SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
+    SCAFFOLD_COMPLETION_CAPSULE_VERSION,
     SCAFFOLD_SKILL_BACKED_CAPSULE_VERSION,
     SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
     SCAFFOLD_INPUT_TARGETS,
@@ -366,6 +368,90 @@ def experiment_interactive_capsule_checksum() -> str:
 EXPERIMENT_V0_4_CAPSULE_CHECKSUM = experiment_interactive_capsule_checksum()
 EXPERIMENT_V0_4_CAPSULE_ID = (
     "capsule-" + EXPERIMENT_V0_4_CAPSULE_CHECKSUM[7:39]
+)
+
+
+def completion_scaffold_capsule_checksum(workflow_id: str) -> str:
+    if workflow_id not in {WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID}:
+        raise ValueError("completion lifecycle Capsule supports Writing/Review only")
+    config = SCAFFOLD_WORKFLOWS[workflow_id]
+    return canonical_hash({
+        "generator_version": (
+            f"reagent-{workflow_id}-compiler/"
+            f"{SCAFFOLD_COMPLETION_CAPSULE_VERSION}"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": config["template_id"],
+        "package_template_version": SCAFFOLD_COMPLETION_CAPSULE_VERSION,
+        "workflow_checksum": scaffold_contract_checksum(
+            workflow_id,
+            workflow_version=SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
+        ),
+        "artifact_requirements": list(config["requirements"]),
+        "artifact_outputs": [scaffold_output_contract(config["output_type"])],
+        "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+        "skill_pins": [
+            {
+                "skill_id": asset.skill_id,
+                "skill_version": asset.version,
+                "content_checksum": asset.content_checksum,
+            }
+            for asset in PRODUCTION_SKILLS
+        ],
+        "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
+        "progress_lifecycle": "ADOPT_AGENT_FINALIZATION_OR_FINALIZE_ONCE",
+    })
+
+
+SCAFFOLD_V0_4_CAPSULE_CHECKSUMS = {
+    workflow_id: completion_scaffold_capsule_checksum(workflow_id)
+    for workflow_id in (WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID)
+}
+SCAFFOLD_V0_4_CAPSULE_IDS = {
+    workflow_id: "capsule-" + checksum[7:39]
+    for workflow_id, checksum in SCAFFOLD_V0_4_CAPSULE_CHECKSUMS.items()
+}
+
+
+def experiment_completion_capsule_checksum() -> str:
+    config = SCAFFOLD_WORKFLOWS[EXPERIMENT_WORKFLOW_ID]
+    return canonical_hash({
+        "generator_version": (
+            f"reagent-{EXPERIMENT_WORKFLOW_ID}-compiler/"
+            f"{EXPERIMENT_COMPLETION_CAPSULE_VERSION}"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": config["template_id"],
+        "package_template_version": EXPERIMENT_COMPLETION_CAPSULE_VERSION,
+        "workflow_checksum": scaffold_contract_checksum(
+            EXPERIMENT_WORKFLOW_ID,
+            workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+        ),
+        "artifact_requirements": list(config["requirements"]),
+        "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_TYPE)],
+        "resource_requirements": [
+            ["source_repository", "SOURCE_REPOSITORY"],
+            ["dataset", "DATASET"],
+            ["model", "MODEL"],
+            ["checkpoint", "CHECKPOINT"],
+        ],
+        "core_capability_maturity": CoreCapabilityMaturity.SCAFFOLD_CORE.value,
+        "skill_pins": [
+            {
+                "skill_id": asset.skill_id,
+                "skill_version": asset.version,
+                "content_checksum": asset.content_checksum,
+            }
+            for asset in PRODUCTION_SKILLS
+        ],
+        "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
+        "progress_lifecycle": "ADOPT_AGENT_FINALIZATION_OR_FINALIZE_ONCE",
+    })
+
+
+EXPERIMENT_V0_5_CAPSULE_CHECKSUM = experiment_completion_capsule_checksum()
+EXPERIMENT_V0_5_CAPSULE_ID = (
+    "capsule-" + EXPERIMENT_V0_5_CAPSULE_CHECKSUM[7:39]
 )
 
 
@@ -803,6 +889,24 @@ def interactive_scaffold_capsule(
     )
 
 
+def completion_scaffold_capsule(
+    workflow_id: str, now: datetime
+) -> WorkflowCapsuleVersion:
+    """Publish the single-finalization lifecycle over unchanged Definition 0.2."""
+
+    previous = interactive_scaffold_capsule(workflow_id, now)
+    return replace(
+        previous,
+        capsule_id=SCAFFOLD_V0_4_CAPSULE_IDS[workflow_id],
+        capsule_version=SCAFFOLD_COMPLETION_CAPSULE_VERSION,
+        definition_checksum=SCAFFOLD_V0_4_CAPSULE_CHECKSUMS[workflow_id],
+        compatibility={
+            **previous.compatibility,
+            "progress_lifecycle": "ADOPT_AGENT_FINALIZATION_OR_FINALIZE_ONCE",
+        },
+    )
+
+
 def skill_backed_scaffold_requirements(
     workflow_id: str, now: datetime
 ) -> tuple[WorkflowArtifactRequirement, ...]:
@@ -962,6 +1066,22 @@ def experiment_interactive_capsule(now: datetime) -> WorkflowCapsuleVersion:
         legacy_package_compatible=False,
         created_at=now,
         updated_at=now,
+    )
+
+
+def experiment_completion_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    """Publish the single-finalization lifecycle over unchanged Definition 0.3."""
+
+    previous = experiment_interactive_capsule(now)
+    return replace(
+        previous,
+        capsule_id=EXPERIMENT_V0_5_CAPSULE_ID,
+        capsule_version=EXPERIMENT_COMPLETION_CAPSULE_VERSION,
+        definition_checksum=EXPERIMENT_V0_5_CAPSULE_CHECKSUM,
+        compatibility={
+            **previous.compatibility,
+            "progress_lifecycle": "ADOPT_AGENT_FINALIZATION_OR_FINALIZE_ONCE",
+        },
     )
 
 

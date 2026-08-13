@@ -136,9 +136,9 @@ def test_full_preset_resolves_skill_backed_scaffold_versions(tmp_path) -> None:
         )
         assert by_id[workflow_id]["workflow_version"] == expected
         expected_capsule = (
-            "0.4.0"
+            "0.5.0"
             if workflow_id == "reproduction-experiment-local-experimental"
-            else "0.3.0"
+            else "0.4.0"
         )
         assert by_id[workflow_id]["capsule_version"] == expected_capsule
         assert [item["skill_id"] for item in by_id[workflow_id]["skills"]] == [

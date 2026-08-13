@@ -7,9 +7,9 @@ with placeholder research cores. Their Registry cards and Progress state show
 ## What is real
 
 The published 0.1.0 and 0.2.0 Capsules remain immutable. New Writing and Review
-Instances use Skill-backed Definition 0.2.0 with interactive Capsule 0.3.0. New Reproduction &
+Instances use Skill-backed Definition 0.2.0 with interactive Capsule 0.4.0. New Reproduction &
 Experiment Instances use Resource-aware Definition 0.3.0 with interactive
-Capsule 0.4.0; the published 0.3.0 Capsule remains immutable. Each has a Desired
+Capsule 0.5.0; all earlier Capsules remain immutable. Each has a Desired
 Manifest entry, independent sync/install state, exact Artifact requirements,
 verified local materialization, a generic local Harness run, memory, Progress,
 and a content-addressed output Artifact. Cloud stores metadata and provenance;
@@ -68,3 +68,9 @@ the versioned local Workflow prompt, not in the launcher bootstrap.
 Published scaffold Capsules never become reviewed cores in place. A
 future substantive implementation requires a new immutable Definition and
 Capsule version, new checksums, and an explicit Project adoption decision.
+If `workflow list` reports `Progress Upload Pending`, run its exact printed
+command. The root client validates the immutable local completion and uploads
+only the missing Progress report; it does not resume Codex, rerun the Workflow,
+regenerate the Artifact, or create another execution round. A state that fails
+the same recovery evaluator is shown as `Local Progress Invalid` and does not
+advertise Continue.

@@ -127,7 +127,7 @@ def test_workspace_root_interactive_writing_review_revision_chain(
     ))
     repository = Path(__file__).resolve().parents[3]
     fake = _copy_executable(
-        repository / "backend/workflow_packages/tests/fake_writing_review_codex_cli.py",
+        repository / "backend/workflow_packages/tests/fake_completing_scaffold_codex_cli.py",
         tmp_path / "codex-writing-review-fixture",
     )
 
@@ -149,10 +149,10 @@ def test_workspace_root_interactive_writing_review_revision_chain(
         writing_a = instances[WRITING_WORKFLOW_ID]
         review_a = instances[REVIEW_WORKFLOW_ID]
         assert (writing_a["workflow_version"], writing_a["capsule_version"]) == (
-            "0.2.0", "0.3.0",
+            "0.2.0", "0.4.0",
         )
         assert (review_a["workflow_version"], review_a["capsule_version"]) == (
-            "0.2.0", "0.3.0",
+            "0.2.0", "0.4.0",
         )
 
         descriptor = client.get(
@@ -250,7 +250,7 @@ def test_workspace_root_interactive_writing_review_revision_chain(
         assert added.status_code == 201, added.text
         writing_b = added.json()
         assert (writing_b["workflow_version"], writing_b["capsule_version"]) == (
-            "0.2.0", "0.3.0",
+            "0.2.0", "0.4.0",
         )
         assert workspace_cli.sync_workspace(
             workspace_root=workspace, transport=transport

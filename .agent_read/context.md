@@ -1,6 +1,30 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-13
+Last updated: 2026-08-14
+
+## Owner interactive scaffold Progress finalization and recovery repair
+
+Interactive scaffold completion now has a single effective Progress round.
+New immutable Writing/Review Capsule 0.4.0 and Experiment Capsule 0.5.0 expose
+one deterministic Agent finalizer; their runners strictly adopt one valid next
+terminal report or finalize once if the Agent did not. Historical Capsules,
+Definitions, Skill pins, Artifact/Progress schemas and scaffold safety remain
+unchanged. Seed-only migration `20260813_0021` publishes only the new records.
+
+The Workspace client now uses the same fail-closed readiness evaluator in list
+and run. Exact local completion and the fully proven historical
+Writing-0.3/Review-0.3/Experiment-0.4 `completed_rounds=N+1` context rewrite
+upload the immutable missing report without a Harness, Artifact regeneration,
+context edit or new round. Arbitrary context/provenance/output drift is shown
+as invalid and never advertises Continue. The semantically terminal legacy
+context is preserved after acknowledgement.
+
+Synthetic completion, historical recovery, context/tamper, Idea backlog,
+Workspace Writing->Review->Writing, controlled browser and three full real
+Codex completion qualifications passed. Full isolated PostgreSQL backend:
+`857 passed, 14 existing skips`; frontend: `34 passed` plus type/lint/build;
+controlled Playwright: `4 passed`. No owner state or live Provider was used.
+ADR 0037 and the 2026-08-14 Progress record contain the durable details.
 
 ## Owner-test defect repair — Progress backlog execution-round recovery
 
