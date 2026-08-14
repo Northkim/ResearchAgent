@@ -6,7 +6,7 @@ COMPOSE := docker compose --env-file .env
 .PHONY: dev owner-setup owner-start owner-doctor owner-secret-remove controlled-start stop demo-configure demo-config-check demo-start demo-stop demo-reset \
 	demo-seed demo-status demo-logs test-backend test-backend-postgres compile-backend \
 	test-frontend lint-frontend build-frontend test-integration test-e2e \
-	test-controlled-e2e test-all
+	test-controlled-e2e qualify-b0-browser test-all
 
 dev:
 	./scripts/dev-start.sh
@@ -90,6 +90,10 @@ test-e2e:
 test-controlled-e2e:
 	conda run --no-capture-output -n reagent-dev python \
 		-m scripts.run_isolated_qualification controlled-e2e
+
+qualify-b0-browser:
+	PYTHONDONTWRITEBYTECODE=1 conda run --no-capture-output -n reagent-dev python \
+		-m scripts.run_isolated_qualification b0-browser
 
 test-all: test-backend compile-backend test-frontend lint-frontend \
 	build-frontend test-integration test-e2e
