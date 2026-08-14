@@ -199,3 +199,9 @@ Agent-finalized terminal Progress round, or perform the existing deterministic
 finalization once when the Harness did not finalize. The generic Workspace
 client uses one fail-closed evaluator for both `workflow list` and upload-only
 `run` recovery, including the exact known historical scaffold context rewrite.
+The Experiment 0.4 historical exception additionally requires its trusted
+Capsule definition/package identity, an exact typed `experiment-record/v1`,
+the exact historical runner-rendered human companion bytes, exact input
+provenance, and the same canonical `completed_rounds=N+1` context. This is not
+a general output-integrity relaxation: any other Markdown or output mismatch
+remains invalid, and recovery mutates only Cloud acknowledgement receipts.

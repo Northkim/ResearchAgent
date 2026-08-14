@@ -2,6 +2,26 @@
 
 Last updated: 2026-08-14
 
+## Experiment 0.4 legacy human-output drift recovery
+
+The Workspace root client now recognizes the exact combined historical
+Experiment Definition 0.3.0 / Capsule 0.4.0 failure fingerprint: immutable
+Progress binds owner-reviewed plan A and the exact typed
+`experiment-record/v1`, while the historical runner has replaced only the
+human companion with its deterministic plan B and written the already-known
+`completed_rounds=N+1` terminal context. The exception is gated by the trusted
+Capsule ID/definition checksum, exact package/template/generator/Workflow and
+immutable-contract identity, exact materialization provenance, exact typed
+Artifact, byte equality with the historical Capsule's own renderer, and the
+unchanged canonical context proof. Generic output validation remains exact.
+
+Valid states appear as `Progress Upload Pending`; the printed command uploads
+the original report with zero Harness starts, rounds or research-byte changes.
+Arbitrary/one-byte Markdown changes and every typed Artifact, Progress,
+context, identity, provenance or path tamper remain invalid. Acknowledged state
+stays stable across list/refresh/sync/restart. No Capsule, Registry, schema or
+migration changed; Alembic remains `20260813_0021`.
+
 ## Owner interactive scaffold Progress finalization and recovery repair
 
 Interactive scaffold completion now has a single effective Progress round.

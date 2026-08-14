@@ -48,6 +48,22 @@ Future simplification to a runner-only finalization authority is deferred.
 Any broader context relaxation or silent historical Capsule change remains
 forbidden.
 
+## Historical Experiment 0.4 output-drift clarification
+
+The owner subsequently proved that one Experiment 0.4 completion also carried
+a second deterministic defect dimension: its immutable Progress Report bound
+the owner-reviewed human plan A, then the historical runner's post-report
+`_publish()` replaced that file with deterministic plan B while reusing the
+same typed Artifact. The original decision remains unchanged for exact and
+context-only recovery. The generic evaluator recognizes this additional state
+only for the exact trusted Experiment Definition 0.3.0 / Capsule 0.4.0
+identity, only when the typed Artifact and all provenance remain exact, and
+only when current Markdown bytes equal that immutable Capsule's own historical
+renderer output and the existing N+1 context fingerprint also passes. It is
+not enabled for Writing, Review, Idea, Experiment 0.3/0.5, or arbitrary output
+drift. Recovery preserves plan B and every execution byte and uploads only the
+existing report.
+
 ## Alternatives considered
 
 - Runner-only finalization would require changing the current Agent contract

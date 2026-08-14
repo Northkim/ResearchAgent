@@ -3548,10 +3548,16 @@ def _progress_report_identity(report: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def _validated_local_progress_reports(
+def _validated_local_progress_chain(
     capsule: Path, manifest: dict[str, Any], *, allow_context_mismatch: bool = False
 ) -> list[dict[str, Any]]:
-    """Return a strict, semantically ordered, contiguous local report chain."""
+    """Return a strict, semantically ordered, contiguous local report chain.
+
+    Current output bytes are deliberately validated by the separate exact
+    output validator below.  Keeping the concerns separate lets one narrowly
+    proven historical renderer defect be recognized without adding a generic
+    output-integrity bypass.
+    """
 
     reports_root = capsule / "memory/progress/reports"
     if reports_root.is_symlink():
@@ -3673,6 +3679,16 @@ def _validated_local_progress_reports(
         and not allow_context_mismatch
     ):
         raise _identity("LOCAL_PROGRESS_INVALID", "Local Progress does not match current local context")
+    return reports
+
+
+def _validate_latest_progress_outputs_exact(
+    capsule: Path, reports: list[dict[str, Any]],
+) -> None:
+    """Require every output claimed by the latest round to match current bytes."""
+
+    if not reports:
+        return
     # Mutable Workflow outputs may legitimately differ from earlier rounds.
     # Only the latest round claims the current output bytes.
     for output in reports[-1]["output_artifacts"]:
@@ -3684,6 +3700,17 @@ def _validated_local_progress_reports(
         )
         if checksum != output["checksum"] or size != output["size"]:
             raise _identity("LOCAL_PROGRESS_INVALID", "Latest local Progress output integrity is invalid")
+
+
+def _validated_local_progress_reports(
+    capsule: Path, manifest: dict[str, Any], *, allow_context_mismatch: bool = False
+) -> list[dict[str, Any]]:
+    """Return a fully validated report chain with exact current output bytes."""
+
+    reports = _validated_local_progress_chain(
+        capsule, manifest, allow_context_mismatch=allow_context_mismatch
+    )
+    _validate_latest_progress_outputs_exact(capsule, reports)
     return reports
 
 
@@ -3691,6 +3718,25 @@ _LEGACY_SCAFFOLD_DRIFT_PINS = {
     ("writing-local-experimental", "0.2.0", "0.3.0"),
     ("review-local-experimental", "0.2.0", "0.3.0"),
     ("reproduction-experiment-local-experimental", "0.3.0", "0.4.0"),
+}
+
+_LEGACY_EXPERIMENT_V0_4_IDENTITY = {
+    "workflow_id": "reproduction-experiment-local-experimental",
+    "workflow_version": "0.3.0",
+    "capsule_version": "0.4.0",
+    "capsule_id": "capsule-be6448913e6c3d00512ecb2e8a5f00ae",
+    "capsule_definition_checksum": (
+        "sha256:be6448913e6c3d00512ecb2e8a5f00ae70e9746e7e79d71657c93e25d917c96a"
+    ),
+    "package_template_id": (
+        "reproduction-experiment-scaffold-package-experimental"
+    ),
+    "generator_version": (
+        "reagent-reproduction-experiment-local-experimental-compiler/0.4.0"
+    ),
+    "workflow_checksum": (
+        "sha256:5851dc2ca70d4f47c73c0a7d84fe7a2beb4f67f853f103667c10079b7990cf81"
+    ),
 }
 
 
@@ -3881,6 +3927,153 @@ def _legacy_scaffold_context_drift_is_exact(
     return raw == canonical and current["artifact_kind"] in {
         "manuscript-draft/v1", "review-report/v1", "experiment-record/v1"
     }
+
+
+def _legacy_experiment_v0_4_release_is_exact(
+    *, installed: dict[str, Any], capsule: Path, manifest: dict[str, Any],
+) -> bool:
+    """Bind the exception to the one reviewed historical Capsule release."""
+
+    identity = _LEGACY_EXPERIMENT_V0_4_IDENTITY
+    expected_installed = {
+        "workflow_definition_id": identity["workflow_id"],
+        "workflow_definition_version": identity["workflow_version"],
+        "capsule_version": identity["capsule_version"],
+        "capsule_id": identity["capsule_id"],
+        "capsule_definition_checksum": identity["capsule_definition_checksum"],
+        "package_id": manifest.get("package_id"),
+        "package_checksum": manifest.get("package_checksum"),
+        "manifest_checksum": manifest.get("manifest_checksum"),
+        "verification_status": "VERIFIED",
+    }
+    if any(
+        installed.get(field) != value
+        for field, value in expected_installed.items()
+    ):
+        return False
+    if any(
+        manifest.get(field) != value
+        for field, value in {
+            "package_schema_version": PACKAGE_SCHEMA,
+            "package_template_id": identity["package_template_id"],
+            "package_template_version": identity["capsule_version"],
+            "generator_version": identity["generator_version"],
+            "workflow_id": identity["workflow_id"],
+            "workflow_version": identity["workflow_version"],
+            "workflow_checksum": identity["workflow_checksum"],
+        }.items()
+    ):
+        return False
+    immutable_checksum = installed.get("immutable_contract_checksum")
+    if not isinstance(immutable_checksum, str):
+        return False
+    try:
+        return immutable_checksum == _immutable_contract_checksum(capsule, manifest)
+    except (OSError, WorkspaceCLIError, KeyError, TypeError):
+        return False
+
+
+def _legacy_experiment_v0_4_output_and_context_drift_is_exact(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+    manifest: dict[str, Any],
+    reports: list[dict[str, Any]],
+) -> bool:
+    """Prove the combined Experiment 0.4 plan-A -> plan-B failure fingerprint.
+
+    The immutable report remains bound to the owner-reviewed human plan A.
+    The only accepted current-output mismatch is the exact deterministic plan
+    B written by the verified historical runner after that report existed.
+    Every other output, especially experiment-record/v1, stays exact.
+    """
+
+    if (
+        not reports
+        or not _legacy_experiment_v0_4_release_is_exact(
+            installed=installed, capsule=capsule, manifest=manifest
+        )
+    ):
+        return False
+    latest = reports[-1]
+    if (
+        latest.get("status") != "COMPLETED"
+        or latest.get("current_state") != "COMPLETED"
+    ):
+        return False
+    try:
+        config = _read_package_json(capsule / "workflow/scaffold.json")
+    except (OSError, WorkspaceCLIError):
+        return False
+    identity = _LEGACY_EXPERIMENT_V0_4_IDENTITY
+    if any(
+        config.get(field) != value
+        for field, value in {
+            "workflow_id": identity["workflow_id"],
+            "workflow_version": identity["workflow_version"],
+            "workflow_kind": "EXPERIMENT",
+            "core_capability_maturity": "SCAFFOLD_CORE",
+            "human_output_path": "outputs/experiment_plan.md",
+            "output_artifact_type": "experiment-record/v1",
+            "supported_mode": "IDEA_EXPERIMENT",
+        }.items()
+    ):
+        return False
+    outputs = latest.get("output_artifacts")
+    if not isinstance(outputs, list) or len(outputs) != 2:
+        return False
+    human = [
+        item for item in outputs
+        if item.get("relative_path") == "outputs/experiment_plan.md"
+    ]
+    typed = [item for item in outputs if item.get("artifact_kind") == "experiment-record/v1"]
+    if len(human) != 1 or len(typed) != 1:
+        return False
+    human_record = human[0]
+    if (
+        human_record.get("artifact_kind") != "EXPERIMENT_SCAFFOLD_PLACEHOLDER"
+        or human_record.get("media_type") != "text/markdown"
+        or typed[0].get("media_type") != "application/json"
+        or typed[0].get("relative_path") == human_record["relative_path"]
+    ):
+        return False
+    try:
+        human_checksum, human_size = _verified_regular_file(
+            capsule / "outputs/experiment_plan.md",
+            allowed_root=capsule,
+            missing_code="LOCAL_PROGRESS_INVALID",
+        )
+        # This branch proves a rewrite.  Byte-equal human output belongs to the
+        # existing context-only legacy path, never this exception.
+        if (
+            human_checksum == human_record["checksum"]
+            and human_size == human_record["size"]
+        ):
+            return False
+        for output in typed:
+            relative = _safe_artifact_path(output["relative_path"], root="outputs")
+            checksum, size = _verified_regular_file(
+                capsule / relative,
+                allowed_root=capsule,
+                missing_code="LOCAL_PROGRESS_INVALID",
+            )
+            if checksum != output["checksum"] or size != output["size"]:
+                return False
+    except (OSError, WorkspaceCLIError, KeyError, TypeError):
+        return False
+    # Reuse the existing exact historical renderer, Artifact/provenance proof,
+    # and canonical N+1 context proof.  In particular it byte-compares the
+    # current Markdown with the historical Capsule's own _scaffold_payload().
+    return _legacy_scaffold_context_drift_is_exact(
+        workspace=workspace,
+        descriptor=descriptor,
+        installed=installed,
+        capsule=capsule,
+        manifest=manifest,
+        reports=reports,
+    )
 
 
 def _accepted_cloud_progress(
@@ -5299,21 +5492,41 @@ def _evaluate_local_progress_readiness(
         state = "RECOVERABLE_EXACT" if reports else "NO_LOCAL_COMPLETION"
     except WorkspaceCLIError as strict_error:
         try:
-            reports = _validated_local_progress_reports(
+            reports = _validated_local_progress_chain(
                 capsule, manifest, allow_context_mismatch=True
             )
         except WorkspaceCLIError as chain_error:
             return LocalProgressReadiness("INVALID", (), str(chain_error))
-        if not _legacy_scaffold_context_drift_is_exact(
-            workspace=workspace,
-            descriptor=descriptor,
-            installed=installed,
-            capsule=capsule,
-            manifest=manifest,
-            reports=reports,
-        ):
-            return LocalProgressReadiness("INVALID", tuple(reports), str(strict_error))
-        state = "RECOVERABLE_KNOWN_LEGACY_SCAFFOLD_DRIFT"
+        try:
+            _validate_latest_progress_outputs_exact(capsule, reports)
+        except WorkspaceCLIError as output_error:
+            if not _legacy_experiment_v0_4_output_and_context_drift_is_exact(
+                workspace=workspace,
+                descriptor=descriptor,
+                installed=installed,
+                capsule=capsule,
+                manifest=manifest,
+                reports=reports,
+            ):
+                return LocalProgressReadiness(
+                    "INVALID", tuple(reports), str(output_error)
+                )
+            state = (
+                "RECOVERABLE_KNOWN_LEGACY_EXPERIMENT_0_4_OUTPUT_DRIFT"
+            )
+        else:
+            if not _legacy_scaffold_context_drift_is_exact(
+                workspace=workspace,
+                descriptor=descriptor,
+                installed=installed,
+                capsule=capsule,
+                manifest=manifest,
+                reports=reports,
+            ):
+                return LocalProgressReadiness(
+                    "INVALID", tuple(reports), str(strict_error)
+                )
+            state = "RECOVERABLE_KNOWN_LEGACY_SCAFFOLD_DRIFT"
     if not reports:
         return LocalProgressReadiness("NO_LOCAL_COMPLETION", ())
     pin = (
@@ -5882,6 +6095,7 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             and progress_readiness.state in {
                 "RECOVERABLE_EXACT",
                 "RECOVERABLE_KNOWN_LEGACY_SCAFFOLD_DRIFT",
+                "RECOVERABLE_KNOWN_LEGACY_EXPERIMENT_0_4_OUTPUT_DRIFT",
             }
         ):
             readiness = "PROGRESS_UPLOAD_PENDING"

@@ -356,9 +356,14 @@ python reagent_local.py workflow list .
 For each `Progress Upload Pending` entry, prefer the exact command printed by
 `workflow list`; the explicit commands above identify the evidence-reported
 Writing and Experiment Instances. The repaired root client proves the exact
-historical terminal-context fingerprint, uploads the existing immutable report
-only, verifies the Cloud projection, and stores its acknowledgement. It starts
-no Harness, creates no new round, and changes no Artifact.
+historical terminal-context fingerprint. For Experiment Capsule 0.4.0 it also
+proves that the current `outputs/experiment_plan.md` is byte-for-byte the
+deterministic replacement written by that exact historical runner, while the
+typed `experiment-record/v1` remains exact. It then uploads the existing
+immutable report only, verifies the Cloud projection, and stores its
+acknowledgement. It starts no Harness, creates no new round, and changes no
+plan, context, Progress Report, or Artifact bytes. An arbitrary or one-byte
+different Markdown file remains `Local Progress Invalid / Repair Required`.
 
 If the existing Full Research Project already contains an unstarted Review
 Capsule 0.3.0 Instance, retire only that Instance in the Workflow
