@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -78,10 +80,15 @@ def _render(url: URL) -> str:
 
 
 @contextmanager
-def _disposable_database() -> Iterator[tuple[str, str, str]]:
+def _disposable_database(
+    *, database_prefix: str = DISPOSABLE_DATABASE_PREFIX,
+    identity: str | None = None,
+) -> Iterator[tuple[str, str, str]]:
     admin_url = _admin_url()
-    identity = uuid.uuid4().hex
-    database_name = DISPOSABLE_DATABASE_PREFIX + uuid.uuid4().hex
+    identity = identity or uuid.uuid4().hex
+    if not database_prefix.startswith(DISPOSABLE_DATABASE_PREFIX):
+        raise DisposableDatabaseError("disposable database prefix is not approved")
+    database_name = database_prefix + identity
     database_url = _render(admin_url.set(database=database_name))
     admin_engine = create_engine(_render(admin_url), isolation_level="AUTOCOMMIT")
     created = False
@@ -142,6 +149,14 @@ def _disposable_database() -> Iterator[tuple[str, str, str]]:
                     {"database_name": database_name},
                 )
                 connection.execute(text(f"DROP DATABASE {database_name}"))
+                exists = connection.scalar(
+                    text("SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname=:database_name)"),
+                    {"database_name": database_name},
+                )
+                if exists:
+                    raise DisposableDatabaseError(
+                        "disposable database still exists after DROP DATABASE"
+                    )
             print(f"QUALIFICATION_DATABASE_DROPPED={database_name}", flush=True)
         admin_engine.dispose()
 
@@ -179,24 +194,6 @@ def _available_loopback_port() -> int:
         return int(listener.getsockname()[1])
 
 
-def _b0_browser_binary() -> Path:
-    explicit = os.environ.get("REAGENT_PLAYWRIGHT_EXECUTABLE_PATH")
-    candidates = [
-        Path(explicit) if explicit else None,
-        Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-        Path("/usr/bin/google-chrome"),
-        Path("/usr/bin/google-chrome-stable"),
-        Path("/usr/bin/chromium"),
-        Path("/usr/bin/chromium-browser"),
-    ]
-    for candidate in candidates:
-        if candidate is not None and candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate
-    raise RuntimeError(
-        "B0 requires an already-installed Chrome/Chromium binary; browser installation is forbidden"
-    )
-
-
 def _b0_child_environment() -> dict[str, str]:
     sensitive = ("API_KEY", "CREDENTIAL", "DATABASE_URL", "PASSWORD", "SECRET", "TOKEN")
     sensitive_prefixes = ("AWS_", "AZURE_", "GH_", "GITHUB_", "GOOGLE_", "HF_", "PG")
@@ -217,34 +214,116 @@ def _loopback_reachable(port: int) -> bool:
         return False
 
 
-def _b0_browser_qualification() -> int:
-    playwright = REPO_ROOT / "frontend/node_modules/.bin/playwright"
-    if not playwright.is_file() or not os.access(playwright, os.X_OK):
-        raise RuntimeError("repository Playwright package executable is unavailable")
-    print("PLAYWRIGHT_PACKAGE_PRESENT=PASS", flush=True)
-    browser_binary = _b0_browser_binary()
-    print(f"BROWSER_BINARY_PRESENT=PASS path={browser_binary}", flush=True)
+def _process_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
 
-    body_error: Exception | None = None
-    result_code = 0
-    runtime_clean = False
-    with _disposable_database() as (database_url, database_name, identity):
-        try:
-            with tempfile.TemporaryDirectory(
-                prefix="reagent-b0-controlled-browser-"
-            ) as root_text:
-                root = Path(root_text)
-                runtime = root / "runtime"
-                frontend = root / "frontend"
-                workspace = root / "workspace"
-                audit = root / "audit"
-                fixture_manifest = audit / "fixtures.json"
-                screenshot_marker = audit / "screenshot-capture.passed"
-                audit.mkdir(mode=0o700)
-                home = root / "home"
-                xdg = root / "xdg"
-                home.mkdir(mode=0o700)
-                xdg.mkdir(mode=0o700)
+
+def _b0_process_pids(runtime: Path) -> dict[str, int]:
+    result = {}
+    for name in ("backend", "frontend"):
+        pid_path, identity_path = runtime / f"{name}.pid", runtime / f"{name}.identity"
+        if not pid_path.exists() and not identity_path.exists():
+            continue
+        if not pid_path.is_file() or not identity_path.is_file():
+            raise RuntimeError(f"B0 {name} process identity is incomplete")
+        raw = pid_path.read_text(encoding="utf-8").strip()
+        if not raw.isdigit(): raise RuntimeError(f"B0 {name} PID is invalid")
+        pid = int(raw)
+        if not _process_alive(pid): raise RuntimeError(f"B0 {name} process is not alive")
+        actual = subprocess.run(["ps", "-p", str(pid), "-o", "lstart="],
+            capture_output=True, text=True, check=False).stdout.strip()
+        if actual != identity_path.read_text(encoding="utf-8").strip():
+            raise RuntimeError(f"B0 {name} process identity does not match")
+        result[name] = pid
+    return result
+
+
+_B0_CHECKS = {
+    "PLAYWRIGHT_PACKAGE_PRESENT": "repository Playwright executable is present",
+    "BROWSER_BINARY_PRESENT": "repository-declared Playwright browser launches its test body",
+    "CONTROLLED_BACKEND_REACHABLE": "GET dynamic loopback Backend /ready returns 200",
+    "CONTROLLED_FRONTEND_REACHABLE": "GET dynamic loopback Frontend /projects returns 200",
+    "DATASET_VERIFIED_DISPOSABLE": "B0 database guard, run identity, Project, and Workspace marker agree",
+    "SCREENSHOT_CAPTURE_PASS": "three PNG files are readable, non-empty, and match viewport dimensions",
+    "TEARDOWN_PASS": "B0 processes, ports, database, Workspace, screenshots, and root are absent",
+}
+_B0_SCREENSHOTS = {
+    "projects-workflows__1440x900__controlled-states__fold.png": (1440, 900),
+    "projects-workflows__1280x800__controlled-states__fold.png": (1280, 800),
+    "projects-workflows__390x844__controlled-states__fold.png": (390, 844),
+}
+
+
+def _workspace_summary(workspace: Path) -> tuple[tuple[str, int, str], ...]:
+    summary = []
+    for path in sorted(workspace.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            if path.is_dir() and not path.is_symlink():
+                summary.append((path.relative_to(workspace).as_posix() + "/", 0, "DIRECTORY"))
+                continue
+            raise RuntimeError(f"unsupported entry in B0 Workspace: {path}")
+        body = path.read_bytes()
+        summary.append((path.relative_to(workspace).as_posix(), len(body),
+                        hashlib.sha256(body).hexdigest()))
+    return tuple(summary)
+
+
+def _screenshot_evidence(root: Path) -> str:
+    if {item.name for item in root.iterdir()} != set(_B0_SCREENSHOTS):
+        raise RuntimeError("B0 screenshot set does not exactly match the three viewports")
+    evidence = []
+    for name, expected_dimensions in _B0_SCREENSHOTS.items():
+        body = (root / name).read_bytes()
+        if len(body) < 24 or body[:8] != b"\x89PNG\r\n\x1a\n" or body[12:16] != b"IHDR":
+            raise RuntimeError(f"B0 screenshot is not a readable PNG: {name}")
+        dimensions = struct.unpack(">II", body[16:24])
+        if dimensions != expected_dimensions:
+            raise RuntimeError(f"B0 screenshot dimensions mismatch: {name}: {dimensions}")
+        evidence.append(f"{name}:size={len(body)}:dimensions={dimensions}")
+    return ";".join(evidence)
+
+
+def _b0_browser_qualification() -> int:
+    states = {name: {"status": "FAIL", "evidence": "none", "check": check,
+                     "limitation": "not reached"} for name, check in _B0_CHECKS.items()}
+
+    def passed(name: str, evidence: str) -> None:
+        states[name].update(status="PASS", evidence=evidence, limitation="none")
+    run_id = uuid.uuid4().hex
+    playwright = REPO_ROOT / "frontend/node_modules/.bin/playwright"
+    failure: Exception | None = None
+    database_absent = runtime_clean = False
+    root: Path | None = None
+    try:
+        if not playwright.is_file() or not os.access(playwright, os.X_OK):
+            raise RuntimeError("repository Playwright package executable is unavailable")
+        passed("PLAYWRIGHT_PACKAGE_PRESENT", str(playwright))
+        with _disposable_database(identity=run_id) as (
+            database_url, database_name, identity,
+        ):
+            qualification = tempfile.TemporaryDirectory(prefix=f"reagent-b0-{run_id}-")
+            root = Path(qualification.name)
+            runtime, frontend = root / "runtime", root / "frontend"
+            workspace, audit = root / "workspace", root / "audit"
+            screenshots = root / "screenshots"
+            fixture_manifest = audit / "fixtures.json"
+            launch_marker = audit / "playwright-launched"
+            marker = workspace / "B0_DISPOSABLE_WORKSPACE"
+            backend_port = frontend_port = 0
+            environment: dict[str, str] | None = None
+            started = False
+            workspace_before: tuple[tuple[str, int, str], ...] | None = None
+            cleanup_errors: list[str] = []
+            try:
+                if root.resolve().is_relative_to(REPO_ROOT.resolve()):
+                    raise RuntimeError("B0 qualification root must be outside the repository")
+                for directory in (audit, screenshots, workspace, root / "home", root / "xdg"):
+                    directory.mkdir(mode=0o700)
+                marker.write_text(f"B0_DISPOSABLE_WORKSPACE\nrun_id={run_id}\n", encoding="utf-8")
                 _copy_frontend(frontend)
                 backend_port = _available_loopback_port()
                 frontend_port = _available_loopback_port()
@@ -258,7 +337,7 @@ def _b0_browser_qualification() -> int:
                     "REAGENT_DATABASE_URL": database_url,
                     "REAGENT_TEST_DATABASE_URL": database_url,
                     "REAGENT_TEST_DATABASE_IDENTITY": identity,
-                    "REAGENT_E2E_QUALIFICATION_IDENTITY": identity,
+                    "REAGENT_E2E_QUALIFICATION_IDENTITY": run_id,
                     "REAGENT_LOCAL_RUNTIME_DIR": str(runtime),
                     "REAGENT_FRONTEND_ROOT": str(frontend),
                     "REAGENT_BACKEND_PORT": str(backend_port),
@@ -267,84 +346,125 @@ def _b0_browser_qualification() -> int:
                     "REAGENT_E2E_BASE_URL": frontend_url,
                     "REAGENT_LOCAL_BASE_URL": backend_url,
                     "REAGENT_B0_FIXTURE_MANIFEST": str(fixture_manifest),
-                    "REAGENT_B0_SCREENSHOT_MARKER": str(screenshot_marker),
-                    "REAGENT_PLAYWRIGHT_CHANNEL": "chrome",
-                    "HOME": str(home),
-                    "XDG_CONFIG_HOME": str(xdg),
+                    "REAGENT_B0_BROWSER_LAUNCH_MARKER": str(launch_marker),
+                    "REAGENT_B0_SCREENSHOT_DIR": str(screenshots),
+                    "HOME": str(root / "home"),
+                    "XDG_CONFIG_HOME": str(root / "xdg"),
                     "NPM_CONFIG_CACHE": str(root / "npm-cache"),
                     "PYTHONDONTWRITEBYTECODE": "1",
                 }
                 _migrate(database_url, environment)
+                subprocess.run(
+                    ["make", "controlled-start"], cwd=REPO_ROOT,
+                    env=environment, check=True,
+                )
+                started = True
+                with urllib.request.urlopen(backend_url + "/ready", timeout=3) as response:
+                    if response.status != 200:
+                        raise RuntimeError("controlled Backend readiness failed")
+                passed("CONTROLLED_BACKEND_REACHABLE", backend_url + "/ready")
+                with urllib.request.urlopen(frontend_url + "/projects", timeout=3) as response:
+                    if response.status != 200:
+                        raise RuntimeError("controlled Frontend readiness failed")
+                passed("CONTROLLED_FRONTEND_REACHABLE", frontend_url + "/projects")
+                subprocess.run([
+                    "conda", "run", "--no-capture-output", "-n", "reagent-dev", "python",
+                    "-m", "scripts.b0_controlled_fixtures", "--api-url", backend_url,
+                    "--run-id", run_id, "--manifest", str(fixture_manifest),
+                ], cwd=REPO_ROOT, env=environment, check=True)
+                fixture = json.loads(fixture_manifest.read_text(encoding="utf-8"))
+                target_engine = create_postgres_engine(database_url)
                 try:
-                    subprocess.run(
-                        ["make", "controlled-start"], cwd=REPO_ROOT,
-                        env=environment, check=True,
-                    )
-                    with urllib.request.urlopen(backend_url + "/ready", timeout=3) as response:
-                        if response.status != 200:
-                            raise RuntimeError("controlled Backend readiness failed")
-                    print("CONTROLLED_BACKEND_REACHABLE=PASS", flush=True)
-                    with urllib.request.urlopen(frontend_url + "/projects", timeout=3) as response:
-                        if response.status != 200:
-                            raise RuntimeError("controlled Frontend readiness failed")
-                    print("CONTROLLED_FRONTEND_REACHABLE=PASS", flush=True)
-                    subprocess.run(
-                        [
-                            "conda", "run", "--no-capture-output", "-n", "reagent-dev",
-                            "python", "-m", "scripts.b0_controlled_fixtures",
-                            "--api-url", backend_url,
-                            "--workspace", str(workspace),
-                            "--manifest", str(fixture_manifest),
-                        ],
-                        cwd=REPO_ROOT, env=environment, check=True,
-                    )
-                    result = subprocess.run(
-                        [str(playwright), "test", B0_SPEC],
-                        cwd=frontend, env=environment, check=False,
-                    )
-                    result_code = result.returncode
-                    if result_code == 0 and screenshot_marker.read_text(encoding="utf-8") != "PASS\n":
-                        raise RuntimeError("B0 screenshot marker is absent or invalid")
-                    if result_code == 0:
-                        print("SCREENSHOT_CAPTURE_PASS=PASS", flush=True)
-                        fixture = json.loads(fixture_manifest.read_text(encoding="utf-8"))
-                        target_engine = create_postgres_engine(database_url)
-                        try:
-                            require_disposable_database(
-                                target_engine, database_url=database_url,
-                                expected_identity=identity,
-                            )
-                            with target_engine.connect() as connection:
-                                project_count = connection.scalar(text(
-                                    "SELECT count(*) FROM local_projects WHERE project_id=:project_id"
-                                ), {"project_id": fixture["project_id"]})
-                        finally:
-                            target_engine.dispose()
-                        if project_count != 1 or not (workspace / "project.json").is_file():
-                            raise RuntimeError("B0 fixture dataset is not bound to disposable authorities")
-                        print(f"DATASET_VERIFIED_DISPOSABLE=PASS database={database_name}", flush=True)
+                    require_disposable_database(target_engine, database_url=database_url,
+                                                expected_identity=run_id)
+                    with target_engine.connect() as connection:
+                        project_count = connection.scalar(text(
+                            "SELECT count(*) FROM local_projects WHERE project_id=:project_id"
+                        ), {"project_id": fixture["project_id"]})
                 finally:
-                    subprocess.run(
-                        [str(REPO_ROOT / "scripts/dev-stop.sh")],
-                        cwd=REPO_ROOT, env=environment, check=True,
+                    target_engine.dispose()
+                if (fixture.get("run_id") != run_id or project_count != 1 or
+                        marker.read_text(encoding="utf-8") !=
+                        f"B0_DISPOSABLE_WORKSPACE\nrun_id={run_id}\n"):
+                    raise RuntimeError("B0 disposable dataset identities do not agree")
+                workspace_before = _workspace_summary(workspace)
+                passed(
+                    "DATASET_VERIFIED_DISPOSABLE",
+                    f"database={database_name};run_id={run_id};workspace={workspace_before}",
+                )
+                result = subprocess.run([str(playwright), "test", B0_SPEC], cwd=frontend,
+                                        env=environment, check=False)
+                if _workspace_summary(workspace) != workspace_before:
+                    raise RuntimeError("BLOCKED_BROWSER_WORKSPACE_WRITE: "
+                                       "WORKSPACE_BROWSER_MUTATION is not NONE")
+                print("WORKSPACE_BROWSER_MUTATION=NONE", flush=True)
+                if launch_marker.read_text(encoding="utf-8") != f"run_id={run_id}\n":
+                    raise RuntimeError("repository-declared Playwright browser did not launch")
+                passed("BROWSER_BINARY_PRESENT",
+                       "repository-declared Chrome channel entered the Playwright test body")
+                if result.returncode != 0:
+                    raise RuntimeError(f"B0 Playwright qualification failed: {result.returncode}")
+                passed("SCREENSHOT_CAPTURE_PASS", _screenshot_evidence(screenshots))
+            except Exception as error:
+                failure = error
+            finally:
+                captured_pids: dict[str, int] = {}
+                if environment is not None:
+                    try:
+                        captured_pids = _b0_process_pids(runtime)
+                        if started and set(captured_pids) != {"backend", "frontend"}:
+                            cleanup_errors.append("B0 process identities were not both captured")
+                    except RuntimeError as error:
+                        cleanup_errors.append(str(error))
+                    stopped = subprocess.run([str(REPO_ROOT / "scripts/dev-stop.sh")], cwd=REPO_ROOT,
+                                             env=environment, check=False)
+                    if stopped.returncode != 0:
+                        cleanup_errors.append("exact B0 process shutdown failed")
+                surviving = [name for name, pid in captured_pids.items() if _process_alive(pid)]
+                if surviving:
+                    cleanup_errors.append("B0 processes survived shutdown: " + ",".join(surviving))
+                if runtime.exists() and any(
+                    (runtime / name).exists() for name in
+                    ("backend.pid", "backend.identity", "frontend.pid", "frontend.identity")
+                ):
+                    cleanup_errors.append("B0 process identity files remain")
+                for port, label in ((backend_port, "Backend"), (frontend_port, "Frontend")):
+                    if port and _loopback_reachable(port):
+                        cleanup_errors.append(f"B0 {label} port remains served")
+                for path, label in ((screenshots, "screenshot directory"), (workspace, "Workspace")):
+                    if path.exists():
+                        shutil.rmtree(path)
+                    if path.exists():
+                        cleanup_errors.append(f"B0 {label} remains")
+                qualification.cleanup()
+                if root.exists():
+                    cleanup_errors.append("B0 qualification root remains")
+                runtime_clean = not cleanup_errors
+                if cleanup_errors:
+                    cleanup_error = RuntimeError("; ".join(cleanup_errors))
+                    failure = cleanup_error if failure is None else RuntimeError(
+                        f"{failure}; teardown: {cleanup_error}"
                     )
-                    runtime_clean = (
-                        not (runtime / "backend.pid").exists()
-                        and not (runtime / "frontend.pid").exists()
-                        and not _loopback_reachable(backend_port)
-                        and not _loopback_reachable(frontend_port)
-                    )
-                    if not runtime_clean:
-                        raise RuntimeError("B0 controlled processes survived teardown")
-        except Exception as error:
-            body_error = error
-    if runtime_clean:
-        print("TEARDOWN_PASS=PASS", flush=True)
-    if body_error is not None:
-        raise body_error
-    if result_code == 0:
-        print("B0_CONTROLLED_BROWSER_QUALIFICATION=PASS", flush=True)
-    return result_code
+        database_absent = True
+    except Exception as error:
+        failure = error if failure is None else failure
+
+    if database_absent and runtime_clean and root is not None and not root.exists():
+        passed("TEARDOWN_PASS", "processes stopped; ports closed; database, Workspace, "
+               "screenshots, and root absent")
+    for state in states.values():
+        if state["status"] == "FAIL" and state["limitation"] == "not reached":
+            state["limitation"] = "not reached because " + str(
+                failure or "an earlier qualification check did not pass"
+            )
+    for name, state in states.items():
+        print(f"{name}={json.dumps(state, sort_keys=True)}", flush=True)
+    if failure is not None:
+        raise failure
+    if any(state["status"] != "PASS" for state in states.values()):
+        raise RuntimeError("B0 qualification did not pass all seven states")
+    print("B0_CONTROLLED_BROWSER_QUALIFICATION=PASS", flush=True)
+    return 0
 
 
 def _controlled_e2e(specs: tuple[str, ...]) -> int:
