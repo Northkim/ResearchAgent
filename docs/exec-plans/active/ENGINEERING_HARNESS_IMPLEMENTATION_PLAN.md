@@ -57,6 +57,25 @@ future Core's concrete testing problem in advance.
 **Owner approval:** explicit H2A authorization before any implementation and
 Owner review of its bounded output before B0.
 
+### H2A implementation record
+
+Status: `STATIC_COMPLETE_OWNER_REVIEW_AND_COMMIT_PENDING`
+
+Authorized artifacts created: the two repo-local `SKILL.md` files, compact
+change and verification templates, and one synthetic ledger example. Existing
+files changed: root `AGENTS.md` routing and this status record only.
+
+Validation completed: exact file/count/line budgets, required Skill
+frontmatter, referenced paths, ledger required keys, Ruby YAML parse, static
+scope checks, and `git diff --check`. The official Skill Creator validator was
+not runnable because PyYAML is absent; no dependency was installed.
+
+Runtime discovery: `PENDING_FRESH_CODEX_SESSION`. Static completion does not
+claim that this running session discovered the new repo-local Skills.
+
+Remaining next phase after Owner review and commit: B0, only under a separate
+explicit authorization in a fresh Codex session.
+
 ## Deferred mechanical work
 
 The following are `DEFERRED_UNTIL_CONCRETE_NEED`, are not H2A blockers, and do

@@ -1,0 +1,36 @@
+# SYNTHETIC EXAMPLE ONLY. This is not a qualified product requirement or test.
+requirements:
+  - requirement_id: EXAMPLE-REQ-001
+    contract_source: docs/testing/REQUIREMENT_TEST_LEDGER_SPEC.md#example-entry
+    requirement_text: "Synthetic example: an explicitly scoped operation rejects an omitted identity."
+    risk: MEDIUM
+    implementation_symbols:
+      - "EXAMPLE_ONLY:not-a-repository-symbol"
+    test_ids:
+      - EXAMPLE-TEST-NOT-EXECUTED
+    test_levels:
+      - UNIT
+    fixture_class: SYNTHETIC
+    negative_cases:
+      - omitted-identity
+    recovery_cases: []
+    compatibility_cases: []
+    browser_cases: []
+    owner_evidence:
+      - NONE
+    evidence_refs: []
+    evidence_references: []
+    skipped_levels:
+      - POSTGRESQL_INTEGRATION
+      - PUBLIC_API
+      - PUBLIC_WORKSPACE_COMMAND
+    claim_scope: "Example ledger shape only; no product behavior is qualified."
+    highest_qualified_level: E0
+    known_gaps:
+      - No implementation or test exists; values are placeholders.
+    conflicting_evidence: []
+    release_blocking: false
+    status: PROPOSED
+    last_verified_at: null
+    verification_timestamp: null
+
