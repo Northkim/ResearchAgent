@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ReAgent · Canonical interface prototype</title>
+  <style>
+    :root {
+      --canvas: #f2f0e9;
+      --paper: #fbfaf6;
+      --white: #fff;
+      --ink: #20231f;
+      --muted: #666a63;
+      --line: #d7d3c8;
+      --line-dark: #bdb9ad;
+      --forest: #163f35;
+      --forest-deep: #102d27;
+      --forest-soft: #dce7df;
+      --blue: #315f75;
+      --blue-soft: #dbe8ed;
+      --amber: #965f21;
+      --amber-soft: #f4e7d5;
+      --red: #8f382e;
+      --red-soft: #f2ded9;
+      --shadow: 0 16px 45px rgba(31, 38, 33, .07);
+      --sans: Aptos, Inter, "Segoe UI", sans-serif;
+      --serif: Georgia, "Times New Roman", serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); font-family: var(--sans); }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible {
+      outline: 3px solid rgba(49, 95, 117, .34);
+      outline-offset: 3px;
+    }
+    [hidden] { display: none !important; }
+
+    .shell { min-height: 100vh; }
+    .sidebar {
+      background: #1e2723;
+      color: #f7f5ed;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      left: 0;
+      padding: 28px 22px 24px;
+      position: fixed;
+      top: 0;
+      width: 224px;
+      z-index: 20;
+    }
+    .brand { align-items: center; display: flex; gap: 12px; }
+    .brand-mark {
+      align-items: center;
+      background: var(--forest-soft);
+      border-radius: 50%;
+      color: var(--forest);
+      display: flex;
+      font: 18px var(--serif);
+      height: 38px;
+      justify-content: center;
+      width: 38px;
+    }
+    .brand-copy { display: grid; gap: 2px; }
+    .brand-copy strong { font: 500 21px var(--serif); letter-spacing: -.02em; }
+    .brand-copy small { color: #aeb9b2; font-size: 9px; letter-spacing: .13em; text-transform: uppercase; }
+    .global-nav { display: grid; gap: 6px; margin-top: 54px; }
+    .global-nav a {
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, .11);
+      color: #dfe6e1;
+      display: flex;
+      font-size: 13px;
+      gap: 12px;
+      padding: 14px 4px;
+    }
+    .global-nav a::before { color: #83938b; content: attr(data-index); font: 9px var(--mono); }
+    .global-nav a[aria-current="page"] { color: #fff; font-weight: 700; }
+    .global-nav a[aria-current="page"]::before { color: #9dceb5; }
+    .sidebar-note { border-top: 1px solid rgba(255, 255, 255, .12); margin-top: auto; padding-top: 18px; }
+    .sidebar-note strong { font-size: 11px; }
+    .sidebar-note p { color: #9ba69f; font-size: 10px; line-height: 1.5; margin: 5px 0 0; }
+
+    main { margin-left: 224px; min-height: 100vh; padding: 34px clamp(24px, 4vw, 62px) 68px; }
+    .screen { margin: 0 auto; max-width: 1280px; }
+    .page-head { align-items: flex-end; display: flex; gap: 30px; justify-content: space-between; margin-bottom: 22px; }
+    .eyebrow { color: var(--forest); font-size: 9px; font-weight: 800; letter-spacing: .15em; margin: 0 0 7px; text-transform: uppercase; }
+    h1, h2, h3, p { overflow-wrap: anywhere; }
+    h1 { font: 400 clamp(34px, 4vw, 50px)/1.03 var(--serif); letter-spacing: -.035em; margin: 0; }
+    .page-subtitle { color: var(--muted); font-size: 13px; line-height: 1.55; margin: 9px 0 0; max-width: 720px; }
+    .button {
+      align-items: center;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      cursor: pointer;
+      display: inline-flex;
+      font-size: 12px;
+      font-weight: 750;
+      justify-content: center;
+      min-height: 42px;
+      padding: 10px 16px;
+    }
+    .button:hover { transform: translateY(-1px); }
+    .button-primary { background: var(--forest); color: #fff; }
+    .button-primary:hover { background: var(--forest-deep); }
+    .button-secondary { background: var(--forest-soft); border-color: #a9c1b4; color: var(--forest); }
+    .button-ghost { background: transparent; border-color: var(--line-dark); color: var(--ink); }
+    .button-small { min-height: 36px; padding: 8px 12px; }
+    .text-link { color: var(--forest); font-size: 12px; font-weight: 750; }
+    .section-title { align-items: flex-end; display: flex; gap: 20px; justify-content: space-between; margin: 27px 0 12px; }
+    .section-title h2 { font: 400 25px/1.1 var(--serif); letter-spacing: -.02em; margin: 0; }
+    .section-title p { color: var(--muted); font-size: 11px; margin: 0; }
+
+    .toolbar { align-items: center; border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); display: flex; gap: 16px; padding: 12px 0; }
+    .search { flex: 1; max-width: 420px; position: relative; }
+    .search span { color: var(--muted); left: 13px; position: absolute; top: 10px; }
+    .search input { background: var(--paper); border: 1px solid var(--line-dark); border-radius: 3px; min-height: 39px; padding: 8px 12px 8px 35px; width: 100%; }
+    .filter-note { color: var(--muted); font-size: 11px; margin-left: auto; }
+    .attention-queue { background: var(--amber-soft); border-left: 4px solid var(--amber); display: grid; grid-template-columns: 1fr 1fr; }
+    .attention-item { align-items: center; display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) auto; padding: 17px 19px; }
+    .attention-item + .attention-item { border-left: 1px solid #dbc29f; }
+    .attention-item strong { display: block; font: 400 17px var(--serif); }
+    .attention-item p { color: #695137; font-size: 11px; line-height: 1.45; margin: 4px 0 0; }
+
+    .project-list { background: var(--paper); border: 1px solid var(--line); }
+    .project-columns, .project-row {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(160px, 1.35fr) minmax(125px, 1fr) minmax(120px, .9fr) minmax(125px, 1fr) minmax(120px, 1fr) 98px;
+    }
+    .project-columns { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .12em; padding: 11px 16px; text-transform: uppercase; }
+    .project-row { align-items: center; background: var(--white); border-top: 1px solid var(--line); min-height: 91px; padding: 15px 16px; }
+    .project-row:hover { background: #fdfcf8; }
+    .project-name strong { display: block; font: 400 17px/1.2 var(--serif); }
+    .project-name span, .cell-note { color: var(--muted); display: block; font-size: 10px; line-height: 1.35; margin-top: 5px; }
+    .workflow-cell strong, .change-cell strong, .output-cell strong { display: block; font-size: 11px; line-height: 1.35; }
+    .stage { color: var(--forest); font-size: 9px; font-weight: 800; letter-spacing: .06em; margin-top: 5px; text-transform: uppercase; }
+    .state { align-items: flex-start; display: flex; gap: 8px; }
+    .state-mark { align-items: center; border-radius: 50%; display: flex; flex: 0 0 auto; font-size: 10px; font-weight: 900; height: 20px; justify-content: center; width: 20px; }
+    .state strong { display: block; font-size: 10px; line-height: 1.25; }
+    .state small { color: var(--muted); display: block; font-size: 9px; line-height: 1.3; margin-top: 3px; }
+    .state-owner .state-mark, .state-stale .state-mark { background: var(--amber-soft); color: var(--amber); }
+    .state-blocked .state-mark { background: var(--red-soft); color: var(--red); }
+    .state-complete .state-mark { background: var(--forest-soft); color: var(--forest); }
+    .empty-filter { color: var(--muted); font: 400 18px var(--serif); padding: 34px; text-align: center; }
+
+    .breadcrumb { color: var(--muted); display: flex; flex-wrap: wrap; font-size: 10px; gap: 7px; margin-bottom: 15px; }
+    .breadcrumb a { color: var(--forest); font-weight: 700; }
+    .project-tabs { border-bottom: 1px solid var(--line); display: flex; gap: 26px; margin-bottom: 18px; overflow-x: auto; }
+    .project-tabs a { color: var(--muted); font-size: 12px; padding: 10px 1px; white-space: nowrap; }
+    .project-tabs a[aria-current="page"] { border-bottom: 2px solid var(--forest); color: var(--forest); font-weight: 800; }
+    .context-note { color: var(--muted); font-size: 10px; margin: 0; }
+
+    .decision-panel { background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(270px, .65fr); }
+    .decision-main { padding: 25px 28px; }
+    .decision-meta { align-items: center; display: flex; flex-wrap: wrap; gap: 9px 16px; }
+    .attention-label { align-items: center; background: var(--amber-soft); color: #75491b; display: inline-flex; font-size: 10px; font-weight: 800; gap: 7px; padding: 7px 9px; }
+    .attention-label::before { content: "!"; font-size: 12px; }
+    .actor-label { color: var(--muted); font-size: 10px; }
+    .actor-label strong { color: var(--ink); }
+    .decision-main h2 { font: 400 clamp(25px, 3vw, 35px)/1.08 var(--serif); letter-spacing: -.025em; margin: 13px 0 8px; }
+    .decision-main > p { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 0 0 16px; max-width: 700px; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 9px; }
+    .decision-output { background: var(--forest); color: #fff; padding: 24px; }
+    .decision-output .eyebrow { color: #a9cdbb; }
+    .decision-output strong { display: block; font: 400 20px/1.2 var(--serif); margin: 8px 0 9px; }
+    .decision-output p { color: #cbd9d2; font-size: 10px; line-height: 1.5; margin: 0; }
+
+    .workflow-path { background: var(--paper); border: 1px solid var(--line); display: grid; grid-template-columns: repeat(5, 1fr); }
+    .path-step { min-height: 108px; padding: 16px; position: relative; }
+    .path-step + .path-step { border-left: 1px solid var(--line); }
+    .path-index { color: #92958e; font: 9px var(--mono); }
+    .path-step strong { display: block; font: 400 16px var(--serif); margin: 17px 0 6px; }
+    .path-step small { color: var(--muted); font-size: 9px; line-height: 1.35; }
+    .path-step.complete { background: #f4f7f3; }
+    .path-step.current { background: var(--amber-soft); box-shadow: inset 0 3px 0 var(--amber); }
+    .path-step.blocked small { color: var(--red); }
+    .two-column { align-items: start; display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+    .plain-section { border-top: 1px solid var(--line); padding-top: 17px; }
+    .plain-section h2 { font: 400 21px var(--serif); margin: 0 0 12px; }
+    .compact-list { list-style: none; margin: 0; padding: 0; }
+    .compact-list li { align-items: start; border-top: 1px solid var(--line); display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) auto; padding: 11px 0; }
+    .compact-list strong { display: block; font-size: 11px; }
+    .compact-list p, .compact-list time { color: var(--muted); font-size: 9px; line-height: 1.45; margin: 4px 0 0; }
+    .kind { color: var(--forest); font-size: 8px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+
+    .workflow-title-row { align-items: flex-start; display: flex; gap: 20px; justify-content: space-between; }
+    .stage-heading { color: var(--forest); font-size: 12px; font-weight: 800; margin: 9px 0 0; }
+    .safety-note { border-left: 2px solid var(--line-dark); color: var(--muted); font-size: 9px; line-height: 1.4; max-width: 220px; padding: 5px 0 5px 11px; }
+    .action-panel { background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(240px, .5fr); margin-top: 17px; }
+    .action-copy { padding: 24px 28px; }
+    .action-kicker { color: var(--amber); font-size: 9px; font-weight: 850; letter-spacing: .1em; text-transform: uppercase; }
+    .action-copy h2 { font: 400 clamp(25px, 3vw, 34px)/1.08 var(--serif); margin: 9px 0; }
+    .action-copy > p { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 0 0 15px; }
+    .reason-row { border-top: 1px solid var(--line); display: grid; gap: 14px; grid-template-columns: 110px 1fr; padding-top: 13px; }
+    .reason-row dt { color: var(--muted); font-size: 8px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+    .reason-row dd { font-size: 10px; line-height: 1.45; margin: 0; }
+    .action-side { background: var(--amber-soft); display: flex; flex-direction: column; justify-content: center; padding: 24px; }
+    .action-side span { color: #745333; font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+    .action-side strong { font: 400 18px/1.25 var(--serif); margin: 9px 0 14px; }
+    .action-side small { color: #765e43; font-size: 9px; line-height: 1.45; margin-top: 10px; }
+
+    .workflow-content { align-items: start; display: grid; gap: 30px; grid-template-columns: minmax(0, 1.25fr) minmax(270px, .75fr); margin-top: 25px; }
+    .content-stack { display: grid; gap: 25px; }
+    .input-row { align-items: center; border-top: 1px solid var(--line); display: grid; gap: 14px; grid-template-columns: 28px minmax(0, 1fr) auto; padding: 12px 0; }
+    .input-icon { align-items: center; background: var(--forest-soft); border-radius: 50%; color: var(--forest); display: flex; font-size: 10px; font-weight: 900; height: 24px; justify-content: center; width: 24px; }
+    .input-row strong { display: block; font-size: 11px; }
+    .input-row p { color: var(--muted); font-size: 9px; line-height: 1.4; margin: 4px 0 0; }
+    .input-state { color: var(--forest); font-size: 9px; font-weight: 800; }
+    .output-panel { border-left: 3px solid var(--forest); padding: 4px 0 4px 17px; }
+    .output-panel strong { display: block; font: 400 19px var(--serif); margin-bottom: 7px; }
+    .output-panel p { color: var(--muted); font-size: 10px; line-height: 1.5; margin: 0; }
+    .not-produced { color: var(--amber); display: block; font-size: 9px; font-weight: 800; margin-top: 9px; text-transform: uppercase; }
+    .activity { list-style: none; margin: 0; padding: 0; }
+    .activity li { border-left: 1px solid var(--line-dark); margin-left: 5px; padding: 0 0 16px 17px; position: relative; }
+    .activity li::before { background: var(--paper); border: 2px solid var(--forest); border-radius: 50%; content: ""; height: 8px; left: -5px; position: absolute; top: 2px; width: 8px; }
+    .activity strong { display: block; font-size: 10px; }
+    .activity p { color: var(--muted); font-size: 9px; line-height: 1.4; margin: 4px 0 0; }
+    .resource-row { border-top: 1px solid var(--line); padding: 12px 0; }
+    .resource-row strong { display: block; font-size: 10px; }
+    .resource-row p { color: var(--muted); font-size: 9px; line-height: 1.45; margin: 5px 0 0; }
+    .resource-status { color: var(--forest); font-size: 9px; font-weight: 800; }
+    details.technical { border: 1px solid var(--line); margin-top: 22px; padding: 14px 16px; }
+    details.technical summary { cursor: pointer; font-size: 10px; font-weight: 800; }
+    details.technical dl { display: grid; gap: 10px; margin: 15px 0 0; }
+    details.technical dl div { display: grid; gap: 10px; grid-template-columns: 145px minmax(0, 1fr); }
+    details.technical dt { color: var(--muted); font-size: 8px; letter-spacing: .07em; text-transform: uppercase; }
+    details.technical dd { font: 9px var(--mono); margin: 0; overflow-wrap: anywhere; }
+
+    .toast { background: #222b27; bottom: 24px; box-shadow: var(--shadow); color: #fff; font-size: 11px; left: calc(224px + 50%); max-width: 380px; padding: 13px 16px; position: fixed; transform: translateX(-50%); z-index: 40; }
+    .prototype-footer { color: var(--muted); font-size: 9px; margin-top: 30px; text-align: center; }
+
+    @media (max-width: 1160px) {
+      .project-columns, .project-row { grid-template-columns: minmax(180px, 1.25fr) minmax(145px, 1fr) minmax(135px, 1fr) minmax(145px, 1fr) 105px; }
+      .project-columns > :nth-child(5), .project-row > :nth-child(5) { display: none; }
+    }
+
+    @media (max-width: 760px) {
+      .sidebar { align-items: center; flex-direction: row; height: 64px; padding: 0 16px; position: sticky; width: 100%; }
+      .brand-copy small, .sidebar-note { display: none; }
+      .brand-mark { height: 32px; width: 32px; }
+      .brand-copy strong { font-size: 18px; }
+      .global-nav { display: flex; gap: 4px; margin: 0 0 0 auto; }
+      .global-nav a { border: 0; font-size: 11px; padding: 12px 8px; }
+      .global-nav a::before { display: none; }
+      .global-nav a[aria-current="page"] { background: rgba(255, 255, 255, .1); border-radius: 3px; }
+      main { margin-left: 0; padding: 22px 16px 52px; }
+      .page-head, .workflow-title-row { align-items: flex-start; flex-direction: column; }
+      .page-head { gap: 16px; }
+      .page-head .button { width: 100%; }
+      h1 { font-size: 34px; }
+      .toolbar { align-items: stretch; flex-direction: column; }
+      .search { max-width: none; }
+      .filter-note { margin-left: 0; }
+      .attention-queue, .decision-panel, .action-panel, .workflow-content, .two-column { grid-template-columns: 1fr; }
+      .attention-item + .attention-item { border-left: 0; border-top: 1px solid #dbc29f; }
+      .project-columns { display: none; }
+      .project-row { gap: 13px; grid-template-columns: 1fr auto; padding: 17px; }
+      .project-name, .workflow-cell, .state, .change-cell, .output-cell { grid-column: 1 / -1; }
+      .project-row .button { grid-column: 1 / -1; width: 100%; }
+      .project-row > :nth-child(5) { display: block; }
+      .workflow-cell, .change-cell, .output-cell { border-top: 1px solid var(--line); padding-top: 10px; }
+      .decision-output { min-height: 140px; }
+      .workflow-path { grid-template-columns: 1fr; }
+      .path-step { min-height: 82px; padding-left: 48px; }
+      .path-step + .path-step { border-left: 0; border-top: 1px solid var(--line); }
+      .path-step.current { box-shadow: inset 3px 0 0 var(--amber); }
+      .path-index { left: 16px; position: absolute; top: 20px; }
+      .path-step strong { margin-top: 0; }
+      .action-side .button { width: 100%; }
+      .reason-row { grid-template-columns: 1fr; }
+      details.technical dl div { grid-template-columns: 1fr; }
+      .toast { bottom: 14px; left: 16px; max-width: none; right: 16px; transform: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .button:hover { transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#projects" aria-label="ReAgent Projects">
+        <span class="brand-mark" aria-hidden="true">R</span>
+        <span class="brand-copy"><strong>ReAgent</strong><small>Research workspace</small></span>
+      </a>
+      <nav class="global-nav" aria-label="Prototype screens">
+        <a href="#projects" data-route-link="projects" data-index="01">Projects</a>
+        <a href="#overview" data-route-link="overview" data-index="02">Overview</a>
+        <a href="#workflow" data-route-link="workflow" data-index="03">Workflow</a>
+      </nav>
+      <div class="sidebar-note">
+        <strong>Canonical UI prototype</strong>
+        <p>Static presentation data. No API, research execution, or Workspace change.</p>
+      </div>
+    </aside>
+
+    <main id="main-content">
+      <section class="screen" id="projects" data-screen="projects" aria-labelledby="projects-title">
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">Research portfolio</p>
+            <h1 id="projects-title" tabindex="-1">Projects</h1>
+            <p class="page-subtitle">Continue the research decision that needs you now.</p>
+          </div>
+          <button class="button button-primary" type="button" data-demo-action>+ New Project</button>
+        </header>
+
+        <div class="toolbar" role="search">
+          <label class="search"><span aria-hidden="true">⌕</span><input id="project-search" type="search" placeholder="Search projects or topics" aria-label="Search projects"></label>
+          <span class="filter-note">4 active · sorted by attention, then recent change</span>
+        </div>
+
+        <div class="section-title">
+          <div><p class="eyebrow">Your queue</p><h2>Needs attention</h2></div>
+          <p>2 Projects</p>
+        </div>
+        <section class="attention-queue" aria-label="Projects needing attention">
+          <article class="attention-item">
+            <div><strong>Protein adaptation under climate stress</strong><p><b>You</b> · Writing outline is waiting for approval.</p></div>
+            <a class="button button-primary button-small" href="#overview">Review outline</a>
+          </article>
+          <article class="attention-item">
+            <div><strong>Low-resource claim verification</strong><p><b>You</b> · Local Workspace is behind the current Project state.</p></div>
+            <a class="button button-ghost button-small" href="#workflow">Review sync</a>
+          </article>
+        </section>
+
+        <div class="section-title">
+          <div><p class="eyebrow">Work list</p><h2>All Projects</h2></div>
+          <p>Recommended Workflow and latest Output</p>
+        </div>
+        <section class="project-list" aria-label="All Projects">
+          <div class="project-columns" aria-hidden="true"><span>Project</span><span>Recommended Workflow</span><span>Attention</span><span>Recent change</span><span>Latest Output</span><span>Next action</span></div>
+
+          <article class="project-row" data-project data-search-text="protein adaptation climate stress writing outline">
+            <div class="project-name"><strong>Protein adaptation under climate stress</strong><span>How plants maintain protein stability across rapid temperature shifts.</span></div>
+            <div class="workflow-cell"><strong>Writing #1</strong><span class="stage">Outline approval</span></div>
+            <div class="state state-owner" data-fixture-state="AWAITING_OWNER_ACTION"><span class="state-mark" aria-hidden="true">!</span><span><strong>Needs your action</strong><small>Owner · approval required</small></span></div>
+            <div class="change-cell"><strong>Evidence map completed</strong><span class="cell-note">18 min ago</span></div>
+            <div class="output-cell"><strong>Evidence map</strong><span class="cell-note">42 claims · produced</span></div>
+            <a class="button button-primary button-small" href="#overview">Review outline</a>
+          </article>
+
+          <article class="project-row" data-project data-search-text="low resource scientific claim verification literature local sync">
+            <div class="project-name"><strong>Low-resource scientific claim verification</strong><span>Evidence retrieval strategies for claims outside dominant indexes.</span></div>
+            <div class="workflow-cell"><strong>Literature Search</strong><span class="stage">Local continuity</span></div>
+            <div class="state state-stale" data-fixture-state="ACKNOWLEDGED_STALE"><span class="state-mark" aria-hidden="true">↻</span><span><strong>Sync attention</strong><small>Owner · local state stale</small></span></div>
+            <div class="change-cell"><strong>Project setup changed</strong><span class="cell-note">Yesterday, 16:40</span></div>
+            <div class="output-cell"><strong>Search plan</strong><span class="cell-note">Draft · local</span></div>
+            <a class="button button-ghost button-small" href="#workflow">Review sync</a>
+          </article>
+
+          <article class="project-row" data-project data-search-text="neural evidence graph benchmarks experiment blocked dataset">
+            <div class="project-name"><strong>Neural evidence graph benchmarks</strong><span>Benchmarking graph-based support tracing across review workflows.</span></div>
+            <div class="workflow-cell"><strong>Experiment #1</strong><span class="stage">Resource readiness</span></div>
+            <div class="state state-blocked" data-fixture-state="BLOCKED"><span class="state-mark" aria-hidden="true">×</span><span><strong>Blocked</strong><small>System · dataset unavailable</small></span></div>
+            <div class="change-cell"><strong>Dataset check failed</strong><span class="cell-note">Mon, 11:22</span></div>
+            <div class="output-cell"><strong>Experiment result</strong><span class="cell-note">Expected · not produced</span></div>
+            <a class="button button-secondary button-small" href="#workflow">Resolve resource</a>
+          </article>
+
+          <article class="project-row" data-project data-search-text="metadata drift long lived reviews completed review report">
+            <div class="project-name"><strong>Metadata drift in long-lived reviews</strong><span>How evolving sources affect reproducibility of evidence audits.</span></div>
+            <div class="workflow-cell"><strong>Review #1</strong><span class="stage">Owner review complete</span></div>
+            <div class="state state-complete" data-fixture-state="COMPLETED"><span class="state-mark" aria-hidden="true">✓</span><span><strong>Completed</strong><small>None · no action required</small></span></div>
+            <div class="change-cell"><strong>Review finalized</strong><span class="cell-note">Aug 11, 09:15</span></div>
+            <div class="output-cell"><strong>Structured review</strong><span class="cell-note">12 issues · produced</span></div>
+            <a class="button button-ghost button-small" href="#overview">Open Project</a>
+          </article>
+
+          <p class="empty-filter" id="empty-filter" hidden>No Projects match this search.</p>
+        </section>
+        <p class="prototype-footer">Static ProjectAttentionProjection fixture · presentation only</p>
+      </section>
+
+      <section class="screen" id="overview" data-screen="overview" aria-labelledby="overview-title" hidden>
+        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#projects">Projects</a><span aria-hidden="true">/</span><span>Protein adaptation under climate stress</span></nav>
+        <header class="page-head">
+          <div>
+            <p class="eyebrow">Research Project</p>
+            <h1 id="overview-title" tabindex="-1">Protein adaptation under climate stress</h1>
+            <p class="page-subtitle">From evidence collection to an evidence-bound manuscript.</p>
+          </div>
+          <p class="context-note">Active · changed 18 min ago</p>
+        </header>
+        <nav class="project-tabs" aria-label="Project sections">
+          <a href="#overview" aria-current="page">Overview</a><a href="#overview">Workflows</a><a href="#overview">Outputs</a><a href="#overview">Activity</a>
+        </nav>
+
+        <section class="decision-panel" aria-labelledby="current-decision-title">
+          <div class="decision-main">
+            <div class="decision-meta"><span class="attention-label">Owner action required</span><span class="actor-label">Actor · <strong>You</strong></span><span class="actor-label">Stage · <strong>Outline approval</strong></span></div>
+            <h2 id="current-decision-title">Review the manuscript outline</h2>
+            <p>The evidence map is complete. Writing is waiting for you to confirm the argument structure before drafting begins.</p>
+            <div class="button-row"><button class="button button-primary" type="button" data-demo-action>Review outline</button><a class="button button-ghost" href="#workflow">Open Workflow detail</a></div>
+          </div>
+          <aside class="decision-output" aria-label="Latest Output">
+            <p class="eyebrow">Latest Output</p><strong>Evidence map</strong><p>42 mapped claims · 6 limitations<br>Produced by Writing #1 · 18 min ago</p>
+          </aside>
+        </section>
+
+        <div class="section-title"><div><p class="eyebrow">Research progression</p><h2>Where the Project is now</h2></div><p>No invented completion percentage</p></div>
+        <ol class="workflow-path" aria-label="Workflow progression">
+          <li class="path-step complete"><span class="path-index">01</span><strong>Literature</strong><small>Completed · selected paper library produced</small></li>
+          <li class="path-step complete"><span class="path-index">02</span><strong>Idea</strong><small>Completed · research idea selected</small></li>
+          <li class="path-step blocked"><span class="path-index">03</span><strong>Experiment</strong><small>Blocked · optional dataset unavailable</small></li>
+          <li class="path-step current"><span class="path-index">04</span><strong>Writing</strong><small>Needs your action · approve outline</small></li>
+          <li class="path-step"><span class="path-index">05</span><strong>Review</strong><small>Waiting for manuscript Output</small></li>
+        </ol>
+
+        <div class="two-column">
+          <section class="plain-section" aria-labelledby="outputs-title">
+            <div class="section-title"><h2 id="outputs-title">Recent Outputs</h2><a class="text-link" href="#overview">View all →</a></div>
+            <ul class="compact-list">
+              <li><div><strong>Evidence map</strong><p>Writing #1 · 42 mapped claims, 6 explicit limitations</p></div><span class="kind">Produced</span></li>
+              <li><div><strong>Selected research idea</strong><p>Idea Discovery · exact input to Writing and Experiment</p></div><span class="kind">Produced</span></li>
+              <li><div><strong>Selected paper library</strong><p>Literature Search · 28 papers</p></div><span class="kind">Produced</span></li>
+            </ul>
+          </section>
+          <section class="plain-section" aria-labelledby="project-activity-title">
+            <div class="section-title"><h2 id="project-activity-title">Recent Activity</h2><a class="text-link" href="#overview">View all →</a></div>
+            <ul class="compact-list">
+              <li><div><strong>Writing prepared an outline</strong><p>Waiting for owner approval before the initial draft.</p></div><time>18 min</time></li>
+              <li><div><strong>Experiment reported a Resource blocker</strong><p>The optional climate dataset is not available locally.</p></div><time>2 hr</time></li>
+              <li><div><strong>Idea selection completed</strong><p>The exact selected idea is bound downstream.</p></div><time>Yesterday</time></li>
+            </ul>
+          </section>
+        </div>
+
+        <details class="technical">
+          <summary>Technical details</summary>
+          <dl><div><dt>Project ID</dt><dd>project-7a92…e14c</dd></div><div><dt>Manifest revision</dt><dd>12</dd></div><div><dt>Progress reports</dt><dd>8 accepted records</dd></div></dl>
+        </details>
+        <p class="prototype-footer">Static Overview fixture · no API or Project state change</p>
+      </section>
+
+      <section class="screen" id="workflow" data-screen="workflow" aria-labelledby="workflow-title" data-stage="OWNER_APPROVAL" data-actor="OWNER" data-attention-state="OWNER_ACTION_REQUIRED" data-blocker="OWNER_APPROVAL_REQUIRED" data-next-action="REVIEW_EXECUTION_PLAN" data-expected-output="experiment-result" data-latest-output="NONE" hidden>
+        <nav class="breadcrumb" aria-label="Breadcrumb"><a href="#projects">Projects</a><span aria-hidden="true">/</span><a href="#overview">Protein adaptation under climate stress</a><span aria-hidden="true">/</span><span>Experiment #1</span></nav>
+        <div class="workflow-title-row">
+          <header>
+            <p class="eyebrow">Reproduction &amp; Experiment · Workflow</p>
+            <h1 id="workflow-title" tabindex="-1">Experiment #1</h1>
+            <p class="stage-heading">Stage · Plan ready for approval</p>
+          </header>
+          <p class="safety-note">Capability context · prototype fixture<br>Local execution · network off by default</p>
+        </div>
+
+        <section class="action-panel" aria-labelledby="workflow-action-title" data-attention-state="OWNER_ACTION_REQUIRED">
+          <div class="action-copy">
+            <p class="action-kicker">Current action · Owner</p>
+            <h2 id="workflow-action-title">Review the execution plan</h2>
+            <p>The plan is ready. Execution cannot begin until you confirm the method, metrics, exact inputs, and Resource use.</p>
+            <dl class="reason-row"><dt>Waiting reason</dt><dd><strong>Owner approval required.</strong> This is a deliberate checkpoint, not an execution failure.</dd></dl>
+          </div>
+          <aside class="action-side">
+            <span>Next valid action · Browser</span><strong>Approve or return the plan</strong>
+            <button class="button button-primary" type="button" data-demo-action>Review execution plan</button>
+            <small>No local command is available until this checkpoint is resolved.</small>
+          </aside>
+        </section>
+
+        <div class="workflow-content">
+          <div class="content-stack">
+            <section class="plain-section" aria-labelledby="inputs-title">
+              <div class="section-title"><div><p class="eyebrow">Bound evidence</p><h2 id="inputs-title">Inputs</h2></div><p>2 required · ready</p></div>
+              <div class="input-row"><span class="input-icon" aria-hidden="true">✓</span><div><strong>Selected research idea</strong><p>Protein homeostasis across abrupt temperature shifts · Idea Discovery</p></div><span class="input-state">Ready</span></div>
+              <div class="input-row"><span class="input-icon" aria-hidden="true">✓</span><div><strong>Selected paper library</strong><p>28 screened papers · Literature Search</p></div><span class="input-state">Ready</span></div>
+            </section>
+
+            <section class="plain-section" aria-labelledby="output-title">
+              <div class="section-title"><div><p class="eyebrow">Expected Output</p><h2 id="output-title">What this Workflow will produce</h2></div></div>
+              <div class="output-panel"><strong>Experiment result</strong><p>Method, observed execution status, evaluation, results, and limitations tied to the approved plan and exact inputs.</p><span class="not-produced">Expected · not yet produced</span></div>
+            </section>
+
+            <section class="plain-section" aria-labelledby="activity-title">
+              <div class="section-title"><div><p class="eyebrow">Workflow Activity</p><h2 id="activity-title">What happened</h2></div></div>
+              <ol class="activity">
+                <li><strong>Execution plan prepared</strong><p>Method, metrics, baseline, and Resource use recorded · 12 min ago</p></li>
+                <li><strong>Resource readiness verified</strong><p>Exact code revision and local dataset checksum matched · 21 min ago</p></li>
+                <li><strong>Inputs bound</strong><p>Selected idea and literature Outputs were selected explicitly · 34 min ago</p></li>
+              </ol>
+            </section>
+          </div>
+
+          <aside class="content-stack">
+            <section class="plain-section" aria-labelledby="resources-title">
+              <div class="section-title"><div><p class="eyebrow">Contextual</p><h2 id="resources-title">Resources</h2></div></div>
+              <div class="resource-row"><strong>Adaptation benchmark code</strong><p>Exact revision resolved; verified in the Local Workspace.</p><span class="resource-status">Ready</span></div>
+              <div class="resource-row"><strong>Climate response subset</strong><p>Local bytes and checksum verified; use is included in this approval.</p><span class="resource-status">Ready</span></div>
+            </section>
+
+            <section class="plain-section" aria-labelledby="latest-output-title">
+              <div class="section-title"><div><p class="eyebrow">Latest Output</p><h2 id="latest-output-title">Nothing produced yet</h2></div></div>
+              <p class="page-subtitle">The first scientific Output appears only after an authorized local execution is evaluated and finalized.</p>
+            </section>
+          </aside>
+        </div>
+
+        <details class="technical">
+          <summary>Technical Details</summary>
+          <dl>
+            <div><dt>Attention state</dt><dd>OWNER_ACTION_REQUIRED (derived presentation)</dd></div>
+            <div><dt>Blocker code</dt><dd>OWNER_APPROVAL_REQUIRED</dd></div>
+            <div><dt>Desired state</dt><dd>ACTIVE</dd></div>
+            <div><dt>Readiness</dt><dd>READY_TO_RUN_AFTER_APPROVAL</dd></div>
+            <div><dt>Workflow Instance</dt><dd>wfi-48d3…bd82</dd></div>
+            <div><dt>Capsule / version</dt><dd>capsule-23f1…8de1 / prototype</dd></div>
+            <div><dt>Requirement keys</dt><dd>selected_idea, paper_library</dd></div>
+            <div><dt>Manifest / receipt</dt><dd>revision 12 / local verification receipt</dd></div>
+            <div><dt>Skill pins</dt><dd>Research Artifact Provenance; Scaffold Core Safety</dd></div>
+            <div><dt>Checksums</dt><dd>Exact identities retained in presentation fixture</dd></div>
+          </dl>
+        </details>
+        <p class="prototype-footer">WorkflowActionProjection fixture · no execution, approval, or Workspace write</p>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden>Prototype only — no product action was executed.</div>
+
+  <script>
+    (() => {
+      const routes = new Set(["projects", "overview", "workflow"]);
+      const screens = [...document.querySelectorAll("[data-screen]")];
+      const links = [...document.querySelectorAll("[data-route-link]")];
+      let firstRender = true;
+
+      function renderRoute() {
+        const route = routes.has(location.hash.slice(1)) ? location.hash.slice(1) : "projects";
+        if (location.hash !== `#${route}`) history.replaceState(null, "", `#${route}`);
+        screens.forEach((screen) => { screen.hidden = screen.dataset.screen !== route; });
+        links.forEach((link) => {
+          if (link.dataset.routeLink === route) link.setAttribute("aria-current", "page");
+          else link.removeAttribute("aria-current");
+        });
+        document.title = `ReAgent · ${route === "workflow" ? "Workflow Detail" : route[0].toUpperCase() + route.slice(1)}`;
+        if (!firstRender) {
+          window.scrollTo(0, 0);
+          document.querySelector(`[data-screen="${route}"] h1`)?.focus({ preventScroll: true });
+        }
+        firstRender = false;
+      }
+
+      const search = document.querySelector("#project-search");
+      const projects = [...document.querySelectorAll("[data-project]")];
+      const empty = document.querySelector("#empty-filter");
+      search?.addEventListener("input", () => {
+        const query = search.value.trim().toLowerCase();
+        let visible = 0;
+        projects.forEach((project) => {
+          const matches = project.dataset.searchText.includes(query);
+          project.hidden = !matches;
+          if (matches) visible += 1;
+        });
+        empty.hidden = visible !== 0;
+      });
+
+      const toast = document.querySelector("#toast");
+      let toastTimer;
+      document.querySelectorAll("[data-demo-action]").forEach((button) => {
+        button.addEventListener("click", () => {
+          clearTimeout(toastTimer);
+          toast.hidden = false;
+          toastTimer = setTimeout(() => { toast.hidden = true; }, 2800);
+        });
+      });
+
+      window.addEventListener("hashchange", renderRoute);
+      renderRoute();
+    })();
+  </script>
+</body>
+</html>
