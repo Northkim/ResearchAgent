@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -12,6 +13,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 import uuid
 from contextlib import contextmanager
@@ -162,6 +164,14 @@ def _disposable_database(
 
 
 def _copy_frontend(target: Path) -> None:
+    def link_or_copy(source: str, destination: str) -> str | None:
+        try:
+            return os.link(source, destination)
+        except OSError as error:
+            if error.errno != errno.EXDEV:
+                raise
+            return shutil.copy2(source, destination)
+
     source = REPO_ROOT / "frontend"
     shutil.copytree(
         source,
@@ -173,7 +183,7 @@ def _copy_frontend(target: Path) -> None:
     shutil.copytree(
         source / "node_modules",
         target / "node_modules",
-        copy_function=os.link,
+        copy_function=link_or_copy,
         symlinks=True,
     )
 
@@ -294,14 +304,14 @@ def _b0_browser_qualification() -> int:
     def passed(name: str, evidence: str) -> None:
         states[name].update(status="PASS", evidence=evidence, limitation="none")
     run_id = uuid.uuid4().hex
-    playwright = REPO_ROOT / "frontend/node_modules/.bin/playwright"
+    repository_playwright = REPO_ROOT / "frontend/node_modules/.bin/playwright"
     failure: Exception | None = None
     database_absent = runtime_clean = False
     root: Path | None = None
     try:
-        if not playwright.is_file() or not os.access(playwright, os.X_OK):
+        if not repository_playwright.is_file() or not os.access(repository_playwright, os.X_OK):
             raise RuntimeError("repository Playwright package executable is unavailable")
-        passed("PLAYWRIGHT_PACKAGE_PRESENT", str(playwright))
+        passed("PLAYWRIGHT_PACKAGE_PRESENT", str(repository_playwright))
         with _disposable_database(identity=run_id) as (
             database_url, database_name, identity,
         ):
@@ -325,6 +335,17 @@ def _b0_browser_qualification() -> int:
                     directory.mkdir(mode=0o700)
                 marker.write_text(f"B0_DISPOSABLE_WORKSPACE\nrun_id={run_id}\n", encoding="utf-8")
                 _copy_frontend(frontend)
+                playwright = frontend / "node_modules/.bin/playwright"
+                playwright_test = frontend / "node_modules/@playwright/test"
+                config = frontend / "playwright.config.ts"
+                spec = frontend / B0_SPEC
+                frontend_root = frontend.resolve()
+                if any(not path.resolve().is_relative_to(frontend_root)
+                       for path in (playwright, playwright_test, config, spec)):
+                    raise RuntimeError("B0 Playwright runtime identity escaped the temporary frontend")
+                if (not playwright.is_file() or not os.access(playwright, os.X_OK)
+                        or not playwright_test.is_dir() or not config.is_file() or not spec.is_file()):
+                    raise RuntimeError("B0 temporary Playwright runtime identity is incomplete")
                 backend_port = _available_loopback_port()
                 frontend_port = _available_loopback_port()
                 while frontend_port == backend_port:
@@ -420,6 +441,13 @@ def _b0_browser_qualification() -> int:
                                              env=environment, check=False)
                     if stopped.returncode != 0:
                         cleanup_errors.append("exact B0 process shutdown failed")
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    if (not any(_process_alive(pid) for pid in captured_pids.values())
+                            and not any(port and _loopback_reachable(port)
+                                        for port in (backend_port, frontend_port))):
+                        break
+                    time.sleep(0.1)
                 surviving = [name for name, pid in captured_pids.items() if _process_alive(pid)]
                 if surviving:
                     cleanup_errors.append("B0 processes survived shutdown: " + ",".join(surviving))
