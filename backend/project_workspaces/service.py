@@ -485,7 +485,10 @@ def ensure_production_workflow_foundation(
         WRITING_WORKFLOW_ID, REAL_WRITING_WORKFLOW_VERSION, timestamp
     ):
         if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
-            repository.add_workflow_skill_pin(pin)
+            repository.add_workflow_skill_pin(replace(
+                pin,
+                purpose="Use exact bound evidence and preserve Artifact provenance.",
+            ))
     for requirement in real_writing_artifact_requirements(timestamp):
         existing = uow.artifact_references.get_requirement(
             requirement.workflow_definition_id,
@@ -504,7 +507,10 @@ def ensure_production_workflow_foundation(
         WRITING_WORKFLOW_ID, WRITING_REVISION_WORKFLOW_VERSION, timestamp
     ):
         if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
-            repository.add_workflow_skill_pin(pin)
+            repository.add_workflow_skill_pin(replace(
+                pin,
+                purpose="Revise exact claims while preserving Artifact provenance.",
+            ))
     for requirement in writing_revision_artifact_requirements(timestamp):
         existing = uow.artifact_references.get_requirement(
             requirement.workflow_definition_id,
@@ -523,7 +529,10 @@ def ensure_production_workflow_foundation(
         REVIEW_WORKFLOW_ID, REAL_REVIEW_WORKFLOW_VERSION, timestamp
     ):
         if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
-            repository.add_workflow_skill_pin(pin)
+            repository.add_workflow_skill_pin(replace(
+                pin,
+                purpose="Audit exact bound evidence and preserve Artifact provenance.",
+            ))
     for requirement in real_review_artifact_requirements(timestamp):
         existing = uow.artifact_references.get_requirement(
             requirement.workflow_definition_id,

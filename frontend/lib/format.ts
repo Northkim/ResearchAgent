@@ -5,14 +5,15 @@ import type {
   WorkflowRunStatus,
 } from "@/types/api";
 
-const DATE_TIME_FORMAT = new Intl.DateTimeFormat("en", {
-  dateStyle: "medium",
-  timeStyle: "short",
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
   timeZone: "UTC",
 });
 
 export function formatDateTime(value: string): string {
-  return DATE_TIME_FORMAT.format(new Date(value)) + " UTC";
+  return DATE_TIME_FORMAT.format(new Date(value));
 }
 
 export function formatIdentifier(value: string): string {

@@ -630,6 +630,88 @@ class ProjectProgressProjection(SerializableContract):
 
 
 @dataclass(frozen=True, slots=True)
+class WorkflowStageProjection(SerializableContract):
+    code: str
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowBlockerProjection(SerializableContract):
+    code: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowNextActionProjection(SerializableContract):
+    surface: str
+    code: str
+    label: str
+    description: str
+
+    def __post_init__(self) -> None:
+        if self.surface not in {"BROWSER", "LOCAL", "INFORMATIONAL", "NONE"}:
+            raise ValueError("invalid Workflow next-action surface")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowOutputProjection(SerializableContract):
+    label: str
+    artifact_id: str | None
+    artifact_type: str
+    artifact_schema: str
+    checksum: str | None
+    produced_at: str | None
+    progress_round: int | None
+    state: str
+
+    def __post_init__(self) -> None:
+        if self.state not in {"EXPECTED", "PRODUCED"}:
+            raise ValueError("invalid Workflow Output presentation state")
+        if self.state == "PRODUCED" and (
+            self.artifact_id is None
+            or self.checksum is None
+            or self.produced_at is None
+            or self.progress_round is None
+        ):
+            raise ValueError("produced Workflow Output requires exact identity")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowActionProjection(SerializableContract):
+    stage: WorkflowStageProjection
+    actor: str
+    attention_state: str
+    blocker: WorkflowBlockerProjection | None
+    next_action: WorkflowNextActionProjection
+    expected_output: WorkflowOutputProjection | None
+    latest_output: WorkflowOutputProjection | None
+
+    def __post_init__(self) -> None:
+        if self.actor not in {"OWNER", "AGENT", "SYSTEM", "NONE"}:
+            raise ValueError("invalid Workflow presentation actor")
+        if self.attention_state not in {
+            "NORMAL", "OWNER_ACTION_REQUIRED", "BLOCKED",
+            "ATTENTION_REQUIRED", "COMPLETED",
+        }:
+            raise ValueError("invalid Workflow presentation attention state")
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectRecentChangeProjection(SerializableContract):
+    summary: str
+    changed_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectAttentionProjection(SerializableContract):
+    recommended_workflow_instance_id: str | None
+    recommended_workflow_label: str | None
+    action: WorkflowActionProjection
+    recent_change: ProjectRecentChangeProjection
+    latest_output: WorkflowOutputProjection | None
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowInstanceProgressProjection(SerializableContract):
     """Cloud-known research projection for exactly one Workflow Instance."""
 
@@ -665,6 +747,7 @@ class WorkflowInstanceProgressProjection(SerializableContract):
     compatible_input_counts: Mapping[str, int]
     bound_required_inputs: tuple[str, ...]
     result_count: int
+    action: WorkflowActionProjection
 
     def __post_init__(self) -> None:
         if self.schema_version != WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION:
@@ -709,6 +792,7 @@ class ProjectWorkflowProgressProjection(SerializableContract):
     dependency_edges: tuple[Mapping[str, Any], ...]
     recommended_workflow_instance_id: str | None
     recommended_next_action: str
+    attention: ProjectAttentionProjection
 
     def __post_init__(self) -> None:
         if self.schema_version != PROJECT_WORKFLOW_PROGRESS_SCHEMA_VERSION:

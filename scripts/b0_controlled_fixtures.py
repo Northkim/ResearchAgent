@@ -6,7 +6,7 @@ import os
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid5
 from backend.artifact_references.contracts import ArtifactReference, ArtifactState
 from backend.database import SQLAlchemyUnitOfWork, create_postgres_engine, create_session_factory
 from backend.progress_reports.contracts import (
@@ -62,10 +62,18 @@ def _upload(service: ProgressReportService, run_id: str, project_id: str,
     if not receipt.accepted_for_projection:
         raise RuntimeError("B0 fixture Progress was not accepted for projection")
     return receipt, report
-def seed(base_url: str, run_id: str, manifest_path: Path) -> None:
-    project_name = f"B0 controlled {run_id}"
+def seed(
+    base_url: str,
+    run_id: str,
+    manifest_path: Path,
+    *,
+    project_name: str | None = None,
+    research_topic: str | None = None,
+    scenario: str = "b0",
+) -> None:
+    project_name = project_name or f"B0 controlled {run_id}"
     project = _request(base_url, "/projects", {"name": project_name,
-        "research_topic": "Disposable browser qualification only",
+        "research_topic": research_topic or "Disposable browser qualification only",
         "selected_workflow": "LITERATURE_SEARCH", "workflow_setup": "custom",
         "custom_workflow_definition_ids": list(WORKFLOWS)})
     project_id = project["project_id"]
@@ -113,17 +121,72 @@ def seed(base_url: str, run_id: str, manifest_path: Path) -> None:
             producer_capsule_id=instances[WORKFLOWS[0]]["capsule_id"],
             producer_capsule_version=instances[WORKFLOWS[0]]["capsule_version"],
             artifact_type="selected-paper-library/v1", artifact_schema_version="selected-paper-library/v1",
-            media_type="application/json", state=ArtifactState.METADATA_ONLY,
+            media_type="application/json",
+            state=(ArtifactState.LOCAL_AVAILABLE
+                   if scenario == "fe-m-desktop" else ArtifactState.METADATA_ONLY),
             relative_path=output.relative_path, content_checksum=artifact_checksum, size_bytes=0,
             cloud_metadata_available=True, produced_at=now, retired_at=None, created_at=now,
             updated_at=now))
         uow.commit()
-        _upload(service, run_id, project_id, instances[WORKFLOWS[1]], checksums[WORKFLOWS[1]],
-                ProgressStatus.BLOCKED, "Blocked until an exact controlled input is available.",
-                "2026-08-14T01:02:00Z")
+        if scenario == "fe-m-desktop":
+            _request(base_url,
+                f"/projects/{project_id}/workflow-instances/"
+                f"{instances[WORKFLOWS[1]]['workflow_instance_id']}/artifact-dependencies", {
+                    "requirement_key": "paper_library", "artifact_id": "artifact-" + run_id,
+                    "idempotency_key": str(uuid5(UUID(run_id), "fe-m-idea-paper-library")),
+                })
+            idea_checksum = canonical_hash({
+                "schema_version": "reagent.fe-m-selected-research-idea/v0.1",
+                "run_id": run_id, "scientific_content": False,
+            })
+            idea_output = OutputArtifactReference(
+                relative_path=("outputs/artifacts/selected-research-idea/sha256-"
+                               f"{idea_checksum[7:]}.json"),
+                artifact_kind="selected-research-idea/v1", media_type="application/json",
+                checksum=idea_checksum, size=0)
+            idea_receipt, idea_report = _upload(
+                service, run_id, project_id, instances[WORKFLOWS[1]], checksums[WORKFLOWS[1]],
+                ProgressStatus.COMPLETED,
+                "Selected research idea confirmed from the controlled evidence map.",
+                "2026-08-14T01:02:00Z", (idea_output,))
+            idea_artifact_id = "artifact-" + uuid5(
+                UUID(run_id), "fe-m-selected-research-idea"
+            ).hex
+            idea_time = datetime(2026, 8, 14, 1, 2, tzinfo=timezone.utc)
+            uow.artifact_references.add_artifact(ArtifactReference(
+                artifact_id=idea_artifact_id, project_id=project_id,
+                producer_workflow_instance_id=instances[WORKFLOWS[1]]["workflow_instance_id"],
+                producer_progress_receipt_id=idea_receipt.receipt_id,
+                producer_progress_report_id=idea_report.report_id, producer_execution_round=1,
+                producer_capsule_id=instances[WORKFLOWS[1]]["capsule_id"],
+                producer_capsule_version=instances[WORKFLOWS[1]]["capsule_version"],
+                artifact_type="selected-research-idea/v1",
+                artifact_schema_version="selected-research-idea/v1",
+                media_type="application/json", state=ArtifactState.LOCAL_AVAILABLE,
+                relative_path=idea_output.relative_path, content_checksum=idea_checksum,
+                size_bytes=0, cloud_metadata_available=True, produced_at=idea_time,
+                retired_at=None, created_at=idea_time, updated_at=idea_time))
+            uow.commit()
+            writing_id = instances[WORKFLOWS[2]]["workflow_instance_id"]
+            for key, artifact_id, idempotency_name in (
+                ("research_idea", idea_artifact_id, "fe-m-writing-research-idea"),
+                ("literature_library", "artifact-" + run_id, "fe-m-writing-literature"),
+            ):
+                _request(base_url,
+                    f"/projects/{project_id}/workflow-instances/{writing_id}/artifact-dependencies", {
+                        "requirement_key": key, "artifact_id": artifact_id,
+                        "idempotency_key": str(uuid5(UUID(run_id), idempotency_name)),
+                    })
+        else:
+            _upload(service, run_id, project_id, instances[WORKFLOWS[1]], checksums[WORKFLOWS[1]],
+                    ProgressStatus.BLOCKED,
+                    "Blocked until an exact controlled input is available.",
+                    "2026-08-14T01:02:00Z")
         _upload(service, run_id, project_id, instances[WORKFLOWS[2]], checksums[WORKFLOWS[2]],
                 ProgressStatus.BLOCKED,
-                "Awaiting owner action before any scaffold Writing activity.",
+                ("The evidence map and six-section outline are ready for owner review."
+                 if scenario == "fe-m-desktop"
+                 else "Awaiting owner action before any scaffold Writing activity."),
                 "2026-08-14T01:03:00Z")
     finally:
         uow.close()
@@ -147,18 +210,27 @@ def seed(base_url: str, run_id: str, manifest_path: Path) -> None:
              {"base_revision": 1})
     progress = _request(base_url, f"/projects/{project_id}/progress")
     by_workflow = {item["workflow_definition_id"]: item for item in progress["instances"]}
-    expected = dict(zip(WORKFLOWS, ("COMPLETED", "BLOCKED", "BLOCKED", "NOT_STARTED")))
+    expected = dict(zip(WORKFLOWS, (
+        "COMPLETED", "COMPLETED" if scenario == "fe-m-desktop" else "BLOCKED",
+        "BLOCKED", "NOT_STARTED",
+    )))
     if len(progress["instances"]) != 4 or any(
             by_workflow[key]["research_status"] != value for key, value in expected.items()):
         raise RuntimeError("B0 fixture states do not match the approved mapping")
     completed, mismatch = by_workflow[WORKFLOWS[0]], by_workflow[WORKFLOWS[3]]
     if len(completed["artifact_metadata"]) != 1 or completed["result_count"] != 1:
         raise RuntimeError("B0 completion lacks its single metadata-only Artifact reference")
-    if progress["dependency_edges"]:
+    if scenario == "fe-m-desktop":
+        if len(progress["dependency_edges"]) != 3:
+            raise RuntimeError("FE-M fixture lacks its three exact Artifact bindings")
+    elif progress["dependency_edges"]:
         raise RuntimeError("B0 fixture must not create Artifact dependency bindings")
     if mismatch["installation_state"] != "ACKNOWLEDGED_STALE":
         raise RuntimeError("B0 fixture lacks a proven stale local/Cloud installation")
-    if "Awaiting owner action" not in by_workflow[WORKFLOWS[2]]["latest_summary"]:
+    expected_writing_summary = (
+        "six-section outline" if scenario == "fe-m-desktop" else "Awaiting owner action"
+    )
+    if expected_writing_summary not in by_workflow[WORKFLOWS[2]]["latest_summary"]:
         raise RuntimeError("B0 owner-action state is not observable")
     manifest_path.write_text(canonical_json({
         "schema_version": "reagent.b0-controlled-fixtures/v0.1", "run_id": run_id,
@@ -171,7 +243,14 @@ def main() -> None:
     parser.add_argument("--api-url", required=True)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--manifest", required=True, type=Path)
+    parser.add_argument("--project-name")
+    parser.add_argument("--research-topic")
+    parser.add_argument("--scenario", choices=("b0", "fe-m-desktop"), default="b0")
     arguments = parser.parse_args()
-    seed(arguments.api_url.rstrip("/"), arguments.run_id, arguments.manifest)
+    seed(
+        arguments.api_url.rstrip("/"), arguments.run_id, arguments.manifest,
+        project_name=arguments.project_name, research_topic=arguments.research_topic,
+        scenario=arguments.scenario,
+    )
 if __name__ == "__main__":
     main()

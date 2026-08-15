@@ -14,8 +14,15 @@ from .contracts import (
     PROJECT_WORKFLOW_PROGRESS_SCHEMA_VERSION,
     WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION,
     ProjectWorkflowProgressProjection,
+    ProjectAttentionProjection,
+    ProjectRecentChangeProjection,
     UploadedProgressReport,
+    WorkflowActionProjection,
+    WorkflowBlockerProjection,
     WorkflowInstanceProgressProjection,
+    WorkflowNextActionProjection,
+    WorkflowOutputProjection,
+    WorkflowStageProjection,
 )
 
 
@@ -124,6 +131,20 @@ class ProjectProgressAggregationService:
             key=lambda item: (_next_action_priority(item.next_action), _workflow_path_priority(item.workflow_definition_id), item.friendly_instance_label),
             default=None,
         )
+        latest_project_output = max(
+            (
+                item.action.latest_output
+                for item in projections
+                if item.action.latest_output is not None
+            ),
+            key=lambda item: (item.produced_at or "", item.artifact_id or ""),
+            default=None,
+        )
+        attention = _project_attention(
+            recommended=recommended,
+            latest_activity=latest_activity,
+            latest_output=latest_project_output,
+        )
         return ProjectWorkflowProgressProjection(
             schema_version=PROJECT_WORKFLOW_PROGRESS_SCHEMA_VERSION,
             project_id=project_id,
@@ -154,6 +175,7 @@ class ProjectProgressAggregationService:
             ),
             recommended_workflow_instance_id=(recommended.workflow_instance_id if recommended else None),
             recommended_next_action=(recommended.next_action if recommended else "REVIEW_RESULT"),
+            attention=attention,
         )
 
     def instance_progress(
@@ -253,6 +275,37 @@ class ProjectProgressAggregationService:
             result_count=result_count,
             stable_key=(definition.workflow_definition_id if definition is not None else ""),
         )
+        latest_artifact = max(
+            (
+                artifact
+                for artifact in artifacts
+                if artifact.producer_workflow_instance_id
+                == instance.workflow_instance_id
+                and artifact.state.value not in {"MISSING", "INCOMPATIBLE"}
+            ),
+            key=lambda item: (item.produced_at, item.artifact_id),
+            default=None,
+        )
+        action = _workflow_action(
+            project_id=instance.project_id,
+            workflow_definition_id=(
+                definition.workflow_definition_id if definition is not None else ""
+            ),
+            output_schema_id=definition_version.output_schema_id,
+            lifecycle=instance.desired_state.value,
+            research_status=(record.status.value if record is not None else "NOT_STARTED"),
+            latest_summary=(escape(record.current_state) if record is not None else None),
+            continuation_reason=(
+                escape(record.continuation_reason)
+                if record is not None and record.continuation_reason is not None
+                else None
+            ),
+            installation_state=installation_state,
+            readiness=readiness,
+            next_action=next_action,
+            missing=missing,
+            latest_artifact=latest_artifact,
+        )
         return WorkflowInstanceProgressProjection(
             schema_version=WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION,
             project_id=instance.project_id,
@@ -294,6 +347,7 @@ class ProjectProgressAggregationService:
             compatible_input_counts=compatible_counts,
             bound_required_inputs=bound,
             result_count=result_count,
+            action=action,
         )
 
 
@@ -318,6 +372,315 @@ def _readiness(*, lifecycle, installation_state, missing, compatible_counts, rep
         # Cloud knows the exact bindings, but local materialization remains local truth.
         return "NEEDS_MATERIALIZATION", "MATERIALIZE"
     return "READY_TO_RUN", "RUN"
+
+
+_OUTPUT_LABELS = {
+    "selected-paper-library/v1": "Selected paper library",
+    "selected-research-idea/v1": "Selected research idea",
+    "experiment-record/v1": "Experiment record",
+    "experiment-record/v2": "Experiment result",
+    "manuscript-draft/v1": "Manuscript draft",
+    "manuscript-draft/v2": "Initial manuscript draft",
+    "manuscript-draft/v3": "Revised manuscript draft",
+    "review-report/v1": "Review report",
+    "review-report/v2": "Structured review report",
+}
+
+_ACTION_CONTENT = {
+    "SYNC": ("LOCAL", "Sync Local Workspace", "Bring this Workflow's installed Capsule up to the current Project revision."),
+    "WAIT_FOR_UPSTREAM": ("INFORMATIONAL", "Wait for required Output", "Complete the upstream research needed by this Workflow."),
+    "SELECT_INPUT": ("BROWSER", "Choose exact input", "Select one exact compatible Output; ReAgent never selects latest implicitly."),
+    "MATERIALIZE": ("LOCAL", "Prepare inputs locally", "Materialize verified copies in the Local Workspace before running."),
+    "RUN": ("LOCAL", "Start in Local Workspace", "Run this Workflow through the public local Workspace command."),
+    "CONTINUE": ("LOCAL", "Continue in Local Workspace", "Continue from the Workflow's durable local state with the qualified Agent."),
+    "REVIEW_RESULT": ("BROWSER", "Review Output", "Inspect the exact produced Output and its limitations."),
+    "REVISE_MANUSCRIPT": ("BROWSER", "Plan manuscript revision", "Use the exact Review and prior Draft as explicit revision inputs."),
+}
+
+
+def _workflow_action(
+    *, project_id, workflow_definition_id, output_schema_id, lifecycle,
+    research_status, latest_summary, continuation_reason, installation_state,
+    readiness, next_action, missing, latest_artifact,
+) -> WorkflowActionProjection:
+    del project_id  # Route construction remains a frontend navigation concern.
+    expected = _expected_output(output_schema_id)
+    latest = _produced_output(latest_artifact)
+    owner_checkpoint = _owner_checkpoint(latest_summary, continuation_reason)
+
+    if lifecycle == "RETIRED":
+        stage = WorkflowStageProjection("RETIRED", "Retired")
+        return WorkflowActionProjection(
+            stage=stage,
+            actor="NONE",
+            attention_state="COMPLETED" if latest is not None else "NORMAL",
+            blocker=None,
+            next_action=_next_action("REVIEW_RESULT" if latest else "NONE"),
+            expected_output=expected,
+            latest_output=latest,
+        )
+    if installation_state == "ACKNOWLEDGED_STALE":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("LOCAL_SYNC", "Local Workspace out of date"),
+            actor="OWNER",
+            attention_state="ATTENTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "LOCAL_STATE_STALE",
+                "The Local Workspace acknowledges an older Project revision.",
+            ),
+            next_action=_next_action("SYNC"), expected_output=expected,
+            latest_output=latest,
+        )
+    if installation_state != "ACKNOWLEDGED_CURRENT":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("LOCAL_SETUP", "Local Workspace setup required"),
+            actor="OWNER", attention_state="ATTENTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "LOCAL_SYNC_REQUIRED",
+                "Cloud has not received acknowledgement for the current local installation.",
+            ),
+            next_action=_next_action("SYNC"), expected_output=expected,
+            latest_output=latest,
+        )
+    if research_status == "FAILED":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("FAILED", _stage_label(workflow_definition_id, "FAILED")),
+            actor="OWNER", attention_state="ATTENTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "EXECUTION_FAILED",
+                latest_summary or "The latest Workflow attempt failed; preserved evidence requires review.",
+            ),
+            next_action=_next_action("REVIEW_RESULT" if latest else "CONTINUE"),
+            expected_output=expected, latest_output=latest,
+        )
+    if research_status == "CANCELLED":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("CANCELLED", "Cancelled"),
+            actor="OWNER", attention_state="ATTENTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "INVALID_OR_UNSUPPORTED_STATE",
+                latest_summary or "The latest Workflow attempt was cancelled.",
+            ),
+            next_action=_next_action("CONTINUE"), expected_output=expected,
+            latest_output=latest,
+        )
+    if research_status == "BLOCKED" and owner_checkpoint:
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("OWNER_APPROVAL", "Waiting for owner review"),
+            actor="OWNER", attention_state="OWNER_ACTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "OWNER_APPROVAL_REQUIRED",
+                latest_summary or "An explicit owner checkpoint must be completed locally.",
+            ),
+            next_action=WorkflowNextActionProjection(
+                "LOCAL", "CONTINUE", "Continue at owner checkpoint",
+                "Open this Workflow in the Local Workspace to review the exact checkpoint.",
+            ),
+            expected_output=expected, latest_output=latest,
+        )
+    if research_status == "BLOCKED":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("BLOCKED", "Blocked"),
+            actor="OWNER", attention_state="BLOCKED",
+            blocker=WorkflowBlockerProjection(
+                "INVALID_OR_UNSUPPORTED_STATE",
+                latest_summary or "The Workflow reported a blocker that requires review.",
+            ),
+            next_action=_next_action("CONTINUE"), expected_output=expected,
+            latest_output=latest,
+        )
+    if readiness == "WAITING_FOR_INPUT" and next_action == "WAIT_FOR_UPSTREAM":
+        names = ", ".join(_human_requirement(item) for item in missing)
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("INPUT_READINESS", "Waiting for required Output"),
+            actor="NONE", attention_state="BLOCKED",
+            blocker=WorkflowBlockerProjection(
+                "MISSING_INPUT", f"Required upstream Output unavailable: {names}.",
+            ), next_action=_next_action(next_action), expected_output=expected,
+            latest_output=latest,
+        )
+    if readiness == "WAITING_FOR_INPUT":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("INPUT_REVIEW", "Inputs need attention"),
+            actor="OWNER", attention_state="OWNER_ACTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "MISSING_INPUT", "Compatible Outputs exist but no exact input is bound.",
+            ), next_action=_next_action(next_action), expected_output=expected,
+            latest_output=latest,
+        )
+    if research_status == "COMPLETED" or readiness == "RESULT_READY":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("COMPLETED", _stage_label(workflow_definition_id, "COMPLETED")),
+            actor="OWNER" if latest is not None else "NONE",
+            attention_state="COMPLETED", blocker=None,
+            next_action=_next_action(next_action if latest is not None else "NONE"),
+            expected_output=expected, latest_output=latest,
+        )
+    if research_status == "IN_PROGRESS" or readiness == "IN_PROGRESS":
+        return WorkflowActionProjection(
+            stage=_active_stage(workflow_definition_id, latest_summary),
+            actor="AGENT", attention_state="NORMAL", blocker=None,
+            next_action=_next_action("CONTINUE"), expected_output=expected,
+            latest_output=latest,
+        )
+    labels = {
+        "NEEDS_MATERIALIZATION": ("INPUT_PREPARATION", "Inputs selected"),
+        "READY_TO_RUN": ("READY", "Ready to start"),
+    }
+    stage_code, stage_label = labels.get(readiness, ("UNKNOWN", "State needs review"))
+    return WorkflowActionProjection(
+        stage=WorkflowStageProjection(stage_code, stage_label),
+        actor="OWNER" if next_action in _ACTION_CONTENT else "SYSTEM",
+        attention_state="NORMAL" if stage_code != "UNKNOWN" else "ATTENTION_REQUIRED",
+        blocker=(
+            None if stage_code != "UNKNOWN" else WorkflowBlockerProjection(
+                "INVALID_OR_UNSUPPORTED_STATE", "No safe user action can be derived from the current Cloud state."
+            )
+        ),
+        next_action=_next_action(next_action if stage_code != "UNKNOWN" else "NONE"),
+        expected_output=expected, latest_output=latest,
+    )
+
+
+def _project_attention(*, recommended, latest_activity, latest_output):
+    if recommended is None:
+        action = WorkflowActionProjection(
+            stage=WorkflowStageProjection("NO_ACTIVE_WORKFLOW", "No active Workflow"),
+            actor="NONE", attention_state="NORMAL", blocker=None,
+            next_action=_next_action("NONE"), expected_output=None,
+            latest_output=None,
+        )
+        return ProjectAttentionProjection(
+            recommended_workflow_instance_id=None,
+            recommended_workflow_label=None,
+            action=action,
+            recent_change=ProjectRecentChangeProjection(
+                "No active Workflow is available.", latest_activity,
+            ),
+            latest_output=latest_output,
+        )
+    return ProjectAttentionProjection(
+        recommended_workflow_instance_id=recommended.workflow_instance_id,
+        recommended_workflow_label=recommended.friendly_instance_label,
+        action=recommended.action,
+        recent_change=ProjectRecentChangeProjection(
+            recommended.latest_summary or recommended.action.stage.label,
+            recommended.latest_activity_at or latest_activity,
+        ),
+        latest_output=latest_output,
+    )
+
+
+def _next_action(code: str) -> WorkflowNextActionProjection:
+    if code == "NONE":
+        return WorkflowNextActionProjection(
+            "NONE", "NONE", "No action available", "No valid action is available from the current Cloud state."
+        )
+    surface, label, description = _ACTION_CONTENT[code]
+    return WorkflowNextActionProjection(surface, code, label, description)
+
+
+def _expected_output(output_schema_id: str) -> WorkflowOutputProjection | None:
+    if "/v" not in output_schema_id:
+        return None
+    return WorkflowOutputProjection(
+        label=_OUTPUT_LABELS.get(output_schema_id, "Workflow Output"),
+        artifact_id=None,
+        artifact_type=output_schema_id,
+        artifact_schema=output_schema_id,
+        checksum=None,
+        produced_at=None,
+        progress_round=None,
+        state="EXPECTED",
+    )
+
+
+def _produced_output(artifact) -> WorkflowOutputProjection | None:
+    if artifact is None:
+        return None
+    return WorkflowOutputProjection(
+        label=_OUTPUT_LABELS.get(artifact.artifact_type, "Workflow Output"),
+        artifact_id=artifact.artifact_id,
+        artifact_type=artifact.artifact_type,
+        artifact_schema=artifact.artifact_schema_version,
+        checksum=artifact.content_checksum,
+        produced_at=_utc_text(artifact.produced_at),
+        progress_round=artifact.producer_execution_round,
+        state="PRODUCED",
+    )
+
+
+def _owner_checkpoint(summary: str | None, continuation: str | None) -> bool:
+    text = " ".join(item or "" for item in (summary, continuation)).upper()
+    return any(token in text for token in (
+        "AWAITING_OWNER_ACTION", "OWNER ACTION", "OWNER APPROVAL", "OWNER REVIEW",
+        "APPROVE", "APPROVAL REQUIRED",
+    ))
+
+
+def _human_requirement(value: str) -> str:
+    labels = {
+        "paper_library": "selected paper library",
+        "research_idea": "selected research idea",
+        "experiment_record": "experiment result",
+        "prior_manuscript": "prior manuscript",
+        "causal_review": "causal review",
+        "literature_library": "selected literature",
+    }
+    return labels.get(value, "required research input")
+
+
+def _stage_label(workflow_definition_id: str, outcome: str) -> str:
+    noun = _workflow_noun(workflow_definition_id)
+    return f"{noun} {'completed' if outcome == 'COMPLETED' else 'failed'}"
+
+
+def _workflow_noun(workflow_definition_id: str) -> str:
+    labels = {
+        "reproduction-experiment-local-experimental": "Experiment",
+        "writing-local-experimental": "Writing",
+        "review-local-experimental": "Review",
+        "idea-discovery-local-experimental": "Idea Discovery",
+        "literature-search-local-experimental": "Literature Search",
+    }
+    return labels.get(workflow_definition_id, "Workflow")
+
+
+_REAL_STAGE_LABELS = {
+    "INPUT_REVIEW": "Input review",
+    "EXPERIMENT_REQUIREMENTS": "Experiment requirements",
+    "RESOURCE_READINESS": "Resource readiness",
+    "EXPERIMENT_PLAN": "Experiment plan",
+    "OWNER_APPROVAL": "Owner approval",
+    "PREPARATION": "Execution preparation",
+    "LOCAL_EXECUTION": "Local execution",
+    "EVALUATION": "Evaluation",
+    "RESULT_REVIEW": "Result review",
+    "WRITING_BRIEF": "Writing brief",
+    "EVIDENCE_MAP": "Evidence map",
+    "OUTLINE": "Outline",
+    "SECTION_DRAFTING": "Section drafting",
+    "CLAIM_CITATION_CHECK": "Claim and citation check",
+    "REVIEW_SCOPE": "Review scope",
+    "CLAIM_EVIDENCE_AUDIT": "Claim and evidence audit",
+    "METHOD_RESULT_AUDIT": "Method and result audit",
+    "CITATION_REPRODUCIBILITY_AUDIT": "Citation and reproducibility audit",
+    "STRUCTURED_ISSUES": "Structured issues",
+    "OWNER_REVIEW": "Owner review",
+    "ISSUE_RECONCILIATION": "Issue reconciliation",
+    "REVISION_PLAN": "Revision plan",
+    "DRAFT_REVISION": "Draft revision",
+    "CLAIM_CITATION_RECHECK": "Claim and citation recheck",
+}
+
+
+def _active_stage(workflow_definition_id: str, summary: str | None) -> WorkflowStageProjection:
+    normalized = (summary or "").strip().upper().replace(" / ", "_").replace(" ", "_")
+    if normalized in _REAL_STAGE_LABELS:
+        return WorkflowStageProjection(normalized, _REAL_STAGE_LABELS[normalized])
+    return WorkflowStageProjection(
+        "IN_PROGRESS", f"{_workflow_noun(workflow_definition_id)} in progress"
+    )
 
 
 def _friendly_labels(instances, definitions) -> dict[str, str]:

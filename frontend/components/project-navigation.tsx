@@ -3,13 +3,13 @@ import Link from "next/link";
 const items = [
   { label: "Overview", suffix: "" },
   { label: "Workflows", suffix: "/workflows" },
-  { label: "Progress", suffix: "/progress" },
-  { label: "Help", suffix: "/help" },
+  { label: "Outputs", suffix: "/outputs" },
+  { label: "Activity", suffix: "/progress" },
 ] as const;
 
 export function ProjectNavigation({ projectId, active }: {
   projectId: string;
-  active: "Overview" | "Workflows" | "Progress" | "Help";
+  active: "Overview" | "Workflows" | "Outputs" | "Activity" | "Help";
 }) {
   const root = `/projects/${projectId}`;
 

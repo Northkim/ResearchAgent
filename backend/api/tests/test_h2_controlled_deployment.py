@@ -17,6 +17,7 @@ from backend.api.deployment import (
 )
 from backend.api.readiness import check_postgres_readiness
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
+from backend.progress_reports.aggregation import _project_attention, _workflow_action
 
 
 def _container() -> ApplicationContainer:
@@ -249,7 +250,7 @@ class _Connection:
 
 
 class _ReadyEngine:
-    def __init__(self, revision: str = "20260813_0021") -> None:
+    def __init__(self, revision: str = "20260815_0026") -> None:
         self.connection = _Connection(revision)
 
     def connect(self):
@@ -271,8 +272,52 @@ def test_readiness_requires_exact_migration_and_production_registry() -> None:
     assert ready.ready
     assert ready.checks == {
         "database": "ok",
-        "migration": "20260813_0021",
+        "migration": "20260815_0026",
         "production_registry": "ok",
     }
     assert not mismatch.ready
     assert mismatch.checks == {"database": "ok", "migration": "mismatch"}
+
+
+@pytest.mark.parametrize(
+    ("research_status", "installation_state", "readiness", "next_action", "summary", "attention", "actor"),
+    [
+        ("COMPLETED", "ACKNOWLEDGED_CURRENT", "RESULT_READY", "REVIEW_RESULT", "Done", "COMPLETED", "NONE"),
+        ("BLOCKED", "ACKNOWLEDGED_CURRENT", "IN_PROGRESS", "CONTINUE", "Awaiting owner action before drafting.", "OWNER_ACTION_REQUIRED", "OWNER"),
+        ("BLOCKED", "ACKNOWLEDGED_CURRENT", "IN_PROGRESS", "CONTINUE", "Resource unavailable", "BLOCKED", "OWNER"),
+        ("IN_PROGRESS", "ACKNOWLEDGED_CURRENT", "IN_PROGRESS", "CONTINUE", "ISSUE_RECONCILIATION", "NORMAL", "AGENT"),
+        ("NOT_STARTED", "ACKNOWLEDGED_STALE", "NOT_INSTALLED", "SYNC", None, "ATTENTION_REQUIRED", "OWNER"),
+        ("FAILED", "ACKNOWLEDGED_CURRENT", "IN_PROGRESS", "CONTINUE", "Evaluation failed", "ATTENTION_REQUIRED", "OWNER"),
+    ],
+)
+def test_task_first_projection_covers_authoritative_workflow_states(
+    research_status, installation_state, readiness, next_action, summary, attention, actor,
+) -> None:
+    action = _workflow_action(
+        project_id="project-projection-test",
+        workflow_definition_id="writing-local-experimental",
+        output_schema_id="manuscript-draft/v3",
+        lifecycle="ACTIVE",
+        research_status=research_status,
+        latest_summary=summary,
+        continuation_reason=None,
+        installation_state=installation_state,
+        readiness=readiness,
+        next_action=next_action,
+        missing=(),
+        latest_artifact=None,
+    )
+    assert action.attention_state == attention
+    assert action.actor == actor
+    assert action.expected_output is not None
+    assert action.expected_output.label == "Revised manuscript draft"
+    if summary == "ISSUE_RECONCILIATION":
+        assert action.stage.label == "Issue reconciliation"
+
+
+def test_task_first_projection_has_an_honest_no_workflow_state() -> None:
+    projection = _project_attention(
+        recommended=None, latest_activity=None, latest_output=None
+    )
+    assert projection.action.stage.code == "NO_ACTIVE_WORKFLOW"
+    assert projection.action.next_action.surface == "NONE"

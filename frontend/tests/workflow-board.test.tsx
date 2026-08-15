@@ -4,6 +4,8 @@ import { afterEach, test, vi } from "vitest";
 
 import { ApiError, apiClient } from "@/api/client";
 import { WorkflowBoard } from "@/components/workflow-board";
+import { WorkflowDetail } from "@/components/workflow-detail";
+import { ProjectOutputs } from "@/components/project-outputs";
 import { Providers } from "@/lib/providers";
 
 import {
@@ -23,15 +25,16 @@ function arrange() {
   vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
 }
 
-test("renders Registry-driven Workflow cards and keeps planned definitions disabled", async () => {
+test("renders projection-driven Workflow rows and keeps planned definitions disabled", async () => {
   arrange();
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
 
-  expect(await screen.findByRole("heading", { name: "Your Project workflows" })).toBeVisible();
-  expect(screen.getByText("Next: Review the latest result")).toBeVisible();
-  expect(screen.getByText("Completed")).toBeVisible();
-  expect(screen.getByText("Cloud desired")).toBeVisible();
-  expect(screen.getByText("Installed · current")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Workflow progression" })).toBeVisible();
+  expect(screen.getByText("Review Output")).toBeVisible();
+  expect(screen.getByText("Literature selected")).toBeVisible();
+  expect(screen.getByText("Owner acts")).toBeVisible();
+  expect(screen.getByText("Selected paper library")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Open Workflow" })).toHaveAttribute("href", expect.stringContaining(workflowInstanceId));
   expect(screen.getByRole("button", { name: "Planned" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Add workflow" })).toBeEnabled();
   expect(screen.getByRole("link", { name: "Workflows" })).toHaveAttribute("aria-current", "page");
@@ -111,7 +114,7 @@ test("distinguishes two Instances of the same Workflow Definition", async () => 
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
 
   expect(await screen.findByText("Literature Search B")).toBeVisible();
-  expect(screen.getAllByText("Technical details")).toHaveLength(2);
+  expect(screen.getAllByText("Manage")).toHaveLength(2);
 });
 
 test("refreshes on Manifest revision conflict and never attempts a browser-local write", async () => {
@@ -165,4 +168,61 @@ test("retire confirms history retention and uses the current base revision", asy
     1,
   );
   expect(await screen.findByText(/Local research files were not deleted/)).toBeVisible();
+});
+
+test("focused Workflow Detail presents one specific action with secondary technical state", async () => {
+  arrange();
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={workflowInstanceId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Review the selected papers" })).toBeVisible();
+  expect(screen.queryByText("Owner acts now")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "View selected papers" })).toHaveAttribute("href", expect.stringContaining("/outputs"));
+  expect(screen.getByText("Selected paper library")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Inputs" })).toBeVisible();
+  expect(screen.getByText("No upstream research input is required.")).toBeVisible();
+  expect(screen.getByText("Technical Details").closest("details")).not.toHaveAttribute("open");
+  expect(screen.queryByText("python reagent_local.py run .", { exact: false })).not.toBeInTheDocument();
+});
+
+test("Outputs presents exact Artifact identity as secondary provenance", async () => {
+  arrange();
+  vi.spyOn(apiClient, "listProjectArtifactReferences").mockResolvedValue({
+    schema_version: "reagent.artifact-reference-page/v0.1",
+    project_id: localProjectFixture.project_id,
+    artifacts: [{
+      schema_version: "reagent.artifact-reference/v0.1",
+      artifact_id: `artifact-${"a".repeat(32)}`,
+      project_id: localProjectFixture.project_id,
+      producer_workflow_instance_id: workflowInstanceId,
+      producer_progress_receipt_id: "progress-receipt-fictional",
+      producer_progress_report_id: `prv2-${"e".repeat(64)}`,
+      producer_execution_round: 1,
+      producer_capsule_id: `capsule-${"2".repeat(32)}`,
+      producer_capsule_version: "0.5.0",
+      producer_core_capability_maturity: "REVIEWED_CORE",
+      artifact_type: "paper_library",
+      artifact_schema_version: "selected-paper-library/v1",
+      media_type: "application/json",
+      state: "LOCAL_AVAILABLE",
+      relative_path: "outputs/selected-paper-library.json",
+      content_checksum: `sha256:${"1".repeat(64)}`,
+      size_bytes: 128,
+      cloud_metadata_available: true,
+      produced_at: "2026-08-05T08:05:01Z",
+      retired_at: null,
+      created_at: "2026-08-05T08:05:01Z",
+      updated_at: "2026-08-05T08:05:01Z",
+    }],
+    offset: 0,
+    limit: 100,
+    total: 1,
+    has_more: false,
+  });
+  render(<Providers><ProjectOutputs projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Selected paper library" })).toBeVisible();
+  expect(screen.getByText("COMPLETED")).toBeVisible();
+  expect(screen.getByText(`artifact-${"a".repeat(32)}`)).toBeInTheDocument();
+  expect(screen.getByText("Technical Details").closest("details")).not.toHaveAttribute("open");
+  expect(screen.getByRole("link", { name: "Outputs" })).toHaveAttribute("aria-current", "page");
 });

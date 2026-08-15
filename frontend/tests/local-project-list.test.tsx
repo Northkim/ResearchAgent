@@ -10,15 +10,17 @@ import { localProjectFixture } from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
-test("renders local projects and their uploaded progress summary", async () => {
+test("renders task-first Projects with backend-derived attention and next action", async () => {
   vi.spyOn(apiClient, "listProjects").mockResolvedValue([localProjectFixture]);
   render(<Providers><LocalProjectList /></Providers>);
   expect(await screen.findByRole("heading", { name: localProjectFixture.name })).toBeVisible();
-  expect(screen.getByText("COMPLETED")).toBeVisible();
-  expect(screen.getByText("1")).toBeVisible();
-  expect(screen.getByRole("link", { name: "Open project →" })).toHaveAttribute(
+  expect(screen.getByRole("heading", { name: "Needs your attention" })).toBeVisible();
+  expect(screen.getByText("Needs your review")).toBeVisible();
+  expect(screen.getByText("Review the selected papers")).toBeVisible();
+  expect(screen.queryByText("OWNER ACTION REQUIRED")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "View selected papers →" })).toHaveAttribute(
     "href",
-    `/projects/${localProjectFixture.project_id}`,
+    `/projects/${localProjectFixture.project_id}/outputs`,
   );
 });
 

@@ -39,22 +39,22 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Project Progress"
-        title={`${project.data.name} history`}
-        description="Progress Reports are bounded Cloud continuity records grouped by Workflow Instance. Complete research files remain in the Local Workspace."
-        action={<Link href={`/projects/${projectId}/workflows`} className="button button-ghost">Workflow Board</Link>}
+        eyebrow="Project Activity"
+        title={`${project.data.name} Activity`}
+        description="Meaningful Workflow events and outcomes, with exact Progress provenance available when needed."
+        action={<Link href={`/projects/${projectId}`} className="button button-ghost">Project Overview</Link>}
       />
-      <ProjectNavigation projectId={projectId} active="Progress" />
+      <ProjectNavigation projectId={projectId} active="Activity" />
 
-      <section className="progress-summary-strip" aria-label="Project Progress summary">
-        <div><span>Total reports</span><strong>{data.total_progress_report_count}</strong></div>
+      <section className="progress-summary-strip secondary-summary" aria-label="Project Activity summary">
+        <div><span>Activity events</span><strong>{data.total_progress_report_count}</strong></div>
         <div><span>Active workflows</span><strong>{data.active_workflow_count}</strong></div>
         <div><span>Retired workflows</span><strong>{data.retired_workflow_count}</strong></div>
         <div><span>Latest activity</span><strong>{data.latest_project_activity_at ? formatDateTime(data.latest_project_activity_at) : "None"}</strong></div>
       </section>
 
       <section className="progress-toolbar" aria-label="Progress filters">
-        <label htmlFor="workflow-progress-filter">Workflow Instance</label>
+        <label htmlFor="workflow-progress-filter">Workflow</label>
         <select
           id="workflow-progress-filter"
           value={workflowInstanceId}
@@ -73,30 +73,21 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
       {selected ? (
         <section className="selected-progress-card">
           <div>
-            <p className="eyebrow">Selected Workflow Instance</p>
+            <p className="eyebrow">Selected Workflow</p>
             <h2>{selected.friendly_instance_label ?? selected.instance_display_name}</h2>
-            <code>{selected.workflow_instance_id}</code>
+            <p>{selected.action.stage.label} · {selected.action.actor === "NONE" ? "No actor required" : `${selected.action.actor.toLowerCase()} acts`}</p>
           </div>
-          <div className="workflow-badge-row">
-            <WorkflowStatusBadge value={selected.lifecycle} dimension="lifecycle" />
-            <WorkflowStatusBadge value={selected.core_capability_maturity} dimension="maturity" />
-            <WorkflowStatusBadge value={selected.research_status} dimension="research" />
-            <WorkflowStatusBadge value={selected.desired_state} dimension="desired" />
-            <WorkflowStatusBadge value={selected.installation_state} dimension="installation" />
-          </div>
-          {selected.core_capability_maturity === "SCAFFOLD_CORE" ? (
-            <p className="scaffold-warning">Product flow is functional. Research capability is placeholder.</p>
-          ) : null}
           <p>{selected.latest_summary ?? "No Progress Report has been uploaded for this instance."}</p>
-          {selected.next_recommended_action ? <p><strong>Next:</strong> {selected.next_recommended_action}</p> : null}
+          <p><strong>Next:</strong> {selected.action.next_action.label}</p>
+          <details className="technical-details compact-technical-details"><summary>Technical Details</summary><code>{selected.workflow_instance_id}</code><p>{selected.core_capability_maturity.replaceAll("_", " ")} · {selected.installation_state.replaceAll("_", " ")}</p></details>
         </section>
       ) : null}
 
       {data.history.length ? (
         <section className="project-progress-history" aria-labelledby="progress-history-title">
           <div className="section-heading">
-            <div><p className="eyebrow">Immutable history</p><h2 id="progress-history-title">Progress Report activity</h2></div>
-            <span className="section-caption">Newest first · stable ordering</span>
+            <div><p className="eyebrow">Activity</p><h2 id="progress-history-title">What happened</h2></div>
+            <span className="section-caption">Newest first</span>
           </div>
           <ol>
             {data.history.map((report) => {
@@ -105,29 +96,22 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
                 <li key={report.receipt_id}>
                   <div className="progress-history-heading">
                     <div>
-                      <p className="eyebrow">{instance?.workflow_display_name ?? "Workflow"}</p>
+                      <p className="eyebrow">{instance?.action.stage.label ?? "Workflow Activity"}</p>
                       <h3>{instance?.friendly_instance_label ?? instance?.instance_display_name ?? report.workflow_instance_id}</h3>
-                      <code>Instance {report.workflow_instance_id.slice(-8)}</code>
+                      <span>{instance?.action.actor === "NONE" ? "System record" : `${instance?.action.actor.toLowerCase()} activity`} · round {report.normalized_record?.execution_round ?? "—"}</span>
                     </div>
                     <WorkflowStatusBadge value={report.normalized_record?.status ?? report.validation_status} dimension="research" />
                   </div>
                   <p>{report.normalized_record?.current_state ?? "No normalized summary is available."}</p>
-                  {report.normalized_record?.next_recommended_action ? <p><strong>Next:</strong> {report.normalized_record.next_recommended_action}</p> : null}
+                  {instance ? <p><strong>Next:</strong> {instance.action.next_action.label}</p> : null}
                   {report.normalized_record?.output_artifacts.length ? (
-                    <div className="artifact-metadata-list">
-                      <strong>Local artifact metadata</strong>
-                      <ul>{report.normalized_record.output_artifacts.map((artifact) => (
-                        <li key={`${report.report_id}-${artifact.relative_path}`}><code>{artifact.relative_path}</code><span>{artifact.artifact_kind}</span><code>{artifact.checksum}</code></li>
-                      ))}</ul>
-                      <p className="boundary-caption">Cloud retains names and checksums only; these files remain local.</p>
-                    </div>
+                    <p className="activity-output"><strong>Output:</strong> {instance?.action.latest_output?.label ?? report.normalized_record.output_artifacts[0].artifact_kind.replaceAll("_", " ")}</p>
                   ) : null}
-                  <dl>
-                    <div><dt>Round</dt><dd>{report.normalized_record?.execution_round ?? "—"}</dd></div>
-                    <div><dt>Report</dt><dd><code>{report.report_id}</code></dd></div>
-                    <div><dt>Receipt</dt><dd><code>{report.receipt_id}</code></dd></div>
-                    <div><dt>Received</dt><dd>{formatDateTime(report.received_at)}</dd></div>
-                  </dl>
+                  <time>{formatDateTime(report.received_at)}</time>
+                  <details className="technical-details compact-technical-details">
+                    <summary>Technical Details</summary>
+                    <dl><div><dt>Report</dt><dd><code>{report.report_id}</code></dd></div><div><dt>Receipt</dt><dd><code>{report.receipt_id}</code></dd></div><div><dt>Chain</dt><dd>{report.chain_state}</dd></div><div><dt>Received</dt><dd>{formatDateTime(report.received_at)}</dd></div></dl>
+                  </details>
                 </li>
               );
             })}

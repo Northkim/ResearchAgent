@@ -5,143 +5,98 @@ import Link from "next/link";
 import { apiClient } from "@/api/client";
 import { useProject, useProjectProgress } from "@/api/hooks";
 import { formatDateTime } from "@/lib/format";
-import { deriveWorkflowNextAction } from "@/lib/workflow-next-action";
 
-import { CopyCommand } from "./copy-command";
 import { PageHeader } from "./page-header";
 import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
-import { WorkflowStatusBadge } from "./workflow-status-badge";
+import { presentWorkflowAction, WorkflowActionPanel } from "./workflow-detail";
 
 export function LocalProjectDetail({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
   const progress = useProjectProgress(projectId);
 
-  if (project.isLoading || progress.isLoading) return <LoadingState label="Loading project overview" />;
+  if (project.isLoading || progress.isLoading) return <LoadingState label="Loading Project Overview" />;
   if (project.isError || !project.data || progress.isError || !progress.data) {
-    return <ErrorState title="Project overview unavailable" />;
+    return <ErrorState title="Project Overview unavailable" />;
   }
 
   const data = project.data;
   const projection = progress.data;
-  const recent = projection.instances
-    .filter((item) => item.latest_activity_at)
-    .sort((left, right) => (right.latest_activity_at ?? "").localeCompare(left.latest_activity_at ?? ""))
-    .slice(0, 3);
-  const actions = projection.instances
-    .filter((item) => item.lifecycle === "ACTIVE")
-    .map((item) => ({
-      instance: item,
-      action: deriveWorkflowNextAction({
-        instance: { desired_state: item.lifecycle },
-        progress: item,
-        requiresInput: (item.missing_required_inputs?.length ?? 0) > 0 || (item.bound_required_inputs?.length ?? 0) > 0,
-        dependencies: projection.dependency_edges.filter(
-          (edge) => edge.consumer_workflow_instance_id === item.workflow_instance_id,
-        ),
-      }),
-    }))
-    .sort((left, right) => left.action.priority - right.action.priority);
-  const recommended = actions.find(({ instance }) => instance.workflow_instance_id === projection.recommended_workflow_instance_id) ?? actions[0];
-  const bootstrapCommand = "python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json";
+  const attention = projection.attention;
+  const workflowHref = attention.action.next_action.code === "REVIEW_RESULT"
+    ? `/projects/${projectId}/outputs`
+    : attention.recommended_workflow_instance_id
+      ? `/projects/${projectId}/workflows/${attention.recommended_workflow_instance_id}`
+      : `/projects/${projectId}/workflows`;
+  const recent = projection.history.slice(0, 3);
+  const output = attention.latest_output;
+  const syncRequired = attention.action.next_action.code === "SYNC";
+  const currentPresentation = presentWorkflowAction(attention.action, attention.recommended_workflow_label, attention.recent_change.summary);
 
   return (
-    <div className="page-stack">
+    <div className="page-stack project-overview-page">
+      <Link href="/projects" className="back-link">← Projects</Link>
       <PageHeader
-        eyebrow="Project workspace"
+        eyebrow="Project Overview"
         title={data.name}
         description={data.research_topic}
-        action={<Link href="/projects" className="button button-ghost">All projects</Link>}
       />
       <ProjectNavigation projectId={projectId} active="Overview" />
 
-      <section className="overview-hero" aria-labelledby="project-state-title">
-        <div>
-          <p className="eyebrow">Overview</p>
-          <h2 id="project-state-title">Your research workflows at a glance</h2>
-          <p>Research progress is reported by each Workflow. Local installation is shown separately and never counts as research completion.</p>
-        </div>
-        <dl className="overview-counts">
-          <div><dt>Active</dt><dd>{projection.active_workflow_count}</dd></div>
-          <div><dt>Not started</dt><dd>{projection.status_counts.NOT_STARTED ?? 0}</dd></div>
-          <div><dt>In progress</dt><dd>{projection.status_counts.IN_PROGRESS ?? 0}</dd></div>
-          <div><dt>Completed</dt><dd>{projection.status_counts.COMPLETED ?? 0}</dd></div>
-          <div><dt>Retired</dt><dd>{projection.retired_workflow_count}</dd></div>
-        </dl>
-      </section>
+      <WorkflowActionPanel
+        action={attention.action}
+        workflowLabel={attention.recommended_workflow_label}
+        href={workflowHref}
+        context={attention.recent_change.summary}
+      />
 
-      <section className="overview-grid">
-        <article>
-          <p className="eyebrow">Recommended next action</p>
-          <h2>{recommended?.action.title ?? "Set up your Local Workspace"}</h2>
-          <p>{recommended?.action.description ?? "Download the Workspace setup file, then bootstrap it locally. Cloud cannot inspect local files."}</p>
-          <div className="button-row">
-            <Link href={`/projects/${projectId}/workflows`} className="button button-primary">Open workflows</Link>
-            <Link href={`/projects/${projectId}/help`} className="button button-ghost">Local workflow help</Link>
+      <div className="overview-support-grid">
+        <section className="plain-section" aria-labelledby="overview-workflows-title">
+          <div className="section-heading"><h2 id="overview-workflows-title">Workflow progress</h2><Link href={`/projects/${projectId}/workflows`} className="text-link">View all workflows →</Link></div>
+          <div className="overview-workflow-list">
+            {projection.instances.filter((item) => item.lifecycle === "ACTIVE").slice(0, 5).map((item) => {
+              const presentation = presentWorkflowAction(item.action, item.friendly_instance_label ?? item.workflow_display_name, item.latest_summary ?? "");
+              return <div key={item.workflow_instance_id}><div><strong>{item.friendly_instance_label ?? item.workflow_display_name}</strong><p>{presentation.task}</p></div><span>{presentation.attention}</span></div>;
+            })}
           </div>
-        </article>
-        <article>
-          <p className="eyebrow">First local setup</p>
-          <h2>Create your Local Workspace</h2>
-          <p>Download this Project&apos;s setup file once. The command creates a separate local folder; it does not upload research files.</p>
-          <div className="button-row">
-            <a
-              href={apiClient.localClientDownloadUrl()}
-              download="reagent_local.py"
-              className="button button-secondary"
-            >
-              Download local tool
-            </a>
-            <a
-              href={apiClient.workspaceBootstrapDownloadUrl(projectId)}
-              download="workspace-bootstrap.json"
-              className="button button-secondary"
-            >
-              Download setup file
-            </a>
-          </div>
-          <CopyCommand command={bootstrapCommand} label="Workspace bootstrap command" />
-        </article>
-        <article>
-          <p className="eyebrow">Latest project activity</p>
-          <h2>{projection.latest_project_activity_at ? formatDateTime(projection.latest_project_activity_at) : "No Progress yet"}</h2>
-          <p>{projection.total_progress_report_count} immutable Progress Report{projection.total_progress_report_count === 1 ? "" : "s"} retained.</p>
-          <Link href={`/projects/${projectId}/progress`} className="text-link">Review project progress →</Link>
-        </article>
-      </section>
+        </section>
 
-      <section className="recent-workflows" aria-labelledby="recent-workflows-title">
-        <div className="section-heading">
-          <div><p className="eyebrow">Recent workflow progress</p><h2 id="recent-workflows-title">Independent Workflow status</h2></div>
-          <Link href={`/projects/${projectId}/workflows`} className="text-link">View all workflows →</Link>
+        <div className="overview-side-column">
+          <section id="outputs" className="plain-section" aria-labelledby="overview-output-title">
+            <div className="section-heading"><h2 id="overview-output-title">Latest output</h2><Link href={`/projects/${projectId}/outputs`} className="text-link">All outputs →</Link></div>
+            {output ? <div className="output-summary-row"><div><strong>{output.label}</strong><p>{currentPresentation.stage} · {output.produced_at ? formatDateTime(output.produced_at) : "Available now"}</p></div></div> : <p className="muted-copy">Expected next: {attention.action.expected_output?.label ?? "No output is expected yet."}</p>}
+          </section>
+
+          <section id="activity" className="plain-section" aria-labelledby="overview-activity-title">
+            <div className="section-heading"><h2 id="overview-activity-title">Recent activity</h2><Link href={`/projects/${projectId}/progress`} className="text-link">All activity →</Link></div>
+            {recent.length ? <ol className="activity-list">{recent.slice(0, 2).map((report) => {
+              const workflow = projection.instances.find((item) => item.workflow_instance_id === report.workflow_instance_id);
+              const presentation = workflow ? presentWorkflowAction(workflow.action, workflow.friendly_instance_label ?? workflow.workflow_display_name, workflow.latest_summary ?? "") : null;
+              return <li key={report.receipt_id}><div><strong>{workflow?.friendly_instance_label ?? "Workflow"}</strong><p>{presentation?.task ?? "Activity recorded."}</p></div><time>{formatDateTime(report.received_at)}</time></li>;
+            })}</ol> : <p className="muted-copy">No workflow activity has been reported yet.</p>}
+          </section>
         </div>
-        {recent.length ? (
-          <div className="workflow-card-grid">
-            {recent.map((item) => (
-              <article className="workflow-card" key={item.workflow_instance_id}>
-                <div className="workflow-card-heading">
-                  <div><h3>{item.friendly_instance_label ?? item.instance_display_name}</h3></div>
-                  <WorkflowStatusBadge value={item.research_status} dimension="research" />
-                </div>
-                <p>{item.latest_summary ?? "No summary reported."}</p>
-                <time>{item.latest_activity_at ? formatDateTime(item.latest_activity_at) : "No activity"}</time>
-                <details className="technical-details compact-technical-details">
-                  <summary>Technical identity</summary>
-                  <code>{item.workflow_instance_id}</code>
-                </details>
-              </article>
-            ))}
+      </div>
+
+      {syncRequired ? (
+        <section className="local-boundary-strip" aria-labelledby="local-setup-title">
+          <div><p className="eyebrow">Local Workspace</p><h2 id="local-setup-title">Set up or sync locally</h2><p>The browser downloads metadata and tools only. It never writes research files.</p></div>
+          <div className="button-row">
+            <a href={apiClient.localClientDownloadUrl()} download="reagent_local.py" className="button button-secondary">Download local tool</a>
+            <a href={apiClient.workspaceBootstrapDownloadUrl(projectId)} download="workspace-bootstrap.json" className="button button-secondary">Download setup file</a>
           </div>
-        ) : <div className="empty-panel"><h3>No Workflow Progress yet</h3><p>Run Literature Search locally, then upload its bounded Progress Report.</p></div>}
-      </section>
+        </section>
+      ) : null}
 
       <details className="technical-details">
-        <summary>Technical details</summary>
+        <summary>Technical Details</summary>
         <dl>
           <div><dt>Project ID</dt><dd><code>{data.project_id}</code></dd></div>
           <div><dt>Manifest revision</dt><dd>{projection.manifest_revision}</dd></div>
+          <div><dt>Active Workflows</dt><dd>{projection.active_workflow_count}</dd></div>
+          <div><dt>Progress reports</dt><dd>{projection.total_progress_report_count}</dd></div>
           <div><dt>Created</dt><dd>{formatDateTime(data.created_at)}</dd></div>
-          {data.current_package ? <div><dt>Legacy Package checksum</dt><dd><code>{data.current_package.package_checksum}</code></dd></div> : null}
+          {output ? <div><dt>Latest Artifact checksum</dt><dd><code>{output.checksum}</code></dd></div> : null}
         </dl>
       </details>
     </div>

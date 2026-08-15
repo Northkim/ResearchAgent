@@ -286,6 +286,7 @@ export interface LocalProject {
   updated_at: string;
   current_package: LocalPackage | null;
   progress: LegacyProjectProgress | null;
+  attention: ProjectAttentionProjection;
 }
 
 export interface CreateLocalProjectRequest {
@@ -465,6 +466,52 @@ export interface ProjectWorkflowInstancePage {
   manifest_revision: number;
 }
 
+export interface WorkflowStageProjection {
+  code: string;
+  label: string;
+}
+
+export interface WorkflowBlockerProjection {
+  code: string;
+  message: string;
+}
+
+export interface WorkflowNextActionProjection {
+  surface: "BROWSER" | "LOCAL" | "INFORMATIONAL" | "NONE";
+  code: string;
+  label: string;
+  description: string;
+}
+
+export interface WorkflowOutputProjection {
+  label: string;
+  artifact_id: string | null;
+  artifact_type: string;
+  artifact_schema: string;
+  checksum: string | null;
+  produced_at: string | null;
+  progress_round: number | null;
+  state: "EXPECTED" | "PRODUCED";
+}
+
+export interface WorkflowActionProjection {
+  stage: WorkflowStageProjection;
+  actor: "OWNER" | "AGENT" | "SYSTEM" | "NONE";
+  attention_state: "NORMAL" | "OWNER_ACTION_REQUIRED" | "BLOCKED" | "ATTENTION_REQUIRED" | "COMPLETED";
+  blocker: WorkflowBlockerProjection | null;
+  next_action: WorkflowNextActionProjection;
+  expected_output: WorkflowOutputProjection | null;
+  latest_output: WorkflowOutputProjection | null;
+}
+
+export interface ProjectAttentionProjection {
+  recommended_workflow_instance_id: string | null;
+  recommended_workflow_label: string | null;
+  action: WorkflowActionProjection;
+  recent_change: { summary: string; changed_at: string | null };
+  latest_output: WorkflowOutputProjection | null;
+}
+
 export interface WorkflowInstanceProgress {
   schema_version: string;
   project_id: string;
@@ -498,6 +545,7 @@ export interface WorkflowInstanceProgress {
   compatible_input_counts?: Record<string, number>;
   bound_required_inputs?: string[];
   result_count?: number;
+  action: WorkflowActionProjection;
 }
 
 export interface ProjectProgress {
@@ -521,6 +569,7 @@ export interface ProjectProgress {
   dependency_edges: ArtifactDependencyEdge[];
   recommended_workflow_instance_id?: string | null;
   recommended_next_action?: string;
+  attention: ProjectAttentionProjection;
   latest_status: string | null;
   latest_execution_round: number | null;
   current_state_summary: string | null;

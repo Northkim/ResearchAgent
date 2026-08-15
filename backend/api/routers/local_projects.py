@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Response, status
 
 from ..dependencies import LocalProductServicesDependency
@@ -22,7 +24,29 @@ def _project_response(project, services) -> LocalProjectResponse:
             project_id=project.project_id,
             package_id=package.package_id,
         )
-    return LocalProjectResponse.from_contract(project, projection)
+    workflow_progress = services.project_progress.project_progress(
+        project_id=project.project_id,
+        history_limit=1,
+    )
+    return LocalProjectResponse.from_contract(
+        project,
+        projection,
+        workflow_progress,
+    )
+
+
+def _attention_order(project: LocalProjectResponse) -> tuple[int, float, str]:
+    priority = {
+        "OWNER_ACTION_REQUIRED": 0,
+        "ATTENTION_REQUIRED": 1,
+        "BLOCKED": 2,
+        "NORMAL": 3,
+        "COMPLETED": 4,
+    }
+    attention = project.attention.action.attention_state
+    changed_at = project.attention.recent_change.changed_at or project.updated_at
+    timestamp = datetime.fromisoformat(changed_at.replace("Z", "+00:00")).timestamp()
+    return (priority.get(attention, 5), -timestamp, project.name.casefold())
 
 
 @router.post(
@@ -42,10 +66,11 @@ async def create_local_project(
 async def list_local_projects(
     services: LocalProductServicesDependency,
 ) -> list[LocalProjectResponse]:
-    return [
+    projects = [
         _project_response(project, services)
         for project in services.local_projects.list_projects()
     ]
+    return sorted(projects, key=_attention_order)
 
 
 @router.get("/{project_id}", response_model=LocalProjectResponse)

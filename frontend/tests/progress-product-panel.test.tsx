@@ -14,22 +14,21 @@ import {
 
 afterEach(() => vi.restoreAllMocks());
 
-test("renders instance-bound progress and local-only artifact metadata", async () => {
+test("renders human Activity with exact Progress provenance in Technical Details", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
   const progress = vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
   render(<Providers><ProgressProductPanel projectId={localProjectFixture.project_id} /></Providers>);
 
-  expect(await screen.findByRole("heading", { name: "Progress Report activity" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: `${localProjectFixture.name} Activity` })).toBeVisible();
   expect(screen.getByText("Selection rationale is ready for review.")).toBeVisible();
-  expect(screen.getByText("outputs/search_plan.md")).toBeVisible();
-  expect(screen.getByText(progressReportFixture.report_id)).toBeVisible();
-  expect(screen.getByText(progressReportFixture.receipt_id)).toBeVisible();
-  expect(screen.getByText(`Instance ${workflowInstanceId.slice(-8)}`)).toBeVisible();
-  expect(screen.getByText(/Cloud retains names and checksums only/)).toBeVisible();
-  expect(screen.getByRole("link", { name: "Progress" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByText(progressReportFixture.report_id)).toBeInTheDocument();
+  expect(screen.getByText(progressReportFixture.receipt_id)).toBeInTheDocument();
+  expect(screen.getAllByText("Technical Details")[0].closest("details")).not.toHaveAttribute("open");
+  expect(screen.getByText("Selected paper library")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Activity" })).toHaveAttribute("aria-current", "page");
 
-  fireEvent.change(screen.getByLabelText("Workflow Instance"), { target: { value: workflowInstanceId } });
-  expect(await screen.findByText(workflowInstanceId)).toBeVisible();
+  fireEvent.change(screen.getByLabelText("Workflow"), { target: { value: workflowInstanceId } });
+  expect(await screen.findByText(workflowInstanceId)).toBeInTheDocument();
   expect(progress).toHaveBeenLastCalledWith(localProjectFixture.project_id, expect.objectContaining({ workflowInstanceId }));
 });
 

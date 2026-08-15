@@ -30,8 +30,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="sidebar-note">
           <span className="live-dot" aria-hidden="true" />
           <div>
-            <strong>Local V0.1</strong>
-            <p>Codex executes research in your downloaded folder. Cloud execution is not the primary path.</p>
+            <strong>Local workspace connected</strong>
+            <p>Research runs locally. ReAgent keeps project state and evidence in sync.</p>
           </div>
         </div>
       </aside>

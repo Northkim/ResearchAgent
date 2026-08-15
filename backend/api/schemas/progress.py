@@ -205,6 +205,58 @@ class WorkflowInstanceProgressResponse(StrictDTO):
     compatible_input_counts: dict[str, int]
     bound_required_inputs: list[str]
     result_count: int
+    action: "WorkflowActionResponse"
+
+
+class WorkflowStageResponse(StrictDTO):
+    code: str
+    label: str
+
+
+class WorkflowBlockerResponse(StrictDTO):
+    code: str
+    message: str
+
+
+class WorkflowNextActionResponse(StrictDTO):
+    surface: str
+    code: str
+    label: str
+    description: str
+
+
+class WorkflowOutputResponse(StrictDTO):
+    label: str
+    artifact_id: str | None
+    artifact_type: str
+    artifact_schema: str
+    checksum: str | None
+    produced_at: str | None
+    progress_round: int | None
+    state: str
+
+
+class WorkflowActionResponse(StrictDTO):
+    stage: WorkflowStageResponse
+    actor: str
+    attention_state: str
+    blocker: WorkflowBlockerResponse | None
+    next_action: WorkflowNextActionResponse
+    expected_output: WorkflowOutputResponse | None
+    latest_output: WorkflowOutputResponse | None
+
+
+class ProjectRecentChangeResponse(StrictDTO):
+    summary: str
+    changed_at: str | None
+
+
+class ProjectAttentionResponse(StrictDTO):
+    recommended_workflow_instance_id: str | None
+    recommended_workflow_label: str | None
+    action: WorkflowActionResponse
+    recent_change: ProjectRecentChangeResponse
+    latest_output: WorkflowOutputResponse | None
 
 
 class ProjectWorkflowProgressResponse(StrictDTO):
@@ -228,6 +280,7 @@ class ProjectWorkflowProgressResponse(StrictDTO):
     dependency_edges: list[dict[str, Any]]
     recommended_workflow_instance_id: str | None
     recommended_next_action: str
+    attention: ProjectAttentionResponse
     # V0.x Literature Search compatibility projection. New clients use
     # ``instances``; these additive fields keep the accepted result view alive.
     package_id: str | None = None
@@ -289,6 +342,9 @@ class ProjectWorkflowProgressResponse(StrictDTO):
             dependency_edges=[dict(item) for item in projection.dependency_edges],
             recommended_workflow_instance_id=projection.recommended_workflow_instance_id,
             recommended_next_action=projection.recommended_next_action,
+            attention=ProjectAttentionResponse.model_validate(
+                projection.attention.to_dict()
+            ),
             **legacy,
         )
 

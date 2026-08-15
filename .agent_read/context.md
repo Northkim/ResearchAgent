@@ -2,6 +2,54 @@
 
 Last updated: 2026-08-15
 
+## FE-M desktop controlled-state coherence correction
+
+The accepted FE-M desktop layout remains unchanged. The Owner-review fixture now
+represents one exact Project journey: Literature Search and Idea Discovery are
+COMPLETED; their controlled, locally available exact Artifacts are bound through
+the existing dependency API; Writing is the recommended Workflow at its existing
+OWNER Outline-approval checkpoint; Experiment remains optional and unprovided.
+Projects, Overview, and Workflow Detail therefore all present `Review outline`.
+
+Overview now identifies the exact selected research idea as the latest controlled
+Output. Workflow Detail reports selected Literature and Idea as Ready and the
+Experiment result as `Optional · Not provided`. Primary dates use concise product
+format, and Writing uses the natural evidence-preserving description requested by
+the Owner. No layout/style, backend production, projection, API, Core, Artifact,
+Capsule, persistence, migration, or workflow-semantic change occurred.
+
+TypeScript, ESLint, 17 Vitest files / 36 tests, and the controlled browser journey
+pass. E6 used real Next.js/FastAPI/Chromium with disposable PostgreSQL at 1440x900
+and 1280x800; the database was dropped. Exactly three ignored final 1440x900 PNGs
+exist in `.agent_read/tmp/fe-m-desktop-final-review/` and were visually inspected.
+`FE-M_DESKTOP_STATUS = PASS_FE_M_DESKTOP_COHERENT_READY_FOR_OWNER_REVIEW`; Owner
+visual acceptance remains pending, and Q1 must not begin automatically.
+
+## FE-M desktop final Owner-reference implementation
+
+The rejected FE-M visual/content layer has been replaced with the Owner-approved
+desktop references while preserving the accepted backend projections, additive
+API fields, routes, Core wiring, Cloud/local authority, exact Artifact binding,
+and immutable Capsule/Artifact versions. No backend production file, migration,
+Core contract, or browser-to-Workspace behavior changed in the desktop correction.
+
+Projects is now a compact five-fact work queue; Overview is action-first with
+Workflow progress, latest Output, and recent Activity in the first viewport;
+Workflow Detail uses one task-specific strip, compact Inputs/Output/Activity, and
+collapsed Run locally, Resource, input-management, and Technical Details controls.
+Presentation copy translates authoritative projection states into concise human
+tasks without creating another state machine. Raw Project/Workflow/Capsule/
+Artifact identity and checksums remain secondary.
+
+Frontend TypeScript, ESLint, all 17 Vitest files / 36 tests, and the production
+build pass. The real controlled FastAPI/Next.js/Chromium journey passed at
+1440x900 and 1280x800 against a generated disposable PostgreSQL database, with no
+fatal error, unexpected external request, horizontal overflow, or browser
+Workspace write; teardown dropped the database. Exactly three ignored 1440x900
+screenshots are in `.agent_read/tmp/fe-m-desktop-final-review/`.
+`FE-M_DESKTOP_STATUS = PASS_FE_M_DESKTOP_READY_FOR_OWNER_REVIEW`; Owner visual
+acceptance remains pending. Q1 must not begin without a separate Owner decision.
+
 ## W2 Review-to-Writing revision integration
 
 Writing Revision is published as reviewed Definition 0.4.0 / Capsule 0.6.0 with

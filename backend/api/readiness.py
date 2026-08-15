@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, text
 
 
-EXPECTED_MIGRATION_HEAD = "20260813_0021"
+EXPECTED_MIGRATION_HEAD = "20260815_0026"
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +103,34 @@ def check_postgres_readiness(engine: Engine) -> ReadinessResult:
                           AND review_status = 'REVIEWED'
                           AND core_capability_maturity = 'SCAFFOLD_CORE'
                       ) AS scaffold_versions
+                      ,EXISTS (
+                        SELECT 1 FROM local_workflow_capsule_versions
+                        WHERE workflow_definition_id = 'reproduction-experiment-local-experimental'
+                          AND workflow_version = '0.4.0'
+                          AND capsule_version = '0.7.0'
+                          AND review_status = 'REVIEWED'
+                      ) AS real_experiment
+                      ,EXISTS (
+                        SELECT 1 FROM local_workflow_capsule_versions
+                        WHERE workflow_definition_id = 'writing-local-experimental'
+                          AND workflow_version = '0.3.0'
+                          AND capsule_version = '0.5.0'
+                          AND review_status = 'REVIEWED'
+                      ) AS real_writing
+                      ,EXISTS (
+                        SELECT 1 FROM local_workflow_capsule_versions
+                        WHERE workflow_definition_id = 'review-local-experimental'
+                          AND workflow_version = '0.3.0'
+                          AND capsule_version = '0.5.0'
+                          AND review_status = 'REVIEWED'
+                      ) AS real_review
+                      ,EXISTS (
+                        SELECT 1 FROM local_workflow_capsule_versions
+                        WHERE workflow_definition_id = 'writing-local-experimental'
+                          AND workflow_version = '0.4.0'
+                          AND capsule_version = '0.6.0'
+                          AND review_status = 'REVIEWED'
+                      ) AS writing_revision
                       ,(
                         SELECT count(*) = 5
                         FROM local_workflow_definitions

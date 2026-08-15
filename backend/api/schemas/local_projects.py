@@ -7,10 +7,10 @@ from typing import Literal
 from pydantic import Field
 
 from backend.local_projects import LocalPackageMetadata, LocalProject
-from backend.progress_reports import ProjectProgressProjection
+from backend.progress_reports import ProjectProgressProjection, ProjectWorkflowProgressProjection
 
 from .common import StrictDTO
-from .progress import ProjectProgressResponse
+from .progress import ProjectAttentionResponse, ProjectProgressResponse
 
 
 class CreateLocalProjectRequest(StrictDTO):
@@ -72,12 +72,14 @@ class LocalProjectResponse(StrictDTO):
     updated_at: str
     current_package: LocalPackageResponse | None
     progress: ProjectProgressResponse | None
+    attention: ProjectAttentionResponse
 
     @classmethod
     def from_contract(
         cls,
         project: LocalProject,
         progress: ProjectProgressProjection | None,
+        workflow_progress: ProjectWorkflowProgressProjection,
     ) -> LocalProjectResponse:
         return cls(
             project_id=project.project_id,
@@ -98,5 +100,8 @@ class LocalProjectResponse(StrictDTO):
                 ProjectProgressResponse.from_contract(progress)
                 if progress is not None
                 else None
+            ),
+            attention=ProjectAttentionResponse.model_validate(
+                workflow_progress.attention.to_dict()
             ),
         )

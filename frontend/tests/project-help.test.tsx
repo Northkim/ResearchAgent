@@ -25,5 +25,6 @@ test("guides setup, multi-Workflow work, continuation, and Cloud/local boundarie
   expect(screen.getByRole("heading", { name: "Cloud continuity is not backup" })).toBeVisible();
   expect(screen.getByText(/Literature Search 0.3.0/)).toBeVisible();
   expect(screen.getAllByText("python reagent_local.py workflow list .")).toHaveLength(2);
-  expect(screen.getByRole("link", { name: "Help" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("link", { name: "Activity" })).toBeVisible();
+  expect(screen.queryByRole("link", { name: "Help" })).not.toBeInTheDocument();
 });

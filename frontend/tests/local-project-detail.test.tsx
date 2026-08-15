@@ -9,26 +9,23 @@ import { localProjectFixture, projectProgressFixture } from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
-test("renders the project overview without a fake completion percentage", async () => {
+test("leads the Project Overview with the current research action", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
   vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
   render(<Providers><LocalProjectDetail projectId={localProjectFixture.project_id} /></Providers>);
 
-  expect(await screen.findByRole("heading", { name: "Your research workflows at a glance" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Review the latest result" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Download setup file" })).toHaveAttribute(
-    "href", `/backend/projects/${localProjectFixture.project_id}/workspace-bootstrap`,
-  );
-  expect(screen.getByRole("link", { name: "Download local tool" })).toHaveAttribute(
-    "href", "/backend/local-client/reagent_local.py",
-  );
-  expect(screen.getByText(/bootstrap \.\/reagent-workspace/)).toBeVisible();
-  expect(screen.getByText("Literature Search")).toBeVisible();
-  expect(screen.getByText("Selection rationale is ready for review.")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Review the selected papers" })).toBeVisible();
+  expect(screen.queryByText("Owner acts now")).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "View selected papers" })).toHaveAttribute("href", expect.stringContaining("/outputs"));
+  expect(screen.getAllByText("Literature Search").length).toBeGreaterThan(0);
+  expect(screen.getByRole("heading", { name: "Workflow progress" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Latest output" })).toBeVisible();
+  expect(screen.getByText("Selected paper library")).toBeVisible();
   expect(screen.queryByText(/% complete/i)).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
   expect(screen.getByRole("link", { name: "Workflows" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Progress" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Help" })).toBeVisible();
-  expect(screen.queryByText(/Artifacts|Resources|Skills|Activity|Settings/)).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Outputs" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Activity" })).toBeVisible();
+  expect(screen.queryByRole("link", { name: "Download setup file" })).not.toBeInTheDocument();
+  expect(screen.getByText("Technical Details")).toBeVisible();
 });

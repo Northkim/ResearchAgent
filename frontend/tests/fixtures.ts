@@ -8,9 +8,43 @@ import type {
   ProjectWorkflowInstancePage,
   UploadedProgressReport,
   WorkflowCatalogPage,
+  WorkflowActionProjection,
 } from "@/types/api";
 
 export const workflowInstanceId = `wfi-${"1".repeat(32)}`;
+
+export const completedWorkflowActionFixture: WorkflowActionProjection = {
+  stage: { code: "COMPLETED", label: "Literature selected" },
+  actor: "OWNER",
+  attention_state: "OWNER_ACTION_REQUIRED",
+  blocker: null,
+  next_action: {
+    surface: "BROWSER",
+    code: "REVIEW_RESULT",
+    label: "Review Output",
+    description: "Review the selected paper library before continuing.",
+  },
+  expected_output: {
+    label: "Selected paper library",
+    artifact_id: null,
+    artifact_type: "paper_library",
+    artifact_schema: "selected-paper-library/v1",
+    checksum: null,
+    produced_at: null,
+    progress_round: null,
+    state: "EXPECTED",
+  },
+  latest_output: {
+    label: "Selected paper library",
+    artifact_id: `artifact-${"a".repeat(32)}`,
+    artifact_type: "paper_library",
+    artifact_schema: "selected-paper-library/v1",
+    checksum: `sha256:${"1".repeat(64)}`,
+    produced_at: "2026-08-05T08:05:01Z",
+    progress_round: 1,
+    state: "PRODUCED",
+  },
+};
 
 export const workflowFixture: WorkflowDefinition = {
   id: "literature-review",
@@ -189,6 +223,13 @@ export const localProjectFixture: LocalProject = {
     legacy_warning_state: false,
     projection_checksum: `sha256:${"2".repeat(64)}`,
   },
+  attention: {
+    recommended_workflow_instance_id: workflowInstanceId,
+    recommended_workflow_label: "Literature Search",
+    action: completedWorkflowActionFixture,
+    recent_change: { summary: "Selection rationale is ready for review.", changed_at: "2026-08-05T08:05:01Z" },
+    latest_output: completedWorkflowActionFixture.latest_output,
+  },
 };
 
 export const progressReportFixture: UploadedProgressReport = {
@@ -269,6 +310,7 @@ export const projectProgressFixture: ProjectProgress = {
     installation_state: "ACKNOWLEDGED_CURRENT",
     installation_manifest_revision: 1,
     sync_uncertainty: "CLIENT_REPORTED",
+    action: completedWorkflowActionFixture,
   }],
   history: [progressReportFixture],
   history_offset: 0,
@@ -276,6 +318,9 @@ export const projectProgressFixture: ProjectProgress = {
   history_total: 1,
   has_more_history: false,
   dependency_edges: [],
+  recommended_workflow_instance_id: workflowInstanceId,
+  recommended_next_action: "Review Output",
+  attention: localProjectFixture.attention,
   latest_status: "COMPLETED",
   latest_execution_round: 1,
   current_state_summary: "Selection rationale is ready for review.",

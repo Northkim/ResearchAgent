@@ -13,25 +13,13 @@ import {
   useWorkflowDefinitions,
 } from "@/api/hooks";
 import { formatDateTime } from "@/lib/format";
-import { deriveWorkflowNextAction } from "@/lib/workflow-next-action";
 import type { ProjectWorkflowInstance, WorkflowCatalogItem } from "@/types/api";
 
 import { PageHeader } from "./page-header";
 import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
-import { IdeaDiscoverySetup } from "./idea-discovery-setup";
-import { WorkflowInputSetup } from "./workflow-input-setup";
 import { CopyCommand } from "./copy-command";
-import { WorkflowResourceSetup } from "./workflow-resource-setup";
-
-const IDEA_DISCOVERY_WORKFLOW_ID = "idea-discovery-local-experimental";
-const INPUT_WORKFLOW_IDS = new Set([
-  IDEA_DISCOVERY_WORKFLOW_ID,
-  "writing-local-experimental",
-  "review-local-experimental",
-  "reproduction-experiment-local-experimental",
-]);
 
 function WorkflowSkills({ skills }: { skills: NonNullable<ProjectWorkflowInstance["skills"]> }) {
   if (!skills.length) return null;
@@ -135,10 +123,10 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Workflow Board"
-        title={`${project.data.name} workflows`}
-        description="Each card is one independent Workflow. Research progress, Cloud selection, and local installation knowledge remain separate."
-        action={<Link href={`/projects/${projectId}/help`} className="button button-ghost">Workflow help</Link>}
+        eyebrow="Project Workflows"
+        title={`${project.data.name} Workflows`}
+        description="Open an exact Workflow to see its current stage, next valid action, inputs, Outputs and Activity."
+        action={<Link href={`/projects/${projectId}`} className="button button-ghost">Project Overview</Link>}
       />
       <ProjectNavigation projectId={projectId} active="Workflows" />
       {notice ? (
@@ -157,110 +145,32 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
         </div>
       ) : null}
 
-      <section className="boundary-callout" aria-labelledby="research-relationships-title">
-        <strong id="research-relationships-title">Research relationships · guidance, not a pipeline</strong>
-        <p>Each Workflow remains independent. These links come from the current immutable Artifact requirement contracts.</p>
-        <ul>
-          {relationships.map((item) => (
-            <li key={item.key}>{item.producer} → {item.consumer}{item.required ? " · required" : " · optional"}</li>
-          ))}
-        </ul>
-      </section>
-
       <section aria-labelledby="current-workflows-title">
         <div className="section-heading">
-          <div><p className="eyebrow">Current Workflows</p><h2 id="current-workflows-title">Your Project workflows</h2></div>
-          <span className="section-caption">Cloud configuration</span>
+          <div><p className="eyebrow">Current Work</p><h2 id="current-workflows-title">Workflow progression</h2></div>
+          <span className="section-caption">{instances.data.items.length} Workflow{instances.data.items.length === 1 ? "" : "s"}</span>
         </div>
         {instances.data.items.length ? (
-          <div className="workflow-card-grid">
+          <div className="workflow-work-list">
             {instances.data.items.map((instance) => {
               const state = projections.get(instance.workflow_instance_id);
               const definition = catalog.data!.items.find(
                 (item) => item.workflow_definition_id === instance.workflow_definition_id,
               );
-              const dependencyEdges = progress.data.dependency_edges.filter(
-                (item) => item.consumer_workflow_instance_id === instance.workflow_instance_id,
-              );
-              const nextAction = deriveWorkflowNextAction({
-                instance,
-                progress: state,
-                requiresInput: INPUT_WORKFLOW_IDS.has(definition?.stable_workflow_key ?? ""),
-                dependencies: dependencyEdges,
-              });
+              if (!state) return null;
               return (
-                <article className="workflow-card" key={instance.workflow_instance_id}>
-                  <div className="workflow-card-heading">
-                    <div>
-                      <p className="eyebrow">{definition?.display_name ?? instance.workflow_definition_id}</p>
-                      <h3>{state?.friendly_instance_label ?? instance.display_name}</h3>
-                    </div>
-                    <WorkflowStatusBadge value={instance.desired_state} dimension="lifecycle" />
-                  </div>
-                  <div className="workflow-badge-row">
-                    {definition?.recommended_version ? (
-                      <WorkflowStatusBadge value={definition.recommended_version.core_capability_maturity} dimension="maturity" />
-                    ) : null}
-                    <WorkflowStatusBadge value={state?.research_status ?? "NOT_STARTED"} dimension="research" />
-                    <WorkflowStatusBadge value={state?.desired_state ?? (instance.in_current_manifest ? "DESIRED" : "NOT_DESIRED")} dimension="desired" />
-                    <WorkflowStatusBadge value={state?.installation_state ?? "UNKNOWN"} dimension="installation" />
-                    {state?.readiness ? <WorkflowStatusBadge value={state.readiness} dimension="readiness" /> : null}
-                  </div>
-                  {definition?.recommended_version?.core_capability_maturity === "SCAFFOLD_CORE" ? (
-                    <div className="boundary-callout">
-                      <strong>Scaffold core</strong>
-                      <p>Product flow is functional. Research capability is placeholder.</p>
-                    </div>
-                  ) : null}
-                  <WorkflowSkills skills={instance.skills ?? []} />
-                  {(instance.resource_requirements ?? []).length ? (
-                    <WorkflowResourceSetup
-                      projectId={projectId}
-                      instance={instance}
-                      requirements={instance.resource_requirements ?? []}
-                    />
-                  ) : null}
-                  <p>{state?.latest_summary ?? "No Progress Report has been uploaded for this instance."}</p>
-                  <div className="workflow-next-action" data-action={nextAction.code}>
-                    <strong>Next: {nextAction.title}</strong>
-                    <p>{nextAction.description}</p>
-                  </div>
-                  <dl className="workflow-card-details">
-                    <div><dt>Progress reports</dt><dd>{state?.report_count ?? 0}</dd></div>
-                    <div><dt>Latest activity</dt><dd>{state?.latest_activity_at ? formatDateTime(state.latest_activity_at) : "None"}</dd></div>
-                  </dl>
-                  {instance.workflow_definition_id === IDEA_DISCOVERY_WORKFLOW_ID ? (
-                    <IdeaDiscoverySetup
-                      projectId={projectId}
-                      instance={instance}
-                      instances={instances.data.items}
-                      installationState={state?.installation_state ?? "UNKNOWN"}
-                      dependencies={dependencyEdges}
-                    />
-                  ) : null}
-                  {instance.workflow_definition_id !== IDEA_DISCOVERY_WORKFLOW_ID ? (
-                    <WorkflowInputSetup
-                      projectId={projectId}
-                      instance={instance}
-                      instances={instances.data.items}
-                      projections={progress.data.instances}
-                      requirements={definition?.recommended_version?.artifact_requirements ?? []}
-                      dependencies={dependencyEdges}
-                    />
-                  ) : null}
-                  <details className="technical-details compact-technical-details">
-                    <summary>Technical details</summary>
-                    <dl>
-                      <div><dt>Instance ID</dt><dd><code>{instance.workflow_instance_id}</code></dd></div>
-                      <div><dt>Workflow version</dt><dd>{instance.workflow_version}</dd></div>
-                      <div><dt>Capsule version</dt><dd>{instance.capsule_version ?? "Not pinned"}</dd></div>
-                    </dl>
-                  </details>
-                  <div className="button-row">
-                    <Link href={`/projects/${projectId}/progress?workflow_instance_id=${encodeURIComponent(instance.workflow_instance_id)}`} className="button button-secondary">View progress</Link>
-                    {instance.desired_state === "ACTIVE" ? (
-                      <button className="button button-ghost" disabled={retire.isPending} onClick={() => retireWorkflow(instance)}>Retire</button>
-                    ) : null}
+                <article className="workflow-work-row" key={instance.workflow_instance_id} data-attention-state={state.action.attention_state}>
+                  <div className="workflow-work-identity"><p className="eyebrow">{definition?.display_name ?? state.workflow_display_name}</p><h3>{state.friendly_instance_label ?? instance.display_name}</h3><span>{state.action.stage.label}</span></div>
+                  <div className="workflow-work-status"><span>Actor</span><strong>{state.action.actor === "NONE" ? "No action required" : `${state.action.actor.charAt(0)}${state.action.actor.slice(1).toLowerCase()} acts`}</strong><small>{state.action.blocker?.message ?? state.latest_summary ?? "Ready for its next valid action."}</small></div>
+                  <div className="workflow-work-status"><span>Next</span><strong>{state.action.next_action.label}</strong><small>{state.action.next_action.surface === "LOCAL" ? "Local Workspace" : state.action.next_action.surface === "BROWSER" ? "Browser" : "Information"}</small></div>
+                  <div className="workflow-work-status"><span>{state.action.latest_output ? "Latest Output" : "Expected Output"}</span><strong>{state.action.latest_output?.label ?? state.action.expected_output?.label ?? "No Output declared"}</strong><small>{state.latest_activity_at ? formatDateTime(state.latest_activity_at) : "No Activity yet"}</small></div>
+                  <div className="workflow-row-actions">
+                    <Link href={`/projects/${projectId}/workflows/${instance.workflow_instance_id}`} className="button button-secondary">Open Workflow</Link>
+                    <details className="compact-row-details">
+                      <summary>Manage</summary>
+                      <p>{definition?.recommended_version?.core_capability_maturity.replaceAll("_", " ") ?? "Maturity unknown"}</p>
+                      {instance.desired_state === "ACTIVE" ? <button className="button button-ghost" disabled={retire.isPending} onClick={() => retireWorkflow(instance)}>Retire</button> : null}
+                    </details>
                   </div>
                 </article>
               );
@@ -271,7 +181,7 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
 
       <details className="technical-details">
         <summary>Cloud configuration details</summary>
-        <dl><div><dt>Revision</dt><dd>{instances.data.manifest_revision}</dd></div></dl>
+        <dl><div><dt>Revision</dt><dd>{instances.data.manifest_revision}</dd></div><div><dt>Artifact relationships</dt><dd>{relationships.length ? relationships.map((item) => `${item.producer} → ${item.consumer}${item.required ? " (required)" : " (optional)"}`).join("; ") : "None declared"}</dd></div></dl>
       </details>
 
       <section className="workflow-catalog-section" aria-labelledby="catalog-title">
