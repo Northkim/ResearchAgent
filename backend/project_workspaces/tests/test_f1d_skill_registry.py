@@ -56,8 +56,12 @@ def test_skill_catalog_is_read_only_stable_and_projects_exact_pins(tmp_path) -> 
         assert item["trust"] == "BUILT_IN_REVIEWED"
         assert item["current_version"]["version"] == "0.1.0"
         detail = client.get(f"/skills/{item['skill_id']}").json()
-        assert len(detail["workflow_usages"]) == 4
-        assert {use["workflow_version"] for use in detail["workflow_usages"]} == {"0.2.0", "0.3.0"}
+        expected_count = 5 if item["skill_id"] == PRODUCTION_SKILLS[0].skill_id else 4
+        assert len(detail["workflow_usages"]) == expected_count
+        expected_versions = {"0.2.0", "0.3.0"}
+        if expected_count == 5:
+            expected_versions.add("0.4.0")
+        assert {use["workflow_version"] for use in detail["workflow_usages"]} == expected_versions
     assert client.post("/skills", json={}).status_code == 405
     writing = client.get("/workflow-definitions/writing-local-experimental").json()
     skills = writing["recommended_version"]["skills"]

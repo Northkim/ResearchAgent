@@ -3053,3 +3053,34 @@ database/Project/Workspace or live Provider was accessed. Owner recovery uses a
 new same-Project Experiment Instance pinned to Capsule 0.4.0 and the existing
 selected Idea; no Literature or Idea rerun is required. Next action is owner
 Experiment Scaffold UX testing, not Real Experiment Core development.
+
+## E1 Real Experiment closure (2026-08-15)
+
+E1 is **COMPLETE** for the accepted narrow controlled product path. Real
+Experiment Definition 0.4.0 and immutable bugfix Capsule 0.7.0 take one exact
+selected Idea and one checksum-verified owner-staged package through typed
+requirements, a deterministic checksum-bound plan and one-use approval, one
+bounded local foreground execution with network denied by default, declared
+evaluation, `experiment-record/v2`, terminal Progress, and Cloud Artifact and
+Workflow projection. Historical Capsule 0.6.0 and `experiment-record/v1`
+remain immutable.
+
+The last Cloud-closure failure was qualification-only: the controlled app
+enabled local-session routes without composing their required existing
+`CloudAPIProxyService`, so upload-only session creation failed at `_proxy()`
+with `SERVICE_UNAVAILABLE`. The qualifier now uses the same production
+`ProxyApplicationContainer` composition with deterministic in-memory fake
+Proxy persistence. No local-session API, authorization, Progress, Artifact,
+database, Capsule, or Experiment runtime semantic changed.
+
+Focused qualification passed `2` route tests and `9` affected E1/local-session
+tests. The public Workspace command then passed on its first closure attempt:
+local session `201`, Progress upload `201`, session close `204`, exactly one
+accepted terminal round, exactly one promoted `experiment-record/v2`, completed
+Instance/Project projection, one Cloud acknowledgement, and temporary-state
+cleanup. Evidence is controlled synthetic E5 public-Workspace evidence; it is
+not arbitrary scientific-validity, hostile-code-safety, Real Codex, or
+long-lived Workspace evidence. Alembic remains sole head `20260815_0023`.
+
+Next product phase: W1 Real Writing. Do not continue Experiment hardening or
+begin W1 automatically.

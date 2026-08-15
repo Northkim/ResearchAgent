@@ -21,6 +21,7 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_INPUT_TARGET,
     EXPERIMENT_RECORD_TYPE,
+    EXPERIMENT_RECORD_V2_TYPE,
     EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
     EXPERIMENT_COMPLETION_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_CAPSULE_VERSION,
@@ -28,6 +29,8 @@ from backend.workflow_packages.production_workflows import (
     EXPERIMENT_REQUIREMENTS,
     EXPERIMENT_TEMPLATE_ID,
     EXPERIMENT_WORKFLOW_ID,
+    REAL_EXPERIMENT_CAPSULE_VERSION,
+    REAL_EXPERIMENT_WORKFLOW_VERSION,
     LITERATURE_SEARCH_CAPSULE_VERSION,
     LITERATURE_SEARCH_TEMPLATE_ID,
     LITERATURE_SEARCH_WORKFLOW_ID,
@@ -52,6 +55,7 @@ from backend.workflow_packages.production_workflows import (
     idea_discovery_contract_checksum,
     idea_discovery_v0_2_contract_checksum,
     literature_search_contract_checksum,
+    real_experiment_contract_checksum,
     selected_paper_library_output_contract,
     selected_research_idea_output_contract,
     scaffold_contract_checksum,
@@ -59,7 +63,11 @@ from backend.workflow_packages.production_workflows import (
 )
 from backend.workflow_packages.serialization import canonical_hash
 
-from .skills import PRODUCTION_SKILLS, production_skill_pins
+from .skills import (
+    PRODUCTION_SKILLS,
+    RESEARCH_ARTIFACT_PROVENANCE_SKILL,
+    production_skill_pins,
+)
 
 from .contracts import (
     CapsuleTrustClassification,
@@ -453,6 +461,38 @@ EXPERIMENT_V0_5_CAPSULE_CHECKSUM = experiment_completion_capsule_checksum()
 EXPERIMENT_V0_5_CAPSULE_ID = (
     "capsule-" + EXPERIMENT_V0_5_CAPSULE_CHECKSUM[7:39]
 )
+
+
+def real_experiment_capsule_checksum() -> str:
+    asset = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    return canonical_hash({
+        "generator_version": (
+            f"reagent-{EXPERIMENT_WORKFLOW_ID}-compiler/"
+            f"{REAL_EXPERIMENT_CAPSULE_VERSION}"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": EXPERIMENT_TEMPLATE_ID,
+        "package_template_version": REAL_EXPERIMENT_CAPSULE_VERSION,
+        "workflow_checksum": real_experiment_contract_checksum(),
+        "artifact_requirements": [{
+            "requirement_key": "research_idea",
+            "artifact_type": "selected-research-idea/v1",
+            "required": True,
+        }],
+        "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_V2_TYPE)],
+        "resource_requirements": [["source_repository", "SOURCE_REPOSITORY", "GITHUB"]],
+        "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+        "skill_pins": [{
+            "skill_id": asset.skill_id,
+            "skill_version": asset.version,
+            "content_checksum": asset.content_checksum,
+        }],
+        "execution_boundary": "ONE_APPROVED_LOCAL_NO_EGRESS_ATTEMPT",
+    })
+
+
+REAL_EXPERIMENT_CAPSULE_CHECKSUM = real_experiment_capsule_checksum()
+REAL_EXPERIMENT_CAPSULE_ID = "capsule-" + REAL_EXPERIMENT_CAPSULE_CHECKSUM[7:39]
 
 
 def literature_search_definition_version(now: datetime) -> WorkflowDefinitionVersion:
@@ -1105,4 +1145,73 @@ def experiment_resource_artifact_requirements(
             updated_at=now,
         )
         for item in EXPERIMENT_REQUIREMENTS
+    )
+
+
+def real_experiment_definition_version(now: datetime) -> WorkflowDefinitionVersion:
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=EXPERIMENT_WORKFLOW_ID,
+        version=REAL_EXPERIMENT_WORKFLOW_VERSION,
+        contract_checksum=real_experiment_contract_checksum(),
+        input_schema_id="selected-research-idea/v1",
+        output_schema_id=EXPERIMENT_RECORD_V2_TYPE,
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_V2_TYPE)],
+            "resource_mode": "ONE_OWNER_STAGED_GITHUB_SOURCE_REPOSITORY",
+            "network_policy": "DISABLED",
+            "automatic_retry": False,
+            "default_project_setup": False,
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def real_experiment_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    asset = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    return WorkflowCapsuleVersion(
+        capsule_id=REAL_EXPERIMENT_CAPSULE_ID,
+        capsule_version=REAL_EXPERIMENT_CAPSULE_VERSION,
+        workflow_definition_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_version=REAL_EXPERIMENT_WORKFLOW_VERSION,
+        definition_checksum=REAL_EXPERIMENT_CAPSULE_CHECKSUM,
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=("memory/context.md", "memory/progress", "memory/execution", "memory/input-provenance.json", "memory/resource-provenance.json", "memory/plan-context.json", "memory/experiment-requirements.json", "memory/experiment-plan.json", "memory/experiment-approval.json", "memory/approval-consumption.json", "memory/current-artifact.json", "outputs", "inputs"),
+        capability_requirements=("progress.upload/v0.2", "artifact.materialize/v0.1", "artifact.publish/v0.1", "resource.index.verify/v0.1", "execute.local-foreground/v0.1", "network.no-egress/v0.1"),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": EXPERIMENT_TEMPLATE_ID,
+            "trust_classification": CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value,
+            "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_V2_TYPE)],
+            "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+            "skill_pins": [{"skill_id": asset.skill_id, "skill_version": asset.version, "skill_checksum": asset.content_checksum, "trust": "BUILT_IN_REVIEWED"}],
+            "execution_boundary": "ONE_APPROVED_LOCAL_NO_EGRESS_ATTEMPT",
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def real_experiment_artifact_requirement(now: datetime) -> WorkflowArtifactRequirement:
+    return WorkflowArtifactRequirement(
+        workflow_definition_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_version=REAL_EXPERIMENT_WORKFLOW_VERSION,
+        requirement_key="research_idea",
+        artifact_type="selected-research-idea/v1",
+        compatibility_mode=CompatibilityMode.EXACT,
+        schema_constraint="selected-research-idea/v1",
+        cardinality_min=1,
+        cardinality_max=1,
+        required=True,
+        materialization_mode=MaterializationMode.VERIFIED_COPY,
+        target_relative_path=SCAFFOLD_INPUT_TARGETS["research_idea"],
+        created_at=now,
+        updated_at=now,
     )

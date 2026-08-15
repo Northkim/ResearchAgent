@@ -10,11 +10,12 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 from backend.project_workspaces.contracts import CoreCapabilityMaturity
-from backend.workflow_packages.serialization import canonical_json, sha256_bytes
+from backend.workflow_packages.serialization import canonical_hash, canonical_json, sha256_bytes
 
 SELECTED_RESEARCH_IDEA_TYPE = "selected-research-idea/v1"
 SELECTED_RESEARCH_IDEA_SCHEMA = "selected-research-idea/v1"
@@ -24,6 +25,8 @@ REVIEW_REPORT_TYPE = "review-report/v1"
 REVIEW_REPORT_SCHEMA = "review-report/v1"
 EXPERIMENT_RECORD_TYPE = "experiment-record/v1"
 EXPERIMENT_RECORD_SCHEMA = "experiment-record/v1"
+EXPERIMENT_RECORD_V2_TYPE = "experiment-record/v2"
+EXPERIMENT_RECORD_V2_SCHEMA = "experiment-record/v2"
 SELECTED_PAPER_LIBRARY_TYPE = "selected-paper-library/v1"
 CANDIDATE_IDEAS_SCHEMA = "candidate-ideas/v0.1"
 JSON_MEDIA_TYPE = "application/json"
@@ -33,6 +36,8 @@ _CHECKSUM = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ARTIFACT_TYPE = re.compile(
     r"^[a-z][a-z0-9._-]{1,139}(?:/v[0-9]+(?:\.[0-9]+)?)?$"
 )
+_RESOURCE_ID = re.compile(r"^resource-[0-9a-f]{32}$")
+_ATTEMPT_ID = re.compile(r"^attempt-[0-9a-f]{32}$")
 _IDEA_ID = re.compile(r"^idea-[0-9]{3,}$")
 _CANDIDATE_ID = re.compile(r"^candidate-[0-9a-f]{16,64}$")
 _IDEA_STATUSES = {"candidate", "shortlisted", "selected", "rejected"}
@@ -356,6 +361,115 @@ def validate_experiment_record(
     }
 
 
+def validate_experiment_record_v2(
+    value: Mapping[str, Any],
+    *,
+    producer_maturity: CoreCapabilityMaturity | None = None,
+) -> dict[str, Any]:
+    """Validate the immutable, approval-bound Real Experiment Output."""
+
+    result = _object(value, "experiment record v2")
+    _exact_keys(result, {
+        "schema", "core_capability_maturity", "mode", "source_artifacts",
+        "requirements", "approved_plan", "approval", "execution",
+        "evaluation", "result_status", "limitations",
+    }, "experiment record v2")
+    if result["schema"] != EXPERIMENT_RECORD_V2_SCHEMA:
+        raise ResearchFlowContractError("experiment record v2 schema mismatch")
+    maturity = _maturity(result["core_capability_maturity"])
+    _require_producer_maturity(maturity, producer_maturity)
+    if maturity is not CoreCapabilityMaturity.REVIEWED_CORE:
+        raise ResearchFlowContractError("real experiment output requires REVIEWED_CORE")
+    if result["mode"] != "IDEA_EXPERIMENT":
+        raise ResearchFlowContractError("experiment record v2 mode is invalid")
+    sources = _artifact_ref_list(result["source_artifacts"], "experiment v2 sources")
+    if not sources or sources[0]["artifact_type"] != SELECTED_RESEARCH_IDEA_TYPE:
+        raise ResearchFlowContractError("experiment v2 requires the exact selected Idea first")
+
+    requirements = _checksummed_value(result["requirements"], "requirements")
+    plan = _checksummed_value(result["approved_plan"], "approved plan")
+    _validate_requirements(requirements["value"])
+    _validate_experiment_plan(plan["value"], sources, requirements["sha256"])
+
+    approval = _object(result["approval"], "approval")
+    _exact_keys(approval, {
+        "sha256", "plan_sha256", "attempt_id", "approved_at", "decision", "scope",
+    }, "approval")
+    _checksum(approval["sha256"], "approval checksum")
+    _attempt(approval["attempt_id"])
+    _time(approval["approved_at"], "approval time")
+    if approval["plan_sha256"] != plan["sha256"] or approval["decision"] != "APPROVED" or approval["scope"] != "ONE_ATTEMPT":
+        raise ResearchFlowContractError("approval is not bound to the exact plan and one attempt")
+    approval_payload = dict(approval)
+    approval_checksum = approval_payload.pop("sha256")
+    if canonical_hash(approval_payload) != approval_checksum:
+        raise ResearchFlowContractError("approval checksum mismatch")
+
+    execution = _object(result["execution"], "execution")
+    _exact_keys(execution, {
+        "attempt_id", "approval_sha256", "status", "started_at", "completed_at",
+        "argv", "working_directory", "environment", "network_policy", "limits",
+        "exit_code", "signal", "stdout", "stderr",
+    }, "execution")
+    _attempt(execution["attempt_id"])
+    if execution["attempt_id"] != approval["attempt_id"] or execution["approval_sha256"] != approval["sha256"]:
+        raise ResearchFlowContractError("execution identity differs from approval")
+    if execution["status"] not in {"SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED", "INTERRUPTED"}:
+        raise ResearchFlowContractError("execution status is invalid")
+    started = _time(execution["started_at"], "execution start")
+    completed = _time(execution["completed_at"], "execution completion")
+    if completed < started:
+        raise ResearchFlowContractError("execution timestamps are not monotonic")
+    argv = _string_list(execution["argv"], "execution argv")
+    if not argv or argv != plan["value"]["argv"]:
+        raise ResearchFlowContractError("execution command differs from approved plan")
+    if execution["working_directory"] != plan["value"]["working_directory"]:
+        raise ResearchFlowContractError("execution working directory differs from plan")
+    if execution["environment"] != plan["value"]["environment"] or execution["limits"] != plan["value"]["limits"]:
+        raise ResearchFlowContractError("execution environment or limits differ from plan")
+    if execution["network_policy"] != "DISABLED" or plan["value"]["network_policy"] != "DISABLED":
+        raise ResearchFlowContractError("real experiment network policy must be disabled")
+    if execution["exit_code"] is not None and (isinstance(execution["exit_code"], bool) or not isinstance(execution["exit_code"], int)):
+        raise ResearchFlowContractError("execution exit code is invalid")
+    if execution["signal"] is not None:
+        _nonempty(execution["signal"], "execution signal")
+    stdout = _evidence_ref(execution["stdout"], "stdout")
+    stderr = _evidence_ref(execution["stderr"], "stderr")
+
+    evaluation = _object(result["evaluation"], "evaluation")
+    _exact_keys(evaluation, {"status", "metrics", "raw_result", "summary"}, "evaluation")
+    if evaluation["status"] not in {"VALID", "INVALID", "NOT_RUN"}:
+        raise ResearchFlowContractError("evaluation status is invalid")
+    metrics = _result_metrics(evaluation["metrics"])
+    raw_result = None if evaluation["raw_result"] is None else _evidence_ref(evaluation["raw_result"], "raw result")
+    _nonempty(evaluation["summary"], "evaluation summary")
+    if evaluation["status"] == "VALID" and raw_result is None:
+        raise ResearchFlowContractError("valid evaluation requires raw result evidence")
+    if result["result_status"] not in {"SUCCEEDED", "FAILED", "PARTIAL"}:
+        raise ResearchFlowContractError("result status is invalid")
+    if result["result_status"] == "SUCCEEDED" and (
+        execution["status"] != "SUCCEEDED" or execution["exit_code"] != 0
+        or evaluation["status"] != "VALID"
+    ):
+        raise ResearchFlowContractError("successful result lacks execution and evaluation proof")
+    if execution["status"] == "SUCCEEDED" and evaluation["status"] == "INVALID" and result["result_status"] != "PARTIAL":
+        raise ResearchFlowContractError("invalid evaluation after process success must be partial")
+    limitations = _string_list(result["limitations"], "experiment v2 limitations")
+    return {
+        "schema": EXPERIMENT_RECORD_V2_SCHEMA,
+        "core_capability_maturity": maturity.value,
+        "mode": result["mode"],
+        "source_artifacts": sources,
+        "requirements": requirements,
+        "approved_plan": plan,
+        "approval": dict(approval),
+        "execution": {**execution, "argv": argv, "stdout": stdout, "stderr": stderr},
+        "evaluation": {**evaluation, "metrics": metrics, "raw_result": raw_result},
+        "result_status": result["result_status"],
+        "limitations": limitations,
+    }
+
+
 def validate_writing_review_revision(
     *, manuscript: Mapping[str, Any], review: Mapping[str, Any]
 ) -> None:
@@ -510,6 +624,182 @@ def _actual_results(value: Any) -> dict[str, Any]:
     }
 
 
+def _checksummed_value(value: Any, label: str) -> dict[str, Any]:
+    item = _object(value, label)
+    _exact_keys(item, {"sha256", "value"}, label)
+    _checksum(item["sha256"], f"{label} checksum")
+    payload = _copy_json(_object(item["value"], f"{label} value"))
+    if canonical_hash(payload) != item["sha256"]:
+        raise ResearchFlowContractError(f"{label} checksum mismatch")
+    return {"sha256": item["sha256"], "value": payload}
+
+
+def _validate_requirements(value: Any) -> None:
+    item = _object(value, "experiment requirements")
+    _exact_keys(item, {
+        "research_question", "hypothesis", "scientific_inputs", "configuration",
+        "seeds", "repetitions", "metrics", "runtime", "limits",
+        "stopping_conditions",
+    }, "experiment requirements")
+    _nonempty(item["research_question"], "requirements research question")
+    if item["hypothesis"] is not None:
+        _nonempty(item["hypothesis"], "requirements hypothesis")
+    if not isinstance(item["scientific_inputs"], list) or not item["scientific_inputs"]:
+        raise ResearchFlowContractError("requirements scientific inputs are invalid")
+    for raw in item["scientific_inputs"]:
+        need = _object(raw, "scientific input")
+        _exact_keys(need, {"kind", "role", "required"}, "scientific input")
+        if need["kind"] not in {"SOURCE_CODE", "DATASET", "EVENTS", "MODEL", "CHECKPOINT", "BASELINE"} or not isinstance(need["required"], bool):
+            raise ResearchFlowContractError("scientific input is invalid")
+        _nonempty(need["role"], "scientific input role")
+    if not isinstance(item["configuration"], Mapping):
+        raise ResearchFlowContractError("requirements configuration must be an object")
+    if not isinstance(item["seeds"], list) or any(isinstance(seed, bool) or not isinstance(seed, int) for seed in item["seeds"]):
+        raise ResearchFlowContractError("requirements seeds are invalid")
+    if isinstance(item["repetitions"], bool) or not isinstance(item["repetitions"], int) or not 1 <= item["repetitions"] <= 100:
+        raise ResearchFlowContractError("requirements repetitions are invalid")
+    _metric_definitions(item["metrics"])
+    _nonempty(item["runtime"], "requirements runtime")
+    _limits(item["limits"])
+    _string_list(item["stopping_conditions"], "requirements stopping conditions")
+
+
+def _validate_experiment_plan(value: Any, sources: list[dict[str, str]], requirements_checksum: str) -> None:
+    plan = _object(value, "experiment plan")
+    _exact_keys(plan, {
+        "research_question", "hypothesis", "requirements_sha256", "source_artifacts",
+        "resource", "entrypoint", "argv", "working_directory", "configuration",
+        "seeds", "repetitions", "metrics", "environment", "network_policy",
+        "limits", "stopping_conditions", "known_limitations",
+    }, "experiment plan")
+    _nonempty(plan["research_question"], "plan research question")
+    if plan["hypothesis"] is not None:
+        _nonempty(plan["hypothesis"], "plan hypothesis")
+    if plan["requirements_sha256"] != requirements_checksum or plan["source_artifacts"] != sources:
+        raise ResearchFlowContractError("plan input identity mismatch")
+    resource = _object(plan["resource"], "plan resource")
+    _exact_keys(resource, {
+        "resource_id", "resource_kind", "provider", "locator", "exact_revision",
+        "content_checksum", "package_manifest_checksum", "entrypoint_checksum",
+        "lock_checksum",
+    }, "plan resource")
+    if not isinstance(resource["resource_id"], str) or not _RESOURCE_ID.fullmatch(resource["resource_id"]):
+        raise ResearchFlowContractError("plan Resource ID is invalid")
+    if resource["resource_kind"] != "SOURCE_REPOSITORY" or resource["provider"] != "GITHUB":
+        raise ResearchFlowContractError("plan Resource mode is unsupported")
+    for field in ("locator", "exact_revision"):
+        _nonempty(resource[field], f"plan Resource {field}")
+    for field in ("content_checksum", "package_manifest_checksum", "entrypoint_checksum", "lock_checksum"):
+        _checksum(resource[field], f"plan Resource {field}")
+    _safe_relative(plan["entrypoint"], "plan entrypoint")
+    argv = _string_list(plan["argv"], "plan argv")
+    if (
+        len(argv) != 3
+        or argv[1] != plan["entrypoint"]
+        or argv[2] != "memory/execution/config.json"
+    ):
+        raise ResearchFlowContractError("plan argv must be the exact Python entrypoint")
+    if plan["working_directory"] != ".":
+        raise ResearchFlowContractError("plan working directory must be the Capsule root")
+    if not isinstance(plan["configuration"], Mapping):
+        raise ResearchFlowContractError("plan configuration must be an object")
+    if not isinstance(plan["seeds"], list) or any(isinstance(seed, bool) or not isinstance(seed, int) for seed in plan["seeds"]):
+        raise ResearchFlowContractError("plan seeds are invalid")
+    if isinstance(plan["repetitions"], bool) or not isinstance(plan["repetitions"], int) or not 1 <= plan["repetitions"] <= 100:
+        raise ResearchFlowContractError("plan repetitions are invalid")
+    _metric_definitions(plan["metrics"])
+    environment = _object(plan["environment"], "plan environment")
+    _exact_keys(environment, {"python_version", "implementation", "platform", "lock_checksum"}, "plan environment")
+    for field in environment:
+        _nonempty(environment[field], f"plan environment {field}")
+    _checksum(environment["lock_checksum"], "plan environment lock checksum")
+    if plan["network_policy"] != "DISABLED":
+        raise ResearchFlowContractError("plan network policy must be disabled")
+    _limits(plan["limits"])
+    _string_list(plan["stopping_conditions"], "plan stopping conditions")
+    _string_list(plan["known_limitations"], "plan limitations")
+
+
+def _metric_definitions(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value or len(value) > 50:
+        raise ResearchFlowContractError("metric definitions are invalid")
+    result = []
+    for raw in value:
+        metric = _object(raw, "metric definition")
+        _exact_keys(metric, {"name", "description", "unit"}, "metric definition")
+        _nonempty(metric["name"], "metric name")
+        _nonempty(metric["description"], "metric description")
+        if metric["unit"] is not None:
+            _nonempty(metric["unit"], "metric unit")
+        result.append(dict(metric))
+    if len({item["name"] for item in result}) != len(result):
+        raise ResearchFlowContractError("metric names are duplicated")
+    return result
+
+
+def _result_metrics(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) > 50:
+        raise ResearchFlowContractError("result metrics are invalid")
+    result = []
+    for raw in value:
+        metric = _object(raw, "result metric")
+        _exact_keys(metric, {"name", "value", "unit"}, "result metric")
+        _nonempty(metric["name"], "result metric name")
+        if isinstance(metric["value"], bool) or not isinstance(metric["value"], (int, float)) or not math.isfinite(metric["value"]):
+            raise ResearchFlowContractError("result metric value must be finite")
+        if metric["unit"] is not None:
+            _nonempty(metric["unit"], "result metric unit")
+        result.append(dict(metric))
+    return result
+
+
+def _limits(value: Any) -> dict[str, int]:
+    item = _object(value, "execution limits")
+    _exact_keys(item, {"wall_seconds", "cpu_seconds", "max_output_bytes"}, "execution limits")
+    bounds = {"wall_seconds": (1, 300), "cpu_seconds": (1, 300), "max_output_bytes": (1024, 10_485_760)}
+    for field, (minimum, maximum) in bounds.items():
+        number = item[field]
+        if isinstance(number, bool) or not isinstance(number, int) or not minimum <= number <= maximum:
+            raise ResearchFlowContractError(f"execution limit {field} is invalid")
+    return dict(item)
+
+
+def _evidence_ref(value: Any, label: str) -> dict[str, Any]:
+    item = _object(value, label)
+    _exact_keys(item, {"relative_path", "sha256", "availability", "limitation"}, label)
+    _safe_relative(item["relative_path"], f"{label} path")
+    _checksum(item["sha256"], f"{label} checksum")
+    if item["availability"] not in {"AVAILABLE", "UNAVAILABLE"}:
+        raise ResearchFlowContractError(f"{label} availability is invalid")
+    if item["limitation"] is not None:
+        _nonempty(item["limitation"], f"{label} limitation")
+    return dict(item)
+
+
+def _safe_relative(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value or value.startswith("/") or "\\" in value or any(part in {"", ".", ".."} for part in value.split("/")):
+        raise ResearchFlowContractError(f"{label} is unsafe")
+    return value
+
+
+def _attempt(value: Any) -> str:
+    if not isinstance(value, str) or not _ATTEMPT_ID.fullmatch(value):
+        raise ResearchFlowContractError("attempt identity is invalid")
+    return value
+
+
+def _time(value: Any, label: str) -> datetime:
+    if not isinstance(value, str):
+        raise ResearchFlowContractError(f"{label} is invalid")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ResearchFlowContractError(f"{label} is invalid") from error
+    if parsed.tzinfo is None:
+        raise ResearchFlowContractError(f"{label} requires a timezone")
+    return parsed
+
+
 def _unique_artifact_roles(values: Mapping[str, dict[str, str] | None]) -> None:
     ids = [item["artifact_id"] for item in values.values() if item is not None]
     if len(ids) != len(set(ids)):
@@ -588,6 +878,10 @@ ARTIFACT_CONTRACTS: Mapping[str, ArtifactContract] = MappingProxyType({
     EXPERIMENT_RECORD_TYPE: ArtifactContract(
         EXPERIMENT_RECORD_TYPE, EXPERIMENT_RECORD_SCHEMA,
         JSON_MEDIA_TYPE, validate_experiment_record, True,
+    ),
+    EXPERIMENT_RECORD_V2_TYPE: ArtifactContract(
+        EXPERIMENT_RECORD_V2_TYPE, EXPERIMENT_RECORD_V2_SCHEMA,
+        JSON_MEDIA_TYPE, validate_experiment_record_v2, True,
     ),
 })
 

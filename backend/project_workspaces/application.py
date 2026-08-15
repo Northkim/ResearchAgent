@@ -551,6 +551,7 @@ class ProjectWorkspaceApplicationService:
                 item for item in self.versions_for(workflow_definition_id)
                 if item.review_status is WorkflowReviewStatus.REVIEWED
                 and item.published_at is not None
+                and item.compatibility.get("default_project_setup", True) is True
             ),
             key=lambda item: _semver_key(item.version),
         )

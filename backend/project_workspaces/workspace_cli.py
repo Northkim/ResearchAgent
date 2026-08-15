@@ -130,6 +130,14 @@ SUPPORTED_CAPSULE_PINS = {
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
+    ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
+    ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -942,40 +950,7 @@ def _validate_legacy_package(
         for item in manifest.get("output_contracts", [])
         if isinstance(item, dict)
     }
-    dynamic_input_paths = {"inputs/selected-paper-library.json"}
-    scaffold_entry = declared.get("workflow/scaffold.json")
-    if scaffold_entry is not None:
-        scaffold_path = root / "workflow/scaffold.json"
-        scaffold_bytes = scaffold_path.read_bytes()
-        if (
-            scaffold_entry.get("mutable_by_harness") is not False
-            or sha256_bytes(scaffold_bytes) != scaffold_entry.get("sha256")
-        ):
-            raise _package_error(
-                "LEGACY_PACKAGE_CHECKSUM_MISMATCH",
-                "Scaffold input contract checksum is invalid",
-            )
-        scaffold = _object_package(
-            _read_json(scaffold_path), "Scaffold input contract"
-        )
-        requirements = scaffold.get("input_requirements", [])
-        if not isinstance(requirements, list):
-            raise _package_error(
-                "LEGACY_PACKAGE_UNSUPPORTED",
-                "Scaffold input requirements are invalid",
-            )
-        for requirement in requirements:
-            target = _safe_package_path(
-                _object_package(requirement, "Scaffold input requirement").get(
-                    "target_relative_path"
-                )
-            )
-            if not target.startswith("inputs/"):
-                raise _package_error(
-                    "UNSAFE_PACKAGE_PATH",
-                    "Scaffold input target must stay below inputs",
-                )
-            dynamic_input_paths.add(target)
+    dynamic_input_paths = _declared_dynamic_input_paths(root, declared)
     allowed_dynamic = (
         "memory/progress/reports/",
         "memory/progress/receipts/",
@@ -1043,6 +1018,52 @@ def _validate_legacy_package(
     if manifest.get("workflow_checksum") != canonical_hash(workflow):
         raise _package_error("LEGACY_PACKAGE_CHECKSUM_MISMATCH", "Legacy Workflow checksum is invalid")
     return manifest, _tree_checksum(root)
+
+
+def _declared_dynamic_input_paths(
+    root: Path, declared: dict[str, dict[str, Any]]
+) -> set[str]:
+    """Read exact materialization paths from supported immutable descriptors."""
+
+    dynamic_input_paths = {"inputs/selected-paper-library.json"}
+    for descriptor_path in (
+        "workflow/scaffold.json",
+        "workflow/real-experiment.json",
+    ):
+        descriptor_entry = declared.get(descriptor_path)
+        if descriptor_entry is None:
+            continue
+        descriptor_bytes = (root / descriptor_path).read_bytes()
+        if (
+            descriptor_entry.get("mutable_by_harness") is not False
+            or sha256_bytes(descriptor_bytes) != descriptor_entry.get("sha256")
+        ):
+            raise _package_error(
+                "LEGACY_PACKAGE_CHECKSUM_MISMATCH",
+                "Workflow input contract checksum is invalid",
+            )
+        descriptor = _object_package(
+            _read_json(root / descriptor_path), "Workflow input contract"
+        )
+        requirements = descriptor.get("input_requirements", [])
+        if not isinstance(requirements, list):
+            raise _package_error(
+                "LEGACY_PACKAGE_UNSUPPORTED",
+                "Workflow input requirements are invalid",
+            )
+        for requirement in requirements:
+            target = _safe_package_path(
+                _object_package(requirement, "Workflow input requirement").get(
+                    "target_relative_path"
+                )
+            )
+            if not target.startswith("inputs/"):
+                raise _package_error(
+                    "UNSAFE_PACKAGE_PATH",
+                    "Workflow input target must stay below inputs",
+                )
+            dynamic_input_paths.add(target)
+    return dynamic_input_paths
 
 
 def _select_capsule(
@@ -4270,6 +4291,38 @@ def _progress_upload_envelope(
 ) -> dict[str, Any]:
     path = capsule / "memory/progress/reports" / f"{report['report_id']}.json"
     content = path.read_bytes()
+    declarations: list[dict[str, Any]] = []
+    current_path = capsule / "memory/current-artifact.json"
+    if current_path.exists() and not current_path.is_symlink():
+        current = _object(_read_json(current_path), "current Artifact")
+        _exact_fields(current, {
+            "relative_path", "artifact_kind", "media_type", "checksum", "size",
+        }, "current Artifact")
+        if current not in report.get("output_artifacts", []):
+            raise _identity("LOCAL_PROGRESS_INVALID", "Current Artifact is absent from Progress")
+        artifact_path = capsule / _safe_artifact_path(current["relative_path"], root="outputs")
+        checksum, size = _verified_regular_file(
+            artifact_path, allowed_root=capsule, missing_code="LOCAL_PROGRESS_INVALID"
+        )
+        if checksum != current["checksum"] or size != current["size"]:
+            raise _identity("LOCAL_PROGRESS_INVALID", "Current Artifact bytes drifted")
+        artifact_id = "artifact-" + uuid.uuid5(
+            uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966"),
+            "production-artifact/v1|package=" + report["package_id"]
+            + "|report=" + report["report_id"]
+            + "|path=" + current["relative_path"]
+            + "|checksum=" + current["checksum"],
+        ).hex
+        declarations.append({
+            "artifact_id": artifact_id,
+            "artifact_type": current["artifact_kind"],
+            "artifact_schema_version": current["artifact_kind"],
+            "media_type": current["media_type"],
+            "relative_path": current["relative_path"],
+            "content_checksum": current["checksum"],
+            "size_bytes": current["size"],
+            "produced_at": report["completed_at"],
+        })
     payload = {
         "workflow_instance_id": workflow_instance_id,
         "upload_schema_version": "progress-report-upload/v0.1",
@@ -4288,7 +4341,7 @@ def _progress_upload_envelope(
         "client_version": "reagent-workspace-progress-recovery/0.1.0",
         "source_path_hint": f"memory/progress/reports/{report['report_id']}.json",
         "context_snapshot_metadata": None,
-        "artifact_declarations": [],
+        "artifact_declarations": declarations,
         "envelope_checksum": None,
     }
     envelope = dict(payload)
@@ -4441,10 +4494,14 @@ def run_workflow(
                 ("0.3.0", "0.5.0"),
             }
         )
+        is_real_experiment = pin in {
+            ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
+            ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
+        }
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
         local_reports: list[dict[str, Any]] = []
-        if not preflight_only and (is_idea or is_scaffold):
+        if not preflight_only and (is_idea or is_scaffold or is_real_experiment):
             readiness = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -4556,6 +4613,30 @@ def run_workflow(
                 command.append("--preflight-only")
             if codex_executable is not None:
                 command.extend(["--codex-executable", codex_executable])
+        elif is_real_experiment:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                real_experiment=True,
+            )
+            _prepare_real_experiment_resource(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
         elif is_scaffold:
             if pin in {
                 ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"),
@@ -4646,7 +4727,7 @@ def run_workflow(
             check=False,
         )
         if completed.returncode != 0:
-            if not preflight_only and (is_idea or is_scaffold):
+            if not preflight_only and (is_idea or is_scaffold or is_real_experiment):
                 recovered = _evaluate_local_progress_readiness(
                     workspace=workspace,
                     descriptor=descriptor,
@@ -4683,6 +4764,28 @@ def run_workflow(
                 "WORKFLOW_RUN_PREFLIGHT_FAILED" if preflight_only else "WORKFLOW_RUN_FAILED",
                 "Workflow local Harness did not complete successfully",
                 EXIT_VALIDATION,
+            )
+        if not preflight_only and is_real_experiment:
+            recovered = _evaluate_local_progress_readiness(
+                workspace=workspace,
+                descriptor=descriptor,
+                installed=installed,
+                capsule=capsule,
+                manifest=manifest,
+            )
+            if recovered.state == "INVALID" or not recovered.reports:
+                raise _identity(
+                    "LOCAL_PROGRESS_INVALID",
+                    recovered.reason or "Real Experiment did not finalize exact Progress",
+                )
+            _recover_progress_backlog(
+                workspace=workspace,
+                descriptor=descriptor,
+                installed=installed,
+                capsule=capsule,
+                manifest=manifest,
+                reports=list(recovered.reports),
+                transport=transport,
             )
         return WorkflowRunResult(
             status="PREFLIGHT_READY" if preflight_only else "RUN_COMPLETED",
@@ -5025,11 +5128,14 @@ def _prepare_idea_output_provenance(
 
 def _prepare_scaffold_input_provenance(
     *, workspace: Path, descriptor: dict[str, Any], capsule: Path,
-    workflow_instance_id: str, transport: Any,
+    workflow_instance_id: str, transport: Any, real_experiment: bool = False,
 ) -> None:
-    config = _read_json(capsule / "workflow/scaffold.json")
+    config = _read_json(capsule / (
+        "workflow/real-experiment.json" if real_experiment else "workflow/scaffold.json"
+    ))
     if (
-        config.get("core_capability_maturity") != "SCAFFOLD_CORE"
+        config.get("core_capability_maturity")
+        != ("REVIEWED_CORE" if real_experiment else "SCAFFOLD_CORE")
         or config.get("workflow_id") not in {
             "writing-local-experimental", "review-local-experimental",
             "reproduction-experiment-local-experimental",
@@ -5110,10 +5216,14 @@ def _prepare_scaffold_input_provenance(
             "artifact_id": item["artifact_id"],
             "artifact_type": item["artifact_type"],
             "sha256": item["expected_checksum"],
-            "relative_path": item["target_relative_path"],
         }
+        if not real_experiment:
+            records[key]["relative_path"] = item["target_relative_path"]
     _atomic_write_json(capsule / "memory/input-provenance.json", {
-        "schema_version": "reagent.scaffold-input-provenance/v0.1",
+        "schema_version": (
+            "reagent.real-experiment-input-provenance/v0.1"
+            if real_experiment else "reagent.scaffold-input-provenance/v0.1"
+        ),
         "workflow_instance_id": workflow_instance_id,
         "artifacts": records,
     })
@@ -5196,6 +5306,16 @@ def build_parser() -> argparse.ArgumentParser:
     resource_resolve_command.add_argument("--api-url", default="http://127.0.0.1:8000")
     resource_resolve_command.add_argument("--local-test-fixture-root", type=Path)
     resource_resolve_command.add_argument("--json", action="store_true")
+    resource_stage_command = resource_commands.add_parser(
+        "stage", help="verify and copy one owner-staged Real Experiment Package"
+    )
+    resource_stage_command.add_argument("workspace", type=Path)
+    resource_stage_command.add_argument("source", type=Path)
+    resource_stage_selector = resource_stage_command.add_mutually_exclusive_group(required=True)
+    resource_stage_selector.add_argument("--workflow-instance", dest="workflow_instance_id")
+    resource_stage_selector.add_argument("--workflow", dest="workflow_definition_id")
+    resource_stage_command.add_argument("--api-url", default="http://127.0.0.1:8000")
+    resource_stage_command.add_argument("--json", action="store_true")
     run = commands.add_parser("run", help="preflight and run one exact installed Workflow Capsule")
     run.add_argument("workspace", type=Path, help="Local Workspace directory")
     run_selector = run.add_mutually_exclusive_group(required=True)
@@ -5277,7 +5397,7 @@ def main(argv: list[str] | None = None) -> int:
                         transport=transport,
                         workflow_instance_id=workflow_instance_id,
                     )
-                else:
+                elif args.resource_command == "resolve":
                     result = resolve_resources(
                         workspace_root=args.workspace,
                         workflow_instance_id=workflow_instance_id,
@@ -5286,6 +5406,13 @@ def main(argv: list[str] | None = None) -> int:
                         allow_local_test=(
                             os.environ.get("REAGENT_CONTROLLED_RESOURCE_TEST") == "1"
                         ),
+                    )
+                else:
+                    result = stage_experiment_package(
+                        workspace_root=args.workspace,
+                        workflow_instance_id=workflow_instance_id,
+                        source=args.source,
+                        transport=transport,
                     )
             json_output = args.json
         elif args.command == "run":
@@ -5538,6 +5665,9 @@ def _evaluate_local_progress_readiness(
     if pin[0] in {
         "writing-local-experimental", "review-local-experimental",
         "reproduction-experiment-local-experimental",
+    } and pin not in {
+        ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
+        ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
     }:
         try:
             provenance_exact = _scaffold_provenance_is_exact(
@@ -5891,6 +6021,123 @@ def resolve_resources(
     }
 
 
+def _experiment_package_manifest(source: Path) -> dict[str, Any]:
+    manifest_path = source / ".reagent-experiment.json"
+    value = _object(_read_json(manifest_path), "Experiment Package manifest")
+    _exact_fields(value, {
+        "schema_version", "entrypoint", "runtime", "runtime_version", "lock_file",
+    }, "Experiment Package manifest")
+    if value["schema_version"] != "reagent.experiment-package/v0.1":
+        raise _identity("RESOURCE_PACKAGE_INVALID", "Experiment Package schema is invalid")
+    if value["runtime"] != "PYTHON" or value["runtime_version"] != (
+        f"{sys.version_info.major}.{sys.version_info.minor}"
+    ):
+        raise _identity(
+            "RESOURCE_RUNTIME_UNUSABLE",
+            "Experiment Package requires a different supported Python runtime",
+        )
+    for field in ("entrypoint", "lock_file"):
+        relative = value[field]
+        if not isinstance(relative, str):
+            raise _identity("RESOURCE_PACKAGE_INVALID", "Experiment Package path is invalid")
+        path = PurePosixPath(relative)
+        if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+            raise _identity("RESOURCE_PACKAGE_INVALID", "Experiment Package path is unsafe")
+        target = source.joinpath(*path.parts)
+        if target.is_symlink() or not target.is_file() or target.stat().st_nlink != 1:
+            raise _identity("RESOURCE_RUNTIME_UNUSABLE", "Experiment Package runtime file is unavailable")
+    if PurePosixPath(value["entrypoint"]).suffix != ".py":
+        raise _identity("RESOURCE_RUNTIME_UNUSABLE", "E1 supports one Python entrypoint only")
+    return value
+
+
+def stage_experiment_package(
+    *, workspace_root: str | Path, workflow_instance_id: str,
+    source: Path, transport: Any, now: datetime | None = None,
+) -> dict[str, Any]:
+    """Verify and copy exactly one owner-staged package; never clone or install."""
+
+    workspace, descriptor, _ = load_workspace(workspace_root)
+    _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+    lock = _require_installed_lock(workspace, descriptor)
+    installed = next((item for item in lock["installed_capsules"] if item["workflow_instance_id"] == workflow_instance_id and item["lifecycle"] == "ACTIVE"), None)
+    if installed is None or (
+        installed["workflow_definition_id"],
+        installed["workflow_definition_version"],
+        installed["capsule_version"],
+    ) not in {
+        ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
+        ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
+    }:
+        raise _identity("RESOURCE_PACKAGE_UNSUPPORTED", "Owner staging is limited to Real Experiment 0.4 Capsules 0.6/0.7")
+    bindings = _resource_bindings(transport, descriptor, workflow_instance_id)
+    if len(bindings) != 1 or bindings[0].get("requirement_key") != "source_repository":
+        raise WorkspaceCLIError("DEPENDENCY_UNRESOLVED", "Real Experiment requires one exact source_repository binding", EXIT_VALIDATION)
+    binding = bindings[0]
+    resource_value = _object(binding.get("resource"), "bound Resource")
+    if resource_value.get("provider") != "GITHUB" or resource_value.get("resource_kind") != "SOURCE_REPOSITORY":
+        raise _identity("RESOURCE_PACKAGE_UNSUPPORTED", "Real Experiment supports one exact GitHub source reference")
+    source = source.resolve(strict=True)
+    package = _experiment_package_manifest(source)
+    content_checksum, _ = _resource_manifest(source)
+    if content_checksum != resource_value.get("expected_content_checksum") or content_checksum != binding.get("expected_content_checksum"):
+        raise _identity("RESOURCE_CHECKSUM_MISMATCH", "Owner-staged bytes do not match the exact Cloud Resource checksum")
+    timestamp = _utc_text(now or datetime.now(timezone.utc))
+    with _WorkspaceWriteLock(workspace):
+        index = _read_resource_index(workspace, descriptor)
+        indexed = {item["resource_id"]: item for item in index["resources"]}
+        target_root = workspace / RESOURCE_ROOT
+        target_root.mkdir(parents=True, exist_ok=True)
+        if target_root.is_symlink():
+            raise _identity("RESOURCE_UNSAFE_PATH", "Resource root is unsafe")
+        target = target_root / resource_value["resource_id"]
+        if target.exists() or target.is_symlink():
+            existing_checksum, _ = _resource_manifest(target)
+            if existing_checksum != content_checksum:
+                raise _identity("RESOURCE_CONFLICT", "Existing staged Resource bytes conflict")
+        else:
+            staging = Path(tempfile.mkdtemp(prefix=f".{resource_value['resource_id']}.", dir=target_root))
+            try:
+                for base, _directories, names in os.walk(source, followlinks=False):
+                    relative = Path(base).relative_to(source)
+                    destination = staging / relative
+                    destination.mkdir(parents=True, exist_ok=True)
+                    for name in names:
+                        candidate = Path(base) / name
+                        shutil.copyfile(candidate, destination / name)
+                copied_checksum, _ = _resource_manifest(staging)
+                if copied_checksum != content_checksum:
+                    raise _identity("RESOURCE_CHECKSUM_MISMATCH", "Experiment Package changed while staging")
+                os.replace(staging, target)
+            finally:
+                if staging.exists():
+                    shutil.rmtree(staging)
+        indexed[resource_value["resource_id"]] = {
+            "resource_id": resource_value["resource_id"],
+            "project_id": descriptor["project_id"],
+            "resource_kind": resource_value["resource_kind"],
+            "provider": resource_value["provider"],
+            "locator": resource_value["locator"],
+            "exact_revision": resource_value["exact_revision"],
+            "expected_content_checksum": content_checksum,
+            "verified_content_checksum": content_checksum,
+            "local_relative_path": f"{RESOURCE_ROOT}/{resource_value['resource_id']}",
+            "resolution_status": "RESOLVED_VERIFIED",
+            "verified_at": timestamp,
+        }
+        payload = {"schema_version": RESOURCE_INDEX_SCHEMA, "project_id": descriptor["project_id"], "workspace_id": descriptor["workspace_id"], "resources": [indexed[key] for key in sorted(indexed)], "updated_at": timestamp}
+        _atomic_write_json(workspace / RESOURCE_INDEX, {**payload, "index_checksum": canonical_hash(payload)})
+    return {
+        "schema_version": "reagent.workspace-resource-operation/v0.1",
+        "status": "OWNER_STAGED_VERIFIED",
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "workflow_instance_id": workflow_instance_id,
+        "resource_count": 1,
+        "package": {"entrypoint": package["entrypoint"], "runtime": package["runtime"], "runtime_version": package["runtime_version"]},
+    }
+
+
 def _experiment_resource_projection(
     *, descriptor: dict[str, Any], workflow_instance_id: str,
     bindings: list[dict[str, Any]], indexed: dict[str, dict[str, Any]],
@@ -6010,6 +6257,72 @@ def _verify_bound_resources(
         bindings=bindings,
         indexed=indexed,
     )
+
+
+def _prepare_real_experiment_resource(
+    *, workspace: Path, descriptor: dict[str, Any], capsule: Path,
+    workflow_instance_id: str, transport: Any,
+) -> None:
+    bindings = _resource_bindings(transport, descriptor, workflow_instance_id)
+    if len(bindings) != 1 or bindings[0].get("requirement_key") != "source_repository":
+        raise WorkspaceCLIError("DEPENDENCY_UNRESOLVED", "Real Experiment requires one exact staged package", EXIT_VALIDATION)
+    binding = bindings[0]
+    resource_value = _object(binding.get("resource"), "bound Resource")
+    index = _read_resource_index(workspace, descriptor)
+    indexed = {item["resource_id"]: item for item in index["resources"]}
+    item = indexed.get(binding.get("resource_id"))
+    if item is None:
+        raise WorkspaceCLIError("RESOURCE_UNRESOLVED", "Run `resource stage` for the exact Real Experiment Package", EXIT_VALIDATION)
+    source = workspace / item["local_relative_path"]
+    checksum, _ = _resource_manifest(source)
+    if checksum != binding.get("expected_content_checksum") or checksum != item["verified_content_checksum"]:
+        raise _identity("RESOURCE_DRIFT", "Staged Experiment Package checksum drifted")
+    package = _experiment_package_manifest(source)
+    target = capsule / "inputs/experiment-package"
+    if target.exists() or target.is_symlink():
+        current_checksum, _ = _resource_manifest(target)
+        if current_checksum != checksum:
+            raise _identity("RESOURCE_CONFLICT", "Capsule already contains different Experiment Package bytes")
+    else:
+        staging = Path(tempfile.mkdtemp(prefix=".experiment-package.", dir=capsule / "inputs"))
+        try:
+            for base, _directories, names in os.walk(source, followlinks=False):
+                relative = Path(base).relative_to(source)
+                destination = staging / relative
+                destination.mkdir(parents=True, exist_ok=True)
+                for name in names:
+                    shutil.copyfile(Path(base) / name, destination / name)
+            copied_checksum, _ = _resource_manifest(staging)
+            if copied_checksum != checksum:
+                raise _identity("RESOURCE_CHECKSUM_MISMATCH", "Experiment Package changed during Capsule copy")
+            os.replace(staging, target)
+        finally:
+            if staging.exists():
+                shutil.rmtree(staging)
+    manifest_path = target / ".reagent-experiment.json"
+    entrypoint = target / package["entrypoint"]
+    lock_file = target / package["lock_file"]
+    provenance = {
+        "schema_version": "reagent.real-experiment-resource-provenance/v0.1",
+        "workflow_instance_id": workflow_instance_id,
+        "resource_id": resource_value["resource_id"],
+        "resource_kind": resource_value["resource_kind"],
+        "provider": resource_value["provider"],
+        "locator": resource_value["locator"],
+        "exact_revision": resource_value["exact_revision"],
+        "content_checksum": checksum,
+        "target_relative_path": "inputs/experiment-package",
+        "package": {
+            "manifest_checksum": sha256_bytes(manifest_path.read_bytes()),
+            "entrypoint": package["entrypoint"],
+            "entrypoint_checksum": sha256_bytes(entrypoint.read_bytes()),
+            "lock_file": package["lock_file"],
+            "lock_checksum": sha256_bytes(lock_file.read_bytes()),
+            "runtime": package["runtime"],
+            "runtime_version": package["runtime_version"],
+        },
+    }
+    _atomic_write_json(capsule / "memory/resource-provenance.json", provenance)
 
 
 def workflow_list(workspace_root: str | Path) -> dict[str, Any]:

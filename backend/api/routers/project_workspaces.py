@@ -49,6 +49,7 @@ def _catalog_response(definition, service, resource_service) -> WorkflowCatalogR
         for item in versions
         if item.review_status is WorkflowReviewStatus.REVIEWED
         and item.published_at is not None
+        and item.compatibility.get("default_project_setup", True) is True
     ]
     published.sort(key=lambda item: item.version)
     selected_version = published[-1] if published else None

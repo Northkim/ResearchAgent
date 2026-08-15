@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -72,12 +73,23 @@ from .production_workflows import (
     experiment_resource_definition_version,
     experiment_interactive_capsule,
     experiment_completion_capsule,
+    real_experiment_artifact_requirement,
+    real_experiment_capsule,
+    real_experiment_definition_version,
 )
 from backend.workflow_packages.production_workflows import (
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     EXPERIMENT_WORKFLOW_ID,
+    REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+    REAL_EXPERIMENT_V0_7_CAPSULE_CHECKSUM,
+    REAL_EXPERIMENT_V0_7_CAPSULE_ID,
+    REAL_EXPERIMENT_WORKFLOW_VERSION,
 )
-from .skills import PRODUCTION_SKILLS, production_skill_pins
+from .skills import (
+    PRODUCTION_SKILLS,
+    RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID,
+    production_skill_pins,
+)
 
 if TYPE_CHECKING:
     from backend.persistence.ports.unit_of_work import UnitOfWork
@@ -396,6 +408,63 @@ def ensure_production_workflow_foundation(
             raise WorkflowFoundationConflictError(
                 "Experiment Resource requirement immutable-content conflict"
             )
+    repository.add_definition_version(real_experiment_definition_version(timestamp))
+    historical_real_experiment = real_experiment_capsule(timestamp)
+    repository.add_capsule_version(historical_real_experiment)
+    repository.add_capsule_version(replace(
+        historical_real_experiment,
+        capsule_id=REAL_EXPERIMENT_V0_7_CAPSULE_ID,
+        capsule_version=REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+        definition_checksum=REAL_EXPERIMENT_V0_7_CAPSULE_CHECKSUM,
+    ))
+    for pin in production_skill_pins(
+        EXPERIMENT_WORKFLOW_ID, REAL_EXPERIMENT_WORKFLOW_VERSION, timestamp
+    ):
+        if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
+            repository.add_workflow_skill_pin(pin)
+    real_artifact_requirement = real_experiment_artifact_requirement(timestamp)
+    existing_artifact_requirement = uow.artifact_references.get_requirement(
+        real_artifact_requirement.workflow_definition_id,
+        real_artifact_requirement.workflow_version,
+        real_artifact_requirement.requirement_key,
+    )
+    if existing_artifact_requirement is None:
+        uow.artifact_references.add_requirement(real_artifact_requirement)
+    elif _requirement_content(existing_artifact_requirement) != _requirement_content(
+        real_artifact_requirement
+    ):
+        raise WorkflowFoundationConflictError(
+            "Real Experiment Artifact requirement immutable-content conflict"
+        )
+    real_resource_requirement = WorkflowResourceRequirement(
+        workflow_definition_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_version=REAL_EXPERIMENT_WORKFLOW_VERSION,
+        requirement_key="source_repository",
+        resource_kind=ResourceKind.SOURCE_REPOSITORY,
+        cardinality_min=1,
+        cardinality_max=1,
+        required=True,
+        allowed_providers=(ResourceProvider.GITHUB,),
+        usage_description=(
+            "One exact owner-staged local Experiment Package; Cloud metadata alone "
+            "is not execution readiness."
+        ),
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    existing_resource_requirement = uow.resource_references.get_requirement(
+        real_resource_requirement.workflow_definition_id,
+        real_resource_requirement.workflow_version,
+        real_resource_requirement.requirement_key,
+    )
+    if existing_resource_requirement is None:
+        uow.resource_references.add_requirement(real_resource_requirement)
+    elif _resource_requirement_content(existing_resource_requirement) != _resource_requirement_content(
+        real_resource_requirement
+    ):
+        raise WorkflowFoundationConflictError(
+            "Real Experiment Resource requirement immutable-content conflict"
+        )
     return (
         literature_definition,
         literature_version,
@@ -477,4 +546,18 @@ def _requirement_content(value):
         value.required,
         value.materialization_mode,
         value.target_relative_path,
+    )
+
+
+def _resource_requirement_content(value):
+    return (
+        value.workflow_definition_id,
+        value.workflow_version,
+        value.requirement_key,
+        value.resource_kind,
+        value.cardinality_min,
+        value.cardinality_max,
+        value.required,
+        value.allowed_providers,
+        value.usage_description,
     )

@@ -90,6 +90,10 @@ EXPERIMENT_RESOURCE_PROMPT_VERSION = "0.3.0"
 # immutable Capsule.
 EXPERIMENT_INTERACTIVE_CAPSULE_VERSION = "0.4.0"
 EXPERIMENT_COMPLETION_CAPSULE_VERSION = "0.5.0"
+REAL_EXPERIMENT_WORKFLOW_VERSION = "0.4.0"
+REAL_EXPERIMENT_CAPSULE_VERSION = "0.6.0"
+REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION = "0.7.0"
+REAL_EXPERIMENT_PROMPT_VERSION = "0.1.0"
 WRITING_TEMPLATE_ID = "writing-scaffold-package-experimental"
 REVIEW_TEMPLATE_ID = "review-scaffold-package-experimental"
 EXPERIMENT_TEMPLATE_ID = "reproduction-experiment-scaffold-package-experimental"
@@ -105,6 +109,7 @@ SELECTED_RESEARCH_IDEA_PREFIX = "outputs/artifacts/selected-research-idea"
 MANUSCRIPT_DRAFT_TYPE = "manuscript-draft/v1"
 REVIEW_REPORT_TYPE = "review-report/v1"
 EXPERIMENT_RECORD_TYPE = "experiment-record/v1"
+EXPERIMENT_RECORD_V2_TYPE = "experiment-record/v2"
 
 SCAFFOLD_INPUT_TARGETS = {
     "research_idea": "inputs/selected-research-idea.json",
@@ -183,6 +188,91 @@ REVIEW_REQUIREMENTS = (
 EXPERIMENT_REQUIREMENTS = (
     _scaffold_requirement("research_idea", SELECTED_RESEARCH_IDEA_TYPE, required=True),
     _scaffold_requirement("literature_library", SELECTED_PAPER_LIBRARY_TYPE, required=False),
+)
+
+
+def real_experiment_workflow_document() -> dict[str, Any]:
+    """Immutable first reviewed Real Experiment Definition contract."""
+
+    return {
+        "schema_version": "local-workflow/v0.2",
+        "experimental_status": EXPERIMENTAL_STATUS,
+        "workflow_type": "Reproduction & Experiment",
+        "workflow_id": EXPERIMENT_WORKFLOW_ID,
+        "workflow_version": REAL_EXPERIMENT_WORKFLOW_VERSION,
+        "execution_owner": "codex-coordinated-local-workspace",
+        "hosted_agent_runtime_required": False,
+        "network_boundary": "ENFORCED_LOCAL_NO_EGRESS",
+        "core_capability_maturity": "REVIEWED_CORE",
+        "supported_mode": "IDEA_EXPERIMENT",
+        "input_requirements": [
+            _scaffold_requirement(
+                "research_idea", SELECTED_RESEARCH_IDEA_TYPE, required=True
+            )
+        ],
+        "resource_requirements": [{
+            "requirement_key": "source_repository",
+            "resource_kind": "SOURCE_REPOSITORY",
+            "required": True,
+            "cardinality": "ONE",
+            "selection_policy": "EXPLICIT_SPECIFIC_RESOURCE",
+            "provider": "GITHUB",
+            "materialization_mode": "OWNER_STAGED_VERIFIED_COPY",
+        }],
+        "stages": [
+            "INPUT_REVIEW", "EXPERIMENT_REQUIREMENTS", "RESOURCE_READINESS",
+            "EXPERIMENT_PLAN", "OWNER_APPROVAL", "PREPARATION",
+            "LOCAL_EXECUTION", "EVALUATION", "RESULT_REVIEW", "COMPLETED",
+        ],
+        "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_V2_TYPE)],
+        "execution_policy": {
+            "attempts_per_approval": 1,
+            "automatic_retry": False,
+            "process_model": "ONE_LOCAL_FOREGROUND_PROCESS",
+            "network_policy": "DISABLED",
+            "trusted_owner_staged_code_only": True,
+            "hostile_code_containment_claimed": False,
+        },
+        "immutable_versioning": "experiment-record/v1 and prior Capsules remain unchanged",
+    }
+
+
+def real_experiment_contract_checksum() -> str:
+    return canonical_hash(real_experiment_workflow_document())
+
+
+def real_experiment_v0_7_capsule_checksum() -> str:
+    return canonical_hash({
+        "generator_version": (
+            f"reagent-{EXPERIMENT_WORKFLOW_ID}-compiler/"
+            f"{REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION}"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": EXPERIMENT_TEMPLATE_ID,
+        "package_template_version": REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+        "workflow_checksum": real_experiment_contract_checksum(),
+        "artifact_requirements": [{
+            "requirement_key": "research_idea",
+            "artifact_type": "selected-research-idea/v1",
+            "required": True,
+        }],
+        "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_V2_TYPE)],
+        "resource_requirements": [["source_repository", "SOURCE_REPOSITORY", "GITHUB"]],
+        "core_capability_maturity": "REVIEWED_CORE",
+        "skill_pins": [{
+            "skill_id": "research-artifact-provenance-local-builtin",
+            "skill_version": "0.1.0",
+            "content_checksum": (
+                "sha256:0650f150099823499d1fdcf072abd70275e87cb76e3e9d64dfb12361cc13d7c8"
+            ),
+        }],
+        "execution_boundary": "ONE_APPROVED_LOCAL_NO_EGRESS_ATTEMPT",
+    })
+
+
+REAL_EXPERIMENT_V0_7_CAPSULE_CHECKSUM = real_experiment_v0_7_capsule_checksum()
+REAL_EXPERIMENT_V0_7_CAPSULE_ID = (
+    "capsule-" + REAL_EXPERIMENT_V0_7_CAPSULE_CHECKSUM[7:39]
 )
 
 
@@ -2035,6 +2125,198 @@ def _experiment_v0_5_files(**kwargs) -> dict[str, FileSpec]:
     return files
 
 
+def _real_experiment_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    """Render only the narrow reviewed 0.4/0.6 local Experiment Capsule."""
+
+    del research_topic
+    from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    from . import real_experiment_runtime, real_experiment_validator
+
+    workflow = real_experiment_workflow_document()
+    skill = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    skill_files = skill.content_files()
+    contract = {
+        "schema_version": "reagent.real-experiment-workflow/v0.1",
+        "workflow_id": EXPERIMENT_WORKFLOW_ID,
+        "workflow_version": REAL_EXPERIMENT_WORKFLOW_VERSION,
+        "core_capability_maturity": "REVIEWED_CORE",
+        "input_requirements": workflow["input_requirements"],
+        "resource_requirements": workflow["resource_requirements"],
+        "output_artifact_type": EXPERIMENT_RECORD_V2_TYPE,
+        "network_policy": "DISABLED",
+        "process_model": "ONE_LOCAL_FOREGROUND_PROCESS",
+        "automatic_retry": False,
+        "requirements_fields": [
+            "research_question", "hypothesis", "scientific_inputs",
+            "configuration", "seeds", "repetitions", "metrics", "runtime",
+            "limits", "stopping_conditions",
+        ],
+        "plan_fields": [
+            "research_question", "hypothesis", "requirements_sha256",
+            "source_artifacts", "resource", "entrypoint", "argv",
+            "working_directory", "configuration", "seeds", "repetitions",
+            "metrics", "environment", "network_policy", "limits",
+            "stopping_conditions", "known_limitations",
+        ],
+    }
+    context = {
+        "schema_version": "reagent.real-experiment-context/v0.1",
+        "workflow_id": EXPERIMENT_WORKFLOW_ID,
+        "workflow_version": REAL_EXPERIMENT_WORKFLOW_VERSION,
+        "package_id": package_id,
+        "package_checksum": package_checksum,
+        "stage": "INPUT_REVIEW",
+        "attempt_id": None,
+        "result_status": None,
+        "latest_artifact": None,
+        "updated_at": DETERMINISTIC_GENERATED_AT,
+    }
+    draft = {
+        "execution_round": 1,
+        "harness_type": "codex",
+        "harness_version": None,
+        "harness_session_id": "real-experiment-attempt-1",
+        "previous_report_id": None,
+        "previous_report_checksum": None,
+        "started_at": DETERMINISTIC_GENERATED_AT,
+        "completed_at": DETERMINISTIC_GENERATED_AT,
+        "status": "IN_PROGRESS",
+        "completed_work": [],
+        "current_state": "INPUT_REVIEW",
+        "next_recommended_action": "Materialize the exact Idea and stage one exact local package",
+        "continuation_reason": None,
+        "warnings": ["Trusted owner-staged code only; hostile-code containment is not claimed"],
+        "errors": [],
+        "unresolved_questions": [],
+        "continuation_instructions": ["Use the public Workspace path; never retry automatically"],
+    }
+    prompt = """# Real Experiment narrow-slice planning
+
+Use only the exact materialized selected Idea, Resource provenance, and plan
+context. Derive the minimum scientific requirements, then produce one plan whose
+Resource identity, argv, working directory, runtime environment, limits, and
+DISABLED network policy exactly copy the readiness context. Declare numeric
+metrics with stable names and units. Do not execute code or infer owner approval.
+"""
+    agent = """# ReAgent Real Experiment — REVIEWED_CORE
+
+This Capsule is the authoritative local state for one exact Workflow Instance.
+Use only its verified inputs and owner-staged Experiment Package. Codex derives
+requirements and the exact plan; the bundled runner alone obtains checksum-bound
+approval, consumes it for one attempt, enforces local no-egress, evaluates the
+declared metrics, obtains result review, publishes experiment-record/v2, and
+finalizes Progress. Never infer approval, retry automatically, enable network,
+read sibling Capsules, or claim hostile-code containment.
+"""
+    project = {
+        "schema_version": "local-project-input/v0.1",
+        "project_id": project_id,
+        "project_name": project_name,
+        "selected_workflow": EXPERIMENT_WORKFLOW_ID,
+    }
+    skill_root = f"workflow/skills/{skill.skill_id}"
+    return {
+        "AGENT.md": FileSpec(agent.encode(), "text/markdown", "Real Experiment authority", False, "INSTRUCTION"),
+        "AGENTS.md": FileSpec(b"# Codex shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Codex shim", False, "INSTRUCTION"),
+        "CLAUDE.md": FileSpec(b"# Claude Code shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Harness shim", False, "INSTRUCTION"),
+        "README.md": FileSpec(b"# Real Experiment Capsule\n\nRun only through the public Local Workspace command.\n", "text/markdown", "Capsule overview", False, "INSTRUCTION"),
+        "reagent_local.py": FileSpec(Path(real_experiment_runtime.__file__).read_bytes(), "text/x-python", "bounded local Experiment runner", False, "INSTRUCTION"),
+        "validate_package.py": FileSpec(Path(real_experiment_validator.__file__).read_bytes(), "text/x-python", "self-contained Real Experiment validator", False, "INSTRUCTION"),
+        "progress_report.py": FileSpec(_scaffold_progress_source(), "text/x-python", "Progress v0.2 exact Artifact helper", False, "INSTRUCTION"),
+        "workflow/AGENT.md": FileSpec(b"# Real Experiment Workflow\n\nFollow the root authority and preserve exact evidence identity.\n", "text/markdown", "workflow instructions", False, "INSTRUCTION"),
+        "workflow/workflow.json": FileSpec(_json(workflow), "application/json", "pinned Workflow", False, "CONFIGURATION"),
+        "workflow/real-experiment.json": FileSpec(_json(contract), "application/json", "narrow execution contract", False, "CONFIGURATION"),
+        "workflow/prompts/real-experiment.md": FileSpec(prompt.encode(), "text/markdown", "reviewed planning method", False, "INSTRUCTION"),
+        f"{skill_root}/SKILL.md": FileSpec(skill_files["SKILL.md"], "text/markdown", "reviewed provenance Skill", False, "INSTRUCTION"),
+        f"{skill_root}/skill.json": FileSpec(skill_files["skill.json"], "application/json", "reviewed provenance Skill contract", False, "CONFIGURATION"),
+        "workflow/artifact-inputs.json": FileSpec(_json({"schema_version": "reagent.artifact-input-contract/v0.1", "requirements": workflow["input_requirements"]}), "application/json", "exact Idea input contract", False, "CONFIGURATION"),
+        "workflow/artifact-outputs.json": FileSpec(_json({"schema_version": "reagent.artifact-output-contract/v0.1", **scaffold_output_contract(EXPERIMENT_RECORD_V2_TYPE), "producer_core_capability_maturity": "REVIEWED_CORE", "validity_point": "OWNER_REVIEWED_EVIDENCE_BACKED_ATTEMPT"}), "application/json", "experiment-record/v2 output contract", False, "CONFIGURATION"),
+        "inputs/project.json": FileSpec(_json(project), "application/json", "immutable Project identity", False, "INPUT"),
+        "outputs/README.md": FileSpec(b"# Real Experiment outputs\n\nOnly validated content-addressed experiment-record/v2 files are outputs.\n", "text/markdown", "output policy", False, "OUTPUT"),
+        "memory/context.md": FileSpec(("# Real Experiment Context\n\n```json\n" + canonical_json(context) + "\n```\n").encode(), "text/markdown", "cross-session state", True, "STATE"),
+        "memory/progress/report-draft.json": FileSpec(_json(draft), "application/json", "mutable Progress draft", True, "STATE"),
+        "memory/progress/reports/README.md": FileSpec(b"# Append-only Progress Reports\n", "text/markdown", "Progress policy", False, "STATE"),
+        "memory/progress/receipts/README.md": FileSpec(b"# Verified upload receipts\n", "text/markdown", "receipt policy", False, "STATE"),
+    }
+
+
+def _real_experiment_v0_7_validator_source(source: bytes) -> bytes:
+    """Derive the immutable 0.7 validator from the historical 0.6 bytes."""
+
+    text = source.decode("utf-8")
+    identity = (
+        'manifest.get("package_template_version") != "0.6.0"'
+    )
+    if identity not in text:
+        raise RuntimeError("Real Experiment 0.6 identity extension point is unavailable")
+    text = text.replace(
+        identity,
+        'manifest.get("package_template_version") != "0.7.0"',
+        1,
+    )
+    old = '''    for path in root.rglob("*"):
+        if path.is_dir():
+            if path.is_symlink():
+                raise PackageValidationError("Capsule directory link rejected")
+            continue
+        relative = path.relative_to(root).as_posix()
+        if relative == "package-manifest.json" or relative in declared or any(relative.startswith(prefix) for prefix in ALLOWED_DYNAMIC):
+            if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+                raise PackageValidationError("Capsule dynamic file is unsafe")
+            continue
+        raise PackageValidationError(f"undeclared Capsule file: {relative}")
+    config = _object(root / "workflow/real-experiment.json", "Real Experiment contract")
+    if config.get("schema_version") != "reagent.real-experiment-workflow/v0.1" or config.get("output_artifact_type") != "experiment-record/v2" or config.get("network_policy") != "DISABLED":
+        raise PackageValidationError("Real Experiment contract is invalid")
+'''
+    new = '''    config = _object(root / "workflow/real-experiment.json", "Real Experiment contract")
+    if config.get("schema_version") != "reagent.real-experiment-workflow/v0.1" or config.get("output_artifact_type") != "experiment-record/v2" or config.get("network_policy") != "DISABLED":
+        raise PackageValidationError("Real Experiment contract is invalid")
+    requirements = config.get("input_requirements")
+    if not isinstance(requirements, list):
+        raise PackageValidationError("Real Experiment Artifact inputs are invalid")
+    materialized_inputs = set()
+    for requirement in requirements:
+        if not isinstance(requirement, dict) or requirement.get("materialization_mode") != "VERIFIED_COPY":
+            raise PackageValidationError("Real Experiment Artifact input declaration is invalid")
+        target = safe_relative_path(requirement.get("target_relative_path"))
+        if not target.startswith("inputs/") or target.endswith("/") or target in materialized_inputs:
+            raise PackageValidationError("Real Experiment Artifact input target is invalid")
+        materialized_inputs.add(target)
+    for path in root.rglob("*"):
+        if path.is_dir():
+            if path.is_symlink():
+                raise PackageValidationError("Capsule directory link rejected")
+            continue
+        relative = path.relative_to(root).as_posix()
+        if relative == "package-manifest.json" or relative in declared or relative in materialized_inputs or any(relative.startswith(prefix) for prefix in ALLOWED_DYNAMIC):
+            if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+                raise PackageValidationError("Capsule dynamic file is unsafe")
+            continue
+        raise PackageValidationError(f"undeclared Capsule file: {relative}")
+'''
+    if old not in text:
+        raise RuntimeError("Real Experiment 0.6 validator extension point is unavailable")
+    return text.replace(old, new, 1).encode("utf-8")
+
+
+def _real_experiment_v0_7_files(**kwargs) -> dict[str, FileSpec]:
+    """Render the input-validation bugfix without changing Capsule 0.6."""
+
+    files = dict(_real_experiment_files(**kwargs))
+    _replace_spec(
+        files,
+        "validate_package.py",
+        _real_experiment_v0_7_validator_source(
+            files["validate_package.py"].content
+        ),
+    )
+    return files
+
+
 def _selected_library_schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2191,6 +2473,36 @@ def _make_manifest(
         )
         continuation = "MULTI ROUND; append Progress every session; local files, not chat history, preserve continuity"
         proxy = "NO PROVIDER CAPABILITY; LOCAL INTERACTIVE HARNESS ONLY"
+    elif (
+        workflow_id == EXPERIMENT_WORKFLOW_ID
+        and workflow_version == REAL_EXPERIMENT_WORKFLOW_VERSION
+    ):
+        from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
+
+        asset = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+        skill_path = f"workflow/skills/{asset.skill_id}/SKILL.md"
+        skills = (SkillPin(
+            name=asset.skill_id,
+            semantic_version=asset.version,
+            source_type="BUNDLED_REAGENT_ORIGINAL",
+            source_identity=asset.content_source_identity,
+            checksum=asset.content_checksum,
+            relative_path=skill_path,
+            required_capabilities=asset.required_capabilities,
+        ),)
+        prompt_path = "workflow/prompts/real-experiment.md"
+        prompt_id = "real-experiment-narrow-slice"
+        prompt_version = REAL_EXPERIMENT_PROMPT_VERSION
+        # The exact content-addressed v2 path is not known until execution.
+        # Progress appends the validated memory/current-artifact.json identity.
+        outputs = ()
+        inputs = (PackageInputManifest(
+            "local-project-display", "inputs/project.json",
+            sha256_bytes(files["inputs/project.json"].content), True,
+            "application/json", "CLOUD_SUPPLIED",
+        ),)
+        continuation = "ONE ATTEMPT PER EXACT OWNER APPROVAL; NO AUTOMATIC RETRY"
+        proxy = "NO NETWORK; OWNER-STAGED TRUSTED PACKAGE; LOCAL FOREGROUND EXECUTION ONLY"
     else:
         config = json.loads(files["workflow/scaffold.json"].content)
         if workflow_version in {
@@ -2270,6 +2582,16 @@ def _make_manifest(
         purpose=f"Drive reviewed local {workflow_type} interaction safely.",
     ),)
     file_manifest_checksum = canonical_hash(_normalized_entries(entries))
+    required_capabilities = [
+        "read_and_write_local_files", "run_local_python_validator",
+        "calculate_sha256", "follow_AGENT_md", "launch_codex_cli",
+        "progress.upload/v0.2",
+    ]
+    if workflow_version == REAL_EXPERIMENT_WORKFLOW_VERSION:
+        required_capabilities.extend((
+            "execute_one_local_foreground_process",
+            "enforce_child_no_egress",
+        ))
     base = WorkflowPackageManifest(
         package_id=package_id,
         package_schema_version=PACKAGE_SCHEMA_VERSION,
@@ -2284,11 +2606,7 @@ def _make_manifest(
         prompt_pins=prompts,
         input_manifest=inputs,
         output_contracts=outputs,
-        required_harness_capabilities=(
-            "read_and_write_local_files", "run_local_python_validator",
-            "calculate_sha256", "follow_AGENT_md", "launch_codex_cli",
-            "progress.upload/v0.2",
-        ),
+        required_harness_capabilities=tuple(required_capabilities),
         content_scope_declaration="OWNER-SCOPED LOCAL RESEARCH STATE; NO SECRET; NO CLOUD ARTIFACT BYTES",
         generated_at=DETERMINISTIC_GENERATED_AT,
         generator_version=f"reagent-{workflow_id}-compiler/{template_version}",
@@ -2666,6 +2984,30 @@ def build_experiment_scaffold_v0_5_package(**kwargs) -> BuildResult:
         workflow_type="Reproduction & Experiment", template_id=EXPERIMENT_TEMPLATE_ID,
         workflow_version=EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
         capsule_version=EXPERIMENT_COMPLETION_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_real_experiment_v0_6_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_real_experiment_files,
+        workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment",
+        template_id=EXPERIMENT_TEMPLATE_ID,
+        workflow_version=REAL_EXPERIMENT_WORKFLOW_VERSION,
+        capsule_version=REAL_EXPERIMENT_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_real_experiment_v0_7_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_real_experiment_v0_7_files,
+        workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment",
+        template_id=EXPERIMENT_TEMPLATE_ID,
+        workflow_version=REAL_EXPERIMENT_WORKFLOW_VERSION,
+        capsule_version=REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
         **kwargs,
     )
 

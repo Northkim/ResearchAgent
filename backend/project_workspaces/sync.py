@@ -29,6 +29,9 @@ from backend.workflow_packages.production_workflows import (
     EXPERIMENT_COMPLETION_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+    REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+    REAL_EXPERIMENT_CAPSULE_VERSION,
+    REAL_EXPERIMENT_WORKFLOW_VERSION,
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
     SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
@@ -55,6 +58,8 @@ from backend.workflow_packages.production_workflows import (
     build_experiment_scaffold_v0_3_package,
     build_experiment_scaffold_v0_4_package,
     build_experiment_scaffold_v0_5_package,
+    build_real_experiment_v0_6_package,
+    build_real_experiment_v0_7_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
@@ -655,6 +660,23 @@ class WorkspaceSyncApplicationService:
             package_id = (
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.5"
             )
+        elif (
+            instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
+            and instance.workflow_version == REAL_EXPERIMENT_WORKFLOW_VERSION
+            and instance.capsule_version in {
+                REAL_EXPERIMENT_CAPSULE_VERSION,
+                REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+            }
+        ):
+            builder = {
+                REAL_EXPERIMENT_CAPSULE_VERSION: build_real_experiment_v0_6_package,
+                REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION: build_real_experiment_v0_7_package,
+            }[instance.capsule_version]
+            package_id = (
+                f"real-experiment-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v"
+                f"{instance.capsule_version.removesuffix('.0')}"
+            )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")
         output = (
@@ -689,6 +711,7 @@ class WorkspaceSyncApplicationService:
             and instance.workflow_version in {
                 SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
                 EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
+                REAL_EXPERIMENT_WORKFLOW_VERSION,
             }
         ):
             self._verify_compiled_skill_authority(instance, built.package_root)
