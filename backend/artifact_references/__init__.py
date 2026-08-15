@@ -23,7 +23,9 @@ from .research_flow_contracts import (
     validate_experiment_record,
     validate_experiment_record_v2,
     validate_manuscript_draft,
+    validate_manuscript_draft_v2,
     validate_review_report,
+    validate_review_report_v2,
     validate_selected_research_idea,
 )
 
@@ -48,6 +50,8 @@ __all__ = [
     "validate_experiment_record",
     "validate_experiment_record_v2",
     "validate_manuscript_draft",
+    "validate_manuscript_draft_v2",
     "validate_review_report",
+    "validate_review_report_v2",
     "validate_selected_research_idea",
 ]

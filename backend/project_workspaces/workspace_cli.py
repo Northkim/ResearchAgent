@@ -94,6 +94,10 @@ SUPPORTED_CAPSULE_PINS = {
         "writing-scaffold-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.3.0", "0.5.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
     ("review-local-experimental", "0.1.0", "0.1.0"): (
         "review-scaffold-package-experimental",
         False,
@@ -107,6 +111,10 @@ SUPPORTED_CAPSULE_PINS = {
         False,
     ),
     ("review-local-experimental", "0.2.0", "0.4.0"): (
+        "review-scaffold-package-experimental",
+        False,
+    ),
+    ("review-local-experimental", "0.3.0", "0.5.0"): (
         "review-scaffold-package-experimental",
         False,
     ),
@@ -219,6 +227,7 @@ _SECRET_PATTERNS = (
     re.compile(b"/" + b"Volumes/"),
     re.compile(rb"[A-Za-z]:\\\\"),
 )
+_CREDENTIAL_PATTERNS = _SECRET_PATTERNS[:6]
 
 _WORKSPACE_FIELDS = {
     "schema_version",
@@ -951,6 +960,7 @@ def _validate_legacy_package(
         if isinstance(item, dict)
     }
     dynamic_input_paths = _declared_dynamic_input_paths(root, declared)
+    dynamic_runtime_paths = _declared_runtime_dynamic_paths(root, declared)
     allowed_dynamic = (
         "memory/progress/reports/",
         "memory/progress/receipts/",
@@ -976,7 +986,16 @@ def _validate_legacy_package(
         total_bytes += len(content)
         if total_bytes > MAX_PACKAGE_BYTES or len(content) > MAX_FILE_BYTES:
             raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package exceeds size limits")
-        _reject_secrets(content)
+        try:
+            if relative in dynamic_input_paths or relative.startswith("outputs/artifacts/"):
+                _reject_credentials(content)
+            else:
+                _reject_secrets(content)
+        except WorkspaceCLIError as error:
+            raise _package_error(
+                error.code,
+                f"{error} in {relative}",
+            ) from error
         if path.name == ".DS_Store":
             if len(content) > 1_048_576:
                 raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "macOS metadata exceeds the safe bound")
@@ -986,6 +1005,7 @@ def _validate_legacy_package(
             entry is None
             and relative not in output_paths
             and relative not in dynamic_input_paths
+            and relative not in dynamic_runtime_paths
             and relative != "memory/current-artifact.json"
             and not relative.startswith(allowed_dynamic)
         ):
@@ -1029,6 +1049,8 @@ def _declared_dynamic_input_paths(
     for descriptor_path in (
         "workflow/scaffold.json",
         "workflow/real-experiment.json",
+        "workflow/real-writing.json",
+        "workflow/real-review.json",
     ):
         descriptor_entry = declared.get(descriptor_path)
         if descriptor_entry is None:
@@ -1064,6 +1086,50 @@ def _declared_dynamic_input_paths(
                 )
             dynamic_input_paths.add(target)
     return dynamic_input_paths
+
+
+def _declared_runtime_dynamic_paths(
+    root: Path, declared: dict[str, dict[str, Any]]
+) -> set[str]:
+    """Read exact mutable working paths from supported reviewed descriptors."""
+
+    paths: set[str] = set()
+    for descriptor_path in (
+        "workflow/real-writing.json", "workflow/real-review.json",
+    ):
+        descriptor_entry = declared.get(descriptor_path)
+        if descriptor_entry is None:
+            continue
+        descriptor_bytes = (root / descriptor_path).read_bytes()
+        if (
+            descriptor_entry.get("mutable_by_harness") is not False
+            or sha256_bytes(descriptor_bytes) != descriptor_entry.get("sha256")
+        ):
+            raise _package_error(
+                "LEGACY_PACKAGE_CHECKSUM_MISMATCH",
+                "reviewed runtime contract checksum is invalid",
+            )
+        descriptor = _object_package(
+            _read_json(root / descriptor_path), "reviewed runtime contract"
+        )
+        values = descriptor.get("runtime_dynamic_paths")
+        if not isinstance(values, list) or not values:
+            raise _package_error(
+                "LEGACY_PACKAGE_UNSUPPORTED",
+                "reviewed runtime paths are invalid",
+            )
+        for value in values:
+            path = _safe_package_path(value)
+            if (
+                path.endswith("/")
+                or not path.startswith(("memory/", "outputs/"))
+                or path in paths
+            ):
+                raise _package_error(
+                    "UNSAFE_PACKAGE_PATH", "reviewed runtime path is unsafe"
+                )
+            paths.add(path)
+    return paths
 
 
 def _select_capsule(
@@ -1553,6 +1619,11 @@ def _hash_file(path: Path) -> str:
 def _reject_secrets(content: bytes) -> None:
     if any(pattern.search(content) for pattern in _SECRET_PATTERNS):
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package contains prohibited credential material")
+
+
+def _reject_credentials(content: bytes) -> None:
+    if any(pattern.search(content) for pattern in _CREDENTIAL_PATTERNS):
+        raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Materialized Artifact contains prohibited credential material")
 
 
 def _object(value: Any, name: str) -> dict[str, Any]:
@@ -4493,15 +4564,25 @@ def run_workflow(
                 ("0.3.0", "0.3.0"), ("0.3.0", "0.4.0"),
                 ("0.3.0", "0.5.0"),
             }
+            and pin not in {
+                ("writing-local-experimental", "0.3.0", "0.5.0"),
+                ("review-local-experimental", "0.3.0", "0.5.0"),
+            }
         )
         is_real_experiment = pin in {
             ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
             ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
         }
+        is_real_writing = pin == (
+            "writing-local-experimental", "0.3.0", "0.5.0"
+        )
+        is_real_review = pin == (
+            "review-local-experimental", "0.3.0", "0.5.0"
+        )
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
         local_reports: list[dict[str, Any]] = []
-        if not preflight_only and (is_idea or is_scaffold or is_real_experiment):
+        if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review):
             readiness = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -4608,6 +4689,40 @@ def run_workflow(
                 workflow_instance_id,
                 "--api-url",
                 api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
+        elif is_real_writing:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                real_writing=True,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
+        elif is_real_review:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                real_review=True,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
             ])
             if preflight_only:
                 command.append("--preflight-only")
@@ -4727,7 +4842,7 @@ def run_workflow(
             check=False,
         )
         if completed.returncode != 0:
-            if not preflight_only and (is_idea or is_scaffold or is_real_experiment):
+            if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review):
                 recovered = _evaluate_local_progress_readiness(
                     workspace=workspace,
                     descriptor=descriptor,
@@ -4765,7 +4880,7 @@ def run_workflow(
                 "Workflow local Harness did not complete successfully",
                 EXIT_VALIDATION,
             )
-        if not preflight_only and is_real_experiment:
+        if not preflight_only and (is_real_experiment or is_real_writing or is_real_review):
             recovered = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -4776,7 +4891,7 @@ def run_workflow(
             if recovered.state == "INVALID" or not recovered.reports:
                 raise _identity(
                     "LOCAL_PROGRESS_INVALID",
-                    recovered.reason or "Real Experiment did not finalize exact Progress",
+                    recovered.reason or "reviewed Workflow did not finalize exact Progress",
                 )
             _recover_progress_backlog(
                 workspace=workspace,
@@ -4846,11 +4961,30 @@ def _capsule_child_environment() -> dict[str, str]:
 
 def _scan_capsule_for_credentials(capsule: Path) -> None:
     """Reject credential assignments in immutable or mutable Capsule files."""
-
+    manifest = _read_package_json(capsule / "package-manifest.json")
+    declared = {
+        item["relative_path"]: item
+        for item in manifest.get("files", [])
+        if isinstance(item, dict) and isinstance(item.get("relative_path"), str)
+    }
+    materialized_inputs = _declared_dynamic_input_paths(capsule, declared)
     for path in capsule.rglob("*"):
         if path.is_symlink() or not path.is_file():
             continue
-        _reject_secrets(path.read_bytes())
+        relative = path.relative_to(capsule).as_posix()
+        try:
+            if relative in materialized_inputs or relative.startswith("outputs/artifacts/"):
+                # Exact Artifact provenance may honestly contain a local execution
+                # path. Artifact bytes remain local and checksum-bound; credential
+                # assignments and private keys remain prohibited.
+                _reject_credentials(path.read_bytes())
+            else:
+                _reject_secrets(path.read_bytes())
+        except WorkspaceCLIError as error:
+            raise _package_error(
+                error.code,
+                f"{error} in {relative}",
+            ) from error
 
 
 def _confirm_real_provider_disclosure(
@@ -5129,13 +5263,20 @@ def _prepare_idea_output_provenance(
 def _prepare_scaffold_input_provenance(
     *, workspace: Path, descriptor: dict[str, Any], capsule: Path,
     workflow_instance_id: str, transport: Any, real_experiment: bool = False,
+    real_writing: bool = False, real_review: bool = False,
 ) -> None:
-    config = _read_json(capsule / (
-        "workflow/real-experiment.json" if real_experiment else "workflow/scaffold.json"
-    ))
+    if sum((real_experiment, real_writing, real_review)) > 1:
+        raise _identity("LOCAL_CAPSULE_DRIFT", "reviewed Workflow descriptor is ambiguous")
+    descriptor_path = (
+        "workflow/real-experiment.json" if real_experiment
+        else "workflow/real-writing.json" if real_writing
+        else "workflow/real-review.json" if real_review
+        else "workflow/scaffold.json"
+    )
+    config = _read_json(capsule / descriptor_path)
     if (
         config.get("core_capability_maturity")
-        != ("REVIEWED_CORE" if real_experiment else "SCAFFOLD_CORE")
+        != ("REVIEWED_CORE" if (real_experiment or real_writing or real_review) else "SCAFFOLD_CORE")
         or config.get("workflow_id") not in {
             "writing-local-experimental", "review-local-experimental",
             "reproduction-experiment-local-experimental",
@@ -5217,12 +5358,17 @@ def _prepare_scaffold_input_provenance(
             "artifact_type": item["artifact_type"],
             "sha256": item["expected_checksum"],
         }
-        if not real_experiment:
+        if not (real_experiment or real_writing or real_review):
             records[key]["relative_path"] = item["target_relative_path"]
     _atomic_write_json(capsule / "memory/input-provenance.json", {
         "schema_version": (
             "reagent.real-experiment-input-provenance/v0.1"
-            if real_experiment else "reagent.scaffold-input-provenance/v0.1"
+            if real_experiment
+            else "reagent.real-writing-input-provenance/v0.1"
+            if real_writing
+            else "reagent.real-review-input-provenance/v0.1"
+            if real_review
+            else "reagent.scaffold-input-provenance/v0.1"
         ),
         "workflow_instance_id": workflow_instance_id,
         "artifacts": records,
@@ -5668,6 +5814,8 @@ def _evaluate_local_progress_readiness(
     } and pin not in {
         ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
         ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
+        ("writing-local-experimental", "0.3.0", "0.5.0"),
+        ("review-local-experimental", "0.3.0", "0.5.0"),
     }:
         try:
             provenance_exact = _scaffold_provenance_is_exact(

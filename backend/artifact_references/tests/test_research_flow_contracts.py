@@ -12,11 +12,13 @@ from backend.artifact_references.research_flow_contracts import (
     canonical_artifact_bytes,
     validate_experiment_record,
     validate_manuscript_draft,
+    validate_manuscript_draft_v2,
     validate_review_report,
+    validate_review_report_v2,
     validate_selected_research_idea,
     validate_writing_review_revision,
 )
-from backend.workflow_packages.serialization import canonical_json, sha256_bytes
+from backend.workflow_packages.serialization import canonical_hash, canonical_json, sha256_bytes
 from backend.project_workspaces.contracts import CoreCapabilityMaturity
 
 
@@ -251,6 +253,91 @@ def test_manuscript_contract_rejects_invalid_values(mutator, message: str) -> No
         validate_manuscript_draft(value)
 
 
+def _evidence_ref(source: dict, item: str, *, limitation: str | None = None) -> dict:
+    return {
+        **source, "evidence_item": item, "location": item,
+        "availability": "LIMITED" if limitation else "AVAILABLE",
+        "limitation": limitation,
+    }
+
+
+def _manuscript_v2() -> dict:
+    idea = _ref(ARTIFACT_A, "selected-research-idea/v1", CHECKSUM_A)
+    library = _ref(ARTIFACT_B, "selected-paper-library/v1", CHECKSUM_B)
+    sources = {"research_idea": idea, "literature_library": library, "experiment_record": None}
+    brief = {
+        "document_type": "research proposal", "working_title": "Bounded draft",
+        "target_audience": "research owner", "target_words": {"minimum": 300, "maximum": 1200},
+        "requested_sections": ["Introduction", "Method", "Results"],
+        "citation_style": "numeric", "abstract_requested": False,
+        "owner_constraints": ["Do not fabricate results"],
+    }
+    evidence_map = [
+        {"section": "Introduction", "support_status": "SUPPORTED", "evidence_refs": [_evidence_ref(library, CANDIDATE_A, limitation="Abstract-level evidence only")], "limitations": ["No full text"]},
+        {"section": "Method", "support_status": "PLANNED", "evidence_refs": [_evidence_ref(idea, "selected_idea.proposed_direction")], "limitations": []},
+        {"section": "Results", "support_status": "UNAVAILABLE", "evidence_refs": [], "limitations": ["No Experiment bound"]},
+    ]
+    outline_value = [
+        {"heading": "Introduction", "support_status": "SUPPORTED"},
+        {"heading": "Method", "support_status": "PLANNED"},
+        {"heading": "Results", "support_status": "UNAVAILABLE"},
+    ]
+    outline = {"sha256": canonical_hash(outline_value), "value": outline_value}
+    approval_payload = {
+        "outline_sha256": outline["sha256"], "brief_sha256": canonical_hash(brief),
+        "evidence_map_sha256": canonical_hash(evidence_map),
+        "source_artifacts_sha256": canonical_hash(sources),
+        "approved_at": "2026-08-15T00:00:00Z", "decision": "APPROVED",
+    }
+    citations = [{
+        "citation_id": "cite-1", "paper_id": CANDIDATE_A,
+        "source_artifact": library, "evidence_scope": "ABSTRACT",
+        "reference_markdown": "[1] Controlled synthetic paper.",
+    }]
+    claims = [
+        {"claim_id": "claim-1", "claim_type": "LITERATURE", "section": "Introduction", "claim_text": "The selected abstract reports a bounded observation.", "support_status": "SUPPORTED", "evidence_refs": [_evidence_ref(library, CANDIDATE_A, limitation="Abstract-level evidence only")], "citation_ids": ["cite-1"], "limitations": ["No full text"]},
+        {"claim_id": "claim-2", "claim_type": "PROPOSAL", "section": "Method", "claim_text": "The study will evaluate the proposed comparison.", "support_status": "PLANNED", "evidence_refs": [_evidence_ref(idea, "selected_idea.proposed_direction")], "citation_ids": [], "limitations": []},
+        {"claim_id": "claim-3", "claim_type": "RESULT", "section": "Results", "claim_text": "Observed results are unavailable.", "support_status": "UNAVAILABLE", "evidence_refs": [], "citation_ids": [], "limitations": ["No Experiment bound"]},
+    ]
+    title = "Bounded draft"
+    content = "# Bounded draft\n\nThe study will evaluate a proposed comparison. Results are unavailable.\n"
+    draft_sha = canonical_hash({"title": title, "content_markdown": content, "claims": claims, "citations": citations})
+    review_payload = {"draft_sha256": draft_sha, "reviewed_at": "2026-08-15T00:05:00Z", "decision": "APPROVED"}
+    return {
+        "schema": "manuscript-draft/v2", "core_capability_maturity": "REVIEWED_CORE",
+        "producer": {"workflow_instance_id": "wfi-" + "1" * 32, "capsule_id": "capsule-" + "2" * 32, "capsule_version": "0.5.0", "execution_round": 1},
+        "source_artifacts": sources, "writing_brief": brief, "evidence_map": evidence_map,
+        "approved_outline": outline,
+        "outline_approval": {"sha256": canonical_hash(approval_payload), **approval_payload},
+        "title": title, "content_markdown": content, "claims": claims, "citations": citations,
+        "experiment_evidence_available": False, "unsupported_areas": ["Results"],
+        "limitations": ["Controlled synthetic evidence only"],
+        "owner_review": {"sha256": canonical_hash(review_payload), **review_payload},
+    }
+
+
+def test_manuscript_v2_preserves_exact_evidence_and_v1_authority() -> None:
+    value = _manuscript_v2()
+    assert validate_manuscript_draft_v2(value) == value
+    assert validate_manuscript_draft(_manuscript())["schema"] == "manuscript-draft/v1"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda value: value["claims"][0].update(evidence_refs=[]), "SUPPORTED claim"),
+        (lambda value: value["claims"][2].update(support_status="SUPPORTED"), "SUPPORTED claim"),
+        (lambda value: value["citations"][0].update(source_artifact=_ref(ARTIFACT_C, "selected-paper-library/v1", CHECKSUM_C)), "exact selected library"),
+        (lambda value: value["approved_outline"]["value"][0].update(heading="Drifted"), "checksum mismatch"),
+    ],
+)
+def test_manuscript_v2_fails_closed_on_evidence_or_approval_drift(mutation, message: str) -> None:
+    value = _manuscript_v2()
+    mutation(value)
+    with pytest.raises(ResearchFlowContractError, match=message):
+        validate_manuscript_draft_v2(value)
+
+
 def _review() -> dict:
     return {
         "schema": "review-report/v1",
@@ -270,6 +357,114 @@ def _review() -> dict:
         }],
         "recommendation": "REVISION",
     }
+
+
+def _review_v2() -> tuple[dict, dict, dict]:
+    manuscript = _manuscript_v2()
+    manuscript_ref = _ref(ARTIFACT_C, "manuscript-draft/v2", CHECKSUM_C)
+    idea = manuscript["source_artifacts"]["research_idea"]
+    library = manuscript["source_artifacts"]["literature_library"]
+    support = [idea, library]
+    scope_value = {
+        "manuscript_identity": manuscript_ref,
+        "available_evidence": support,
+        "categories": [
+            "EVIDENCE_SUPPORT", "CLAIM_SCOPE", "CITATION",
+            "METHOD_CONSISTENCY", "RESULT_SUPPORT", "REPRODUCIBILITY",
+        ],
+        "known_evidence_limitations": ["Literature is abstract-level only"],
+        "owner_focus": [],
+    }
+    scope = {"sha256": canonical_hash(scope_value), "value": scope_value}
+    approval_payload = {
+        "scope_sha256": scope["sha256"],
+        "manuscript_sha256": manuscript_ref["sha256"],
+        "bound_artifacts_sha256": canonical_hash(support),
+        "approved_at": "2026-08-15T01:00:00Z", "decision": "APPROVED",
+    }
+    approval = {"sha256": canonical_hash(approval_payload), **approval_payload}
+    availability = [
+        {
+            **library, "evidence_item": CANDIDATE_A, "location": CANDIDATE_A,
+            "availability": "SCOPE_LIMITED",
+            "limitation": "Abstract-level evidence only",
+        },
+        {
+            **idea, "evidence_item": "selected_idea.proposed_direction",
+            "location": "selected_idea.proposed_direction",
+            "availability": "AVAILABLE", "limitation": None,
+        },
+    ]
+    issues = [{
+        "issue_id": "issue-1", "category": "CLAIM_SCOPE", "severity": "MAJOR",
+        "target": {"section": "Introduction", "claim_id": "claim-1"},
+        "summary": "The claim exceeds the supplied abstract-level evidence.",
+        "evidence_refs": [_evidence_ref(
+            library, CANDIDATE_A, limitation="Abstract-level evidence only"
+        )],
+        "recommended_action": "Narrow the claim to the represented abstract scope.",
+        "blocking": True,
+    }]
+    report_payload = {
+        "source_manuscript": manuscript_ref, "supporting_artifacts": support,
+        "review_scope": scope, "scope_approval": approval,
+        "evidence_availability": availability,
+        "assessment": "REVISION_REQUIRED",
+        "summary": "One bounded evidence-scope revision is required.",
+        "issues": issues,
+        "limitations": ["This is a bounded evidence audit, not universal peer review."],
+    }
+    owner_payload = {
+        "review_result_sha256": canonical_hash(report_payload),
+        "reviewed_at": "2026-08-15T01:05:00Z", "decision": "APPROVED",
+    }
+    report = {
+        "schema": "review-report/v2", "core_capability_maturity": "REVIEWED_CORE",
+        "producer": {
+            "workflow_instance_id": "wfi-" + "4" * 32,
+            "capsule_id": "capsule-" + "5" * 32,
+            "capsule_version": "0.5.0", "execution_round": 1,
+        },
+        **report_payload,
+        "owner_review": {"sha256": canonical_hash(owner_payload), **owner_payload},
+    }
+    bound = {
+        "manuscript": manuscript_ref, "research_idea": idea,
+        "literature_library": library, "experiment_record": None,
+    }
+    return report, manuscript, bound
+
+
+def test_review_v2_is_structured_exact_and_preserves_v1() -> None:
+    report, manuscript, bound = _review_v2()
+    assert validate_review_report_v2(
+        report, manuscript=manuscript, bound_inputs=bound,
+    ) == report
+    assert validate_review_report(_review())["schema"] == "review-report/v1"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (
+            lambda value: value["issues"][0]["target"].update(claim_id="claim-missing"),
+            "unknown claim",
+        ),
+        (
+            lambda value: value.update(assessment="NO_BLOCKING_ISSUES"),
+            "conflicts with a blocking issue",
+        ),
+        (
+            lambda value: value["issues"][0].update(summary="The paper should REJECT."),
+            "prohibited publication semantics",
+        ),
+    ],
+)
+def test_review_v2_fails_closed_on_structured_contract_drift(mutation, message: str) -> None:
+    report, manuscript, bound = _review_v2()
+    mutation(report)
+    with pytest.raises(ResearchFlowContractError, match=message):
+        validate_review_report_v2(report, manuscript=manuscript, bound_inputs=bound)
 
 
 def test_review_contract_and_writing_revision_cross_reference() -> None:
@@ -368,9 +563,14 @@ def test_downstream_dependency_map_is_production_seeded_and_exact() -> None:
     assert [(item.requirement_key, item.artifact_type, item.required) for item in writing.inputs] == [
         ("research_idea", "selected-research-idea/v1", True),
         ("literature_library", "selected-paper-library/v1", True),
-        ("experiment_record", "experiment-record/v1", False),
-        ("review_feedback", "review-report/v1", False),
-        ("prior_manuscript", "manuscript-draft/v1", False),
+        ("experiment_record", "experiment-record/v2", False),
+    ]
+    review = FUTURE_WORKFLOW_CONTRACTS["review"]
+    assert [(item.requirement_key, item.artifact_type, item.required) for item in review.inputs] == [
+        ("manuscript", "manuscript-draft/v2", True),
+        ("research_idea", "selected-research-idea/v1", False),
+        ("literature_library", "selected-paper-library/v1", False),
+        ("experiment_record", "experiment-record/v2", False),
     ]
     assert all(
         dependency.selection_policy == "EXPLICIT_SPECIFIC_ARTIFACT"
@@ -384,6 +584,7 @@ def test_downstream_dependency_map_is_production_seeded_and_exact() -> None:
     assert all(
         ARTIFACT_CONTRACTS[artifact_type].production_producer_available
         for artifact_type in (
-            "manuscript-draft/v1", "review-report/v1", "experiment-record/v1"
+            "manuscript-draft/v1", "manuscript-draft/v2",
+            "review-report/v1", "review-report/v2", "experiment-record/v1"
         )
     )

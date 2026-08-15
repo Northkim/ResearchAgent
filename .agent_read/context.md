@@ -1,6 +1,57 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-14
+Last updated: 2026-08-15
+
+## R1 Real Review structured evidence audit
+
+Real Review is published as reviewed Definition 0.3.0 / Capsule 0.5.0 with
+immutable `review-report/v2`; historical Review 0.2/0.4 and v1 remain unchanged.
+One exact `manuscript-draft/v2` is required. Exact Idea, Literature, and
+Experiment v2 support is optional, explicit, and must match manuscript lineage.
+No auto-latest selection or sibling Workflow private-file access is permitted.
+
+Codex performs exact Review Scope and bounded evidence-audit passes locally. The
+runner owns checksum-bound Scope approval, exact Owner review, structured v2
+publication, exactly-once Progress, and Cloud Artifact projection. Issues use
+bounded categories, MAJOR/MINOR revision priority, exact section/claim targets,
+exact evidence references, recommended actions, and blocking flags. Assessment
+is only NO_BLOCKING_ISSUES, REVISION_REQUIRED, or INSUFFICIENT_EVIDENCE; no
+publication decision or scientific score is allowed.
+
+Controlled public Workspace qualification passed seeded revision-required and
+bounded-clean scenarios. Bounded Real Codex identified the seeded claim-scope
+violation, anchored it to Introduction/claim-1, preserved evidence limitations,
+crossed both Owner checkpoints, and completed exact v2, Progress, Cloud
+projection, and cleanup. Focused affected suites passed 60; disposable
+PostgreSQL migration/Registry tests passed 2 and dropped the database. Alembic
+sole head is `20260815_0025`. ADR 0039 and the 2026-08-15 R1 progress report
+contain durable details. `R1_STATUS = COMPLETE`; next phase is W2 Revision
+Integration.
+
+## W1 Real Writing evidence-bound initial draft
+
+Real Writing is published as reviewed Definition 0.3.0 / Capsule 0.5.0 with
+immutable `manuscript-draft/v2`; historical Writing 0.2/0.4 and v1 remain
+unchanged. Exact selected Idea and selected Literature are required, and one
+exact valid `experiment-record/v2` is optional. Codex performs Brief, Evidence
+Map, approved Outline, substantive draft, and claim/citation passes locally.
+The runner owns exact Outline approval, exact Owner review, v2 publication,
+exactly-once Progress, and Cloud Artifact projection.
+
+Evidence status is exactly SUPPORTED, PLANNED, UNAVAILABLE. Literature use is
+bounded to selected-library membership and actual metadata/abstract scope;
+observed result claims require a successful, valid bound Experiment v2. The
+descriptor formally declares exact inputs and mutable working paths. Shared and
+embedded validators remain fail closed for undeclared files, unsafe paths,
+source drift, unsupported claims, and citation membership. Codex bytecode output
+is disabled to preserve Capsule admission.
+
+Controlled public Workspace qualification passed no-Experiment and valid-
+Experiment scenarios; bounded real Codex qualification passed the no-Experiment
+path without fabricated Results. Focused affected tests passed 82; disposable
+PostgreSQL migration/Registry tests passed 2 and dropped the database. Alembic
+sole head is `20260815_0024`. ADR 0038 and the 2026-08-15 W1 progress report
+contain durable details. `W1_STATUS = COMPLETE`; next phase is R1 Real Review.
 
 ## Experiment 0.4 legacy human-output drift recovery
 

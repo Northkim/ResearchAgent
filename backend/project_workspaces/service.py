@@ -76,6 +76,12 @@ from .production_workflows import (
     real_experiment_artifact_requirement,
     real_experiment_capsule,
     real_experiment_definition_version,
+    real_writing_artifact_requirements,
+    real_writing_capsule,
+    real_writing_definition_version,
+    real_review_artifact_requirements,
+    real_review_capsule,
+    real_review_definition_version,
 )
 from backend.workflow_packages.production_workflows import (
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
@@ -84,6 +90,10 @@ from backend.workflow_packages.production_workflows import (
     REAL_EXPERIMENT_V0_7_CAPSULE_CHECKSUM,
     REAL_EXPERIMENT_V0_7_CAPSULE_ID,
     REAL_EXPERIMENT_WORKFLOW_VERSION,
+    REAL_WRITING_WORKFLOW_VERSION,
+    REAL_REVIEW_WORKFLOW_VERSION,
+    REVIEW_WORKFLOW_ID,
+    WRITING_WORKFLOW_ID,
 )
 from .skills import (
     PRODUCTION_SKILLS,
@@ -465,6 +475,44 @@ def ensure_production_workflow_foundation(
         raise WorkflowFoundationConflictError(
             "Real Experiment Resource requirement immutable-content conflict"
         )
+    repository.add_definition_version(real_writing_definition_version(timestamp))
+    repository.add_capsule_version(real_writing_capsule(timestamp))
+    for pin in production_skill_pins(
+        WRITING_WORKFLOW_ID, REAL_WRITING_WORKFLOW_VERSION, timestamp
+    ):
+        if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
+            repository.add_workflow_skill_pin(pin)
+    for requirement in real_writing_artifact_requirements(timestamp):
+        existing = uow.artifact_references.get_requirement(
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+        )
+        if existing is None:
+            uow.artifact_references.add_requirement(requirement)
+        elif _requirement_content(existing) != _requirement_content(requirement):
+            raise WorkflowFoundationConflictError(
+                "Real Writing Artifact requirement immutable-content conflict"
+            )
+    repository.add_definition_version(real_review_definition_version(timestamp))
+    repository.add_capsule_version(real_review_capsule(timestamp))
+    for pin in production_skill_pins(
+        REVIEW_WORKFLOW_ID, REAL_REVIEW_WORKFLOW_VERSION, timestamp
+    ):
+        if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
+            repository.add_workflow_skill_pin(pin)
+    for requirement in real_review_artifact_requirements(timestamp):
+        existing = uow.artifact_references.get_requirement(
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+        )
+        if existing is None:
+            uow.artifact_references.add_requirement(requirement)
+        elif _requirement_content(existing) != _requirement_content(requirement):
+            raise WorkflowFoundationConflictError(
+                "Real Review Artifact requirement immutable-content conflict"
+            )
     return (
         literature_definition,
         literature_version,

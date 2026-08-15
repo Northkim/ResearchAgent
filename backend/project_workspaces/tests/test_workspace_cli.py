@@ -18,7 +18,11 @@ from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces import workspace_cli
 from backend.project_workspaces.workspace_cli import WorkspaceCLIError
-from backend.workflow_packages import validate_package
+from backend.workflow_packages import real_review_validator, validate_package
+from backend.workflow_packages.production_workflows import (
+    build_real_review_v0_5_package,
+    build_real_writing_v0_5_package,
+)
 
 
 @pytest.fixture
@@ -105,6 +109,102 @@ def test_bootstrap_creates_frozen_minimal_layout_and_is_idempotent(
     )
     assert status.returncode == 0
     assert json.loads(status.stdout)["workspace_id"] == descriptor["workspace_id"]
+
+
+def test_declared_artifact_allows_local_provenance_path_but_rejects_credentials(
+    tmp_path: Path,
+) -> None:
+    built = build_real_writing_v0_5_package(
+        project_id="project-" + "a" * 32,
+        project_name="Credential boundary",
+        research_topic="Controlled",
+        output_root=tmp_path / "built",
+        package_id="package-" + "b" * 32,
+    )
+    artifact = built.package_root / "inputs/experiment-record.json"
+    artifact.write_text(
+        json.dumps({"argv": ["/Users/owner/miniconda/bin/python"]}),
+        encoding="utf-8",
+    )
+    workspace_cli._scan_capsule_for_credentials(built.package_root)
+    artifact.write_text(
+        "OPENAI_API_KEY=not-allowed-in-materialized-artifact\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(WorkspaceCLIError, match="prohibited credential"):
+        workspace_cli._scan_capsule_for_credentials(built.package_root)
+
+
+def test_real_writing_progress_readiness_does_not_use_scaffold_provenance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    capsule = tmp_path / "capsule"
+    capsule.mkdir()
+    report = {"status": "COMPLETED"}
+    manifest = {
+        "workflow_id": "writing-local-experimental",
+        "workflow_version": "0.3.0",
+        "package_template_version": "0.5.0",
+    }
+    installed = {
+        "workflow_definition_id": "writing-local-experimental",
+        "workflow_definition_version": "0.3.0",
+        "capsule_version": "0.5.0",
+    }
+    monkeypatch.setattr(
+        workspace_cli, "_validated_local_progress_reports", lambda *_args: [report]
+    )
+    monkeypatch.setattr(
+        workspace_cli, "_local_progress_acknowledged", lambda *_args, **_kwargs: False
+    )
+
+    def scaffold_provenance_must_not_run(*_args, **_kwargs):
+        raise AssertionError("Real Writing is not a Scaffold Workflow")
+
+    monkeypatch.setattr(
+        workspace_cli, "_scaffold_provenance_is_exact", scaffold_provenance_must_not_run
+    )
+
+    readiness = workspace_cli._evaluate_local_progress_readiness(
+        workspace=tmp_path,
+        descriptor={},
+        installed=installed,
+        capsule=capsule,
+        manifest=manifest,
+    )
+
+    assert readiness.state == "RECOVERABLE_EXACT"
+    assert readiness.reports == (report,)
+
+
+def test_real_review_descriptor_declares_only_exact_materialized_inputs(
+    tmp_path: Path,
+) -> None:
+    built = build_real_review_v0_5_package(
+        project_id="project-" + "a" * 32,
+        project_name="Review admission",
+        research_topic="Controlled",
+        output_root=tmp_path / "built",
+        package_id="package-" + "b" * 32,
+    )
+    descriptor = json.loads(
+        (built.package_root / "workflow/real-review.json").read_text()
+    )
+    manifest = json.loads((built.package_root / "package-manifest.json").read_text())
+    manifest_entries = {item["relative_path"]: item for item in manifest["files"]}
+    declared = workspace_cli._declared_dynamic_input_paths(
+        built.package_root, manifest_entries,
+    )
+    assert declared == {
+        item["target_relative_path"] for item in descriptor["input_requirements"]
+    }
+    declared_input = built.package_root / "inputs/manuscript-draft.json"
+    declared_input.write_text("{}\n", encoding="utf-8")
+    real_review_validator.validate(built.package_root)
+    undeclared = built.package_root / "inputs/unbound-source.json"
+    undeclared.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(Exception, match="undeclared Capsule file"):
+        real_review_validator.validate(built.package_root)
 
 
 def test_bootstrap_conflict_corruption_and_interrupted_write_are_fail_closed(

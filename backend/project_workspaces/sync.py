@@ -32,6 +32,10 @@ from backend.workflow_packages.production_workflows import (
     REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
     REAL_EXPERIMENT_CAPSULE_VERSION,
     REAL_EXPERIMENT_WORKFLOW_VERSION,
+    REAL_WRITING_CAPSULE_VERSION,
+    REAL_WRITING_WORKFLOW_VERSION,
+    REAL_REVIEW_CAPSULE_VERSION,
+    REAL_REVIEW_WORKFLOW_VERSION,
     REVIEW_WORKFLOW_ID,
     SCAFFOLD_CAPSULE_VERSION,
     SCAFFOLD_INTERACTIVE_CAPSULE_VERSION,
@@ -60,6 +64,8 @@ from backend.workflow_packages.production_workflows import (
     build_experiment_scaffold_v0_5_package,
     build_real_experiment_v0_6_package,
     build_real_experiment_v0_7_package,
+    build_real_writing_v0_5_package,
+    build_real_review_v0_5_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 
@@ -631,6 +637,26 @@ class WorkspaceSyncApplicationService:
                 f"{slug}-{project.project_id}-{instance.workflow_instance_id}-v0.4"
             )
         elif (
+            instance.workflow_definition_id == WRITING_WORKFLOW_ID
+            and instance.workflow_version == REAL_WRITING_WORKFLOW_VERSION
+            and instance.capsule_version == REAL_WRITING_CAPSULE_VERSION
+        ):
+            builder = build_real_writing_v0_5_package
+            package_id = (
+                f"real-writing-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.5"
+            )
+        elif (
+            instance.workflow_definition_id == REVIEW_WORKFLOW_ID
+            and instance.workflow_version == REAL_REVIEW_WORKFLOW_VERSION
+            and instance.capsule_version == REAL_REVIEW_CAPSULE_VERSION
+        ):
+            builder = build_real_review_v0_5_package
+            package_id = (
+                f"real-review-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.5"
+            )
+        elif (
             instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
             and instance.workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION
             and instance.capsule_version == EXPERIMENT_RESOURCE_CAPSULE_VERSION
@@ -712,6 +738,7 @@ class WorkspaceSyncApplicationService:
                 SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
                 EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
                 REAL_EXPERIMENT_WORKFLOW_VERSION,
+                REAL_WRITING_WORKFLOW_VERSION,
             }
         ):
             self._verify_compiled_skill_authority(instance, built.package_root)

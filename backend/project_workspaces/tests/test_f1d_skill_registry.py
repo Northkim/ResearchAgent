@@ -56,10 +56,10 @@ def test_skill_catalog_is_read_only_stable_and_projects_exact_pins(tmp_path) -> 
         assert item["trust"] == "BUILT_IN_REVIEWED"
         assert item["current_version"]["version"] == "0.1.0"
         detail = client.get(f"/skills/{item['skill_id']}").json()
-        expected_count = 5 if item["skill_id"] == PRODUCTION_SKILLS[0].skill_id else 4
+        expected_count = 7 if item["skill_id"] == PRODUCTION_SKILLS[0].skill_id else 4
         assert len(detail["workflow_usages"]) == expected_count
         expected_versions = {"0.2.0", "0.3.0"}
-        if expected_count == 5:
+        if expected_count == 7:
             expected_versions.add("0.4.0")
         assert {use["workflow_version"] for use in detail["workflow_usages"]} == expected_versions
     assert client.post("/skills", json={}).status_code == 405
@@ -86,7 +86,7 @@ def test_old_scaffold_versions_remain_and_existing_instance_does_not_upgrade() -
     versions = uow.workflow_foundation.list_definition_versions(
         "writing-local-experimental"
     )
-    assert {item.version for item in versions} == {"0.1.0", "0.2.0"}
+    assert {item.version for item in versions} == {"0.1.0", "0.2.0", "0.3.0"}
     old_capsules = [
         item for item in uow.workflow_foundation.list_capsule_versions(
             "writing-local-experimental"
