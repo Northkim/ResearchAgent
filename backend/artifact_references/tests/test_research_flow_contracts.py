@@ -13,6 +13,7 @@ from backend.artifact_references.research_flow_contracts import (
     validate_experiment_record,
     validate_manuscript_draft,
     validate_manuscript_draft_v2,
+    validate_manuscript_draft_v3,
     validate_review_report,
     validate_review_report_v2,
     validate_selected_research_idea,
@@ -465,6 +466,101 @@ def test_review_v2_fails_closed_on_structured_contract_drift(mutation, message: 
     mutation(report)
     with pytest.raises(ResearchFlowContractError, match=message):
         validate_review_report_v2(report, manuscript=manuscript, bound_inputs=bound)
+
+
+def _manuscript_v3() -> tuple[dict, dict, dict, dict]:
+    review, prior, _ = _review_v2()
+    prior_ref = review["source_manuscript"]
+    review_ref = _ref(ARTIFACT_D, "review-report/v2", CHECKSUM_D)
+    support = review["supporting_artifacts"]
+    sources = {
+        "research_idea": support[0], "literature_library": support[1],
+        "experiment_record": None,
+    }
+    evidence = _evidence_ref(
+        sources["literature_library"], CANDIDATE_A,
+        limitation="Abstract-level evidence only",
+    )
+    plan_value = [{
+        "issue_id": "issue-1", "intended_disposition": "ADDRESSED",
+        "planned_change": "Narrow the claim to the abstract scope.",
+        "affected_section": "Introduction", "affected_claims": ["claim-1"],
+        "evidence_to_use": [evidence], "known_limitation": None,
+    }]
+    plan = {"sha256": canonical_hash(plan_value), "value": plan_value}
+    approval_payload = {
+        "prior_manuscript_sha256": prior_ref["sha256"],
+        "causal_review_sha256": review_ref["sha256"],
+        "issue_set_sha256": canonical_hash(review["issues"]),
+        "revision_plan_sha256": plan["sha256"],
+        "supporting_artifacts_sha256": canonical_hash(support),
+        "approved_at": "2026-08-15T02:00:00Z", "decision": "APPROVED",
+    }
+    claims = deepcopy(prior["claims"])
+    claims[0]["claim_text"] = "The selected abstract reports a bounded observation."
+    accounting = [{
+        "issue_id": "issue-1", "disposition": "ADDRESSED",
+        "change_summary": "Narrowed the claim to the selected abstract.",
+        "changed_sections": ["Introduction"], "changed_claims": ["claim-1"],
+        "remaining_limitation": None,
+    }]
+    content = "# Bounded revised draft\n\nThe selected abstract reports a bounded observation.\n"
+    draft_sha = canonical_hash({
+        "title": "Bounded revised draft", "content_markdown": content,
+        "claims": claims, "citations": prior["citations"],
+    })
+    owner_payload = {
+        "revised_draft_sha256": draft_sha,
+        "issue_accounting_sha256": canonical_hash(accounting),
+        "reviewed_at": "2026-08-15T02:05:00Z", "decision": "APPROVED",
+    }
+    artifact = {
+        "schema": "manuscript-draft/v3", "core_capability_maturity": "REVIEWED_CORE",
+        "producer": {"workflow_instance_id": "wfi-" + "6" * 32,
+                     "capsule_id": "capsule-" + "7" * 32,
+                     "capsule_version": "0.6.0", "execution_round": 1},
+        "prior_manuscript": prior_ref, "causal_review": review_ref,
+        "supporting_artifacts": support, "revision_round": 1,
+        "writing_brief": prior["writing_brief"], "title": "Bounded revised draft",
+        "content_markdown": content, "claims": claims, "citations": prior["citations"],
+        "experiment_evidence_available": False, "unsupported_areas": ["Results"],
+        "limitations": ["Controlled synthetic evidence only"],
+        "revision_plan": plan,
+        "revision_plan_approval": {"sha256": canonical_hash(approval_payload), **approval_payload},
+        "issue_accounting": accounting, "remaining_blocking_issue_ids": [],
+        "remaining_blocking_issue_count": 0, "revision_limitations": [],
+        "owner_review": {"sha256": canonical_hash(owner_payload), **owner_payload},
+    }
+    bound = deepcopy({"prior_manuscript": prior_ref, "causal_review": review_ref, **sources})
+    return artifact, prior, review, bound
+
+
+def test_manuscript_v3_binds_causal_review_and_accounts_every_issue() -> None:
+    artifact, prior, review, bound = _manuscript_v3()
+    assert validate_manuscript_draft_v3(
+        artifact, prior_manuscript=prior, causal_review=review,
+        bound_inputs=bound,
+    ) == artifact
+    assert validate_manuscript_draft_v2(prior)["schema"] == "manuscript-draft/v2"
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda value: value["causal_review"].update(sha256=CHECKSUM_A), "differs from exact bindings"),
+        (lambda value: value["issue_accounting"].append(deepcopy(value["issue_accounting"][0])), "more than once"),
+        (lambda value: value["issue_accounting"][0].update(disposition="RESOLVED"), "disposition"),
+        (lambda value: value["issue_accounting"][0].update(disposition="NOT_ADDRESSED", remaining_limitation=None), "remaining revision limitation"),
+    ],
+)
+def test_manuscript_v3_fails_closed_on_lineage_or_issue_accounting_drift(mutation, message: str) -> None:
+    artifact, prior, review, bound = _manuscript_v3()
+    mutation(artifact)
+    with pytest.raises(ResearchFlowContractError, match=message):
+        validate_manuscript_draft_v3(
+            artifact, prior_manuscript=prior, causal_review=review,
+            bound_inputs=bound,
+        )
 
 
 def test_review_contract_and_writing_revision_cross_reference() -> None:

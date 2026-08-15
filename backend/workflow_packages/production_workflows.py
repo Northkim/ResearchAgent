@@ -97,6 +97,9 @@ REAL_EXPERIMENT_PROMPT_VERSION = "0.1.0"
 REAL_WRITING_WORKFLOW_VERSION = "0.3.0"
 REAL_WRITING_CAPSULE_VERSION = "0.5.0"
 REAL_WRITING_PROMPT_VERSION = "0.1.0"
+WRITING_REVISION_WORKFLOW_VERSION = "0.4.0"
+WRITING_REVISION_CAPSULE_VERSION = "0.6.0"
+WRITING_REVISION_PROMPT_VERSION = "0.1.0"
 REAL_REVIEW_WORKFLOW_VERSION = "0.3.0"
 REAL_REVIEW_CAPSULE_VERSION = "0.5.0"
 REAL_REVIEW_PROMPT_VERSION = "0.1.0"
@@ -114,6 +117,7 @@ SELECTED_RESEARCH_IDEA_PREFIX = "outputs/artifacts/selected-research-idea"
 
 MANUSCRIPT_DRAFT_TYPE = "manuscript-draft/v1"
 MANUSCRIPT_DRAFT_V2_TYPE = "manuscript-draft/v2"
+MANUSCRIPT_DRAFT_V3_TYPE = "manuscript-draft/v3"
 REVIEW_REPORT_TYPE = "review-report/v1"
 REVIEW_REPORT_V2_TYPE = "review-report/v2"
 EXPERIMENT_RECORD_TYPE = "experiment-record/v1"
@@ -125,6 +129,7 @@ SCAFFOLD_INPUT_TARGETS = {
     "experiment_record": "inputs/experiment-record.json",
     "review_feedback": "inputs/review-report.json",
     "prior_manuscript": "inputs/prior-manuscript.json",
+    "causal_review": "inputs/review-report.json",
     "manuscript": "inputs/manuscript-draft.json",
 }
 
@@ -197,6 +202,13 @@ REAL_REVIEW_REQUIREMENTS = (
     _scaffold_requirement("manuscript", MANUSCRIPT_DRAFT_V2_TYPE, required=True),
     _scaffold_requirement("research_idea", SELECTED_RESEARCH_IDEA_TYPE, required=False),
     _scaffold_requirement("literature_library", SELECTED_PAPER_LIBRARY_TYPE, required=False),
+    _scaffold_requirement("experiment_record", EXPERIMENT_RECORD_V2_TYPE, required=False),
+)
+WRITING_REVISION_REQUIREMENTS = (
+    _scaffold_requirement("prior_manuscript", MANUSCRIPT_DRAFT_V2_TYPE, required=True),
+    _scaffold_requirement("causal_review", REVIEW_REPORT_V2_TYPE, required=True),
+    _scaffold_requirement("research_idea", SELECTED_RESEARCH_IDEA_TYPE, required=True),
+    _scaffold_requirement("literature_library", SELECTED_PAPER_LIBRARY_TYPE, required=True),
     _scaffold_requirement("experiment_record", EXPERIMENT_RECORD_V2_TYPE, required=False),
 )
 REVIEW_REQUIREMENTS = (
@@ -374,6 +386,67 @@ def real_review_capsule_checksum() -> str:
 
 REAL_REVIEW_CAPSULE_CHECKSUM = real_review_capsule_checksum()
 REAL_REVIEW_CAPSULE_ID = "capsule-" + REAL_REVIEW_CAPSULE_CHECKSUM[7:39]
+
+
+def writing_revision_workflow_document() -> dict[str, Any]:
+    """Immutable first Review-to-Writing revision Definition contract."""
+
+    return {
+        "schema_version": "local-workflow/v0.2",
+        "experimental_status": EXPERIMENTAL_STATUS,
+        "workflow_type": "Writing",
+        "workflow_id": WRITING_WORKFLOW_ID,
+        "workflow_version": WRITING_REVISION_WORKFLOW_VERSION,
+        "execution_owner": "codex-coordinated-local-workspace",
+        "hosted_agent_runtime_required": False,
+        "network_boundary": "NO_WORKFLOW_NETWORK_REQUIRED",
+        "core_capability_maturity": "REVIEWED_CORE",
+        "supported_mode": "REVIEW_TO_WRITING_REVISION_ROUND_ONE",
+        "input_requirements": list(WRITING_REVISION_REQUIREMENTS),
+        "stages": [
+            "INPUT_REVIEW", "ISSUE_RECONCILIATION", "REVISION_PLAN",
+            "OWNER_APPROVAL", "DRAFT_REVISION", "CLAIM_CITATION_RECHECK",
+            "OWNER_REVIEW", "COMPLETED",
+        ],
+        "artifact_outputs": [scaffold_output_contract(MANUSCRIPT_DRAFT_V3_TYPE)],
+        "revision_dispositions": [
+            "ADDRESSED", "PARTIALLY_ADDRESSED", "NOT_ADDRESSED",
+        ],
+        "approval_policy": "EXACT_REVISION_PLAN_AND_EXACT_REVISED_DRAFT",
+        "revision_rounds": 1,
+        "immutable_versioning": (
+            "manuscript-draft/v1, manuscript-draft/v2, and prior Writing Capsules remain unchanged"
+        ),
+    }
+
+
+def writing_revision_contract_checksum() -> str:
+    return canonical_hash(writing_revision_workflow_document())
+
+
+def writing_revision_capsule_checksum() -> str:
+    return canonical_hash({
+        "generator_version": f"reagent-{WRITING_WORKFLOW_ID}-compiler/{WRITING_REVISION_CAPSULE_VERSION}",
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": WRITING_TEMPLATE_ID,
+        "package_template_version": WRITING_REVISION_CAPSULE_VERSION,
+        "workflow_checksum": writing_revision_contract_checksum(),
+        "artifact_requirements": list(WRITING_REVISION_REQUIREMENTS),
+        "artifact_outputs": [scaffold_output_contract(MANUSCRIPT_DRAFT_V3_TYPE)],
+        "core_capability_maturity": "REVIEWED_CORE",
+        "skill_pins": [{
+            "skill_id": "research-artifact-provenance-local-builtin",
+            "skill_version": "0.1.0",
+            "content_checksum": (
+                "sha256:0650f150099823499d1fdcf072abd70275e87cb76e3e9d64dfb12361cc13d7c8"
+            ),
+        }],
+        "interaction_boundary": "EXACT_REVISION_PLAN_AND_FINAL_DRAFT_CHECKPOINTS",
+    })
+
+
+WRITING_REVISION_CAPSULE_CHECKSUM = writing_revision_capsule_checksum()
+WRITING_REVISION_CAPSULE_ID = "capsule-" + WRITING_REVISION_CAPSULE_CHECKSUM[7:39]
 
 
 def real_experiment_contract_checksum() -> str:
@@ -2410,6 +2483,121 @@ planned work stays future/proposal language; unavailable evidence stays explicit
     }
 
 
+def _writing_revision_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    """Render the bounded first Review-to-Writing revision Capsule."""
+
+    del research_topic
+    from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    from . import writing_revision_runtime, writing_revision_validator
+
+    workflow = writing_revision_workflow_document()
+    skill = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    skill_files = skill.content_files()
+    contract = {
+        "schema_version": "reagent.writing-revision-workflow/v0.1",
+        "workflow_id": WRITING_WORKFLOW_ID,
+        "workflow_version": WRITING_REVISION_WORKFLOW_VERSION,
+        "capsule_id": WRITING_REVISION_CAPSULE_ID,
+        "capsule_version": WRITING_REVISION_CAPSULE_VERSION,
+        "core_capability_maturity": "REVIEWED_CORE",
+        "input_requirements": workflow["input_requirements"],
+        "output_artifact_type": MANUSCRIPT_DRAFT_V3_TYPE,
+        "stages": workflow["stages"],
+        "revision_dispositions": workflow["revision_dispositions"],
+        "revision_plan_fields": [
+            "issue_id", "intended_disposition", "planned_change",
+            "affected_section", "affected_claims", "evidence_to_use",
+            "known_limitation",
+        ],
+        "issue_accounting_fields": [
+            "issue_id", "disposition", "change_summary", "changed_sections",
+            "changed_claims", "remaining_limitation",
+        ],
+        "runtime_dynamic_paths": [
+            "memory/input-provenance.json", "memory/revision-plan.json",
+            "memory/revision-plan-approval.json", "memory/claims.json",
+            "memory/citations.json", "memory/issue-accounting.json",
+            "memory/owner-review.json", "outputs/revised-draft.md",
+        ],
+    }
+    context = {
+        "schema_version": "reagent.writing-revision-context/v0.1",
+        "workflow_id": WRITING_WORKFLOW_ID,
+        "workflow_version": WRITING_REVISION_WORKFLOW_VERSION,
+        "package_id": package_id, "package_checksum": package_checksum,
+        "stage": "INPUT_REVIEW", "latest_output": None,
+        "updated_at": DETERMINISTIC_GENERATED_AT,
+    }
+    draft = {
+        "execution_round": 1, "harness_type": "codex", "harness_version": None,
+        "harness_session_id": "writing-revision-round-1",
+        "previous_report_id": None, "previous_report_checksum": None,
+        "started_at": DETERMINISTIC_GENERATED_AT,
+        "completed_at": DETERMINISTIC_GENERATED_AT, "status": "IN_PROGRESS",
+        "completed_work": [], "current_state": "INPUT_REVIEW",
+        "next_recommended_action": "Reconcile every exact causal Review issue",
+        "continuation_reason": None,
+        "warnings": ["A Review request does not create new evidence"],
+        "errors": [], "unresolved_questions": [],
+        "continuation_instructions": [
+            "Use only exact inputs and wait for both Owner checkpoints",
+        ],
+    }
+    prompt = """# Review-to-Writing bounded revision method
+
+Use only the exact prior manuscript-draft/v2, causal review-report/v2, and exact
+supporting Artifacts materialized here. Verify the Review names the exact prior
+Draft. Account for every structured Review issue exactly once and produce a
+compact Revision Plan. A Review request creates no evidence. After exact Owner
+approval, revise the prior manuscript only within the approved plan, preserving
+its Writing Brief and evidence scope. Use only ADDRESSED, PARTIALLY_ADDRESSED,
+NOT_ADDRESSED. Partial and unaddressed items must retain explicit limitations.
+Recheck the W1 claim/citation truth rules, then present the exact revised draft,
+issue accounting, and remaining blocking issues for final Owner review. Never
+read sibling state, use network, acquire evidence, or call an issue Review-resolved.
+"""
+    agent = """# ReAgent Writing Revision — REVIEWED_CORE
+
+Codex performs one bounded revision round from exact v2 Draft and exact causal v2
+Review. The runner owns exact Revision Plan approval, exact final review,
+manuscript-draft/v3 publication, and Progress finalization. Inputs are read-only.
+Do not invent issues or evidence, rewrite outside the approved plan, infer
+approval, or publish v1/v2. Workflow completion does not mean every Review issue
+was resolved; preserve remaining blocking issue identity honestly.
+"""
+    project = {
+        "schema_version": "local-project-input/v0.1", "project_id": project_id,
+        "project_name": project_name, "selected_workflow": WRITING_WORKFLOW_ID,
+    }
+    skill_root = f"workflow/skills/{skill.skill_id}"
+    return {
+        "AGENT.md": FileSpec(agent.encode(), "text/markdown", "Writing revision authority", False, "INSTRUCTION"),
+        "AGENTS.md": FileSpec(b"# Codex shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Codex shim", False, "INSTRUCTION"),
+        "CLAUDE.md": FileSpec(b"# Claude Code shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Harness shim", False, "INSTRUCTION"),
+        "README.md": FileSpec(b"# Writing Revision Capsule\n\nRun only through the public Local Workspace command.\n", "text/markdown", "Capsule overview", False, "INSTRUCTION"),
+        "reagent_local.py": FileSpec(Path(writing_revision_runtime.__file__).read_bytes(), "text/x-python", "bounded Writing revision runner", False, "INSTRUCTION"),
+        "validate_package.py": FileSpec(Path(writing_revision_validator.__file__).read_bytes(), "text/x-python", "self-contained Writing revision validator", False, "INSTRUCTION"),
+        "progress_report.py": FileSpec(_scaffold_progress_source(), "text/x-python", "Progress v0.2 exact Artifact helper", False, "INSTRUCTION"),
+        "workflow/AGENT.md": FileSpec(b"# Writing Revision Workflow\n\nPreserve exact causal Review and evidence identity.\n", "text/markdown", "workflow instructions", False, "INSTRUCTION"),
+        "workflow/workflow.json": FileSpec(_json(workflow), "application/json", "pinned Workflow", False, "CONFIGURATION"),
+        "workflow/writing-revision.json": FileSpec(_json(contract), "application/json", "narrow revision contract", False, "CONFIGURATION"),
+        "workflow/prompts/writing-revision.md": FileSpec(prompt.encode(), "text/markdown", "reviewed revision method", False, "INSTRUCTION"),
+        f"{skill_root}/SKILL.md": FileSpec(skill_files["SKILL.md"], "text/markdown", "reviewed provenance Skill", False, "INSTRUCTION"),
+        f"{skill_root}/skill.json": FileSpec(skill_files["skill.json"], "application/json", "reviewed provenance Skill contract", False, "CONFIGURATION"),
+        "workflow/artifact-inputs.json": FileSpec(_json({"schema_version": "reagent.artifact-input-contract/v0.1", "requirements": workflow["input_requirements"]}), "application/json", "exact revision input contract", False, "CONFIGURATION"),
+        "workflow/artifact-outputs.json": FileSpec(_json({"schema_version": "reagent.artifact-output-contract/v0.1", **scaffold_output_contract(MANUSCRIPT_DRAFT_V3_TYPE), "producer_core_capability_maturity": "REVIEWED_CORE", "validity_point": "OWNER_REVIEWED_EVIDENCE_BOUND_REVISION"}), "application/json", "manuscript-draft/v3 output contract", False, "CONFIGURATION"),
+        "inputs/project.json": FileSpec(_json(project), "application/json", "immutable Project identity", False, "INPUT"),
+        "outputs/README.md": FileSpec(b"# Revision outputs\n\nOnly the exact Owner-reviewed manuscript-draft/v3 is an output.\n", "text/markdown", "output policy", False, "OUTPUT"),
+        "memory/context.md": FileSpec(("# Writing Revision Context\n\n```json\n" + canonical_json(context) + "\n```\n").encode(), "text/markdown", "cross-session state", True, "STATE"),
+        "memory/progress/report-draft.json": FileSpec(_json(draft), "application/json", "mutable Progress draft", True, "STATE"),
+        "memory/progress/reports/README.md": FileSpec(b"# Append-only Progress Reports\n", "text/markdown", "Progress policy", False, "STATE"),
+        "memory/progress/receipts/README.md": FileSpec(b"# Verified upload receipts\n", "text/markdown", "receipt policy", False, "STATE"),
+    }
+
+
 def _real_review_files(
     *, project_id: str, project_name: str, package_id: str,
     package_checksum: str, research_topic: str,
@@ -2901,6 +3089,32 @@ def _make_manifest(
         )
         continuation = "MULTI ROUND; append Progress every session; local files, not chat history, preserve continuity"
         proxy = "NO PROVIDER CAPABILITY; LOCAL INTERACTIVE HARNESS ONLY"
+    elif (
+        workflow_id == WRITING_WORKFLOW_ID
+        and workflow_version == WRITING_REVISION_WORKFLOW_VERSION
+    ):
+        from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
+
+        asset = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+        skill_path = f"workflow/skills/{asset.skill_id}/SKILL.md"
+        skills = (SkillPin(
+            name=asset.skill_id, semantic_version=asset.version,
+            source_type="BUNDLED_REAGENT_ORIGINAL",
+            source_identity=asset.content_source_identity,
+            checksum=asset.content_checksum, relative_path=skill_path,
+            required_capabilities=asset.required_capabilities,
+        ),)
+        prompt_path = "workflow/prompts/writing-revision.md"
+        prompt_id = "review-to-writing-revision"
+        prompt_version = WRITING_REVISION_PROMPT_VERSION
+        outputs = ()
+        inputs = (PackageInputManifest(
+            "local-project-display", "inputs/project.json",
+            sha256_bytes(files["inputs/project.json"].content), True,
+            "application/json", "CLOUD_SUPPLIED",
+        ),)
+        continuation = "ONE ROUND; EXACT REVISION PLAN APPROVAL AND OWNER-REVIEWED REVISION"
+        proxy = "NO NETWORK; EXACT CAUSAL REVIEW AND BOUND EVIDENCE; LOCAL CODEX REVISION ONLY"
     elif (
         workflow_id == WRITING_WORKFLOW_ID
         and workflow_version == REAL_WRITING_WORKFLOW_VERSION
@@ -3430,6 +3644,18 @@ def build_real_writing_v0_5_package(**kwargs) -> BuildResult:
         template_id=WRITING_TEMPLATE_ID,
         workflow_version=REAL_WRITING_WORKFLOW_VERSION,
         capsule_version=REAL_WRITING_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_writing_revision_v0_6_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_writing_revision_files,
+        workflow_id=WRITING_WORKFLOW_ID,
+        workflow_type="Writing",
+        template_id=WRITING_TEMPLATE_ID,
+        workflow_version=WRITING_REVISION_WORKFLOW_VERSION,
+        capsule_version=WRITING_REVISION_CAPSULE_VERSION,
         **kwargs,
     )
 

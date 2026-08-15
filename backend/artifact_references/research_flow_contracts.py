@@ -23,6 +23,8 @@ MANUSCRIPT_DRAFT_TYPE = "manuscript-draft/v1"
 MANUSCRIPT_DRAFT_SCHEMA = "manuscript-draft/v1"
 MANUSCRIPT_DRAFT_V2_TYPE = "manuscript-draft/v2"
 MANUSCRIPT_DRAFT_V2_SCHEMA = "manuscript-draft/v2"
+MANUSCRIPT_DRAFT_V3_TYPE = "manuscript-draft/v3"
+MANUSCRIPT_DRAFT_V3_SCHEMA = "manuscript-draft/v3"
 REVIEW_REPORT_TYPE = "review-report/v1"
 REVIEW_REPORT_SCHEMA = "review-report/v1"
 REVIEW_REPORT_V2_TYPE = "review-report/v2"
@@ -57,6 +59,7 @@ _REVIEW_ASSESSMENTS = {
     "NO_BLOCKING_ISSUES", "REVISION_REQUIRED", "INSUFFICIENT_EVIDENCE",
 }
 _REVIEW_AVAILABILITY = {"AVAILABLE", "UNAVAILABLE", "SCOPE_LIMITED"}
+_REVISION_DISPOSITIONS = {"ADDRESSED", "PARTIALLY_ADDRESSED", "NOT_ADDRESSED"}
 _EXPERIMENT_MODES = {"IDEA_EXPERIMENT", "PAPER_REPRODUCTION"}
 _EXECUTION_STATUSES = {
     "PLACEHOLDER_NOT_EXECUTED", "PLANNED", "RUNNING", "COMPLETED", "FAILED"
@@ -603,6 +606,226 @@ def validate_review_report_v2(
         "summary": result["summary"],
         "issues": issues,
         "limitations": limitations,
+        "owner_review": dict(owner_review),
+    }
+
+
+def validate_manuscript_draft_v3(
+    value: Mapping[str, Any],
+    *,
+    prior_manuscript: Mapping[str, Any] | None = None,
+    causal_review: Mapping[str, Any] | None = None,
+    bound_inputs: Mapping[str, Any] | None = None,
+    literature_library: Mapping[str, Any] | None = None,
+    experiment_record: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate one evidence-bound Review-to-Writing revision round."""
+
+    result = _object(value, "manuscript draft v3")
+    _exact_keys(result, {
+        "schema", "core_capability_maturity", "producer", "prior_manuscript",
+        "causal_review", "supporting_artifacts", "revision_round", "writing_brief",
+        "title", "content_markdown", "claims", "citations",
+        "experiment_evidence_available", "unsupported_areas", "limitations",
+        "revision_plan", "revision_plan_approval", "issue_accounting",
+        "remaining_blocking_issue_ids", "remaining_blocking_issue_count",
+        "revision_limitations", "owner_review",
+    }, "manuscript draft v3")
+    if result["schema"] != MANUSCRIPT_DRAFT_V3_SCHEMA:
+        raise ResearchFlowContractError("manuscript draft v3 schema mismatch")
+    if _maturity(result["core_capability_maturity"]) is not CoreCapabilityMaturity.REVIEWED_CORE:
+        raise ResearchFlowContractError("Writing revision output requires REVIEWED_CORE")
+
+    producer = _object(result["producer"], "Writing revision producer")
+    _exact_keys(producer, {
+        "workflow_instance_id", "capsule_id", "capsule_version", "execution_round",
+    }, "Writing revision producer")
+    if not _WORKFLOW_INSTANCE_ID.fullmatch(str(producer["workflow_instance_id"])):
+        raise ResearchFlowContractError("Writing revision producer Workflow Instance is invalid")
+    if not _CAPSULE_ID.fullmatch(str(producer["capsule_id"])):
+        raise ResearchFlowContractError("Writing revision producer Capsule is invalid")
+    _nonempty(producer["capsule_version"], "Writing revision producer Capsule version")
+    if producer["execution_round"] != 1 or result["revision_round"] != 1:
+        raise ResearchFlowContractError("W2 supports exactly one revision round")
+
+    prior_ref = _artifact_ref(
+        result["prior_manuscript"], expected_type=MANUSCRIPT_DRAFT_V2_TYPE,
+        label="prior manuscript",
+    )
+    review_ref = _artifact_ref(
+        result["causal_review"], expected_type=REVIEW_REPORT_V2_TYPE,
+        label="causal review",
+    )
+    supporting = _artifact_ref_list(result["supporting_artifacts"], "revision supporting Artifacts")
+    allowed_support = {
+        SELECTED_RESEARCH_IDEA_TYPE, SELECTED_PAPER_LIBRARY_TYPE,
+        EXPERIMENT_RECORD_V2_TYPE,
+    }
+    if any(item["artifact_type"] not in allowed_support for item in supporting):
+        raise ResearchFlowContractError("revision supporting Artifact type is invalid")
+    if len({item["artifact_type"] for item in supporting}) != len(supporting):
+        raise ResearchFlowContractError("revision supporting Artifact roles must be unique")
+    if bound_inputs is not None:
+        exact = dict(bound_inputs)
+        if exact.get("prior_manuscript") != prior_ref or exact.get("causal_review") != review_ref:
+            raise ResearchFlowContractError("revision lineage differs from exact bindings")
+        exact_support = [exact[key] for key in (
+            "research_idea", "literature_library", "experiment_record"
+        ) if exact.get(key) is not None]
+        if supporting != exact_support:
+            raise ResearchFlowContractError("revision support differs from exact bindings")
+
+    prior = None if prior_manuscript is None else validate_manuscript_draft_v2(
+        prior_manuscript,
+        literature_library=literature_library,
+        experiment_record=experiment_record,
+    )
+    review = None if causal_review is None else validate_review_report_v2(
+        causal_review, manuscript=prior_manuscript,
+    )
+    if review is not None and review["source_manuscript"] != prior_ref:
+        raise ResearchFlowContractError("causal Review refers to a different prior manuscript")
+    if review is not None and review["supporting_artifacts"] != supporting:
+        raise ResearchFlowContractError("causal Review support differs from revision support")
+    if review is not None and review["assessment"] == "INSUFFICIENT_EVIDENCE":
+        raise ResearchFlowContractError("INSUFFICIENT_EVIDENCE has no W2 revision action")
+    if review is not None and review["assessment"] == "NO_BLOCKING_ISSUES" and not review["issues"]:
+        raise ResearchFlowContractError("clean Review has no legitimate revision action")
+
+    source_roles = {
+        "research_idea": next((item for item in supporting if item["artifact_type"] == SELECTED_RESEARCH_IDEA_TYPE), None),
+        "literature_library": next((item for item in supporting if item["artifact_type"] == SELECTED_PAPER_LIBRARY_TYPE), None),
+        "experiment_record": next((item for item in supporting if item["artifact_type"] == EXPERIMENT_RECORD_V2_TYPE), None),
+    }
+    if source_roles["research_idea"] is None or source_roles["literature_library"] is None:
+        raise ResearchFlowContractError("revision requires exact Idea and literature support")
+    if prior is not None and prior["source_artifacts"] != source_roles:
+        raise ResearchFlowContractError("revision support differs from prior manuscript lineage")
+
+    brief = _writing_brief(result["writing_brief"])
+    if prior is not None and brief != prior["writing_brief"]:
+        raise ResearchFlowContractError("revision changed the approved Writing Brief")
+    _nonempty(result["title"], "revised manuscript title")
+    _nonempty(result["content_markdown"], "revised manuscript content")
+    citations = _writing_citations(
+        result["citations"], source_roles["literature_library"], literature_library,
+    )
+    claims = _writing_claims(
+        result["claims"], source_roles, citations, experiment_record=experiment_record,
+    )
+    experiment_available = source_roles["experiment_record"] is not None
+    if result["experiment_evidence_available"] is not experiment_available:
+        raise ResearchFlowContractError("revision Experiment evidence availability is inconsistent")
+
+    plan = _checksummed_list(result["revision_plan"], "Revision Plan")
+    plan_issue_ids: list[str] = []
+    for raw in plan["value"]:
+        item = _object(raw, "Revision Plan item")
+        _exact_keys(item, {
+            "issue_id", "intended_disposition", "planned_change", "affected_section",
+            "affected_claims", "evidence_to_use", "known_limitation",
+        }, "Revision Plan item")
+        _nonempty(item["issue_id"], "Revision Plan issue ID")
+        if item["issue_id"] in plan_issue_ids:
+            raise ResearchFlowContractError("Revision Plan issue is duplicated")
+        plan_issue_ids.append(item["issue_id"])
+        if item["intended_disposition"] not in _REVISION_DISPOSITIONS:
+            raise ResearchFlowContractError("Revision Plan disposition is invalid")
+        _nonempty(item["planned_change"], "Revision Plan change")
+        _nonempty(item["affected_section"], "Revision Plan section")
+        affected_claims = _string_list(item["affected_claims"], "Revision Plan claims")
+        if any(claim not in {entry["claim_id"] for entry in claims} for claim in affected_claims):
+            raise ResearchFlowContractError("Revision Plan targets an unknown revised claim")
+        _bounded_evidence_refs(item["evidence_to_use"], source_roles)
+        if item["intended_disposition"] in {"PARTIALLY_ADDRESSED", "NOT_ADDRESSED"}:
+            _nonempty(item["known_limitation"], "Revision Plan limitation")
+        elif item["known_limitation"] is not None:
+            _nonempty(item["known_limitation"], "Revision Plan limitation")
+
+    expected_issue_ids = [] if review is None else [item["issue_id"] for item in review["issues"]]
+    if review is not None and set(plan_issue_ids) != set(expected_issue_ids):
+        raise ResearchFlowContractError("Revision Plan must account for every causal Review issue")
+    approval = _object(result["revision_plan_approval"], "Revision Plan approval")
+    _exact_keys(approval, {
+        "sha256", "prior_manuscript_sha256", "causal_review_sha256",
+        "issue_set_sha256", "revision_plan_sha256", "supporting_artifacts_sha256",
+        "approved_at", "decision",
+    }, "Revision Plan approval")
+    approval_payload = dict(approval)
+    approval_checksum = approval_payload.pop("sha256")
+    _checksum(approval_checksum, "Revision Plan approval checksum")
+    if canonical_hash(approval_payload) != approval_checksum:
+        raise ResearchFlowContractError("Revision Plan approval checksum mismatch")
+    if (
+        approval["prior_manuscript_sha256"] != prior_ref["sha256"]
+        or approval["causal_review_sha256"] != review_ref["sha256"]
+        or approval["revision_plan_sha256"] != plan["sha256"]
+        or approval["supporting_artifacts_sha256"] != canonical_hash(supporting)
+        or approval["decision"] != "APPROVED"
+    ):
+        raise ResearchFlowContractError("Revision Plan approval does not bind exact inputs")
+    if review is not None and approval["issue_set_sha256"] != canonical_hash(review["issues"]):
+        raise ResearchFlowContractError("Revision Plan approval does not bind the exact issue set")
+    _checksum(approval["issue_set_sha256"], "Revision Plan issue-set checksum")
+    _time(approval["approved_at"], "Revision Plan approval time")
+
+    accounting = _revision_issue_accounting(
+        result["issue_accounting"], review_issues=None if review is None else review["issues"],
+        revised_claims=claims,
+    )
+    remaining = _string_list(result["remaining_blocking_issue_ids"], "remaining blocking issue IDs")
+    if set(plan_issue_ids) != {item["issue_id"] for item in accounting}:
+        raise ResearchFlowContractError("Revision Plan and issue accounting differ")
+    expected_remaining = None if review is None else [
+        issue["issue_id"] for issue in review["issues"]
+        if issue["blocking"] and next(
+            item["disposition"] for item in accounting if item["issue_id"] == issue["issue_id"]
+        ) != "ADDRESSED"
+    ]
+    if (
+        (expected_remaining is not None and remaining != expected_remaining)
+        or len(remaining) != len(set(remaining))
+        or any(item not in plan_issue_ids for item in remaining)
+        or result["remaining_blocking_issue_count"] != len(remaining)
+    ):
+        raise ResearchFlowContractError("remaining blocking issue accounting is inconsistent")
+
+    owner_review = _object(result["owner_review"], "revision owner review")
+    _exact_keys(owner_review, {
+        "sha256", "revised_draft_sha256", "issue_accounting_sha256",
+        "reviewed_at", "decision",
+    }, "revision owner review")
+    owner_payload = dict(owner_review)
+    owner_checksum = owner_payload.pop("sha256")
+    _checksum(owner_checksum, "revision owner review checksum")
+    if canonical_hash(owner_payload) != owner_checksum or owner_review["decision"] != "APPROVED":
+        raise ResearchFlowContractError("revision owner review is not exact and approved")
+    expected_draft = canonical_hash({
+        "title": result["title"], "content_markdown": result["content_markdown"],
+        "claims": claims, "citations": citations,
+    })
+    if (
+        owner_review["revised_draft_sha256"] != expected_draft
+        or owner_review["issue_accounting_sha256"] != canonical_hash(accounting)
+    ):
+        raise ResearchFlowContractError("Owner review does not bind the exact revision")
+    _time(owner_review["reviewed_at"], "revision owner review time")
+
+    return {
+        "schema": MANUSCRIPT_DRAFT_V3_SCHEMA,
+        "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+        "producer": dict(producer), "prior_manuscript": prior_ref,
+        "causal_review": review_ref, "supporting_artifacts": supporting,
+        "revision_round": 1, "writing_brief": brief, "title": result["title"],
+        "content_markdown": result["content_markdown"], "claims": claims,
+        "citations": citations, "experiment_evidence_available": experiment_available,
+        "unsupported_areas": _string_list(result["unsupported_areas"], "revision unsupported areas"),
+        "limitations": _string_list(result["limitations"], "revision limitations"),
+        "revision_plan": plan, "revision_plan_approval": dict(approval),
+        "issue_accounting": accounting,
+        "remaining_blocking_issue_ids": remaining,
+        "remaining_blocking_issue_count": len(remaining),
+        "revision_limitations": _string_list(result["revision_limitations"], "explicit revision limitations"),
         "owner_review": dict(owner_review),
     }
 
@@ -1358,6 +1581,52 @@ def _review_issues(
     return result
 
 
+def _revision_issue_accounting(
+    value: Any,
+    *,
+    review_issues: list[dict[str, Any]] | None,
+    revised_claims: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value or len(value) > 100:
+        raise ResearchFlowContractError("issue accounting must be a non-empty bounded array")
+    review_by_id = {} if review_issues is None else {
+        item["issue_id"]: item for item in review_issues
+    }
+    claim_ids = {item["claim_id"] for item in revised_claims}
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in value:
+        item = _object(raw, "issue accounting item")
+        _exact_keys(item, {
+            "issue_id", "disposition", "change_summary", "changed_sections",
+            "changed_claims", "remaining_limitation",
+        }, "issue accounting item")
+        _nonempty(item["issue_id"], "issue accounting ID")
+        if item["issue_id"] in seen:
+            raise ResearchFlowContractError("Review issue is accounted more than once")
+        if review_issues is not None and item["issue_id"] not in review_by_id:
+            raise ResearchFlowContractError("issue accounting invents a Review issue")
+        seen.add(item["issue_id"])
+        if item["disposition"] not in _REVISION_DISPOSITIONS:
+            raise ResearchFlowContractError("revision disposition is invalid")
+        _nonempty(item["change_summary"], "revision change summary")
+        sections = _string_list(item["changed_sections"], "changed sections")
+        claims = _string_list(item["changed_claims"], "changed claims")
+        if any(claim not in claim_ids for claim in claims):
+            raise ResearchFlowContractError("issue accounting targets an unknown revised claim")
+        limitation = item["remaining_limitation"]
+        if item["disposition"] in {"PARTIALLY_ADDRESSED", "NOT_ADDRESSED"}:
+            _nonempty(limitation, "remaining revision limitation")
+        elif limitation is not None:
+            _nonempty(limitation, "remaining revision limitation")
+        result.append({
+            **dict(item), "changed_sections": sections, "changed_claims": claims,
+        })
+    if review_issues is not None and seen != set(review_by_id):
+        raise ResearchFlowContractError("every causal Review issue must be accounted exactly once")
+    return result
+
+
 def _reject_publication_semantics(value: str, label: str) -> None:
     prohibited = re.compile(
         r"\b(?:ACCEPT|REJECT|WEAK_ACCEPT|WEAK_REJECT)\b|"
@@ -1608,6 +1877,10 @@ ARTIFACT_CONTRACTS: Mapping[str, ArtifactContract] = MappingProxyType({
     MANUSCRIPT_DRAFT_V2_TYPE: ArtifactContract(
         MANUSCRIPT_DRAFT_V2_TYPE, MANUSCRIPT_DRAFT_V2_SCHEMA,
         JSON_MEDIA_TYPE, validate_manuscript_draft_v2, True,
+    ),
+    MANUSCRIPT_DRAFT_V3_TYPE: ArtifactContract(
+        MANUSCRIPT_DRAFT_V3_TYPE, MANUSCRIPT_DRAFT_V3_SCHEMA,
+        JSON_MEDIA_TYPE, validate_manuscript_draft_v3, True,
     ),
     REVIEW_REPORT_TYPE: ArtifactContract(
         REVIEW_REPORT_TYPE, REVIEW_REPORT_SCHEMA,

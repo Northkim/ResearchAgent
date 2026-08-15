@@ -98,6 +98,10 @@ SUPPORTED_CAPSULE_PINS = {
         "writing-scaffold-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.4.0", "0.6.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
     ("review-local-experimental", "0.1.0", "0.1.0"): (
         "review-scaffold-package-experimental",
         False,
@@ -1051,6 +1055,7 @@ def _declared_dynamic_input_paths(
         "workflow/real-experiment.json",
         "workflow/real-writing.json",
         "workflow/real-review.json",
+        "workflow/writing-revision.json",
     ):
         descriptor_entry = declared.get(descriptor_path)
         if descriptor_entry is None:
@@ -1096,6 +1101,7 @@ def _declared_runtime_dynamic_paths(
     paths: set[str] = set()
     for descriptor_path in (
         "workflow/real-writing.json", "workflow/real-review.json",
+        "workflow/writing-revision.json",
     ):
         descriptor_entry = declared.get(descriptor_path)
         if descriptor_entry is None:
@@ -4579,10 +4585,13 @@ def run_workflow(
         is_real_review = pin == (
             "review-local-experimental", "0.3.0", "0.5.0"
         )
+        is_writing_revision = pin == (
+            "writing-local-experimental", "0.4.0", "0.6.0"
+        )
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
         local_reports: list[dict[str, Any]] = []
-        if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review):
+        if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review or is_writing_revision):
             readiness = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -4702,6 +4711,23 @@ def run_workflow(
                 workflow_instance_id=workflow_instance_id,
                 transport=transport,
                 real_writing=True,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
+        elif is_writing_revision:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                writing_revision=True,
             )
             command.extend([
                 "run", ".", "--workflow-instance", workflow_instance_id,
@@ -4842,7 +4868,7 @@ def run_workflow(
             check=False,
         )
         if completed.returncode != 0:
-            if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review):
+            if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review or is_writing_revision):
                 recovered = _evaluate_local_progress_readiness(
                     workspace=workspace,
                     descriptor=descriptor,
@@ -4880,7 +4906,7 @@ def run_workflow(
                 "Workflow local Harness did not complete successfully",
                 EXIT_VALIDATION,
             )
-        if not preflight_only and (is_real_experiment or is_real_writing or is_real_review):
+        if not preflight_only and (is_real_experiment or is_real_writing or is_real_review or is_writing_revision):
             recovered = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -5264,19 +5290,21 @@ def _prepare_scaffold_input_provenance(
     *, workspace: Path, descriptor: dict[str, Any], capsule: Path,
     workflow_instance_id: str, transport: Any, real_experiment: bool = False,
     real_writing: bool = False, real_review: bool = False,
+    writing_revision: bool = False,
 ) -> None:
-    if sum((real_experiment, real_writing, real_review)) > 1:
+    if sum((real_experiment, real_writing, real_review, writing_revision)) > 1:
         raise _identity("LOCAL_CAPSULE_DRIFT", "reviewed Workflow descriptor is ambiguous")
     descriptor_path = (
         "workflow/real-experiment.json" if real_experiment
         else "workflow/real-writing.json" if real_writing
         else "workflow/real-review.json" if real_review
+        else "workflow/writing-revision.json" if writing_revision
         else "workflow/scaffold.json"
     )
     config = _read_json(capsule / descriptor_path)
     if (
         config.get("core_capability_maturity")
-        != ("REVIEWED_CORE" if (real_experiment or real_writing or real_review) else "SCAFFOLD_CORE")
+        != ("REVIEWED_CORE" if (real_experiment or real_writing or real_review or writing_revision) else "SCAFFOLD_CORE")
         or config.get("workflow_id") not in {
             "writing-local-experimental", "review-local-experimental",
             "reproduction-experiment-local-experimental",
@@ -5358,7 +5386,7 @@ def _prepare_scaffold_input_provenance(
             "artifact_type": item["artifact_type"],
             "sha256": item["expected_checksum"],
         }
-        if not (real_experiment or real_writing or real_review):
+        if not (real_experiment or real_writing or real_review or writing_revision):
             records[key]["relative_path"] = item["target_relative_path"]
     _atomic_write_json(capsule / "memory/input-provenance.json", {
         "schema_version": (
@@ -5368,6 +5396,8 @@ def _prepare_scaffold_input_provenance(
             if real_writing
             else "reagent.real-review-input-provenance/v0.1"
             if real_review
+            else "reagent.writing-revision-input-provenance/v0.1"
+            if writing_revision
             else "reagent.scaffold-input-provenance/v0.1"
         ),
         "workflow_instance_id": workflow_instance_id,
@@ -5815,6 +5845,7 @@ def _evaluate_local_progress_readiness(
         ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
         ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
         ("writing-local-experimental", "0.3.0", "0.5.0"),
+        ("writing-local-experimental", "0.4.0", "0.6.0"),
         ("review-local-experimental", "0.3.0", "0.5.0"),
     }:
         try:

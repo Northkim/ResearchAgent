@@ -41,6 +41,11 @@ from backend.workflow_packages.production_workflows import (
     REAL_REVIEW_CAPSULE_VERSION,
     REAL_REVIEW_REQUIREMENTS,
     REAL_REVIEW_WORKFLOW_VERSION,
+    WRITING_REVISION_CAPSULE_CHECKSUM as PACKAGE_WRITING_REVISION_CAPSULE_CHECKSUM,
+    WRITING_REVISION_CAPSULE_ID as PACKAGE_WRITING_REVISION_CAPSULE_ID,
+    WRITING_REVISION_CAPSULE_VERSION,
+    WRITING_REVISION_REQUIREMENTS,
+    WRITING_REVISION_WORKFLOW_VERSION,
     LITERATURE_SEARCH_CAPSULE_VERSION,
     LITERATURE_SEARCH_TEMPLATE_ID,
     LITERATURE_SEARCH_WORKFLOW_ID,
@@ -49,6 +54,7 @@ from backend.workflow_packages.production_workflows import (
     SELECTED_PAPER_LIBRARY_TYPE,
     MANUSCRIPT_DRAFT_TYPE,
     MANUSCRIPT_DRAFT_V2_TYPE,
+    MANUSCRIPT_DRAFT_V3_TYPE,
     REVIEW_REPORT_TYPE,
     REVIEW_REPORT_V2_TYPE,
     REVIEW_REQUIREMENTS,
@@ -70,6 +76,7 @@ from backend.workflow_packages.production_workflows import (
     real_experiment_contract_checksum,
     real_writing_contract_checksum,
     real_review_contract_checksum,
+    writing_revision_contract_checksum,
     selected_paper_library_output_contract,
     selected_research_idea_output_contract,
     scaffold_contract_checksum,
@@ -512,6 +519,8 @@ REAL_WRITING_CAPSULE_CHECKSUM = PACKAGE_REAL_WRITING_CAPSULE_CHECKSUM
 REAL_WRITING_CAPSULE_ID = PACKAGE_REAL_WRITING_CAPSULE_ID
 REAL_REVIEW_CAPSULE_CHECKSUM = PACKAGE_REAL_REVIEW_CAPSULE_CHECKSUM
 REAL_REVIEW_CAPSULE_ID = PACKAGE_REAL_REVIEW_CAPSULE_ID
+WRITING_REVISION_CAPSULE_CHECKSUM = PACKAGE_WRITING_REVISION_CAPSULE_CHECKSUM
+WRITING_REVISION_CAPSULE_ID = PACKAGE_WRITING_REVISION_CAPSULE_ID
 
 
 def literature_search_definition_version(now: datetime) -> WorkflowDefinitionVersion:
@@ -1320,6 +1329,85 @@ def real_writing_artifact_requirements(now: datetime) -> tuple[WorkflowArtifactR
             updated_at=now,
         )
         for item in REAL_WRITING_REQUIREMENTS
+    )
+
+
+def writing_revision_definition_version(now: datetime) -> WorkflowDefinitionVersion:
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=WRITING_WORKFLOW_ID,
+        version=WRITING_REVISION_WORKFLOW_VERSION,
+        contract_checksum=writing_revision_contract_checksum(),
+        input_schema_id="artifact-bindings/v0.1",
+        output_schema_id=MANUSCRIPT_DRAFT_V3_TYPE,
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "artifact_requirements": list(WRITING_REVISION_REQUIREMENTS),
+            "artifact_outputs": [scaffold_output_contract(MANUSCRIPT_DRAFT_V3_TYPE)],
+            "supported_mode": "REVIEW_TO_WRITING_REVISION_ROUND_ONE",
+            "revision_dispositions": [
+                "ADDRESSED", "PARTIALLY_ADDRESSED", "NOT_ADDRESSED",
+            ],
+            "default_project_setup": False,
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
+        published_at=now, created_at=now, updated_at=now,
+    )
+
+
+def writing_revision_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    asset = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    return WorkflowCapsuleVersion(
+        capsule_id=WRITING_REVISION_CAPSULE_ID,
+        capsule_version=WRITING_REVISION_CAPSULE_VERSION,
+        workflow_definition_id=WRITING_WORKFLOW_ID,
+        workflow_version=WRITING_REVISION_WORKFLOW_VERSION,
+        definition_checksum=WRITING_REVISION_CAPSULE_CHECKSUM,
+        archive_size_bytes=0, archive_media_type="application/zip",
+        mutable_roots=(
+            "memory/context.md", "memory/progress", "memory/input-provenance.json",
+            "memory/revision-plan.json", "memory/revision-plan-approval.json",
+            "memory/claims.json", "memory/citations.json",
+            "memory/issue-accounting.json", "memory/owner-review.json",
+            "memory/current-artifact.json", "outputs", "inputs",
+        ),
+        capability_requirements=(
+            "progress.upload/v0.2", "artifact.materialize/v0.1",
+            "artifact.publish/v0.1",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": WRITING_TEMPLATE_ID,
+            "trust_classification": CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value,
+            "artifact_requirements": list(WRITING_REVISION_REQUIREMENTS),
+            "artifact_outputs": [scaffold_output_contract(MANUSCRIPT_DRAFT_V3_TYPE)],
+            "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+            "skill_pins": [{
+                "skill_id": asset.skill_id, "skill_version": asset.version,
+                "skill_checksum": asset.content_checksum, "trust": "BUILT_IN_REVIEWED",
+            }],
+            "interaction_boundary": "EXACT_REVISION_PLAN_AND_FINAL_DRAFT_CHECKPOINTS",
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False, created_at=now, updated_at=now,
+    )
+
+
+def writing_revision_artifact_requirements(now: datetime) -> tuple[WorkflowArtifactRequirement, ...]:
+    return tuple(
+        WorkflowArtifactRequirement(
+            workflow_definition_id=WRITING_WORKFLOW_ID,
+            workflow_version=WRITING_REVISION_WORKFLOW_VERSION,
+            requirement_key=item["requirement_key"], artifact_type=item["artifact_type"],
+            compatibility_mode=CompatibilityMode.EXACT,
+            schema_constraint=item["artifact_schema"],
+            cardinality_min=1 if item["required"] else 0, cardinality_max=1,
+            required=item["required"],
+            materialization_mode=MaterializationMode.VERIFIED_COPY,
+            target_relative_path=item["target_relative_path"],
+            created_at=now, updated_at=now,
+        )
+        for item in WRITING_REVISION_REQUIREMENTS
     )
 
 

@@ -82,6 +82,9 @@ from .production_workflows import (
     real_review_artifact_requirements,
     real_review_capsule,
     real_review_definition_version,
+    writing_revision_artifact_requirements,
+    writing_revision_capsule,
+    writing_revision_definition_version,
 )
 from backend.workflow_packages.production_workflows import (
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
@@ -92,6 +95,7 @@ from backend.workflow_packages.production_workflows import (
     REAL_EXPERIMENT_WORKFLOW_VERSION,
     REAL_WRITING_WORKFLOW_VERSION,
     REAL_REVIEW_WORKFLOW_VERSION,
+    WRITING_REVISION_WORKFLOW_VERSION,
     REVIEW_WORKFLOW_ID,
     WRITING_WORKFLOW_ID,
 )
@@ -493,6 +497,25 @@ def ensure_production_workflow_foundation(
         elif _requirement_content(existing) != _requirement_content(requirement):
             raise WorkflowFoundationConflictError(
                 "Real Writing Artifact requirement immutable-content conflict"
+            )
+    repository.add_definition_version(writing_revision_definition_version(timestamp))
+    repository.add_capsule_version(writing_revision_capsule(timestamp))
+    for pin in production_skill_pins(
+        WRITING_WORKFLOW_ID, WRITING_REVISION_WORKFLOW_VERSION, timestamp
+    ):
+        if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
+            repository.add_workflow_skill_pin(pin)
+    for requirement in writing_revision_artifact_requirements(timestamp):
+        existing = uow.artifact_references.get_requirement(
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+        )
+        if existing is None:
+            uow.artifact_references.add_requirement(requirement)
+        elif _requirement_content(existing) != _requirement_content(requirement):
+            raise WorkflowFoundationConflictError(
+                "Writing Revision Artifact requirement immutable-content conflict"
             )
     repository.add_definition_version(real_review_definition_version(timestamp))
     repository.add_capsule_version(real_review_capsule(timestamp))

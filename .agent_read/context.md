@@ -2,6 +2,31 @@
 
 Last updated: 2026-08-15
 
+## W2 Review-to-Writing revision integration
+
+Writing Revision is published as reviewed Definition 0.4.0 / Capsule 0.6.0 with
+immutable `manuscript-draft/v3`; historical Writing and manuscript v1/v2 remain
+unchanged. One exact v2 prior Draft and its exact causal `review-report/v2` are
+required. Exact Idea/Literature and optional Experiment support must be explicitly
+bound and match prior Draft lineage. No auto-latest, evidence acquisition, or
+sibling Workflow private-file access is permitted.
+
+Codex accounts for every structured Review issue exactly once, proposes an exact
+Revision Plan, waits for checksum approval, revises only within approved scope,
+rechecks W1 claim/citation truth, records ADDRESSED/PARTIALLY_ADDRESSED/
+NOT_ADDRESSED, exposes remaining blocking issue IDs, and waits for final Owner
+review. Workflow completion means one revision pass completed, not that Review
+issues were scientifically resolved.
+
+Controlled public Workspace qualification passed addressable and missing-evidence
+scenarios with exact v3, Progress, Cloud projection, exactly-once, and cleanup.
+Bounded Real Codex completed the addressable issue path through both Owner
+checkpoints and public Cloud promotion. Focused disposable-PostgreSQL qualification
+passed 47 tests, Alembic autogenerate was clean, and the database was dropped.
+Sole head is `20260815_0026`. ADR 0040 and the W2 progress report contain durable
+details. `W2_STATUS = COMPLETE`; next phase is FE-M Incremental Frontend
+Integration.
+
 ## R1 Real Review structured evidence audit
 
 Real Review is published as reviewed Definition 0.3.0 / Capsule 0.5.0 with
