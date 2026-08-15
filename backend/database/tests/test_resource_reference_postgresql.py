@@ -58,5 +58,70 @@ def test_postgresql_resource_reference_and_exact_binding_reload(
     reloaded = sql_uow_factory()
     assert reloaded.resource_references.get_resource(resource.resource_id) == resource
     assert reloaded.resource_references.get_binding(binding.binding_id) == binding
-    assert len(reloaded.resource_references.list_requirements()) == 4
+    actual_requirements = {
+        (
+            requirement.workflow_definition_id,
+            requirement.workflow_version,
+            requirement.requirement_key,
+            requirement.resource_kind.value,
+            requirement.cardinality_min,
+            requirement.cardinality_max,
+            requirement.required,
+            frozenset(provider.value for provider in requirement.allowed_providers),
+        )
+        for requirement in reloaded.resource_references.list_requirements()
+    }
+    expected_requirements = {
+        (
+            "reproduction-experiment-local-experimental",
+            "0.3.0",
+            "source_repository",
+            "SOURCE_REPOSITORY",
+            0,
+            1,
+            False,
+            frozenset({"GITHUB", "LOCAL_TEST"}),
+        ),
+        (
+            "reproduction-experiment-local-experimental",
+            "0.3.0",
+            "dataset",
+            "DATASET",
+            0,
+            1,
+            False,
+            frozenset({"HUGGING_FACE", "LOCAL_TEST"}),
+        ),
+        (
+            "reproduction-experiment-local-experimental",
+            "0.3.0",
+            "model",
+            "MODEL",
+            0,
+            1,
+            False,
+            frozenset({"HUGGING_FACE", "LOCAL_TEST"}),
+        ),
+        (
+            "reproduction-experiment-local-experimental",
+            "0.3.0",
+            "checkpoint",
+            "CHECKPOINT",
+            0,
+            1,
+            False,
+            frozenset({"HUGGING_FACE", "LOCAL_TEST"}),
+        ),
+        (
+            "reproduction-experiment-local-experimental",
+            "0.4.0",
+            "source_repository",
+            "SOURCE_REPOSITORY",
+            1,
+            1,
+            True,
+            frozenset({"GITHUB"}),
+        ),
+    }
+    assert actual_requirements == expected_requirements
     reloaded.close()
