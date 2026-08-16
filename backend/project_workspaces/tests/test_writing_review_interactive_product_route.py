@@ -135,11 +135,17 @@ def test_workspace_root_interactive_writing_review_revision_chain(
         base_url=base_url, timeout=30
     ) as client:
         created = client.post("/projects", json={
-            "name": "Interactive Writing Review chain",
-            "research_topic": "Synthetic immutable revision qualification",
-            "selected_workflow": "LITERATURE_SEARCH",
-            "workflow_setup": "full-research",
-        })
+                "name": "Interactive Writing Review chain",
+                "research_topic": "Synthetic immutable revision qualification",
+                "selected_workflow": "LITERATURE_SEARCH",
+                "workflow_setup": "custom",
+                "custom_workflow_definition_ids": [
+                    "literature-search-local-experimental",
+                    "idea-discovery-local-experimental",
+                    WRITING_WORKFLOW_ID,
+                    REVIEW_WORKFLOW_ID,
+                ],
+            })
         assert created.status_code == 201, created.text
         project_id = created.json()["project_id"]
         instances = {

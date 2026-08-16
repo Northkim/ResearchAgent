@@ -57,7 +57,7 @@ test("keeps each setup radio inside one coherent accessible option row", async (
   expect(screen.getByRole("radio", { name: /Literature Search only/ })).toBeChecked();
 });
 
-test("discloses scaffold cores before creating the full research preset", async () => {
+test("describes and creates the released full research preset", async () => {
   const user = userEvent.setup();
   vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue(workflowCatalogFixture);
   const create = vi.spyOn(apiClient, "createProject").mockResolvedValue(localProjectFixture);
@@ -65,8 +65,9 @@ test("discloses scaffold cores before creating the full research preset", async 
   await user.type(screen.getByRole("textbox", { name: /^Project name/ }), "Full product test");
   await user.type(screen.getByRole("textbox", { name: /^Fictional or public research topic/ }), "Public synthetic topic");
   await user.click(screen.getByRole("radio", { name: /Full Research Project/ }));
-  expect(screen.getByText("Includes prototype cores")).toBeVisible();
-  expect(screen.getByText(/No substantive manuscript/)).toBeVisible();
+  expect(screen.getByText(/experiment, evidence-bound writing, and structured review/)).toBeVisible();
+  expect(screen.queryByText(/prototype cores/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/scaffold outputs/i)).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Create project" }));
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ workflow_setup: "full-research" }));
 });

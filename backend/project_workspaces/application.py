@@ -15,6 +15,24 @@ from backend.application.errors import (
 )
 from backend.local_projects import LocalProject
 from backend.persistence.ports import UnitOfWork
+from backend.workflow_packages.production_workflows import (
+    EXPERIMENT_WORKFLOW_ID,
+    IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
+    IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+    IDEA_DISCOVERY_WORKFLOW_ID,
+    LITERATURE_SEARCH_CAPSULE_VERSION,
+    LITERATURE_SEARCH_WORKFLOW_ID,
+    LITERATURE_SEARCH_WORKFLOW_VERSION,
+    REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+    REAL_EXPERIMENT_V0_7_CAPSULE_ID,
+    REAL_EXPERIMENT_WORKFLOW_VERSION,
+    REAL_REVIEW_CAPSULE_VERSION,
+    REAL_REVIEW_WORKFLOW_VERSION,
+    REAL_WRITING_CAPSULE_VERSION,
+    REAL_WRITING_WORKFLOW_VERSION,
+    REVIEW_WORKFLOW_ID,
+    WRITING_WORKFLOW_ID,
+)
 
 from .contracts import (
     CloudProject,
@@ -37,11 +55,51 @@ from .legacy import (
     workspace_id_for_project,
 )
 from .manifest import build_desired_manifest, mutation_idempotency_key
-from .presets import resolve_project_setup
+from .presets import FULL_RESEARCH, resolve_project_setup
+from .production_workflows import (
+    IDEA_DISCOVERY_V0_3_CAPSULE_ID,
+    LITERATURE_SEARCH_V0_6_CAPSULE_ID,
+    REAL_REVIEW_CAPSULE_ID,
+    REAL_WRITING_CAPSULE_ID,
+)
 from .bootstrap import build_workspace_bootstrap_descriptor
 from .service import (
     ensure_literature_search_foundation,
     ensure_production_workflow_foundation,
+)
+
+
+_FULL_RESEARCH_INITIAL_PINS = (
+    (
+        LITERATURE_SEARCH_WORKFLOW_ID,
+        LITERATURE_SEARCH_WORKFLOW_VERSION,
+        LITERATURE_SEARCH_V0_6_CAPSULE_ID,
+        LITERATURE_SEARCH_CAPSULE_VERSION,
+    ),
+    (
+        IDEA_DISCOVERY_WORKFLOW_ID,
+        IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
+        IDEA_DISCOVERY_V0_3_CAPSULE_ID,
+        IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+    ),
+    (
+        EXPERIMENT_WORKFLOW_ID,
+        REAL_EXPERIMENT_WORKFLOW_VERSION,
+        REAL_EXPERIMENT_V0_7_CAPSULE_ID,
+        REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+    ),
+    (
+        WRITING_WORKFLOW_ID,
+        REAL_WRITING_WORKFLOW_VERSION,
+        REAL_WRITING_CAPSULE_ID,
+        REAL_WRITING_CAPSULE_VERSION,
+    ),
+    (
+        REVIEW_WORKFLOW_ID,
+        REAL_REVIEW_WORKFLOW_VERSION,
+        REAL_REVIEW_CAPSULE_ID,
+        REAL_REVIEW_CAPSULE_VERSION,
+    ),
 )
 
 
@@ -98,7 +156,23 @@ class ProjectWorkspaceApplicationService:
             raise ApplicationCodedValidationError(
                 str(error), code="PROJECT_WORKFLOW_SETUP_INVALID"
             ) from error
-        pins = tuple(self._current_creatable_pin(item) for item in workflow_ids)
+        if setup == FULL_RESEARCH:
+            pins = tuple(
+                self._require_creatable_pin(
+                    workflow_definition_id=workflow_definition_id,
+                    workflow_version=workflow_version,
+                    capsule_id=capsule_id,
+                    capsule_version=capsule_version,
+                )
+                for (
+                    workflow_definition_id,
+                    workflow_version,
+                    capsule_id,
+                    capsule_version,
+                ) in _FULL_RESEARCH_INITIAL_PINS
+            )
+        else:
+            pins = tuple(self._current_creatable_pin(item) for item in workflow_ids)
         canonical = CloudProject(
             project_id=project.project_id,
             workspace_id=workspace_id_for_project(project.project_id),

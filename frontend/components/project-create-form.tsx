@@ -79,7 +79,7 @@ export function ProjectCreateForm() {
           {([
             ["literature-only", "Literature Search only", "Find and select research literature."],
             ["literature-and-idea", "Literature + Idea Discovery", "Search literature and develop a research direction."],
-            ["full-research", "Full Research Project", "Create all five workflows for end-to-end product testing."],
+            ["full-research", "Full Research Project", "Literature search, idea discovery, experiment, evidence-bound writing, and structured review."],
             ["custom", "Custom", "Choose independently from the production Workflow Registry."],
           ] as const).map(([value, title, description]) => (
             <label key={value} className="artifact-choice">
@@ -88,12 +88,6 @@ export function ProjectCreateForm() {
             </label>
           ))}
         </fieldset>
-        {setup === "full-research" ? (
-          <div className="boundary-callout" role="note">
-            <strong>Includes prototype cores</strong>
-            <p>Writing, Review, and Reproduction &amp; Experiment have functional product flows but produce scaffold outputs only. No substantive manuscript, peer review, or experiment is performed.</p>
-          </div>
-        ) : null}
         {setup === "custom" ? (
           <fieldset>
             <legend>Choose workflows</legend>

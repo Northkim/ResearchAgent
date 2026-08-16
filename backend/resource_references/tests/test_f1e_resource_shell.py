@@ -13,6 +13,14 @@ from backend.api import ApplicationContainer, create_app
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import workspace_cli
 
+HISTORICAL_RESOURCE_SETUP = [
+    "literature-search-local-experimental",
+    "idea-discovery-local-experimental",
+    "writing-local-experimental",
+    "review-local-experimental",
+    "reproduction-experiment-local-experimental",
+]
+
 
 def _client(tmp_path: Path):
     database = InMemoryDatabase()
@@ -24,7 +32,8 @@ def _client(tmp_path: Path):
         "name": "F1E synthetic project",
         "research_topic": "Synthetic external resource shell",
         "selected_workflow": "LITERATURE_SEARCH",
-        "workflow_setup": "full-research",
+        "workflow_setup": "custom",
+        "custom_workflow_definition_ids": HISTORICAL_RESOURCE_SETUP,
     })
     assert response.status_code == 201
     project_id = response.json()["project_id"]
@@ -139,7 +148,8 @@ def test_resource_binding_rejects_wrong_kind_provider_and_project(tmp_path: Path
         "name": "F1E second synthetic project",
         "research_topic": "Cross-project Resource denial",
         "selected_workflow": "LITERATURE_SEARCH",
-        "workflow_setup": "full-research",
+        "workflow_setup": "custom",
+        "custom_workflow_definition_ids": HISTORICAL_RESOURCE_SETUP,
     }).json()
     second_experiment = next(
         item for item in client.get(

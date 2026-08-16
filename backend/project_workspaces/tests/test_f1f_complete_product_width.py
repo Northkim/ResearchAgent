@@ -182,11 +182,69 @@ def test_complete_product_width_e2e_uses_only_product_paths(tmp_path: Path) -> N
 
 def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
     """Qualify F1F without direct persistence writes or synthetic local receipts."""
-    created = client.post("/projects", json={
-        "name": "F1F complete product-width qualification",
-        "research_topic": "Synthetic immutable research-flow continuity",
+    released = client.post("/projects", json={
+        "name": "Current released Full Research composition",
+        "research_topic": "Synthetic released-composition qualification",
         "selected_workflow": "LITERATURE_SEARCH",
         "workflow_setup": "full-research",
+    })
+    assert released.status_code == 201, released.text
+    released_project_id = released.json()["project_id"]
+    released_instances = client.get(
+        f"/projects/{released_project_id}/workflow-instances"
+    ).json()["items"]
+    released_pins = {
+        item["workflow_definition_id"]: (
+            item["workflow_version"], item["capsule_version"],
+        )
+        for item in released_instances
+    }
+    assert released_pins == {
+        LITERATURE_SEARCH_WORKFLOW_ID: ("0.4.0", "0.6.0"),
+        IDEA_DISCOVERY_WORKFLOW_ID: ("0.2.0", "0.3.0"),
+        EXPERIMENT_WORKFLOW_ID: ("0.4.0", "0.7.0"),
+        WRITING_WORKFLOW_ID: ("0.3.0", "0.5.0"),
+        REVIEW_WORKFLOW_ID: ("0.3.0", "0.5.0"),
+    }
+    released_descriptor = client.get(
+        f"/projects/{released_project_id}/workspace-bootstrap"
+    ).json()
+    released_workspace = tmp_path / "released-workspace"
+    workspace_cli.bootstrap_workspace(
+        target=released_workspace, descriptor=released_descriptor
+    )
+    released_transport = _ProductTransport(client)
+    released_sync = workspace_cli.sync_workspace(
+        workspace_root=released_workspace,
+        transport=released_transport,
+        now=datetime(2026, 8, 9, tzinfo=UTC),
+    )
+    assert released_sync.status == "SYNCED"
+    released_list_pins = {
+        item["workflow_definition_id"]: (
+            item["workflow_version"], item["capsule_version"],
+            item["core_capability_maturity"],
+        )
+        for item in workspace_cli.workflow_list(released_workspace)["workflows"]
+    }
+    assert released_list_pins == {
+        key: (*pin, "REVIEWED_CORE") for key, pin in released_pins.items()
+    }
+
+    # Preserve the historical Scaffold compatibility chain independently from
+    # the current Full Research product preset.
+    created = client.post("/projects", json={
+        "name": "F1F historical Scaffold compatibility qualification",
+        "research_topic": "Synthetic immutable research-flow continuity",
+        "selected_workflow": "LITERATURE_SEARCH",
+        "workflow_setup": "custom",
+        "custom_workflow_definition_ids": [
+            LITERATURE_SEARCH_WORKFLOW_ID,
+            IDEA_DISCOVERY_WORKFLOW_ID,
+            WRITING_WORKFLOW_ID,
+            REVIEW_WORKFLOW_ID,
+            EXPERIMENT_WORKFLOW_ID,
+        ],
     })
     assert created.status_code == 201, created.text
     project_id = created.json()["project_id"]

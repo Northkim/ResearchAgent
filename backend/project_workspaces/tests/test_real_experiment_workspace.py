@@ -12,7 +12,6 @@ from backend.api import ApplicationContainer, create_app
 from backend.artifact_references.tests.test_research_flow_contracts import _selected
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import workspace_cli
-from backend.project_workspaces.production_workflows import REAL_EXPERIMENT_CAPSULE_ID
 from backend.project_workspaces.tests.e1_q1_public_workspace_qualification import (
     _qualification_app,
 )
@@ -100,17 +99,14 @@ def _setup(tmp_path: Path):
         "workflow_setup": "full-research",
     }).json()
     instances = client.get(f"/projects/{project['project_id']}/workflow-instances").json()["items"]
-    assert any(item["workflow_definition_id"] == "reproduction-experiment-local-experimental" and item["workflow_version"] == "0.3.0" for item in instances)
-    created_real = client.post(f"/projects/{project['project_id']}/workflow-instances", json={
-        "workflow_definition_id": "reproduction-experiment-local-experimental",
-        "workflow_version": "0.4.0",
-        "capsule_id": REAL_EXPERIMENT_CAPSULE_ID,
-        "capsule_version": "0.6.0",
-        "base_revision": 1,
-    })
-    assert created_real.status_code == 201, created_real.text
-    experiment = created_real.json()
-    assert (experiment["workflow_version"], experiment["capsule_version"]) == ("0.4.0", "0.6.0")
+    experiment = next(
+        item for item in instances
+        if item["workflow_definition_id"]
+        == "reproduction-experiment-local-experimental"
+    )
+    assert (experiment["workflow_version"], experiment["capsule_version"]) == (
+        "0.4.0", "0.7.0"
+    )
     descriptor = client.get(f"/projects/{project['project_id']}/workspace-bootstrap").json()
     workspace = tmp_path / "workspace"
     workspace_cli.bootstrap_workspace(target=workspace, descriptor=descriptor)

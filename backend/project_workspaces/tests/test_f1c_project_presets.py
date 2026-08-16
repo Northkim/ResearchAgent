@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -57,9 +61,9 @@ def test_server_resolved_presets_create_one_revision_atomically(tmp_path, setup,
     assert versions["literature-search-local-experimental"] == ("0.4.0", "0.6.0")
     if setup == "full-research":
         assert versions["idea-discovery-local-experimental"] == ("0.2.0", "0.3.0")
-        assert versions["writing-local-experimental"] == ("0.2.0", "0.4.0")
-        assert versions["review-local-experimental"] == ("0.2.0", "0.4.0")
-        assert versions["reproduction-experiment-local-experimental"] == ("0.3.0", "0.5.0")
+        assert versions["reproduction-experiment-local-experimental"] == ("0.4.0", "0.7.0")
+        assert versions["writing-local-experimental"] == ("0.3.0", "0.5.0")
+        assert versions["review-local-experimental"] == ("0.3.0", "0.5.0")
 
 
 def test_custom_is_registry_validated_and_preserves_requested_independent_workflows(tmp_path):
@@ -134,6 +138,37 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     project_id = created.json()["project_id"]
     descriptor = client.get(f"/projects/{project_id}/workspace-bootstrap").json()
     assert len(descriptor["workflow_capsules"]) == 5
+    expected_pins = {
+        "literature-search-local-experimental": (
+            "0.4.0", "0.6.0", "capsule-e9e6a2e0aa46146818fb6123e03877f3"
+        ),
+        "idea-discovery-local-experimental": (
+            "0.2.0", "0.3.0", "capsule-3976596c49e3df30e08774233055bcce"
+        ),
+        "reproduction-experiment-local-experimental": (
+            "0.4.0", "0.7.0", "capsule-a01688245334eb95a7733a746e6357c1"
+        ),
+        "writing-local-experimental": (
+            "0.3.0", "0.5.0", "capsule-3f94b97702190efed2a4fcd2c0e5f770"
+        ),
+        "review-local-experimental": (
+            "0.3.0", "0.5.0", "capsule-d8565c18f6d0c5d540d4d0ff63b90d7e"
+        ),
+    }
+    assert {
+        item["workflow_definition_id"]: (
+            item["workflow_definition_version"], item["capsule_version"],
+            item["capsule_id"],
+        )
+        for item in descriptor["workflow_capsules"]
+    } == expected_pins
+    assert {
+        item["workflow_definition_id"]: (
+            item["workflow_definition_version"], item["capsule_version"],
+            item["capsule_id"],
+        )
+        for item in descriptor["desired_manifest"]["workflow_instances"]
+    } == expected_pins
     workspace = tmp_path / "workspace"
     workspace_cli.bootstrap_workspace(target=workspace, descriptor=descriptor)
     transport = _Transport(client)
@@ -142,7 +177,75 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     assert transport.downloads == 5
     listed = workspace_cli.workflow_list(workspace)
     assert len(listed["workflows"]) == 5
-    assert {item["core_capability_maturity"] for item in listed["workflows"]} == {"REVIEWED_CORE", "SCAFFOLD_CORE"}
+    assert {item["core_capability_maturity"] for item in listed["workflows"]} == {"REVIEWED_CORE"}
+    expected_versions = {
+        definition_id: pin[:2] for definition_id, pin in expected_pins.items()
+    }
+    assert {
+        item["workflow_definition_id"]: (
+            item["workflow_version"], item["capsule_version"]
+        )
+        for item in listed["workflows"]
+    } == expected_versions
+    installed_lock = json.loads(
+        (workspace / workspace_cli.INSTALLED_LOCK).read_text(encoding="utf-8")
+    )
+    assert {
+        item["workflow_definition_id"]: (
+            item["workflow_definition_version"], item["capsule_version"],
+            item["capsule_id"],
+        )
+        for item in installed_lock["installed_capsules"]
+    } == expected_pins
+    repository = Path(__file__).resolve().parents[3]
+    public_list = subprocess.run(
+        [
+            sys.executable,
+            str(repository / "reagent_local.py"),
+            "workflow",
+            "list",
+            ".",
+            "--json",
+        ],
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert public_list.returncode == 0, public_list.stderr
+    public_result = json.loads(public_list.stdout)
+    assert {
+        item["workflow_definition_id"]: (
+            item["workflow_version"], item["capsule_version"]
+        )
+        for item in public_result["workflows"]
+    } == expected_versions
+    human_list = subprocess.run(
+        [
+            sys.executable,
+            str(repository / "reagent_local.py"),
+            "workflow",
+            "list",
+            ".",
+        ],
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert human_list.returncode == 0, human_list.stderr
+    assert "Installed Workflows (5)" in human_list.stdout
+    assert human_list.stdout.count("Core: Reviewed") == 5
+    assert "Core: Scaffold" not in human_list.stdout
+    for display_name, version in (
+        ("Literature Search", "0.4.0"),
+        ("Idea Discovery", "0.2.0"),
+        ("Reproduction & Experiment", "0.4.0"),
+        ("Writing", "0.3.0"),
+        ("Review", "0.3.0"),
+    ):
+        assert display_name in human_list.stdout
+        assert f"version {version}" in human_list.stdout
     progress = client.get(f"/projects/{project_id}/progress").json()
     by_definition = {item["workflow_definition_id"]: item for item in progress["instances"]}
     assert {item["installation_state"] for item in progress["instances"]} == {"ACKNOWLEDGED_CURRENT"}

@@ -44,11 +44,16 @@ def test_workspace_root_experiment_run_auto_starts_input_review_and_uploads_prog
         base_url=base_url, timeout=30
     ) as client:
         created = client.post("/projects", json={
-            "name": "Experiment interactive product route",
-            "research_topic": "Synthetic multi-agent stress testing",
-            "selected_workflow": "LITERATURE_SEARCH",
-            "workflow_setup": "full-research",
-        })
+                "name": "Experiment interactive product route",
+                "research_topic": "Synthetic multi-agent stress testing",
+                "selected_workflow": "LITERATURE_SEARCH",
+                "workflow_setup": "custom",
+                "custom_workflow_definition_ids": [
+                    "literature-search-local-experimental",
+                    "idea-discovery-local-experimental",
+                    EXPERIMENT_WORKFLOW_ID,
+                ],
+            })
         assert created.status_code == 201, created.text
         project_id = created.json()["project_id"]
         instances = {

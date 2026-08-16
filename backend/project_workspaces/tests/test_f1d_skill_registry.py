@@ -27,6 +27,11 @@ from backend.project_workspaces.tests.test_f1c_project_presets import _Transport
 
 
 NOW = datetime(2026, 8, 9, tzinfo=UTC)
+HISTORICAL_SCAFFOLD_SETUP = [
+    "literature-search-local-experimental",
+    "idea-discovery-local-experimental",
+    *SCAFFOLD_WORKFLOWS,
+]
 
 
 def _client(tmp_path):
@@ -120,13 +125,14 @@ def test_old_scaffold_versions_remain_and_existing_instance_does_not_upgrade() -
     assert unchanged.capsule_version == "0.1.0"
 
 
-def test_full_preset_resolves_skill_backed_scaffold_versions(tmp_path) -> None:
+def test_custom_setup_preserves_skill_backed_scaffold_versions(tmp_path) -> None:
     client, _ = _client(tmp_path)
     created = client.post("/projects", json={
-        "name": "F1D full project",
+        "name": "F1D historical Scaffold project",
         "research_topic": "Synthetic",
         "selected_workflow": "LITERATURE_SEARCH",
-        "workflow_setup": "full-research",
+        "workflow_setup": "custom",
+        "custom_workflow_definition_ids": HISTORICAL_SCAFFOLD_SETUP,
     })
     instances = client.get(
         f"/projects/{created.json()['project_id']}/workflow-instances"
@@ -259,7 +265,8 @@ def test_local_preflight_reports_tampered_bundled_skill(tmp_path) -> None:
         "name": "F1D local tamper",
         "research_topic": "Synthetic",
         "selected_workflow": "LITERATURE_SEARCH",
-        "workflow_setup": "full-research",
+        "workflow_setup": "custom",
+        "custom_workflow_definition_ids": HISTORICAL_SCAFFOLD_SETUP,
     }).json()
     project_id = created["project_id"]
     descriptor = client.get(
