@@ -1,6 +1,58 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-15
+Last updated: 2026-08-16
+
+## Final Owner-approved controlled-local release
+
+The Owner approved exact release candidate
+`35a961d7251ebbb3faedfbed446f12b6a0fea44c` after Q1 completed with
+`PASS_Q1_TECHNICALLY_QUALIFIED`. The approved release profile is
+`CONTROLLED_LOCAL_SINGLE_OWNER`: loopback-only, one owner on a trusted local
+machine, local-first research execution, Cloud metadata/Workflow coordination,
+exact Artifact and Resource binding, Codex as the supported Agent Harness,
+Progress and Artifact Cloud projection, and the Owner-accepted desktop frontend.
+
+The completed product path includes real Literature Search and Idea Discovery;
+the accepted controlled Real Experiment path through `experiment-record/v2`;
+evidence-bound Writing through `manuscript-draft/v2`; structured Review through
+`review-report/v2`; causal Review-to-Writing revision through
+`manuscript-draft/v3`; and task-first Projects, Project Overview, Workflow
+Detail, Outputs, and Activity surfaces. Backend-derived presentation projection
+remains authoritative.
+
+Frozen architecture remains unchanged: Cloud coordinates; the Local Workspace
+executes; Codex performs substantive research reasoning; Artifact handoff is
+explicit and exact; published Artifacts and Capsules are immutable; the browser
+never writes the Local Workspace directly; and continuity is carried through
+files, Progress, Artifact provenance, and durable approval state rather than
+chat history.
+
+Q1 evidence on the approved candidate: backend `959 passed / 14 skipped / 0
+failed`; frontend TypeScript and ESLint PASS; Vitest `17 files / 36 tests` PASS;
+production Next.js build PASS; PostgreSQL/migrations PASS; E1/W1/R1/W2 public
+Workspace PASS; W1/R1/W2 bounded Real Codex PASS; controlled browser PASS;
+Cloud/local, exactly-once/recovery, supported security, bounded compatibility,
+immutable identity, cleanup, and candidate-mutation gates PASS. Experiment full
+Real Codex completion remains `NOT_CLAIMED`; controlled evidence is not relabeled.
+
+Current immutable release pins are Experiment Definition 0.4.0 / Capsule 0.7.0
+/ `experiment-record/v2`; Writing Definition 0.3.0 / Capsule 0.5.0 /
+`manuscript-draft/v2`; Review Definition 0.3.0 / Capsule 0.5.0 /
+`review-report/v2`; and Writing Revision Definition 0.4.0 / Capsule 0.6.0 /
+`manuscript-draft/v3`. Alembic sole head is `20260815_0026`.
+
+Public SaaS, multi-user isolation, hosted research execution, hostile-code
+containment, live Provider correctness, Claude Code, generalized long-lived
+Workspace compatibility, arbitrary scientific correctness, publication fitness,
+mobile visual fidelity, full Real Codex Experiment completion, and frozen
+Experiment 0.4 Owner Workspace recovery are excluded future capabilities, not
+release defects.
+
+`PROJECT_CORE_STATUS = COMPLETE`;
+`CONTROLLED_LOCAL_RELEASE = OWNER_APPROVED`; `Q1 = COMPLETE`;
+`FURTHER_PRODUCT_DEVELOPMENT = NOT_REQUIRED_FOR_CURRENT_RELEASE`. Do not begin
+another phase automatically. The durable release and demonstration handoff is
+`.agent_read/progress/2026-08-16_final_owner_release_handoff.md`.
 
 ## FE-M desktop controlled-state coherence correction
 
@@ -22,8 +74,8 @@ TypeScript, ESLint, 17 Vitest files / 36 tests, and the controlled browser journ
 pass. E6 used real Next.js/FastAPI/Chromium with disposable PostgreSQL at 1440x900
 and 1280x800; the database was dropped. Exactly three ignored final 1440x900 PNGs
 exist in `.agent_read/tmp/fe-m-desktop-final-review/` and were visually inspected.
-`FE-M_DESKTOP_STATUS = PASS_FE_M_DESKTOP_COHERENT_READY_FOR_OWNER_REVIEW`; Owner
-visual acceptance remains pending, and Q1 must not begin automatically.
+`FE-M_DESKTOP_STATUS = OWNER_ACCEPTED_FROZEN`. The later final release record
+above supersedes the historical pending-review state.
 
 ## FE-M desktop final Owner-reference implementation
 
@@ -47,8 +99,8 @@ build pass. The real controlled FastAPI/Next.js/Chromium journey passed at
 fatal error, unexpected external request, horizontal overflow, or browser
 Workspace write; teardown dropped the database. Exactly three ignored 1440x900
 screenshots are in `.agent_read/tmp/fe-m-desktop-final-review/`.
-`FE-M_DESKTOP_STATUS = PASS_FE_M_DESKTOP_READY_FOR_OWNER_REVIEW`; Owner visual
-acceptance remains pending. Q1 must not begin without a separate Owner decision.
+`FE-M_DESKTOP_STATUS = OWNER_ACCEPTED_FROZEN`. The later final release record
+above supersedes the historical pending-review state.
 
 ## W2 Review-to-Writing revision integration
 

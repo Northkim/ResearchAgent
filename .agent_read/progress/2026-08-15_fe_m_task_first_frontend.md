@@ -144,3 +144,17 @@ Verification evidence:
 
 No ADR was added because no architecture decision changed. E9 Owner visual review
 remains pending. Q1 was not started.
+
+## Owner acceptance and release closure (2026-08-16)
+
+The Owner subsequently accepted Projects, Project Overview, and Workflow Detail
+without further visual or structural changes. FE-M is frozen as
+`OWNER_ACCEPTED`; its coherent controlled state is Literature Search completed,
+Idea Discovery completed, Writing awaiting Owner outline approval with required
+inputs Ready, and optional Experiment not provided.
+
+Final Q1 qualified clean committed candidate
+`35a961d7251ebbb3faedfbed446f12b6a0fea44c`, and the Owner approved that exact
+candidate for `CONTROLLED_LOCAL_SINGLE_OWNER`. The earlier pending-review and
+“Q1 not started” statements above remain historical phase records and are
+superseded by `.agent_read/progress/2026-08-16_final_owner_release_handoff.md`.
