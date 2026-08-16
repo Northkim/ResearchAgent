@@ -39,8 +39,8 @@ export function ProjectHelp({ projectId }: { projectId: string }) {
           <a href={apiClient.workspaceBootstrapDownloadUrl(projectId)} download="workspace-bootstrap.json" className="button button-secondary">Download Workspace setup</a>
         </div>
         <CopyCommand command="python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json" label="Workspace bootstrap command" />
-        <p>Then enter the new folder and install the reviewed Workflows selected in Cloud:</p>
-        <CopyCommand command="python reagent_local.py sync ." label="local sync command" />
+        <p>Then enter the new folder and install the reviewed Workflows selected in Cloud. Copy and run this complete sequence from the same parent folder:</p>
+        <CopyCommand command={"cd ./reagent-workspace\npython reagent_local.py sync ."} label="Workspace enter and sync commands" />
       </section>
 
       <section>

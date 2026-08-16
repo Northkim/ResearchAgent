@@ -303,6 +303,20 @@ summary:focus-visible {
 .workflow-card-details dd { font-size: 12px; margin: 4px 0 0; overflow-wrap: anywhere; }
 .artifact-choice { align-items: flex-start; display: flex; gap: 9px; margin: 10px 0; }
 .artifact-choice span { font-size: 12px; overflow-wrap: anywhere; }
+.product-form .artifact-choice {
+  align-items: start;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  margin: 10px 0;
+}
+.product-form .artifact-choice > input[type="radio"],
+.product-form .artifact-choice > input[type="checkbox"] {
+  height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+  width: 16px;
+}
 .boundary-callout fieldset { border: 0; margin: 16px 0 0; padding: 0; }
 .boundary-callout legend { font-size: 12px; font-weight: 700; }
 .boundary-callout code { overflow-wrap: anywhere; }
@@ -1806,7 +1820,21 @@ code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .output-work-row > dl .output-limitation { grid-column: 1 / -1; }
 .copy-command { align-items: center; background: #242b28; display: flex; gap: 16px; justify-content: space-between; margin: 18px 0; padding: 18px; }
 .package-primary-buttons { display: grid; gap: 10px; }
-.copy-command code { color: #e8f0eb; font-size: 13px; }
+.copy-command code { color: #e8f0eb; font-size: 13px; white-space: pre-wrap; }
+.copy-command .button.button-ghost {
+  background: #f7f5ef;
+  border-color: #d7d2c6;
+  color: #17221c;
+}
+.copy-command .button.button-ghost:hover:not(:disabled) {
+  background: #fff;
+  border-color: #fff;
+  color: #0d1711;
+}
+.copy-command .button.button-ghost:focus-visible {
+  outline-color: #fff;
+  outline-offset: 3px;
+}
 .expected-output-card ul { display: grid; gap: 10px; }
 .package-next-row { align-items: center; border-bottom: 1px solid var(--line); border-top: 1px solid var(--line); display: flex; gap: 20px; padding: 22px 0; }
 .package-next-row > div { flex: 1; }
@@ -2001,6 +2029,8 @@ code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .run-local-details > div,
 .secondary-control > :not(summary) { border-top: 1px solid var(--line); padding: 16px; }
 .run-local-details > div > p { color: var(--muted); font-size: 13px; margin: 0; }
+.run-local-details > div > p + p { margin-top: 8px; }
+.run-local-details .exact-command-label { color: var(--ink); font-size: 11px; font-weight: 800; letter-spacing: .08em; margin-top: 18px; text-transform: uppercase; }
 .run-local-details .copy-command { margin-bottom: 0; }
 .secondary-control { color: var(--muted); font-size: 13px; }
 .technical-details { background: transparent; border: 0; border-top: 1px solid var(--line); border-radius: 0; color: var(--muted); margin-top: 12px; padding: 13px 0 0; }

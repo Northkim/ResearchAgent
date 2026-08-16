@@ -11,6 +11,14 @@ import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
 import { presentWorkflowAction, WorkflowActionPanel } from "./workflow-detail";
 
+const WORKFLOW_PRESENTATION_ORDER: Record<string, number> = {
+  "literature-search-local-experimental": 10,
+  "idea-discovery-local-experimental": 20,
+  "reproduction-experiment-local-experimental": 30,
+  "writing-local-experimental": 40,
+  "review-local-experimental": 50,
+};
+
 export function LocalProjectDetail({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
   const progress = useProjectProgress(projectId);
@@ -23,7 +31,9 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
   const data = project.data;
   const projection = progress.data;
   const attention = projection.attention;
-  const workflowHref = attention.action.next_action.code === "REVIEW_RESULT"
+  const workflowHref = attention.action.next_action.code === "SETUP"
+    ? `/projects/${projectId}/help`
+    : attention.action.next_action.code === "REVIEW_RESULT"
     ? `/projects/${projectId}/outputs`
     : attention.recommended_workflow_instance_id
       ? `/projects/${projectId}/workflows/${attention.recommended_workflow_instance_id}`
@@ -31,7 +41,15 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
   const recent = projection.history.slice(0, 3);
   const output = attention.latest_output;
   const syncRequired = attention.action.next_action.code === "SYNC";
+  const setupRequired = attention.action.next_action.code === "SETUP";
   const currentPresentation = presentWorkflowAction(attention.action, attention.recommended_workflow_label, attention.recent_change.summary);
+  const visibleWorkflows = projection.instances
+    .filter((item) => item.lifecycle === "ACTIVE")
+    .sort((left, right) => (
+      (WORKFLOW_PRESENTATION_ORDER[left.workflow_definition_id] ?? 90)
+      - (WORKFLOW_PRESENTATION_ORDER[right.workflow_definition_id] ?? 90)
+    ))
+    .slice(0, 5);
 
   return (
     <div className="page-stack project-overview-page">
@@ -54,9 +72,14 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
         <section className="plain-section" aria-labelledby="overview-workflows-title">
           <div className="section-heading"><h2 id="overview-workflows-title">Workflow progress</h2><Link href={`/projects/${projectId}/workflows`} className="text-link">View all workflows →</Link></div>
           <div className="overview-workflow-list">
-            {projection.instances.filter((item) => item.lifecycle === "ACTIVE").slice(0, 5).map((item) => {
+            {visibleWorkflows.map((item) => {
               const presentation = presentWorkflowAction(item.action, item.friendly_instance_label ?? item.workflow_display_name, item.latest_summary ?? "");
-              return <div key={item.workflow_instance_id}><div><strong>{item.friendly_instance_label ?? item.workflow_display_name}</strong><p>{presentation.task}</p></div><span>{presentation.attention}</span></div>;
+              const projectSetupPresentation = setupRequired
+                ? item.workflow_instance_id === attention.recommended_workflow_instance_id
+                  ? { task: "Waiting for workspace", attention: "Waiting" }
+                  : { task: "Not started", attention: "Not started" }
+                : presentation;
+              return <div key={item.workflow_instance_id}><div><strong>{item.friendly_instance_label ?? item.workflow_display_name}</strong><p>{projectSetupPresentation.task}</p></div><span>{projectSetupPresentation.attention}</span></div>;
             })}
           </div>
         </section>

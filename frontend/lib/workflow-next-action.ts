@@ -5,6 +5,7 @@ import type {
 } from "@/types/api";
 
 export type WorkflowNextActionCode =
+  | "SETUP"
   | "SYNC"
   | "WAIT_FOR_UPSTREAM"
   | "SELECT_INPUT"
@@ -34,6 +35,7 @@ export function deriveWorkflowNextAction({
 }): WorkflowNextAction {
   if (progress?.next_action) {
     const content: Record<string, [string, string, number]> = {
+      SETUP: ["Set up your Local Workspace", "Open the supported Project setup instructions before creating and syncing the Local Workspace.", 5],
       SYNC: ["Set up or sync your Local Workspace", "Cloud has not confirmed the current local installation.", 10],
       WAIT_FOR_UPSTREAM: ["Complete an upstream workflow", `Required results are not available yet: ${(progress.missing_required_inputs ?? []).join(", ")}.`, 20],
       SELECT_INPUT: ["Select exact inputs", "Choose specific compatible results. ReAgent never selects the latest result implicitly.", 30],
@@ -54,7 +56,15 @@ export function deriveWorkflowNextAction({
       priority: 60,
     };
   }
-  if (progress?.installation_state !== "ACKNOWLEDGED_CURRENT") {
+  if (!progress || progress.installation_state === "UNKNOWN") {
+    return {
+      code: "SETUP",
+      title: "Set up your Local Workspace",
+      description: "Open the supported Project setup instructions before creating and syncing the Local Workspace.",
+      priority: 5,
+    };
+  }
+  if (progress.installation_state !== "ACKNOWLEDGED_CURRENT") {
     return {
       code: "SYNC",
       title: "Set up or sync your Local Workspace",

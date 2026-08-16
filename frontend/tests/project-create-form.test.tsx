@@ -42,6 +42,21 @@ test("creates metadata-only Literature Search project from the form", async () =
   expect(push).toHaveBeenCalledWith(`/projects/${localProjectFixture.project_id}`);
 });
 
+test("keeps each setup radio inside one coherent accessible option row", async () => {
+  vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue(workflowCatalogFixture);
+  render(<Providers><ProjectCreateForm /></Providers>);
+
+  const radios = screen.getAllByRole("radio");
+  expect(radios).toHaveLength(4);
+  for (const radio of radios) {
+    const row = radio.closest("label");
+    expect(row).toHaveClass("artifact-choice");
+    expect(row?.querySelector("span > strong")).not.toBeNull();
+    expect(row?.querySelector("span > small")).not.toBeNull();
+  }
+  expect(screen.getByRole("radio", { name: /Literature Search only/ })).toBeChecked();
+});
+
 test("discloses scaffold cores before creating the full research preset", async () => {
   const user = userEvent.setup();
   vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue(workflowCatalogFixture);

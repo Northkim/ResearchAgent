@@ -11,7 +11,10 @@ test("copies a visible command with an accessible control", async () => {
     value: { writeText },
   });
   render(<CopyCommand command="python reagent_local.py sync ." label="local sync command" />);
-  await userEvent.click(screen.getByRole("button", { name: "Copy local sync command" }));
+  const copy = screen.getByRole("button", { name: "Copy local sync command" });
+  expect(copy).toHaveClass("button-ghost");
+  expect(copy).toBeEnabled();
+  await userEvent.click(copy);
   expect(writeText).toHaveBeenCalledWith("python reagent_local.py sync .");
   expect(screen.getByRole("button", { name: "Copy local sync command" })).toHaveTextContent("Copied");
   expect(screen.getByRole("status")).toHaveTextContent("local sync command copied");

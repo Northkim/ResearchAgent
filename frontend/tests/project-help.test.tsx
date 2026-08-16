@@ -21,6 +21,11 @@ test("guides setup, multi-Workflow work, continuation, and Cloud/local boundarie
   expect(screen.getByRole("link", { name: "Download local tool" })).toHaveAttribute(
     "href", "/backend/local-client/reagent_local.py",
   );
+  expect(screen.getByText((_, element) => (
+    element?.tagName === "CODE"
+    && element.textContent === "cd ./reagent-workspace\npython reagent_local.py sync ."
+  ))).toBeVisible();
+  expect(screen.getByRole("button", { name: "Copy Workspace enter and sync commands" })).toBeVisible();
   expect(screen.getByText(/browser never runs sync/i)).toBeVisible();
   expect(screen.getByRole("heading", { name: "Cloud continuity is not backup" })).toBeVisible();
   expect(screen.getByText(/Literature Search 0.3.0/)).toBeVisible();

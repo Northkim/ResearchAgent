@@ -10,7 +10,7 @@ from backend.local_projects.service import LocalProjectService
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces import workspace_cli
-from backend.progress_reports.aggregation import _readiness
+from backend.progress_reports.aggregation import _readiness, _workflow_action
 
 
 def _client(tmp_path):
@@ -145,8 +145,11 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     assert {item["core_capability_maturity"] for item in listed["workflows"]} == {"REVIEWED_CORE", "SCAFFOLD_CORE"}
     progress = client.get(f"/projects/{project_id}/progress").json()
     by_definition = {item["workflow_definition_id"]: item for item in progress["instances"]}
+    assert {item["installation_state"] for item in progress["instances"]} == {"ACKNOWLEDGED_CURRENT"}
     assert by_definition["literature-search-local-experimental"]["readiness"] == "READY_TO_RUN"
     assert by_definition["literature-search-local-experimental"]["next_action"] == "RUN"
+    assert by_definition["literature-search-local-experimental"]["action"]["stage"]["code"] == "READY"
+    assert by_definition["literature-search-local-experimental"]["action"]["next_action"]["code"] == "RUN"
     for definition_id in (
         "idea-discovery-local-experimental", "writing-local-experimental",
         "review-local-experimental", "reproduction-experiment-local-experimental",
@@ -158,6 +161,63 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     second = workspace_cli.sync_workspace(workspace_root=workspace, transport=transport)
     assert second.status == "NO_CHANGE"
     assert transport.downloads == 5
+
+    literature = by_definition["literature-search-local-experimental"]
+    added = client.post(f"/projects/{project_id}/workflow-instances", json={
+        "workflow_definition_id": literature["workflow_definition_id"],
+        "workflow_version": literature["workflow_definition_version"],
+        "capsule_id": literature["capsule_id"],
+        "capsule_version": literature["capsule_version"],
+        "base_revision": 1,
+    })
+    assert added.status_code == 201
+    stale_progress = client.get(f"/projects/{project_id}/progress").json()
+    assert {item["installation_state"] for item in stale_progress["instances"]} == {"ACKNOWLEDGED_STALE"}
+    assert {item["action"]["next_action"]["code"] for item in stale_progress["instances"]} == {"SYNC"}
+    assert stale_progress["attention"]["action"]["next_action"]["code"] == "SYNC"
+
+
+def test_installation_projection_distinguishes_first_setup_from_stale_sync(tmp_path):
+    client, _ = _client(tmp_path)
+    created = _create(client, "full-research")
+    project_id = created.json()["project_id"]
+
+    progress = client.get(f"/projects/{project_id}/progress").json()
+    assert {item["installation_state"] for item in progress["instances"]} == {"UNKNOWN"}
+    assert {item["readiness"] for item in progress["instances"]} == {"NOT_INSTALLED"}
+    assert {item["next_action"] for item in progress["instances"]} == {"SETUP"}
+    for item in progress["instances"]:
+        assert item["action"]["stage"]["code"] == "LOCAL_SETUP"
+        assert item["action"]["blocker"]["code"] == "LOCAL_SETUP_REQUIRED"
+        assert item["action"]["next_action"] == {
+            "surface": "BROWSER",
+            "code": "SETUP",
+            "label": "Set up Local Workspace",
+            "description": "Open the supported Project setup instructions before creating and syncing the Local Workspace.",
+        }
+    assert progress["attention"]["recommended_workflow_label"] == "Literature Search"
+    assert progress["attention"]["action"]["next_action"]["code"] == "SETUP"
+    assert progress["attention"]["action"]["next_action"]["surface"] == "BROWSER"
+    assert progress["attention"]["action"]["expected_output"]["label"] == "Selected paper library"
+
+    stale = _workflow_action(
+        project_id=project_id,
+        workflow_definition_id="literature-search-local-experimental",
+        output_schema_id="selected-paper-library/v1",
+        lifecycle="ACTIVE",
+        research_status="NOT_STARTED",
+        latest_summary=None,
+        continuation_reason=None,
+        installation_state="ACKNOWLEDGED_STALE",
+        readiness="NOT_INSTALLED",
+        next_action="SYNC",
+        missing=(),
+        latest_artifact=None,
+    )
+    assert stale.stage.code == "LOCAL_SYNC"
+    assert stale.blocker is not None and stale.blocker.code == "LOCAL_SYNC_REQUIRED"
+    assert stale.next_action.code == "SYNC"
+    assert stale.next_action.surface == "LOCAL"
 
 
 def test_readiness_distinguishes_upstream_selection_materialization_and_review_revision():

@@ -4,6 +4,7 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -73,11 +74,34 @@ function hashTree(root: string): string {
   return digest.digest("hex");
 }
 
-test("qualifies the controlled first-time Literature Search to Idea Discovery journey", async ({ page }) => {
+test("qualifies the controlled first-time Literature Search to Idea Discovery journey", async ({ page, context }) => {
   const work = mkdtempSync(join(tmpdir(), "reagent-h1-product-e2e-"));
   const workspace = join(work, "workspace");
+  const screenshotRoot = resolve(repoRoot, ".agent_read/tmp/d1-usability-correction-1");
+  const pageErrors: string[] = [];
+  const externalRequests: string[] = [];
+  const browserWorkspaceWrites: string[] = [];
+  const frontendUrl = process.env.REAGENT_E2E_BASE_URL ?? "http://127.0.0.1:3000";
+  const allowedPorts = new Set([new URL(frontendUrl).port, new URL(backendUrl).port]);
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("request", (event) => {
+    const url = new URL(event.url());
+    if (!["data:", "blob:", "about:"].includes(url.protocol)) {
+      const allowed = ["http:", "https:", "ws:", "wss:"].includes(url.protocol)
+        && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
+        && allowedPorts.has(url.port);
+      if (!allowed) externalRequests.push(event.url());
+    }
+    if (!["GET", "HEAD", "OPTIONS"].includes(event.method()) && /\/workspace(?:\/|$)/.test(url.pathname)) {
+      browserWorkspaceWrites.push(`${event.method()} ${url.pathname}`);
+    }
+  });
   try {
+    rmSync(screenshotRoot, { recursive: true, force: true });
+    mkdirSync(screenshotRoot, { recursive: true });
+    await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: frontendUrl });
     await page.goto("/projects/new");
+    await page.screenshot({ path: join(screenshotRoot, "new-project.png"), fullPage: false });
     await page.getByRole("textbox", { name: /^Project name/ }).fill("H1 first-time research journey");
     await page.getByRole("textbox", { name: /^Fictional or public research topic/ }).fill(
       "LLM agents for scientific literature analysis",
@@ -85,10 +109,28 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     await page.getByRole("button", { name: "Create project" }).click();
     await expect(page).toHaveURL(/\/projects\/project-[0-9a-f]{32}$/);
     const projectId = page.url().split("/").at(-1)!;
-    const localSetup = page.getByRole("region", { name: "Set up or sync locally" });
-    await expect(localSetup.getByRole("heading", { name: "Set up or sync locally" })).toBeVisible();
-    const downloadSetup = localSetup.getByRole("link", { name: "Download setup file" });
+    const setupPanel = page.getByRole("region", { name: "Set up local workspace" });
+    await expect(setupPanel.getByText("Local workspace not set up", { exact: true })).toBeVisible();
+    const setupAction = setupPanel.getByRole("link", { name: "Set up local workspace" });
+    await expect(setupAction).toHaveAttribute("href", `/projects/${projectId}/help`);
+    await expect(page.getByRole("link", { name: "Sync workspace" })).toHaveCount(0);
+    await page.screenshot({ path: join(screenshotRoot, "project-overview-setup.png"), fullPage: false });
+    await page.goto("/projects");
+    await expect(page.getByRole("heading", { name: "H1 first-time research journey" })).toBeVisible();
+    await page.screenshot({ path: join(screenshotRoot, "projects.png"), fullPage: false });
+    await page.goto(`/projects/${projectId}`);
+    await setupAction.click();
+    await expect(page).toHaveURL(`/projects/${projectId}/help`);
+    await expect(page.getByRole("heading", { name: "Create the Local Workspace once" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Download local tool" })).toBeVisible();
+    const downloadSetup = page.getByRole("link", { name: "Download Workspace setup" });
     await expect(downloadSetup).toBeVisible();
+    await expect(page.getByText("python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json")).toBeVisible();
+    const enterAndSync = page.locator(".copy-command code").filter({ hasText: "cd ./reagent-workspace" });
+    await expect(enterAndSync).toContainText("cd ./reagent-workspace");
+    await expect(enterAndSync).toContainText("python reagent_local.py sync .");
+    await enterAndSync.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: join(screenshotRoot, "project-help.png"), fullPage: false });
 
     const downloadPromise = page.waitForEvent("download");
     await downloadSetup.click();
@@ -106,6 +148,31 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
       workspace,
       "literature-search-local-experimental",
     );
+    await page.goto(`/projects/${projectId}`);
+    const readyPanel = page.getByRole("region", { name: "Literature Search is ready" });
+    await expect(readyPanel.getByText(/Run Literature Search in your Local Workspace/)).toBeVisible();
+    const viewRunInstructions = readyPanel.getByRole("link", { name: "View run instructions" });
+    await expect(viewRunInstructions).toHaveAttribute(
+      "href",
+      `/projects/${projectId}/workflows/${literature.instanceId}`,
+    );
+    await expect(readyPanel.getByRole("link", { name: "Run locally" })).toHaveCount(0);
+    await page.screenshot({ path: join(screenshotRoot, "project-overview-ready.png"), fullPage: false });
+    await viewRunInstructions.click();
+    await expect(page).toHaveURL(`/projects/${projectId}/workflows/${literature.instanceId}`);
+    const showRunInstructions = page.getByRole("button", { name: "Show run instructions" });
+    await expect(showRunInstructions).toHaveAttribute("aria-expanded", "false");
+    await showRunInstructions.click();
+    await expect(showRunInstructions).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#run-locally")).toHaveAttribute("open", "");
+    await expect(page.getByText("Exact command", { exact: true })).toBeVisible();
+    await expect(page.getByText(`python reagent_local.py run . --workflow-instance ${literature.instanceId}`)).toBeVisible();
+    const copyExactCommand = page.getByRole("button", { name: "Copy Literature Search exact command" });
+    await expect(copyExactCommand).toBeVisible();
+    await copyExactCommand.click();
+    await expect(copyExactCommand).toHaveText("Copied");
+    await page.screenshot({ path: join(screenshotRoot, "workflow-run-instructions.png"), fullPage: false });
+
     const preflight = workspaceCommand(workspace, [
       "run",
       workspace,
@@ -225,13 +292,26 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     await expect(page.getByText("Idea Discovery was added to this Project.")).toBeVisible();
 
     const literatureHashBeforeIdeaSync = hashTree(literature.root);
+    await page.goto(`/projects/${projectId}`);
+    const syncPanel = page.getByRole("region", { name: "Sync the local workspace" });
+    await expect(syncPanel.getByText("Local workspace needs syncing", { exact: true })).toBeVisible();
+    const syncAction = syncPanel.getByRole("link", { name: "Sync workspace" });
+    await expect(syncAction).toHaveAttribute(
+      "href",
+      `/projects/${projectId}/workflows/${literature.instanceId}`,
+    );
+    await syncAction.click();
+    await expect(page).toHaveURL(`/projects/${projectId}/workflows/${literature.instanceId}`);
+    await expect(page.getByRole("link", { name: "Sync workspace" })).toHaveAttribute("href", "#run-locally");
+    await expect(page.locator("#run-locally")).toContainText("python reagent_local.py sync .");
+
     const ideaSync = workspaceCommand(workspace, ["sync", workspace, "--api-url", backendUrl]);
     expect(ideaSync.status).toBe("SYNCED");
     expect(hashTree(literature.root)).toBe(literatureHashBeforeIdeaSync);
     const idea = installedCapsule(workspace, "idea-discovery-local-experimental");
     expect(idea.root).not.toBe(literature.root);
 
-    await page.reload();
+    await page.goto(`/projects/${projectId}/workflows`);
     const current = page.getByRole("region", { name: "Workflow progression" });
     const ideaCard = current.locator("article").filter({ hasText: "Idea Discovery" });
     const openIdea = ideaCard.getByRole("link", { name: "Open Workflow" });
@@ -319,6 +399,20 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     await page.goto(`/projects/${projectId}/progress?workflow_instance_id=${idea.instanceId}`);
     await expect(page.getByText("CANDIDATE_IDEAS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("USER_REVIEW", { exact: true }).first()).toBeVisible();
+    expect(pageErrors).toEqual([]);
+    expect(externalRequests).toEqual([]);
+    expect(browserWorkspaceWrites).toEqual([]);
+    expect(readdirSync(screenshotRoot).sort()).toEqual([
+      "new-project.png",
+      "project-help.png",
+      "project-overview-ready.png",
+      "project-overview-setup.png",
+      "projects.png",
+      "workflow-run-instructions.png",
+    ]);
+    for (const name of readdirSync(screenshotRoot)) {
+      expect(readFileSync(join(screenshotRoot, name))).not.toHaveLength(0);
+    }
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

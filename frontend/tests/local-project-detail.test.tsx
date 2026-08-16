@@ -1,13 +1,137 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, test, vi } from "vitest";
 
 import { apiClient } from "@/api/client";
 import { LocalProjectDetail } from "@/components/local-project-detail";
+import { LocalProjectList } from "@/components/local-project-list";
+import { WorkflowDetail } from "@/components/workflow-detail";
 import { Providers } from "@/lib/providers";
+import type { LocalProject, ProjectProgress, WorkflowActionProjection } from "@/types/api";
 
-import { localProjectFixture, projectProgressFixture } from "./fixtures";
+import {
+  localProjectFixture,
+  projectProgressFixture,
+  workflowCatalogFixture,
+  workflowInstanceId,
+  workflowInstancesFixture,
+} from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
+
+const setupAction: WorkflowActionProjection = {
+  stage: { code: "LOCAL_SETUP", label: "Local Workspace setup required" },
+  actor: "OWNER",
+  attention_state: "ATTENTION_REQUIRED",
+  blocker: {
+    code: "LOCAL_SETUP_REQUIRED",
+    message: "No Local Workspace installation has been acknowledged for this Project.",
+  },
+  next_action: {
+    surface: "BROWSER",
+    code: "SETUP",
+    label: "Set up Local Workspace",
+    description: "Open the supported Project setup instructions before creating and syncing the Local Workspace.",
+  },
+  expected_output: projectProgressFixture.instances[0].action.expected_output,
+  latest_output: null,
+};
+
+const setupProject: LocalProject = {
+  ...localProjectFixture,
+  attention: {
+    recommended_workflow_instance_id: workflowInstanceId,
+    recommended_workflow_label: "Literature Search",
+    action: setupAction,
+    recent_change: { summary: setupAction.stage.label, changed_at: null },
+    latest_output: null,
+  },
+};
+
+const setupProgress: ProjectProgress = {
+  ...projectProgressFixture,
+  total_progress_report_count: 0,
+  history: [],
+  history_total: 0,
+  attention: setupProject.attention,
+  instances: [{
+    ...projectProgressFixture.instances[0],
+    research_status: "NOT_STARTED",
+    latest_report_id: null,
+    latest_report_checksum: null,
+    latest_execution_round: null,
+    latest_summary: null,
+    report_count: 0,
+    installation_state: "UNKNOWN",
+    installation_manifest_revision: null,
+    readiness: "NOT_INSTALLED",
+    next_action: "SETUP" as const,
+    action: setupAction,
+  }],
+};
+
+const fullSetupProgress: ProjectProgress = {
+  ...setupProgress,
+  active_workflow_count: 5,
+  instances: ([
+    ["review-local-experimental", "Review", "5"],
+    ["writing-local-experimental", "Writing", "4"],
+    ["reproduction-experiment-local-experimental", "Reproduction & Experiment", "3"],
+    ["idea-discovery-local-experimental", "Idea Discovery", "2"],
+  ].map(([workflow_definition_id, workflow_display_name, identity]) => ({
+    ...setupProgress.instances[0],
+    workflow_instance_id: `wfi-${identity.repeat(32)}`,
+    workflow_definition_id,
+    workflow_display_name,
+    instance_display_name: workflow_display_name,
+    friendly_instance_label: workflow_display_name,
+  })) as ProjectProgress["instances"]).concat(setupProgress.instances),
+};
+
+const runAction: WorkflowActionProjection = {
+  ...setupAction,
+  stage: { code: "READY", label: "Ready to start" },
+  attention_state: "NORMAL",
+  blocker: null,
+  next_action: {
+    surface: "LOCAL",
+    code: "RUN",
+    label: "Start in Local Workspace",
+    description: "Run this Workflow through the public local Workspace command.",
+  },
+};
+
+const runProject: LocalProject = {
+  ...setupProject,
+  attention: {
+    ...setupProject.attention,
+    action: runAction,
+    recent_change: { summary: runAction.stage.label, changed_at: null },
+  },
+};
+
+const runProgress: ProjectProgress = {
+  ...setupProgress,
+  attention: runProject.attention,
+  instances: [{
+    ...setupProgress.instances[0],
+    installation_state: "ACKNOWLEDGED_CURRENT",
+    installation_manifest_revision: 1,
+    readiness: "READY_TO_RUN",
+    next_action: "RUN",
+    action: runAction,
+  }],
+};
+
+function arrangeWorkflowDetail(
+  progress: ProjectProgress = setupProgress,
+  project: LocalProject = setupProject,
+) {
+  vi.spyOn(apiClient, "getProject").mockResolvedValue(project);
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(progress);
+  vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue(workflowInstancesFixture);
+  vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue(workflowCatalogFixture);
+}
 
 test("leads the Project Overview with the current research action", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
@@ -28,4 +152,124 @@ test("leads the Project Overview with the current research action", async () => 
   expect(screen.getByRole("link", { name: "Activity" })).toBeVisible();
   expect(screen.queryByRole("link", { name: "Download setup file" })).not.toBeInTheDocument();
   expect(screen.getByText("Technical Details")).toBeVisible();
+});
+
+test("routes fresh Projects and Project Overview to the canonical setup surface", async () => {
+  vi.spyOn(apiClient, "listProjects").mockResolvedValue([setupProject]);
+  const list = render(<Providers><LocalProjectList /></Providers>);
+
+  expect(await screen.findByText("Local workspace not set up")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Set up local workspace →" })).toHaveAttribute(
+    "href",
+    `/projects/${localProjectFixture.project_id}/help`,
+  );
+  expect(screen.queryByText("Local workspace needs syncing")).not.toBeInTheDocument();
+  list.unmount();
+
+  vi.spyOn(apiClient, "getProject").mockResolvedValue(setupProject);
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(fullSetupProgress);
+  render(<Providers><LocalProjectDetail projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Set up local workspace" })).toBeVisible();
+  expect(screen.getAllByText("Local workspace not set up")).toHaveLength(1);
+  expect(screen.getByRole("link", { name: "Set up local workspace" })).toHaveAttribute(
+    "href",
+    `/projects/${localProjectFixture.project_id}/help`,
+  );
+  expect(screen.queryByRole("link", { name: "Sync workspace" })).not.toBeInTheDocument();
+  const workflowProgress = screen.getByRole("region", { name: "Workflow progress" });
+  expect([...workflowProgress.querySelectorAll("strong")].map((element) => element.textContent)).toEqual([
+    "Literature Search",
+    "Idea Discovery",
+    "Reproduction & Experiment",
+    "Writing",
+    "Review",
+  ]);
+  expect(screen.getByText("Waiting for workspace")).toBeVisible();
+  expect(screen.getAllByText("Not started")).toHaveLength(8);
+});
+
+test("Project Overview describes ready local execution as navigation to instructions", async () => {
+  vi.spyOn(apiClient, "getProject").mockResolvedValue(runProject);
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(runProgress);
+  render(<Providers><LocalProjectDetail projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Literature Search is ready" })).toBeVisible();
+  expect(screen.getByText(/Run Literature Search in your Local Workspace/)).toBeVisible();
+  expect(screen.getByRole("link", { name: "View run instructions" })).toHaveAttribute(
+    "href",
+    `/projects/${localProjectFixture.project_id}/workflows/${workflowInstanceId}`,
+  );
+  expect(screen.queryByRole("link", { name: "Run locally" })).not.toBeInTheDocument();
+});
+
+test("Workflow Detail visibly opens human-labeled exact run instructions", async () => {
+  const user = userEvent.setup();
+  arrangeWorkflowDetail(runProgress, runProject);
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={workflowInstanceId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Run Literature Search in your Local Workspace" })).toBeVisible();
+  const reveal = screen.getByRole("button", { name: "Show run instructions" });
+  const instructions = screen.getByText("Run Literature Search", { selector: "summary span" }).closest("details");
+  expect(reveal).toHaveAttribute("aria-controls", "run-locally");
+  expect(reveal).toHaveAttribute("aria-expanded", "false");
+  expect(instructions).not.toHaveAttribute("open");
+
+  await user.click(reveal);
+
+  expect(reveal).toHaveAttribute("aria-expanded", "true");
+  expect(instructions).toHaveAttribute("open");
+  expect(screen.getByText("Exact command")).toBeVisible();
+  expect(screen.getByText(`python reagent_local.py run . --workflow-instance ${workflowInstanceId}`)).toBeVisible();
+  expect(screen.getByText(/runs the exact Literature Search Workflow/)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Copy Literature Search exact command" })).toBeEnabled();
+  expect(screen.getByRole("heading", { name: "Run Literature Search in your Local Workspace" })).not.toHaveTextContent("wfi-");
+});
+
+test("Workflow Detail sends SETUP to Project help without presenting a sync command", async () => {
+  arrangeWorkflowDetail();
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={workflowInstanceId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Set up local workspace" })).toBeVisible();
+  expect(screen.getByText("Local workspace setup", { exact: true })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Set up local workspace" })).toHaveAttribute(
+    "href",
+    `/projects/${localProjectFixture.project_id}/help`,
+  );
+  expect(screen.queryByText("python reagent_local.py sync .")).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Sync workspace" })).not.toBeInTheDocument();
+});
+
+test("Workflow Detail preserves stale installation sync semantics", async () => {
+  const staleAction: WorkflowActionProjection = {
+    ...setupAction,
+    stage: { code: "LOCAL_SYNC", label: "Local Workspace out of date" },
+    blocker: {
+      code: "LOCAL_SYNC_REQUIRED",
+      message: "The Local Workspace acknowledges an older Project revision.",
+    },
+    next_action: {
+      surface: "LOCAL",
+      code: "SYNC",
+      label: "Sync Local Workspace",
+      description: "Bring this Workflow's installed Capsule up to the current Project revision.",
+    },
+  };
+  arrangeWorkflowDetail({
+    ...setupProgress,
+    attention: { ...setupProgress.attention, action: staleAction },
+    instances: [{
+      ...setupProgress.instances[0],
+      installation_state: "ACKNOWLEDGED_STALE",
+      installation_manifest_revision: 1,
+      next_action: "SYNC",
+      action: staleAction,
+    }],
+  });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={workflowInstanceId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Sync the local workspace" })).toBeVisible();
+  expect(screen.getByText("Local workspace needs syncing")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Sync workspace" })).toHaveAttribute("href", "#run-locally");
+  expect(screen.getByText("python reagent_local.py sync .")).toBeInTheDocument();
 });

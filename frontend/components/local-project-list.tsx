@@ -17,7 +17,9 @@ function ProjectRow({ project }: { project: LocalProject }) {
   const attention = project.attention;
   const action = attention.action;
   const presentation = presentWorkflowAction(action, attention.recommended_workflow_label, attention.recent_change.summary);
-  const actionHref = action.next_action.code === "REVIEW_RESULT"
+  const actionHref = action.next_action.code === "SETUP"
+    ? `/projects/${project.project_id}/help`
+    : action.next_action.code === "REVIEW_RESULT"
     ? `/projects/${project.project_id}/outputs`
     : attention.recommended_workflow_instance_id
       ? `/projects/${project.project_id}/workflows/${attention.recommended_workflow_instance_id}`
@@ -97,8 +99,8 @@ export function LocalProjectList() {
             </section>
           ) : null}
           {other.length ? (
-            <section aria-labelledby="all-projects-title">
-              <div className="section-heading"><div><p className="eyebrow">Portfolio</p><h2 id="all-projects-title">All projects</h2></div><span>{other.length} {other.length === 1 ? "project" : "projects"}</span></div>
+            <section aria-labelledby="other-projects-title">
+              <div className="section-heading"><div><p className="eyebrow">Portfolio</p><h2 id="other-projects-title">Other projects</h2></div><span>{other.length} {other.length === 1 ? "project" : "projects"}</span></div>
               <div className="project-work-list">{other.map((project) => <ProjectRow key={project.project_id} project={project} />)}</div>
             </section>
           ) : null}

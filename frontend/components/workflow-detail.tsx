@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRef, useState } from "react";
 import type { WorkflowActionProjection } from "@/types/api";
 
 import {
@@ -74,13 +75,20 @@ export function presentWorkflowAction(
   const attention = action.attention_state === "OWNER_ACTION_REQUIRED"
     ? "Needs your review"
     : action.attention_state === "ATTENTION_REQUIRED"
-      ? code === "SYNC" ? "Local workspace needs syncing" : "Needs attention"
+      ? code === "SETUP" ? "Local workspace not set up" : code === "SYNC" ? "Local workspace needs syncing" : "Needs attention"
       : action.attention_state === "BLOCKED"
         ? "Blocked"
         : action.actor === "AGENT"
           ? "Agent working"
           : action.attention_state === "COMPLETED" ? "Completed" : "Ready";
 
+  if (code === "SETUP") return {
+    attention,
+    stage: "Local workspace setup",
+    task: "Set up local workspace",
+    reason: "Create the local workspace before starting research.",
+    actionLabel: "Set up local workspace",
+  };
   if (code === "SYNC") return {
     attention,
     stage: "Workspace sync",
@@ -112,9 +120,9 @@ export function presentWorkflowAction(
   if (code === "RUN") return {
     attention: "Ready to continue locally",
     stage: "Ready to run",
-    task: `Run ${kind} locally`,
-    reason: `${action.expected_output?.label ?? "The next output"} can now be produced in the local workspace.`,
-    actionLabel: "Run locally",
+    task: `${kind} is ready`,
+    reason: `Run ${kind} in your Local Workspace to produce ${action.expected_output?.label?.toLocaleLowerCase() ?? "the next output"}.`,
+    actionLabel: "View run instructions",
   };
   if (code === "CONTINUE" && action.stage.code === "OWNER_APPROVAL") {
     return { attention, ...checkpointAction(workflowLabel, `${context} ${action.blocker?.message ?? ""}`) };
@@ -173,13 +181,25 @@ export function WorkflowActionPanel({
   workflowLabel,
   href,
   context,
+  revealLocalInstructions,
+  instructionsExpanded,
 }: {
   action: WorkflowActionProjection;
   workflowLabel: string | null;
   href?: string;
   context?: string;
+  revealLocalInstructions?: () => void;
+  instructionsExpanded?: boolean;
 }) {
-  const presentation = presentWorkflowAction(action, workflowLabel, context);
+  const basePresentation = presentWorkflowAction(action, workflowLabel, context);
+  const presentation = action.next_action.code === "RUN" && revealLocalInstructions
+    ? {
+        ...basePresentation,
+        task: `Run ${workflowLabel ?? "this Workflow"} in your Local Workspace`,
+        reason: "This step runs from the Local Workspace on your machine.",
+        actionLabel: "Show run instructions",
+      }
+    : basePresentation;
   const panelReason = action.next_action.code === "CONTINUE"
     && action.stage.code === "OWNER_APPROVAL"
     && workflowKind(workflowLabel).includes("writing")
@@ -195,7 +215,17 @@ export function WorkflowActionPanel({
       </div>
       <aside className="current-action-next">
         <span>Next action</span>
-        {href && action.next_action.surface !== "NONE" ? <Link href={href} className="button button-primary">{presentation.actionLabel}</Link> : null}
+        {revealLocalInstructions ? (
+          <button
+            type="button"
+            className="button button-primary"
+            aria-controls="run-locally"
+            aria-expanded={instructionsExpanded}
+            onClick={revealLocalInstructions}
+          >
+            {presentation.actionLabel}
+          </button>
+        ) : href && action.next_action.surface !== "NONE" ? <Link href={href} className="button button-primary">{presentation.actionLabel}</Link> : null}
       </aside>
     </section>
   );
@@ -209,6 +239,8 @@ function localCommand(code: string, workflowInstanceId: string): string | null {
 }
 
 export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: string; workflowInstanceId: string }) {
+  const [runInstructionsOpen, setRunInstructionsOpen] = useState(false);
+  const runInstructionsRef = useRef<HTMLDetailsElement>(null);
   const project = useProject(projectId);
   const instances = useProjectWorkflowInstances(projectId);
   const progress = useProjectProgress(projectId, { workflowInstanceId });
@@ -234,12 +266,23 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
   ));
   const activity = progress.data.history.filter((report) => report.workflow_instance_id === workflowInstanceId).slice(0, 5);
   const command = localCommand(state.action.next_action.code, workflowInstanceId);
-  const actionHref = state.action.next_action.surface === "BROWSER" && state.action.next_action.code === "SELECT_INPUT"
+  const actionHref = state.action.next_action.code === "SETUP"
+    ? `/projects/${projectId}/help`
+    : state.action.next_action.surface === "BROWSER" && state.action.next_action.code === "SELECT_INPUT"
     ? "#inputs"
       : state.action.next_action.code === "REVIEW_RESULT"
         ? `/projects/${projectId}/outputs`
       : state.action.next_action.surface === "LOCAL" ? "#run-locally" : undefined;
   const presentation = presentWorkflowAction(state.action, state.workflow_display_name, state.latest_summary ?? "");
+  const revealRunInstructions = state.action.next_action.code === "RUN"
+    ? () => {
+        setRunInstructionsOpen(true);
+        window.requestAnimationFrame(() => {
+          runInstructionsRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+          runInstructionsRef.current?.focus();
+        });
+      }
+    : undefined;
 
   return (
     <div className="page-stack workflow-detail-page">
@@ -250,7 +293,14 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
       </header>
       <ProjectNavigation projectId={projectId} active="Workflows" />
 
-      <WorkflowActionPanel action={state.action} workflowLabel={state.workflow_display_name} href={actionHref} context={state.latest_summary ?? ""} />
+      <WorkflowActionPanel
+        action={state.action}
+        workflowLabel={state.workflow_display_name}
+        href={actionHref}
+        context={state.latest_summary ?? ""}
+        revealLocalInstructions={revealRunInstructions}
+        instructionsExpanded={runInstructionsOpen}
+      />
 
       <div className="workflow-support-grid">
         <section id="inputs" className="plain-section" aria-labelledby="workflow-inputs-title">
@@ -285,9 +335,21 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
       </div>
 
       {command ? (
-        <details id="run-locally" className="run-local-details">
-          <summary><span>Run locally</span><span>Show command</span></summary>
-          <div><p>Copy this command into the local workspace. The browser does not run it or write research files.</p><CopyCommand command={command} label={`${presentation.actionLabel} command`} /></div>
+        <details
+          id="run-locally"
+          className="run-local-details"
+          open={runInstructionsOpen}
+          onToggle={(event) => setRunInstructionsOpen(event.currentTarget.open)}
+          ref={runInstructionsRef}
+          tabIndex={-1}
+        >
+          <summary><span>{state.action.next_action.code === "RUN" ? `Run ${state.workflow_display_name}` : presentation.task}</span><span>{runInstructionsOpen ? "Hide instructions" : "Show instructions"}</span></summary>
+          <div>
+            <p>Use this command in your Local Workspace. The browser does not run it or write research files.</p>
+            <p>This command runs the exact {state.workflow_display_name} Workflow selected for this Project.</p>
+            <p className="exact-command-label">Exact command</p>
+            <CopyCommand command={command} label={`${state.workflow_display_name} exact command`} />
+          </div>
         </details>
       ) : null}
 

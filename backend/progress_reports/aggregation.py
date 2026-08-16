@@ -230,6 +230,14 @@ class ProjectProgressAggregationService:
         elif acknowledged_revisions:
             installation_state = "ACKNOWLEDGED_STALE"
             installation_revision = max(acknowledged_revisions)
+        elif acknowledgements:
+            # The Project has an established Local Workspace, but this newly
+            # desired Workflow has never appeared in an acknowledged install.
+            installation_state = "ACKNOWLEDGED_STALE"
+            installation_revision = max(
+                acknowledgement.manifest_revision
+                for acknowledgement in acknowledgements
+            )
         else:
             installation_state = "UNKNOWN"
             installation_revision = None
@@ -354,6 +362,8 @@ class ProjectProgressAggregationService:
 def _readiness(*, lifecycle, installation_state, missing, compatible_counts, report_count, research_status, result_count, stable_key):
     if lifecycle == "RETIRED":
         return "RETIRED", "REVIEW_RESULT"
+    if installation_state == "UNKNOWN":
+        return "NOT_INSTALLED", "SETUP"
     if installation_state != "ACKNOWLEDGED_CURRENT":
         return "NOT_INSTALLED", "SYNC"
     unavailable = tuple(key for key in missing if compatible_counts.get(key, 0) == 0)
@@ -375,6 +385,7 @@ def _readiness(*, lifecycle, installation_state, missing, compatible_counts, rep
 
 
 _OUTPUT_LABELS = {
+    "literature-search-report/v0.2": "Selected paper library",
     "selected-paper-library/v1": "Selected paper library",
     "selected-research-idea/v1": "Selected research idea",
     "experiment-record/v1": "Experiment record",
@@ -387,6 +398,7 @@ _OUTPUT_LABELS = {
 }
 
 _ACTION_CONTENT = {
+    "SETUP": ("BROWSER", "Set up Local Workspace", "Open the supported Project setup instructions before creating and syncing the Local Workspace."),
     "SYNC": ("LOCAL", "Sync Local Workspace", "Bring this Workflow's installed Capsule up to the current Project revision."),
     "WAIT_FOR_UPSTREAM": ("INFORMATIONAL", "Wait for required Output", "Complete the upstream research needed by this Workflow."),
     "SELECT_INPUT": ("BROWSER", "Choose exact input", "Select one exact compatible Output; ReAgent never selects latest implicitly."),
@@ -425,21 +437,21 @@ def _workflow_action(
             actor="OWNER",
             attention_state="ATTENTION_REQUIRED",
             blocker=WorkflowBlockerProjection(
-                "LOCAL_STATE_STALE",
+                "LOCAL_SYNC_REQUIRED",
                 "The Local Workspace acknowledges an older Project revision.",
             ),
             next_action=_next_action("SYNC"), expected_output=expected,
             latest_output=latest,
         )
-    if installation_state != "ACKNOWLEDGED_CURRENT":
+    if installation_state == "UNKNOWN":
         return WorkflowActionProjection(
             stage=WorkflowStageProjection("LOCAL_SETUP", "Local Workspace setup required"),
             actor="OWNER", attention_state="ATTENTION_REQUIRED",
             blocker=WorkflowBlockerProjection(
-                "LOCAL_SYNC_REQUIRED",
-                "Cloud has not received acknowledgement for the current local installation.",
+                "LOCAL_SETUP_REQUIRED",
+                "No Local Workspace installation has been acknowledged for this Project.",
             ),
-            next_action=_next_action("SYNC"), expected_output=expected,
+            next_action=_next_action("SETUP"), expected_output=expected,
             latest_output=latest,
         )
     if research_status == "FAILED":
@@ -698,7 +710,7 @@ def _friendly_labels(instances, definitions) -> dict[str, str]:
 
 def _next_action_priority(value: str) -> int:
     # Project guidance prefers one actionable step over cards that are waiting.
-    return {"SYNC": 10, "SELECT_INPUT": 20, "MATERIALIZE": 30, "RUN": 40, "CONTINUE": 50, "REVISE_MANUSCRIPT": 60, "REVIEW_RESULT": 70, "WAIT_FOR_UPSTREAM": 90}.get(value, 99)
+    return {"SETUP": 5, "SYNC": 10, "SELECT_INPUT": 20, "MATERIALIZE": 30, "RUN": 40, "CONTINUE": 50, "REVISE_MANUSCRIPT": 60, "REVIEW_RESULT": 70, "WAIT_FOR_UPSTREAM": 90}.get(value, 99)
 
 
 def _workflow_path_priority(definition_id: str) -> int:

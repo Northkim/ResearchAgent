@@ -24,6 +24,30 @@ test("renders task-first Projects with backend-derived attention and next action
   );
 });
 
+test("groups non-attention results under Other projects without a misleading All projects section", async () => {
+  const otherProject = {
+    ...localProjectFixture,
+    project_id: `project-${"9".repeat(32)}`,
+    name: "Other fictional project",
+    attention: {
+      ...localProjectFixture.attention,
+      action: {
+        ...localProjectFixture.attention.action,
+        attention_state: "NORMAL" as const,
+      },
+    },
+  };
+  vi.spyOn(apiClient, "listProjects").mockResolvedValue([localProjectFixture, otherProject]);
+  render(<Providers><LocalProjectList /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Needs your attention" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Other projects" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "All projects" })).not.toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "All projects" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: localProjectFixture.name })).toBeVisible();
+  expect(screen.getByRole("heading", { name: otherProject.name })).toBeVisible();
+});
+
 test("renders the empty project state", async () => {
   vi.spyOn(apiClient, "listProjects").mockResolvedValue([]);
   render(<Providers><LocalProjectList /></Providers>);

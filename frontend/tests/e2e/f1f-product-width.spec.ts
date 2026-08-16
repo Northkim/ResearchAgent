@@ -218,7 +218,7 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
       await expect(inputRows.filter({ hasText: "Selected research idea" }).getByText("Ready", { exact: true })).toBeVisible();
       await expect(inputRows.filter({ hasText: "Experiment result" }).getByText("Optional · Not provided", { exact: true })).toBeVisible();
       await expect(inputs.getByText("Missing", { exact: true })).toHaveCount(0);
-      await expect(page.getByText("Run locally").locator(".." )).not.toHaveAttribute("open");
+      await expect(page.locator("details#run-locally")).not.toHaveAttribute("open");
       await expect(page.getByText("Technical Details").locator(".." )).not.toHaveAttribute("open");
       await expect(page.getByText(/Owner acts now|Continue at owner checkpoint|Run the exact public command locally|placeholder research core|Artifact flow/i)).toHaveCount(0);
       await assertSafeViewport();
