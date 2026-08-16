@@ -32,7 +32,7 @@ from backend.database.orm import Base
 
 
 @pytest.fixture(scope="module")
-def r3ci_engine():
+def r3ci_engine(repository_current_head: str):
     database_url = os.environ.get("REAGENT_TEST_DATABASE_URL")
     if not database_url:
         pytest.fail("R3C-I PostgreSQL tests require REAGENT_TEST_DATABASE_URL and may not skip")
@@ -44,9 +44,12 @@ def r3ci_engine():
     )
     with engine.connect() as connection:
         revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
-    if revision != "20260813_0021":
+    if revision != repository_current_head:
         engine.dispose()
-        pytest.fail("R3C-I PostgreSQL database must be at 20260813_0021")
+        pytest.fail(
+            "R3C-I PostgreSQL database must be at the repository Alembic head "
+            f"{repository_current_head}; found {revision}"
+        )
     yield engine
     engine.dispose()
 

@@ -35,10 +35,14 @@ from backend.skill_system.runtime import register_fake_skills
 from backend.workflow_engine.services import WorkflowExecutionCoordinator
 
 
-def test_postgresql_schema_is_at_head(postgres_engine: Engine) -> None:
+def test_postgresql_schema_is_at_head(
+    postgres_engine: Engine,
+    repository_current_head: str,
+) -> None:
     with postgres_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "20260813_0021"
+        assert (
+            connection.scalar(text("SELECT version_num FROM alembic_version"))
+            == repository_current_head
         )
     assert set(inspect(postgres_engine).get_table_names()) >= {
         "workflow_definitions",
