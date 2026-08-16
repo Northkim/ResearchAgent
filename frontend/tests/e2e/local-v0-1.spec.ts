@@ -19,7 +19,10 @@ function resultFrom(output: string): Record<string, unknown> {
 async function createDownloadedPackage(page: Page, work: string, label: string) {
     await page.goto("/");
     await expect(page).toHaveURL(/\/projects$/);
-    await page.getByRole("link", { name: "Create project" }).click();
+    const newProject = page.getByRole("link", { name: "New Project", exact: true });
+    await expect(newProject).toHaveAttribute("href", "/projects/new");
+    await newProject.click();
+    await expect(page).toHaveURL(/\/projects\/new$/);
     await page.getByRole("textbox", { name: /^Project name/ }).fill(label);
     await page.getByRole("textbox", { name: /^Fictional or public research topic/ }).fill(
       "A fictional public topic about transparent local research continuation",
@@ -94,13 +97,22 @@ test("runs the default interactive demo through all checkpoints and displays its
     expect(resultFrom(replay).status).toBe("ROUND_ALREADY_UPLOADED");
 
     await page.goto(`/projects/${projectId}/progress`);
-    const activity = page.getByRole("region", { name: "Progress Report activity" });
+    const activity = page.getByRole("region", { name: "What happened" });
     await expect(activity.getByText("Completed", { exact: true })).toBeVisible();
-    await expect(page.getByText("FICTIONAL DEMO EVIDENCE: three representative records selected.")).toBeVisible();
-    await expect(activity.getByText("outputs/search_plan.md", { exact: true })).toBeVisible();
-    await expect(activity.getByText("outputs/selected_papers.json", { exact: true })).toBeVisible();
-    await expect(activity.getByText(/selected-paper-library\/v1/)).toBeVisible();
-    await expect(page.getByText(/these files remain local/)).toBeVisible();
+    await expect(activity.getByText("FICTIONAL DEMO EVIDENCE: three representative records selected.")).toBeVisible();
+    const literatureActivity = activity.getByRole("listitem").filter({
+      has: page.getByRole("heading", { name: "Literature Search" }),
+    });
+    await expect(literatureActivity).toContainText("Selected paper library");
+
+    await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Outputs" }).click();
+    await expect(page).toHaveURL(`/projects/${projectId}/outputs`);
+    const outputs = page.getByRole("region", { name: "Project Outputs" });
+    await expect(outputs.getByRole("heading", { name: "Selected paper library" })).toBeVisible();
+    const outputSchema = outputs.getByText("selected-paper-library/v1", { exact: true });
+    await expect(outputSchema).not.toBeVisible();
+    await outputs.getByText("Technical Details", { exact: true }).click();
+    await expect(outputSchema).toBeVisible();
 
     const navigation = page.getByRole("navigation", { name: "Primary navigation" });
     await expect(navigation).not.toContainText(/run|resume|approval|hosted/i);
@@ -124,7 +136,7 @@ test("preserves the explicit unattended demo path", async ({ page }) => {
     expect(resultFrom(first).status).toBe("ROUND_COMPLETED");
     await page.goto(`/projects/${projectId}/progress`);
     await expect(
-      page.getByRole("region", { name: "Progress Report activity" }).getByText("Completed", { exact: true }),
+      page.getByRole("region", { name: "What happened" }).getByText("Completed", { exact: true }),
     ).toBeVisible();
   } finally {
     rmSync(work, { recursive: true, force: true });

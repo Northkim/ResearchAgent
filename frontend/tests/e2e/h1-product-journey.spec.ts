@@ -78,17 +78,20 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
   const workspace = join(work, "workspace");
   try {
     await page.goto("/projects/new");
-    await page.getByRole("textbox", { name: /^Project name/ }).fill("H1 controlled product journey");
+    await page.getByRole("textbox", { name: /^Project name/ }).fill("H1 first-time research journey");
     await page.getByRole("textbox", { name: /^Fictional or public research topic/ }).fill(
       "LLM agents for scientific literature analysis",
     );
     await page.getByRole("button", { name: "Create project" }).click();
     await expect(page).toHaveURL(/\/projects\/project-[0-9a-f]{32}$/);
     const projectId = page.url().split("/").at(-1)!;
-    await expect(page.getByRole("heading", { name: "Create your Local Workspace" })).toBeVisible();
+    const localSetup = page.getByRole("region", { name: "Set up or sync locally" });
+    await expect(localSetup.getByRole("heading", { name: "Set up or sync locally" })).toBeVisible();
+    const downloadSetup = localSetup.getByRole("link", { name: "Download setup file" });
+    await expect(downloadSetup).toBeVisible();
 
     const downloadPromise = page.waitForEvent("download");
-    await page.getByRole("link", { name: "Download setup file" }).click();
+    await downloadSetup.click();
     const descriptor = await (await downloadPromise).path();
     expect(descriptor).not.toBeNull();
     const bootstrap = commandJson(
@@ -229,13 +232,19 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     expect(idea.root).not.toBe(literature.root);
 
     await page.reload();
-    const current = page.locator("section").filter({
-      has: page.getByRole("heading", { name: "Your Project workflows" }),
-    });
+    const current = page.getByRole("region", { name: "Workflow progression" });
     const ideaCard = current.locator("article").filter({ hasText: "Idea Discovery" });
-    await expect(ideaCard.getByText("Recommended: this is the only compatible result.")).toBeVisible();
-    await ideaCard.getByRole("button", { name: "Confirm selected input" }).click();
-    await expect(ideaCard.getByText("Input selected. Next, prepare the verified copy")).toBeVisible();
+    const openIdea = ideaCard.getByRole("link", { name: "Open Workflow" });
+    await expect(openIdea).toHaveAttribute(
+      "href",
+      `/projects/${projectId}/workflows/${idea.instanceId}`,
+    );
+    await openIdea.click();
+    await expect(page).toHaveURL(`/projects/${projectId}/workflows/${idea.instanceId}`);
+    const inputs = page.getByRole("region", { name: "Inputs", exact: true });
+    await expect(inputs.getByRole("radio")).toBeChecked();
+    await inputs.getByRole("button", { name: "Confirm exact input" }).click();
+    await expect(inputs.getByText("Ready", { exact: true })).toBeVisible();
 
     const refreshed = workspaceCommand(workspace, ["artifact", "refresh", workspace, "--api-url", backendUrl]);
     expect(refreshed.status).toBe("INDEX_REFRESHED");
@@ -303,7 +312,10 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     await page.goto(`/projects/${projectId}/workflows`);
     await expect(page.getByRole("heading", { name: "Literature Search" }).first()).toBeVisible();
     await expect(page.getByRole("heading", { name: "Idea Discovery" }).first()).toBeVisible();
-    await expect(page.getByText("Continue this Workflow")).toBeVisible();
+    const progressedIdea = page.getByRole("region", { name: "Workflow progression" })
+      .locator("article")
+      .filter({ hasText: "Idea Discovery" });
+    await expect(progressedIdea.getByText("Continue in Local Workspace", { exact: true })).toBeVisible();
     await page.goto(`/projects/${projectId}/progress?workflow_instance_id=${idea.instanceId}`);
     await expect(page.getByText("CANDIDATE_IDEAS", { exact: true }).first()).toBeVisible();
     await expect(page.getByText("USER_REVIEW", { exact: true }).first()).toBeVisible();
