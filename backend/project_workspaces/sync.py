@@ -74,6 +74,11 @@ from backend.workflow_packages.production_workflows import (
     build_writing_revision_v0_6_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
+from backend.workflow_packages.generic_experiment_publication import (
+    GENERIC_EXPERIMENT_CAPSULE_VERSION,
+    GENERIC_EXPERIMENT_WORKFLOW_VERSION,
+    build_generic_experiment_v0_9_package,
+)
 
 from .contracts import (
     CapsuleArtifactStatus,
@@ -729,6 +734,16 @@ class WorkspaceSyncApplicationService:
                 f"prepared-experiment-{project.project_id}-"
                 f"{instance.workflow_instance_id}-v0.8"
             )
+        elif (
+            instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
+            and instance.workflow_version == GENERIC_EXPERIMENT_WORKFLOW_VERSION
+            and instance.capsule_version == GENERIC_EXPERIMENT_CAPSULE_VERSION
+        ):
+            builder = build_generic_experiment_v0_9_package
+            package_id = (
+                f"generic-experiment-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.9"
+            )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")
         output = (
@@ -766,6 +781,7 @@ class WorkspaceSyncApplicationService:
                 REAL_EXPERIMENT_WORKFLOW_VERSION,
                 REAL_WRITING_WORKFLOW_VERSION,
                 WRITING_REVISION_WORKFLOW_VERSION,
+                GENERIC_EXPERIMENT_WORKFLOW_VERSION,
             }
         ):
             self._verify_compiled_skill_authority(instance, built.package_root)

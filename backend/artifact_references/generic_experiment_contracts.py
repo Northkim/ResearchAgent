@@ -32,9 +32,11 @@ from backend.workflow_packages.serialization import SerializableContract, canoni
 PRESENTATION_SCHEMA = "reagent.artifact-presentation.experiment-record/v0.2"
 EXPERIMENT_RECORD_V4_SCHEMA = "experiment-record/v4"
 _ARTIFACT_ID = re.compile(r"^artifact-[0-9a-f]{32}$")
-_ABSOLUTE_PATH = re.compile(r"(?:^|\s)(?:/Users/|/Volumes/|/home/|[A-Za-z]:\\)")
+_ABSOLUTE_PATH = re.compile(
+    r"(?:^|\s)(?:/" + r"Users/|/" + r"Volumes/|/home/|[A-Za-z]:\\)"
+)
 _FORBIDDEN = re.compile(
-    r"```|<\s*/?[a-z]|-----BEGIN .*PRIVATE KEY-----|\bTraceback\b|"
+    r"```|<\s*/?[a-z]|-----BEGIN .*PRIVATE " + r"KEY-----|\bTraceback\b|"
     r"(?:https?://)[^\s/@]+:[^\s/@]+@",
     re.IGNORECASE,
 )

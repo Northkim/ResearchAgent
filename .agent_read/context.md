@@ -2,6 +2,43 @@
 
 Last updated: 2026-08-17
 
+## GEN-C generic Experiment publication and public Local Workspace path (2026-08-17)
+
+GEN-C publishes immutable Experiment Definition 0.6.0, Capsule 0.9.0, the
+reviewed reference Capability Skill
+`sklearn-tabular-classification-preparation-local-builtin@0.1.0`, and the
+production `experiment-record/v4` contract. Experiment Core remains research-
+domain-agnostic; the production Capability set is intentionally narrow and the
+non-ML Capability remains test-only. Unsupported methodologies return
+`AUTOMATIC_PREPARATION_UNSUPPORTED` without code-authoring or dependency-
+installation fallback.
+
+The existing Local Workspace catalog/create/sync/materialize/run path now
+recognizes the exact 0.6/0.9 pins. One selected Idea is checksum-bound into a
+Research Objective, real or controlled Codex recovers generic Methodology v0.2,
+and the public command stops at a typed durable methodology/Capability/design
+checkpoint without probing a scientific runtime at startup. Resume reads the
+exact local receipt rather than chat history. Later preparation, Resource and
+runtime readiness, one-use Run Approval, existing bounded-runner handoff,
+Capability-owned evaluation, Owner result review, and generic v4 finalization
+continue through the frozen GEN-B coordinator contracts.
+
+Migration `20260817_0028` is the sole head. The final exact identities are
+Definition checksum
+`sha256:5e91401ee48979ff1e61453c8e304565c9c35ab317d511fdb458b82347dff517`
+and Capsule ID/checksum `capsule-2a40aa6dd4668a734bb83c48fcbac088` /
+`sha256:2a40aa6dd4668a734bb83c48fcbac0886659d7a4281b96d4b84296ce728a21fe`.
+An isolated marked PostgreSQL 18 database passed base→0028, exact publication
+assertions, 0028→0027→0028, Alembic check, and restart/readback, then the
+database and cluster were deleted. Aggregate non-database backend regression is
+`946 passed, 5 skipped`; final E4 is `5 passed`; real Codex E7 is `1 passed` and
+stopped at `METHODOLOGY_DECISION_REQUIRED`. No scientific experiment ran.
+
+Experiment 0.4/0.7/v2 and 0.5/0.8/v3 bytes remain unchanged. The Full Research
+preset remains on its compatible historical pins; current D1 remains paused and
+unmodified. GEN-D, Path B, presentation persistence/API, and browser UX have not
+begun.
+
 ## GEN-B generic Experiment coordinator and Capability isolation (2026-08-17)
 
 GEN-B is implemented as an unpublished internal integration seam. The generic
@@ -136,8 +173,8 @@ also paused at its real Owner methodology checkpoint; consequential fold,
 repeat, seed, and neighbor choices must not be fabricated. EP-B2, EP-C, EP-D,
 current D1 Project mutation, and D1 continuation remain unauthorized.
 `REFERENCE_SLICE_CONTRACT_REGRESSION = PASS`;
-`GENERIC_DEFAULT_STATUS = NOT_EXPERIMENT_0_5`; `D1 = PAUSED`; GEN-A contract
-foundation is present, while GEN-B/GEN-C/GEN-D have not begun.
+`GENERIC_DEFAULT_STATUS = EXPERIMENT_0_6`; `D1 = PAUSED`; GEN-A/GEN-B are
+frozen and GEN-C is published, while GEN-D has not begun.
 
 ## Final Owner-approved controlled-local release
 

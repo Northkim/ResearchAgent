@@ -3422,6 +3422,42 @@ def _make_manifest(
         ),)
         continuation = "RESUMABLE METHODOLOGY AND TWO EXACT OWNER APPROVALS; ONE ATTEMPT"
         proxy = "NO NETWORK; REVIEWED LOCAL BUILDER; LOCAL FOREGROUND EXECUTION ONLY"
+    elif (
+        workflow_id == EXPERIMENT_WORKFLOW_ID
+        and workflow_version == "0.6.0"
+    ):
+        skill_id = "sklearn-tabular-classification-preparation-local-builtin"
+        skill_root = f"workflow/skills/{skill_id}"
+        skill_path = f"{skill_root}/SKILL.md"
+        skill_contract_path = f"{skill_root}/skill.json"
+        skills = (SkillPin(
+            name=skill_id, semantic_version="0.1.0",
+            source_type="BUNDLED_REAGENT_ORIGINAL",
+            source_identity="reagent-gen-c-reference-experiment-capability",
+            checksum=canonical_hash({
+                "instructions": sha256_bytes(files[skill_path].content),
+                "contract": sha256_bytes(files[skill_contract_path].content),
+            }),
+            relative_path=skill_path,
+            required_capabilities=(
+                "experiment.capability.assess-support/v0.1",
+                "experiment.capability.declare-requirements/v0.1",
+                "experiment.capability.prepare/v0.1",
+                "experiment.capability.evaluate/v0.1",
+                "experiment.capability.present/v0.1",
+            ),
+        ),)
+        prompt_path = "workflow/prompts/generic-methodology.md"
+        prompt_id = "generic-experiment-methodology"
+        prompt_version = "0.1.0"
+        outputs = ()
+        inputs = (PackageInputManifest(
+            "local-project-display", "inputs/project.json",
+            sha256_bytes(files["inputs/project.json"].content), True,
+            "application/json", "CLOUD_SUPPLIED",
+        ),)
+        continuation = "DURABLE TYPED CHECKPOINTS; LOCAL EXACT RECEIPTS; NO CHAT-HISTORY AUTHORITY"
+        proxy = "NO NETWORK; EXACT REVIEWED CAPABILITY SET; EXISTING BOUNDED RUNNER ONLY"
     else:
         config = json.loads(files["workflow/scaffold.json"].content)
         if workflow_version in {
@@ -3506,7 +3542,7 @@ def _make_manifest(
         "calculate_sha256", "follow_AGENT_md", "launch_codex_cli",
         "progress.upload/v0.2",
     ]
-    if workflow_version == REAL_EXPERIMENT_WORKFLOW_VERSION:
+    if workflow_version in {REAL_EXPERIMENT_WORKFLOW_VERSION, "0.6.0"}:
         required_capabilities.extend((
             "execute_one_local_foreground_process",
             "enforce_child_no_egress",

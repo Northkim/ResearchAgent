@@ -154,6 +154,10 @@ SUPPORTED_CAPSULE_PINS = {
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
+    ("reproduction-experiment-local-experimental", "0.6.0", "0.9.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -1060,6 +1064,7 @@ def _declared_dynamic_input_paths(
         "workflow/real-writing.json",
         "workflow/real-review.json",
         "workflow/writing-revision.json",
+        "workflow/generic-experiment.json",
     ):
         descriptor_entry = declared.get(descriptor_path)
         if descriptor_entry is None:
@@ -1106,6 +1111,7 @@ def _declared_runtime_dynamic_paths(
     for descriptor_path in (
         "workflow/real-writing.json", "workflow/real-review.json",
         "workflow/writing-revision.json",
+        "workflow/generic-experiment.json",
     ):
         descriptor_entry = declared.get(descriptor_path)
         if descriptor_entry is None:
@@ -4586,6 +4592,9 @@ def run_workflow(
         is_prepared_experiment = pin == (
             "reproduction-experiment-local-experimental", "0.5.0", "0.8.0"
         )
+        is_generic_experiment = pin == (
+            "reproduction-experiment-local-experimental", "0.6.0", "0.9.0"
+        )
         is_real_writing = pin == (
             "writing-local-experimental", "0.3.0", "0.5.0"
         )
@@ -4802,6 +4811,23 @@ def run_workflow(
                 command.append("--preflight-only")
             if codex_executable is not None:
                 command.extend(["--codex-executable", codex_executable])
+        elif is_generic_experiment:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                generic_experiment=True,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
         elif is_scaffold:
             if pin in {
                 ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"),
@@ -4929,6 +4955,28 @@ def run_workflow(
                 "WORKFLOW_RUN_PREFLIGHT_FAILED" if preflight_only else "WORKFLOW_RUN_FAILED",
                 "Workflow local Harness did not complete successfully",
                 EXIT_VALIDATION,
+            )
+        if is_generic_experiment and not preflight_only:
+            checkpoint = _read_json(capsule / "memory/generic-checkpoint.json")
+            allowed = {
+                "METHODOLOGY_DECISION_REQUIRED", "CAPABILITY_SELECTION_REQUIRED",
+                "DESIGN_APPROVAL_REQUIRED", "AUTOMATIC_PREPARATION_UNSUPPORTED",
+            }
+            if (
+                checkpoint.get("schema")
+                != "reagent.public-generic-experiment-checkpoint/v0.1"
+                or checkpoint.get("status") not in allowed
+            ):
+                raise _identity(
+                    "LOCAL_PROGRESS_INVALID",
+                    "Generic Experiment did not produce a typed durable checkpoint",
+                )
+            return WorkflowRunResult(
+                status=checkpoint["status"],
+                project_id=descriptor["project_id"],
+                workspace_id=descriptor["workspace_id"],
+                workflow_instance_id=workflow_instance_id,
+                capsule_relative_path=installed["relative_path"],
             )
         if not preflight_only and (is_real_experiment or is_prepared_experiment or is_real_writing or is_real_review or is_writing_revision):
             recovered = _evaluate_local_progress_readiness(
@@ -5316,11 +5364,13 @@ def _prepare_scaffold_input_provenance(
     real_writing: bool = False, real_review: bool = False,
     writing_revision: bool = False,
     prepared_experiment: bool = False,
+    generic_experiment: bool = False,
 ) -> None:
-    if sum((real_experiment, real_writing, real_review, writing_revision, prepared_experiment)) > 1:
+    if sum((real_experiment, real_writing, real_review, writing_revision, prepared_experiment, generic_experiment)) > 1:
         raise _identity("LOCAL_CAPSULE_DRIFT", "reviewed Workflow descriptor is ambiguous")
     descriptor_path = (
-        "workflow/prepared-experiment.json" if prepared_experiment
+        "workflow/generic-experiment.json" if generic_experiment
+        else "workflow/prepared-experiment.json" if prepared_experiment
         else "workflow/real-experiment.json" if real_experiment
         else "workflow/real-writing.json" if real_writing
         else "workflow/real-review.json" if real_review
@@ -5330,7 +5380,7 @@ def _prepare_scaffold_input_provenance(
     config = _read_json(capsule / descriptor_path)
     if (
         config.get("core_capability_maturity")
-        != ("REVIEWED_CORE" if (real_experiment or prepared_experiment or real_writing or real_review or writing_revision) else "SCAFFOLD_CORE")
+        != ("REVIEWED_CORE" if (real_experiment or prepared_experiment or generic_experiment or real_writing or real_review or writing_revision) else "SCAFFOLD_CORE")
         or config.get("workflow_id") not in {
             "writing-local-experimental", "review-local-experimental",
             "reproduction-experiment-local-experimental",
@@ -5412,11 +5462,13 @@ def _prepare_scaffold_input_provenance(
             "artifact_type": item["artifact_type"],
             "sha256": item["expected_checksum"],
         }
-        if not (real_experiment or prepared_experiment or real_writing or real_review or writing_revision):
+        if not (real_experiment or prepared_experiment or generic_experiment or real_writing or real_review or writing_revision):
             records[key]["relative_path"] = item["target_relative_path"]
     _atomic_write_json(capsule / "memory/input-provenance.json", {
         "schema_version": (
-            "reagent.real-experiment-input-provenance/v0.1"
+            "reagent.generic-experiment-input-provenance/v0.1"
+            if generic_experiment
+            else "reagent.real-experiment-input-provenance/v0.1"
             if real_experiment
             else "reagent.prepared-experiment-input-provenance/v0.1"
             if prepared_experiment
