@@ -3604,3 +3604,26 @@ PostgreSQL stack. Fourteen ignored screenshots document the corrected states. Al
 controlled processes and databases were removed. Alembic remains
 `20260817_0030`; immutable 0.4/0.5/0.6 publications, Full Research, and D1 are
 unchanged. D1 remains PAUSED.
+
+## GEN-D-C2 task-first Experiment Workflow UX (2026-08-17)
+
+Generic Experiment 0.6 Workflow Detail now places one prominent Current Task
+immediately after the Research Objective. Full Start cards appear only before a
+path is selected; selected Path A becomes a compact “Prepared with ReAgent”
+summary. Scientific decisions and Resource/preparation/runtime blockers precede
+supporting detail, and methodology shows only reported fields or one truthful
+not-yet-reported message instead of eleven Pending rows.
+
+Controlled-local approval semantics are unchanged, but the approval,
+changed-plan, and approved states now use readable task cards with horizontal
+actions. Result Review and finalized pages place bounded scientific results
+before a collapsed Experiment history, preserving non-ML and reference-shaped
+presentation primitives and typed Outputs previews.
+
+Frontend verification passed 17 files / 60 tests, TypeScript, ESLint, production
+build, and repository-native Playwright E6 5/5 through system Chrome against a
+real controlled FastAPI/Next.js stack and marked disposable PostgreSQL. Fourteen
+ignored screenshots are under `frontend/test-results/gen-d-c2-e6/screenshots/`.
+The final qualification database was dropped; no backend, migration, contract,
+publication, architecture, Full Research, Path B, downstream, Terminal, or D1
+state changed. Alembic remains `20260817_0030`; D1 remains PAUSED.

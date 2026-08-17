@@ -434,9 +434,18 @@ test("generic Experiment starts from the objective and a truthful two-path decis
   expect(screen.queryByRole("heading", { name: "What ReAgent understands" })).not.toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "Choose this path" }));
+  expect(screen.queryByRole("heading", { name: "How would you like to start?" })).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Prepared with ReAgent" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Use an existing local project" })).not.toBeInTheDocument();
   expect(screen.getByRole("heading", { name: "What ReAgent understands" })).toBeVisible();
-  expect(screen.getByText("ReAgent needs your decision")).toBeVisible();
+  const task = screen.getByRole("heading", { name: "ReAgent needs your decision" });
+  const design = screen.getByRole("heading", { name: "What ReAgent understands" });
+  expect(task).toBeVisible();
+  expect(task.compareDocumentPosition(design) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getAllByText(/scientific choice must be resolved/).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText("Experiment design details have not yet been reported from the Local Workspace.")).toBeVisible();
+  expect(screen.queryByText("Recorded when the methodology checkpoint is reported.")).not.toBeInTheDocument();
+  expect(screen.queryByText("Pending")).not.toBeInTheDocument();
   expect(screen.getByText("One recommended command")).toBeVisible();
   expect(screen.getByText("Technical details").closest("details")).not.toHaveAttribute("open");
   expect(screen.queryByText(/ResourceReference|provider locator|package tree hash/i)).not.toBeInTheDocument();
@@ -473,11 +482,20 @@ test.each([
   render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
 
   const row = (await screen.findByText(section)).closest("div")?.parentElement;
+  const currentTask = screen.getByText(checkpoint.split(":")[0] === "RESOURCE_READINESS_REQUIRED"
+    ? "A research resource is needed"
+    : checkpoint.split(":")[0] === "PREPARATION_REQUIREMENT_UNMET"
+      ? "A preparation prerequisite is missing"
+      : checkpoint.split(":")[0] === "PREPARATION_COMPLETE"
+        ? "Experiment implementation prepared"
+        : "No compatible execution environment is ready");
   expect(row).toHaveTextContent(status);
   expect(row).toHaveTextContent(detail);
+  expect(currentTask.compareDocumentPosition(row as Node) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(screen.getByText(checkpoint.split(":")[0])).not.toBeVisible();
   if (checkpoint.startsWith("PREPARATION_COMPLETE")) {
     expect(row).not.toHaveTextContent("In progress");
+    expect(screen.getAllByRole("link", { name: "Continue in Local Workspace" })[0]).toBeVisible();
   }
   if (checkpoint.startsWith("RUNTIME_INCOMPATIBLE")) {
     expect(row).not.toHaveTextContent("Checked after the experiment is prepared");
@@ -538,7 +556,9 @@ test("Run Approval offers bounded rejection and translates changed-plan failures
 
   await userEvent.click(await screen.findByRole("button", { name: "Approve this run" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("The prepared experiment changed after approval.");
-  expect(screen.getByRole("button", { name: "Request changes" })).toBeEnabled();
+  expect(screen.getByRole("heading", { name: "The prepared experiment changed after approval" })).toBeVisible();
+  expect(screen.getByText("Review the updated run before continuing.")).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Approve this run" })).not.toBeInTheDocument();
   expect(screen.queryByText(/checksum mismatch/i)).not.toBeInTheDocument();
 });
 
@@ -614,11 +634,35 @@ test("generic Experiment renders categorical non-ML evidence and separates scien
   expect(screen.getAllByText("INSUFFICIENT").length).toBeGreaterThan(0);
   expect(screen.getAllByRole("table").length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText("View chart data")).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Does this accurately represent the experiment and its limitations?" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Experiment result ready for review" })).toBeVisible();
+  expect(screen.getByText(/Does this result record accurately represent the experiment and its limitations/)).toBeVisible();
+  const result = screen.getByRole("heading", { name: "Experiment result" });
+  const history = screen.getByText("Experiment history");
+  expect(result.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(history.closest("details")).not.toHaveAttribute("open");
   expect(screen.getAllByText("Changed since verification").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Environment changed since validation").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Compatible observation tool available").length).toBeGreaterThanOrEqual(1);
   expect(screen.queryByText(/Metrics|Cross-validation|Robustness|Seeds/)).not.toBeInTheDocument();
+});
+
+test("generic Experiment renders only reported methodology fields inside completed history", async () => {
+  const artifact = experimentArtifact([
+    { kind: "PROSE", label: "Research objective", value: "Observe a bounded categorical transition." },
+    { kind: "PROSE", label: "Protocol", value: "Observe exactly two declared transitions." },
+    { kind: "PROSE", label: "Assumptions", value: "The category labels are stable." },
+    { kind: "SCALAR", label: "Process outcome", value: "COMPLETED" },
+  ]);
+  arrangeGenericExperiment({ artifact, completed: true, summary: "Finalized controlled result." });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  const history = await screen.findByText("Experiment history");
+  await userEvent.click(history);
+  expect(screen.getAllByText("Protocol", { exact: true }).some((item) => item.tagName === "STRONG")).toBe(true);
+  expect(screen.getAllByText("Assumptions", { exact: true }).some((item) => item.tagName === "STRONG")).toBe(true);
+  expect(screen.queryByText("Questions or hypotheses")).not.toBeInTheDocument();
+  expect(screen.queryByText("Recorded when the methodology checkpoint is reported.")).not.toBeInTheDocument();
+  expect(screen.queryByText("Pending")).not.toBeInTheDocument();
 });
 
 test("generic Experiment translates unsupported automatic preparation without plumbing", async () => {

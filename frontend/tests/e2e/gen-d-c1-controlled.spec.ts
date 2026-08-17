@@ -19,7 +19,7 @@ type Fixture = {
 
 test.describe.configure({ mode: "serial" });
 
-test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", async ({ page, request }) => {
+test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, request }) => {
   requireIsolatedQualification();
   const backend = process.env.REAGENT_E2E_BACKEND_URL;
   const identity = process.env.REAGENT_E2E_QUALIFICATION_IDENTITY;
@@ -32,7 +32,7 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
     { cwd: resolve(process.cwd(), ".."), env: process.env, stdio: "inherit" },
   );
   const fixture = JSON.parse(readFileSync(manifestPath, "utf8")) as Fixture;
-  const screenshots = resolve(process.cwd(), "test-results", "gen-d-c1-e6", "screenshots");
+  const screenshots = resolve(process.cwd(), "test-results", "gen-d-c2-e6", "screenshots");
   mkdirSync(screenshots, { recursive: true, mode: 0o700 });
   const shot = async (name: string) => page.screenshot({ path: join(screenshots, `${name}.png`), fullPage: true });
   const detail = (name: string) => `/projects/${fixture.project_id}/workflows/${fixture.instances[name]}`;
@@ -61,25 +61,33 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   await expect(pathB.getByText("Git is optional.")).toBeVisible();
   await expect(pathB.getByRole("button", { name: "Not available in this build" })).toBeDisabled();
   await expect(page.getByText(/GitHub repository|Commit SHA|ResourceReference/)).toHaveCount(0);
-  await shot("01-fresh-experiment-and-path-b");
+  await shot("01-fresh-experiment-before-path-selection");
   const choosePath = page.getByRole("button", { name: "Choose this path" });
   await choosePath.focus();
   await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Prepared with ReAgent" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How would you like to start?" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Use an existing local project" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "What ReAgent understands" })).toBeVisible();
-  await expect(page.getByText(/ReAgent owns the managed Workflow-local preparation area/)).toBeVisible();
+  await expect(page.getByText("Experiment design details have not yet been reported from the Local Workspace.")).toBeVisible();
   await expect(page.getByText(/filesystem folder|Git initialization|Python implementation|manifest|dependency file|entrypoint/i)).toHaveCount(0);
+  expect(await page.locator("body").innerText()).not.toContain("Recorded when the methodology checkpoint is reported.");
+  await shot("02-selected-path-a-compact-start");
 
   await page.goto(detail("methodology"));
-  await expect(page.getByRole("heading", { name: "ReAgent needs your decision" })).toBeVisible();
+  const methodologyTask = page.getByRole("heading", { name: "ReAgent needs your decision" });
+  await expect(methodologyTask).toBeVisible();
   await expect(page.getByText(/scientific choice must be resolved/i).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Review methodology" })).toBeVisible();
+  const methodologyDetails = page.getByRole("heading", { name: "What ReAgent understands" });
+  expect((await methodologyTask.boundingBox())!.y).toBeLessThan((await methodologyDetails.boundingBox())!.y);
+  await expect(page.getByText("Experiment design details have not yet been reported from the Local Workspace.")).toBeVisible();
+  expect(await page.locator("body").innerText()).not.toContain("Recorded when the methodology checkpoint is reported.");
   expect(await page.locator("body").innerText()).not.toContain("METHODOLOGY_DECISION_REQUIRED");
-  await shot("02-methodology-checkpoint");
+  await shot("03-methodology-current-task-before-details");
 
   await page.goto(detail("design"));
-  for (const label of ["Questions or hypotheses", "Inputs or materials", "Protocol", "Observations or expected outputs", "Evaluation criteria", "Reproducibility controls", "Resource constraints", "Compute constraints", "Network policy", "Assumptions", "Claim boundaries"]) {
-    await expect(page.getByText(label, { exact: true })).toBeVisible();
-  }
+  await expect(page.getByText("Experiment design details have not yet been reported from the Local Workspace.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Approve experiment design" }).first()).toBeVisible();
   await expect(page.getByText(/does not run the experiment/i)).toBeVisible();
   expect(await page.locator("body").innerText()).not.toMatch(/Cross-validation|Robustness|Seeds/);
@@ -94,7 +102,8 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   await expect(resourceRow).toContainText("Needs attention");
   await expect(resourceRow).toContainText("not verified locally");
   expect(await page.locator("body").innerText()).not.toContain("RESOURCE_READINESS_REQUIRED");
-  await shot("03-resource-readiness");
+  expect((await page.getByRole("heading", { name: "A research resource is needed" }).boundingBox())!.y).toBeLessThan((await resourceRow.boundingBox())!.y);
+  await shot("04-resource-blocker-current-task");
 
   await page.goto(detail("preparation_requirement"));
   await expect(page.getByRole("heading", { name: "A preparation prerequisite is missing" })).toBeVisible();
@@ -102,14 +111,16 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   await expect(prerequisite).toContainText("Needs attention");
   await expect(prerequisite).toContainText("observation tool is missing");
   expect(await page.locator("body").innerText()).not.toContain("PREPARATION_REQUIREMENT_UNMET");
-  await shot("04-preparation-prerequisite");
+  expect((await page.getByRole("heading", { name: "A preparation prerequisite is missing" }).boundingBox())!.y).toBeLessThan((await prerequisite.boundingBox())!.y);
+  await shot("05-preparation-prerequisite-current-task");
 
   await page.goto(detail("preparation_complete"));
   await expect(page.getByRole("heading", { name: "Experiment implementation prepared" })).toBeVisible();
   const prepared = page.getByText("Implementation preparation", { exact: true }).locator("..").locator("..");
   await expect(prepared).toContainText("Implementation prepared");
   await expect(prepared).not.toContainText("In progress");
-  await shot("05-preparation-complete");
+  await expect(page.getByRole("link", { name: "Continue in Local Workspace" }).first()).toBeVisible();
+  await shot("07-preparation-complete-next-step");
 
   await page.goto(detail("runtime"));
   await expect(page.getByRole("heading", { name: "No compatible execution environment is ready" })).toBeVisible();
@@ -117,7 +128,8 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   await expect(runtimeRow).toContainText("Needs attention");
   await expect(runtimeRow).not.toContainText("Checked after the experiment is prepared");
   expect(await page.locator("body").innerText()).not.toContain("RUNTIME_INCOMPATIBLE");
-  await shot("06-runtime-incompatible");
+  expect((await page.getByRole("heading", { name: "No compatible execution environment is ready" }).boundingBox())!.y).toBeLessThan((await runtimeRow.boundingBox())!.y);
+  await shot("06-runtime-incompatible-current-task");
 
   await page.goto(detail("run_approval"));
   await expect(page.getByRole("heading", { name: "Exact run summary" })).toBeVisible();
@@ -125,20 +137,23 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   await expect(page.getByText("This supports only a narrow categorical claim")).toBeVisible();
   const approve = page.getByRole("button", { name: "Approve this run" });
   await expect(approve).toBeEnabled();
-  await shot("07-run-approval-required");
+  const runTask = page.getByRole("heading", { name: "Experiment ready for approval" });
+  expect((await runTask.boundingBox())!.y).toBeLessThan((await page.getByRole("heading", { name: "Exact run summary" }).boundingBox())!.y);
+  expect((await approve.boundingBox())!.width).toBeGreaterThan(100);
+  await shot("08-run-approval-readable-task-card");
   await approve.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("Run approved")).toBeVisible();
   await expect(page.getByRole("link", { name: "Continue in Local Workspace" })).toBeVisible();
   await expect(page.getByText(/consume this one-use approval, and execute through the controlled local runner/i)).toBeVisible();
-  await shot("08-run-approved-local-handoff");
+  await shot("10-run-approved-local-handoff");
   const observedApproval = await request.get(`${backend}/projects/${fixture.project_id}/workflow-instances/${fixture.instances.run_approval}/run-approval`);
   expect((await observedApproval.json()).request.status).toBe("APPROVED");
 
   await page.goto(detail("run_reject"));
   await page.getByRole("button", { name: "Request changes" }).click();
   await expect(page.getByText("Changes requested")).toBeVisible();
-  await expect(page.getByText("This run is not approved.")).toBeVisible();
+  await expect(page.getByText("Revise the prepared experiment locally before requesting approval again.")).toBeVisible();
 
   await page.goto(detail("run_superseded"));
   await expect(page.getByRole("button", { name: "Approve this run" })).toBeVisible();
@@ -146,19 +161,25 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   expect(supersede.ok()).toBe(true);
   await page.getByRole("button", { name: "Approve this run" }).click();
   await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toContainText("The prepared experiment changed after approval.");
+  await expect(page.getByRole("heading", { name: "The prepared experiment changed after approval" })).toBeVisible();
+  await expect(page.getByText("Review the updated run before continuing.")).toBeVisible();
   expect(await page.locator("body").innerText()).not.toContain("APPROVAL_SUPERSEDED");
-  await shot("09-changed-plan-owner-language");
+  await shot("09-changed-plan-readable-owner-language");
 
   await page.goto(detail("result_review"));
-  const resultHeading = page.getByRole("heading", { name: "Experiment result" });
-  const reviewHeading = page.getByRole("heading", { name: "Does this accurately represent the experiment and its limitations?" });
+  const resultHeading = page.getByRole("heading", { name: "Experiment result", exact: true });
+  const reviewHeading = page.getByRole("heading", { name: "Experiment result ready for review" });
   await expect(resultHeading).toBeVisible();
   await expect(page.getByText("The final category remained amber under the bounded transition.")).toBeVisible();
   await expect(reviewHeading).toBeVisible();
+  await expect(page.getByText("Experiment history")).toBeVisible();
+  await expect(page.getByText("Experiment history").locator("..")).not.toHaveAttribute("open", "");
   const resultBox = await resultHeading.boundingBox();
   const reviewBox = await reviewHeading.boundingBox();
-  expect(resultBox!.y).toBeLessThan(reviewBox!.y);
-  await shot("10-result-review");
+  const historyBox = await page.getByText("Experiment history").boundingBox();
+  expect(reviewBox!.y).toBeLessThan(resultBox!.y);
+  expect(resultBox!.y).toBeLessThan(historyBox!.y);
+  await shot("11-result-review-result-prioritized");
 
   await page.goto(detail("non_ml"));
   await expect(page.getByText("The final category remained amber under the bounded transition.")).toBeVisible();
@@ -166,15 +187,18 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   await expect(page.getByText("View chart data")).toBeVisible();
   const nonMlText = await page.locator("body").innerText();
   expect(nonMlText).not.toMatch(/accuracy|F1|Cross-validation|Robustness|dataset/i);
-  await shot("11-completed-non-ml-result");
+  expect(nonMlText).not.toContain("Recorded when the methodology checkpoint is reported.");
+  await expect(page.getByRole("heading", { name: "Experiment completed" })).toBeVisible();
+  await shot("12-completed-non-ml-result-first");
 
   await page.goto(detail("sklearn"));
   await expect(page.getByText("Held-out score")).toBeVisible();
   await expect(page.getByText("Configuration comparison")).toBeVisible();
   await expect(page.getByRole("img", { name: "Comparison series series chart" })).toBeVisible();
   await expect(page.getByText("View chart data")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "How would you like to start?" })).toBeVisible();
-  await shot("12-completed-sklearn-shaped-result");
+  await expect(page.getByRole("heading", { name: "How would you like to start?" })).toHaveCount(0);
+  await expect(page.getByText("Experiment history").locator("..")).not.toHaveAttribute("open", "");
+  await shot("13-completed-sklearn-shaped-result-first");
 
   await page.goto(detail("completed_absent"));
   await expect(page.getByText("Local result presentation has not yet been reported.")).toBeVisible();
@@ -185,7 +209,6 @@ test("GEN-D-C1 Owner projection and controlled-local approval pass real E6", asy
   await expect(page.getByText("The final category remained amber under the bounded transition.").first()).toBeVisible();
   await expect(page.getByText("Configuration B was stronger in this controlled reference-shaped fixture.")).toBeVisible();
   await expect(page.getByText("Local result presentation has not yet been reported.")).toBeVisible();
-  await shot("13-outputs-typed-v4-preview");
 
   await page.goto(detail("run_approval"));
   const technical = page.getByText("Technical details").locator("..");
