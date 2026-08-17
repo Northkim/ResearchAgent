@@ -3579,3 +3579,28 @@ consumption; every disposable database was dropped. Historical 0.4/0.5/0.6
 publication bytes and hosted approval semantics are unchanged. GEN-D-C1 UI
 wiring remains explicitly deferred, Full Research is unchanged, and D1 remains
 PAUSED.
+
+## GEN-D-C1 Owner projection and Run Approval integration (2026-08-17)
+
+Experiment 0.6 Workflow Detail now treats Workflow Progress/checkpoint state as
+the pre-Artifact authority and the exact v4 presentation companion as the bounded
+post-Artifact scientific-content authority. Resource readiness, preparation
+prerequisites/completion, runtime compatibility, and every current Owner checkpoint
+render in research-facing language without requiring presentation metadata. Raw
+checkpoint codes and checksums are confined to collapsed Technical details.
+
+The browser integrates only the frozen
+`reagent.controlled-local-run-approval/v0.1` endpoints. “Approve this run” records
+one exact authorization; “Request changes” rejects it; approved state directs the
+Owner back to one Local Workflow command. Cloud never launches the process. Exact
+bounded run summary and available package/runtime/Capability/approval provenance
+are shown at the appropriate layer, with unreported local-only fields stated
+truthfully.
+
+Qualification passed frontend `17 files / 59 tests`, TypeScript, ESLint,
+production build, affected generic/R1/historical regressions, compile/diff/Alembic
+checks, and repository-native system-Chrome E6 `5/5` on a marked disposable
+PostgreSQL stack. Fourteen ignored screenshots document the corrected states. All
+controlled processes and databases were removed. Alembic remains
+`20260817_0030`; immutable 0.4/0.5/0.6 publications, Full Research, and D1 are
+unchanged. D1 remains PAUSED.

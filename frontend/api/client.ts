@@ -28,6 +28,8 @@ import type {
   WorkflowResourceBinding,
   WorkflowResourceBindingPage,
   WorkflowCatalogDetail,
+  ControlledLocalRunApproval,
+  ControlledLocalRunApprovalProjection,
 } from "@/types/api";
 
 const API_BASE = "/backend";
@@ -256,6 +258,36 @@ export const apiClient = {
     return request(
       `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
       `${encodeURIComponent(workflowInstanceId)}/resource-bindings`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  },
+
+  observeControlledLocalRunApproval(
+    projectId: string,
+    workflowInstanceId: string,
+  ): Promise<ControlledLocalRunApprovalProjection> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/run-approval`,
+    );
+  },
+
+  decideControlledLocalRunApproval(
+    projectId: string,
+    workflowInstanceId: string,
+    requestId: string,
+    decision: "approve" | "reject",
+    payload: {
+      execution_plan_checksum: string;
+      request_checksum: string;
+      idempotency_key: string;
+      reason?: string;
+    },
+  ): Promise<ControlledLocalRunApproval> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/run-approvals/` +
+      `${encodeURIComponent(requestId)}/${decision}`,
       { method: "POST", body: JSON.stringify(payload) },
     );
   },

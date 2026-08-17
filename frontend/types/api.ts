@@ -585,6 +585,58 @@ export interface ProjectProgress {
   error_count: number;
 }
 
+export type ControlledLocalRunApprovalStatus =
+  | "REQUESTED"
+  | "APPROVED"
+  | "REJECTED"
+  | "CONSUMED"
+  | "SUPERSEDED";
+
+export interface ControlledLocalRunSummary {
+  schema: "reagent.controlled-local-run-approval-summary/v0.1";
+  what_will_run: string;
+  research_objective: string;
+  preparation_method: string;
+  research_resources: string[];
+  execution_environment: string;
+  network_policy: "DISABLED" | "BOUNDED_DECLARED";
+  compute_limits: string[];
+  expected_outputs: string[];
+  evaluation_approach: string;
+  important_assumptions: string[];
+  important_limitations: string[];
+  summary_checksum: string;
+}
+
+export interface ControlledLocalRunApproval {
+  schema: "reagent.controlled-local-run-approval/v0.1";
+  request_id: string;
+  project_id: string;
+  workflow_instance_id: string;
+  research_objective_checksum: string;
+  execution_plan_checksum: string;
+  validated_package_checksum: string;
+  runtime_compatibility_checksum: string | null;
+  capability_checksum: string | null;
+  summary: ControlledLocalRunSummary;
+  created_at: string;
+  request_checksum: string;
+  status: ControlledLocalRunApprovalStatus;
+  owner_actor: string | null;
+  decision_reason: string | null;
+  decision_idempotency_key: string | null;
+  decided_at: string | null;
+  approval_checksum: string | null;
+  consumed_attempt_id: string | null;
+  consumed_at: string | null;
+  consumption_checksum: string | null;
+}
+
+export interface ControlledLocalRunApprovalProjection {
+  request: ControlledLocalRunApproval | null;
+  next_action: string;
+}
+
 export interface ArtifactDependencyEdge {
   binding_id: string;
   consumer_workflow_instance_id: string;

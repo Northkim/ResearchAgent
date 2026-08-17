@@ -36,6 +36,8 @@ function arrangeGenericExperiment(options: {
   summary?: string;
   artifact?: Record<string, unknown>;
   completed?: boolean;
+  reportCount?: number;
+  approval?: Record<string, unknown> | null;
 } = {}) {
   arrange();
   const instance = {
@@ -104,7 +106,7 @@ function arrangeGenericExperiment(options: {
       capsule_id: `capsule-${"9".repeat(32)}`,
       capsule_version: "0.9.0",
       latest_summary: options.summary ?? "METHODOLOGY_DECISION_REQUIRED: choose whether the comparison uses matched or independent observations.",
-      report_count: options.completed ? 1 : 0,
+      report_count: options.reportCount ?? (options.completed ? 1 : 0),
       action,
     }, projectProgressFixture.instances[0]],
     dependency_edges: [{
@@ -129,6 +131,50 @@ function arrangeGenericExperiment(options: {
     total: options.artifact ? 1 : 0,
     has_more: false,
   } as never);
+  vi.spyOn(apiClient, "observeControlledLocalRunApproval").mockResolvedValue({
+    request: options.approval ?? null,
+    next_action: options.approval ? "OWNER_APPROVAL_REQUIRED" : "REPORT_EXACT_RUN_APPROVAL_REQUEST",
+  } as never);
+}
+
+function controlledLocalApproval(status = "REQUESTED") {
+  return {
+    schema: "reagent.controlled-local-run-approval/v0.1",
+    request_id: `clra-${"1".repeat(32)}`,
+    project_id: localProjectFixture.project_id,
+    workflow_instance_id: genericExperimentId,
+    research_objective_checksum: `sha256:${"1".repeat(64)}`,
+    execution_plan_checksum: `sha256:${"2".repeat(64)}`,
+    validated_package_checksum: `sha256:${"3".repeat(64)}`,
+    runtime_compatibility_checksum: `sha256:${"4".repeat(64)}`,
+    capability_checksum: `sha256:${"5".repeat(64)}`,
+    summary: {
+      schema: "reagent.controlled-local-run-approval-summary/v0.1",
+      what_will_run: "A bounded categorical observation protocol.",
+      research_objective: "Determine whether category order is preserved.",
+      preparation_method: "Reviewed categorical observation preparation",
+      research_resources: ["Verified observation schedule"],
+      execution_environment: "Compatible local observation runtime",
+      network_policy: "DISABLED",
+      compute_limits: ["Five minutes", "One process"],
+      expected_outputs: ["Categorical observation record"],
+      evaluation_approach: "Compare the observed category order with the declared protocol.",
+      important_assumptions: ["The schedule is complete"],
+      important_limitations: ["This fixture supports a narrow categorical claim"],
+      summary_checksum: `sha256:${"6".repeat(64)}`,
+    },
+    created_at: "2026-08-17T02:00:00Z",
+    request_checksum: `sha256:${"7".repeat(64)}`,
+    status,
+    owner_actor: status === "REQUESTED" ? null : "owner",
+    decision_reason: null,
+    decision_idempotency_key: status === "REQUESTED" ? null : `owner-approve-clra-${"1".repeat(32)}`,
+    decided_at: status === "REQUESTED" ? null : "2026-08-17T02:01:00Z",
+    approval_checksum: status === "REQUESTED" ? null : `sha256:${"8".repeat(64)}`,
+    consumed_attempt_id: status === "CONSUMED" ? `attempt-${"9".repeat(32)}` : null,
+    consumed_at: status === "CONSUMED" ? "2026-08-17T02:02:00Z" : null,
+    consumption_checksum: status === "CONSUMED" ? `sha256:${"a".repeat(64)}` : null,
+  };
 }
 
 function experimentArtifact(blocks: Array<Record<string, unknown>>) {
@@ -390,10 +436,158 @@ test("generic Experiment starts from the objective and a truthful two-path decis
   await userEvent.click(screen.getByRole("button", { name: "Choose this path" }));
   expect(screen.getByRole("heading", { name: "What ReAgent understands" })).toBeVisible();
   expect(screen.getByText("ReAgent needs your decision")).toBeVisible();
-  expect(screen.getByText(/affects the scientific design/)).toBeVisible();
+  expect(screen.getAllByText(/scientific choice must be resolved/).length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText("One recommended command")).toBeVisible();
   expect(screen.getByText("Technical details").closest("details")).not.toHaveAttribute("open");
   expect(screen.queryByText(/ResourceReference|provider locator|package tree hash/i)).not.toBeInTheDocument();
+  expect(screen.getByText("METHODOLOGY_DECISION_REQUIRED")).not.toBeVisible();
+});
+
+test.each([
+  {
+    checkpoint: "RESOURCE_READINESS_REQUIRED: the required observation schedule is not verified locally.",
+    section: "Research resources",
+    status: "Needs attention",
+    detail: "the required observation schedule is not verified locally.",
+  },
+  {
+    checkpoint: "PREPARATION_REQUIREMENT_UNMET: a reviewed local observation tool is missing.",
+    section: "What ReAgent needs to prepare",
+    status: "Needs attention",
+    detail: "a reviewed local observation tool is missing.",
+  },
+  {
+    checkpoint: "PREPARATION_COMPLETE: the experiment implementation is prepared.",
+    section: "Implementation preparation",
+    status: "Implementation prepared",
+    detail: "the experiment implementation is prepared.",
+  },
+  {
+    checkpoint: "RUNTIME_INCOMPATIBLE: no compatible categorical observation runtime is available.",
+    section: "Execution environment",
+    status: "Needs attention",
+    detail: "no compatible categorical observation runtime is available.",
+  },
+])("projects $checkpoint into its truthful pre-Artifact Owner section", async ({ checkpoint, section, status, detail }) => {
+  arrangeGenericExperiment({ summary: checkpoint, reportCount: 1 });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  const row = (await screen.findByText(section)).closest("div")?.parentElement;
+  expect(row).toHaveTextContent(status);
+  expect(row).toHaveTextContent(detail);
+  expect(screen.getByText(checkpoint.split(":")[0])).not.toBeVisible();
+  if (checkpoint.startsWith("PREPARATION_COMPLETE")) {
+    expect(row).not.toHaveTextContent("In progress");
+  }
+  if (checkpoint.startsWith("RUNTIME_INCOMPATIBLE")) {
+    expect(row).not.toHaveTextContent("Checked after the experiment is prepared");
+  }
+});
+
+test("Run Approval uses the controlled-local request and updates the Local handoff without browser execution", async () => {
+  const requested = controlledLocalApproval();
+  arrangeGenericExperiment({
+    summary: "RUN_APPROVAL_REQUIRED: review the exact categorical observation run.",
+    reportCount: 1,
+    approval: requested,
+  });
+  const approved = { ...requested, status: "APPROVED", owner_actor: "owner", decided_at: "2026-08-17T02:01:00Z" };
+  const decide = vi.spyOn(apiClient, "decideControlledLocalRunApproval").mockResolvedValue(approved as never);
+  const hostedResume = vi.spyOn(apiClient, "resumeRun");
+  const user = userEvent.setup();
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Exact run summary" })).toBeVisible();
+  expect(await screen.findByText("A bounded categorical observation protocol.")).toBeVisible();
+  expect(screen.getByText("This fixture supports a narrow categorical claim")).toBeVisible();
+  const approve = screen.getByRole("button", { name: "Approve this run" });
+  approve.focus();
+  await user.keyboard("{Enter}");
+
+  expect(decide).toHaveBeenCalledWith(
+    localProjectFixture.project_id,
+    genericExperimentId,
+    requested.request_id,
+    "approve",
+    expect.objectContaining({
+      execution_plan_checksum: requested.execution_plan_checksum,
+      request_checksum: requested.request_checksum,
+      idempotency_key: `owner-approve-${requested.request_id}`,
+    }),
+  );
+  expect(await screen.findByText("Run approved")).toBeVisible();
+  expect(screen.getByRole("link", { name: "Continue in Local Workspace" })).toBeVisible();
+  expect(screen.getByText(/verify that the experiment has not changed, consume this one-use approval/i)).toBeVisible();
+  expect(hostedResume).not.toHaveBeenCalled();
+  const technical = screen.getByText("Technical details").closest("details");
+  expect(technical).toHaveTextContent(requested.execution_plan_checksum);
+  expect(screen.getByText(requested.execution_plan_checksum)).not.toBeVisible();
+});
+
+test("Run Approval offers bounded rejection and translates changed-plan failures", async () => {
+  const requested = controlledLocalApproval();
+  arrangeGenericExperiment({
+    summary: "RUN_APPROVAL_REQUIRED: review the updated run.",
+    reportCount: 1,
+    approval: requested,
+  });
+  vi.spyOn(apiClient, "decideControlledLocalRunApproval").mockRejectedValue(
+    new ApiError("Run Approval was superseded", 409, "APPROVAL_SUPERSEDED"),
+  );
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Approve this run" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("The prepared experiment changed after approval.");
+  expect(screen.getByRole("button", { name: "Request changes" })).toBeEnabled();
+  expect(screen.queryByText(/checksum mismatch/i)).not.toBeInTheDocument();
+});
+
+test("Run Approval replay uses one stable decision identity and approved state is translated", async () => {
+  const approved = controlledLocalApproval("APPROVED");
+  arrangeGenericExperiment({
+    summary: "RUN_APPROVAL_REQUIRED: exact run authorization is already recorded.",
+    reportCount: 1,
+    approval: approved,
+  });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  expect(await screen.findByText("Run approved")).toBeVisible();
+  expect(screen.getByText("The exact run is approved and ready to continue locally.")).toBeVisible();
+  expect(screen.queryByText("APPROVED")).not.toBeVisible();
+  expect(screen.queryByRole("button", { name: "Approve this run" })).not.toBeInTheDocument();
+});
+
+test("Run Approval request-changes action uses the same bounded authority", async () => {
+  const requested = controlledLocalApproval();
+  arrangeGenericExperiment({
+    summary: "RUN_APPROVAL_REQUIRED: review the exact run.",
+    reportCount: 1,
+    approval: requested,
+  });
+  const rejected = { ...requested, status: "REJECTED", owner_actor: "owner", decision_reason: "Owner requested changes before local execution." };
+  const decide = vi.spyOn(apiClient, "decideControlledLocalRunApproval").mockResolvedValue(rejected as never);
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Request changes" }));
+  expect(decide).toHaveBeenCalledWith(
+    localProjectFixture.project_id,
+    genericExperimentId,
+    requested.request_id,
+    "reject",
+    expect.objectContaining({ reason: "Owner requested changes before local execution." }),
+  );
+  expect(await screen.findByText("Changes requested")).toBeVisible();
+  expect(screen.getByText(/Continue locally after the experiment has been revised/)).toBeVisible();
+});
+
+test("unreported local provenance remains truthful and secondary", async () => {
+  arrangeGenericExperiment({ summary: "DESIGN_APPROVAL_REQUIRED: review the scientific design.", reportCount: 1 });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  const technical = await screen.findByText("Technical details");
+  expect(technical.closest("details")).not.toHaveAttribute("open");
+  expect(within(technical.closest("details") as HTMLElement).getAllByText("Not yet reported from Local Workspace").length).toBeGreaterThanOrEqual(4);
+  for (const item of screen.queryAllByText(/sha256:[0-9a-f]{64}/i)) expect(item).not.toBeVisible();
 });
 
 test("generic Experiment renders categorical non-ML evidence and separates scientific status", async () => {

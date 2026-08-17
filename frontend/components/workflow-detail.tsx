@@ -14,6 +14,8 @@ import type {
 } from "@/types/api";
 
 import {
+  useControlledLocalRunApproval,
+  useControlledLocalRunApprovalDecision,
   useProject,
   useProjectProgress,
   useProjectArtifactReferences,
@@ -338,6 +340,101 @@ export function ExperimentPresentationView({ artifact }: { artifact: CanonicalAr
   return <div className="page-stack" aria-label="Experiment result presentation">{presentation.payload.blocks.map((block, index) => <PresentationBlockView key={`${block.label}-${index}`} block={block} />)}</div>;
 }
 
+const EXPERIMENT_CHECKPOINTS = {
+  METHODOLOGY_DECISION_REQUIRED: {
+    title: "ReAgent needs your decision",
+    explanation: "A scientific choice must be resolved before the experiment design can continue.",
+    action: "Review methodology",
+    section: "design",
+  },
+  CAPABILITY_SELECTION_REQUIRED: {
+    title: "Choose how ReAgent should prepare the experiment",
+    explanation: "More than one scientifically meaningful preparation method is available.",
+    action: "Review preparation methods",
+    section: "preparation",
+  },
+  DESIGN_APPROVAL_REQUIRED: {
+    title: "Experiment design ready for review",
+    explanation: "Review and approve the scientific design before ReAgent prepares the implementation.",
+    action: "Approve experiment design",
+    section: "design",
+  },
+  RESOURCE_READINESS_REQUIRED: {
+    title: "A research resource is needed",
+    explanation: "One or more research resources must be resolved before ReAgent can prepare the experiment.",
+    action: "Resolve research resources",
+    section: "resources",
+  },
+  PREPARATION_REQUIREMENT_UNMET: {
+    title: "A preparation prerequisite is missing",
+    explanation: "This computer is missing something ReAgent needs to prepare the experiment.",
+    action: "Review preparation requirements",
+    section: "preparation",
+  },
+  PREPARATION_COMPLETE: {
+    title: "Experiment implementation prepared",
+    explanation: "The durable local preparation checkpoint has been reported.",
+    action: "Review preparation",
+    section: "preparation",
+  },
+  RUNTIME_INCOMPATIBLE: {
+    title: "No compatible execution environment is ready",
+    explanation: "A compatible local execution environment is needed before this experiment can run.",
+    action: "Review execution environment",
+    section: "runtime",
+  },
+  RUN_APPROVAL_REQUIRED: {
+    title: "Experiment ready for approval",
+    explanation: "Review the exact prepared run before authorizing one local execution attempt.",
+    action: "Approve this run",
+    section: "run",
+  },
+  RESULT_REVIEW_REQUIRED: {
+    title: "Experiment result ready for review",
+    explanation: "Review the scientific result and its limitations before finalizing.",
+    action: "Review result",
+    section: "results",
+  },
+} as const;
+
+type ExperimentCheckpoint = keyof typeof EXPERIMENT_CHECKPOINTS;
+
+function experimentCheckpoint(state: WorkflowInstanceProgress): ExperimentCheckpoint | null {
+  const source = `${state.latest_summary ?? ""} ${state.next_recommended_action ?? ""}`;
+  return (Object.keys(EXPERIMENT_CHECKPOINTS) as ExperimentCheckpoint[])
+    .find((code) => source.includes(code)) ?? null;
+}
+
+function ownerSafeDetail(value: string | null | undefined): string | null {
+  if (!value) return null;
+  let result = value;
+  for (const code of Object.keys(EXPERIMENT_CHECKPOINTS)) {
+    result = result.replaceAll(code, "");
+  }
+  result = result
+    .replaceAll("AUTOMATIC_PREPARATION_UNSUPPORTED", "")
+    .replaceAll("APPROVAL_INVALIDATED", "")
+    .replace(/sha256:[0-9a-f]{64}/gi, "")
+    .replace(/^\s*[:—-]\s*/, "")
+    .trim();
+  return result || null;
+}
+
+function approvalOwnerError(error: unknown): string {
+  const code = (error as { code?: string } | null)?.code;
+  if (code === "APPROVAL_SUPERSEDED" || code === "APPROVAL_IDENTITY_MISMATCH" || code === "APPROVAL_INVALIDATED") {
+    return "The prepared experiment changed after approval. Review the updated experiment before continuing.";
+  }
+  if (code === "APPROVAL_REJECTED") return "Changes have already been requested for this run.";
+  if (code === "APPROVAL_NOT_REQUESTED") return "This approval request is no longer waiting for a decision.";
+  return "ReAgent could not record this decision. Refresh the page and review the current run before trying again.";
+}
+
+function SummaryList({ label, values }: { label: string; values: string[] }) {
+  if (!values.length) return null;
+  return <div><div><strong>{label}</strong><small>{values.join(" · ")}</small></div><span>Reported</span></div>;
+}
+
 function GenericExperimentDetail({
   project,
   instance,
@@ -354,24 +451,53 @@ function GenericExperimentDetail({
   resourceRequirements: WorkflowResourceRequirement[];
 }) {
   const [pathASelected, setPathASelected] = useState(state.report_count > 0);
+  const approvalProjection = useControlledLocalRunApproval(project.project_id, instance.workflow_instance_id);
+  const approvalDecision = useControlledLocalRunApprovalDecision(project.project_id, instance.workflow_instance_id);
   const artifacts = useProjectArtifactReferences(project.project_id, "experiment-record/v4");
   const artifact = artifacts.data?.artifacts.find((item) => item.producer_workflow_instance_id === instance.workflow_instance_id);
   const presentation = experimentPresentation(artifact);
   const blocks = presentation?.payload.blocks ?? [];
+  const checkpoint = experimentCheckpoint(state);
+  const checkpointPresentation = checkpoint ? EXPERIMENT_CHECKPOINTS[checkpoint] : null;
+  const checkpointDetail = ownerSafeDetail(state.latest_summary);
+  const approvalRequest = approvalProjection.data?.request ?? null;
+  const approvalStatus = approvalRequest?.status ?? null;
+  const runSummary = approvalRequest?.summary;
   const ideaBinding = progress.dependency_edges.find((edge) => edge.consumer_workflow_instance_id === instance.workflow_instance_id && edge.artifact_type === "selected-research-idea/v1");
   const ideaProducer = progress.instances.find((item) => item.workflow_instance_id === ideaBinding?.producer_workflow_instance_id);
   const objective = blockValue(blocks, "Research objective") ?? ideaProducer?.latest_summary ?? project.research_topic;
   const unsupported = /AUTOMATIC_PREPARATION_UNSUPPORTED|cannot prepare this experiment automatically/i.test(state.latest_summary ?? "");
-  const methodologyDecision = /METHODOLOGY_DECISION_REQUIRED|owner.*decision|unresolved/i.test(state.latest_summary ?? "") || (state.action.stage.code === "OWNER_APPROVAL" && !artifact);
-  const capability = blockValue(blocks, "Preparation method") ?? "Reviewed preparation method selected from the compatible installed set";
-  const resourceReadiness = blockValue(blocks, "Resource readiness");
-  const preparationRequirement = blockValue(blocks, "Preparation requirement");
-  const preparationStatus = blockValue(blocks, "Preparation status") ?? (state.report_count ? "In progress" : "Not started");
-  const runtimeStatus = blockValue(blocks, "Execution environment") ?? "Checked after the experiment is prepared";
+  const methodologyDecision = checkpoint === "METHODOLOGY_DECISION_REQUIRED";
+  const designCheckpoint = checkpoint === "DESIGN_APPROVAL_REQUIRED";
+  const capabilityCheckpoint = checkpoint === "CAPABILITY_SELECTION_REQUIRED";
+  const resourceCheckpoint = checkpoint === "RESOURCE_READINESS_REQUIRED";
+  const preparationRequirementCheckpoint = checkpoint === "PREPARATION_REQUIREMENT_UNMET";
+  const runtimeCheckpoint = checkpoint === "RUNTIME_INCOMPATIBLE";
+  const runCheckpoint = checkpoint === "RUN_APPROVAL_REQUIRED" || approvalRequest !== null;
+  const resultReviewCheckpoint = checkpoint === "RESULT_REVIEW_REQUIRED" || state.action.next_action.code === "REVIEW_RESULT";
+  const lifecyclePastPreparation = checkpoint === "PREPARATION_COMPLETE"
+    || runtimeCheckpoint || runCheckpoint || resultReviewCheckpoint || Boolean(artifact);
+  const lifecyclePastResources = preparationRequirementCheckpoint || lifecyclePastPreparation;
+  const capability = runSummary?.preparation_method
+    ?? blockValue(blocks, "Preparation method")
+    ?? "Reviewed preparation method selected from the compatible installed set";
   const executionOutcome = blockValue(blocks, "Process outcome") ?? (artifact ? "Completed" : "Not run");
   const evaluationValidity = blockValue(blocks, "Evaluation validity") ?? (artifact ? "Not reported" : "Pending execution");
   const evidenceStatus = blockValue(blocks, "Scientific evidence status") ?? (artifact ? "Not reported" : "Pending evaluation");
   const command = `python reagent_local.py run . --workflow-instance ${instance.workflow_instance_id}`;
+  const decisionPending = approvalDecision.isPending;
+  const approvalError = approvalDecision.isError ? approvalOwnerError(approvalDecision.error) : null;
+  const localReason = approvalStatus === "APPROVED"
+    ? "The exact run is approved and ready to continue locally."
+    : approvalStatus === "CONSUMED"
+      ? "The one-use approval has been consumed for this local execution."
+      : approvalStatus === "SUPERSEDED"
+        ? "The prepared experiment changed. Review the updated run before continuing."
+        : approvalStatus === "REJECTED"
+          ? "Changes were requested. Continue locally after the experiment has been revised."
+          : runCheckpoint
+            ? "Review and approve the exact run first."
+            : "Local action is required because concrete research files and execution stay in the Local Workspace.";
 
   return <div className="page-stack workflow-detail-page">
     <p className="breadcrumb"><Link href={`/projects/${project.project_id}`}>{project.name}</Link><span>/</span><Link href={`/projects/${project.project_id}/workflows`}>Workflows</Link><span>/</span><strong>Reproduction &amp; Experiment</strong></p>
@@ -386,24 +512,65 @@ function GenericExperimentDetail({
     </div></section>
 
     {pathASelected ? <>
-      <section className="plain-section" aria-labelledby="experiment-design-title"><p className="eyebrow">Experiment design</p><h2 id="experiment-design-title">What ReAgent understands</h2><p>{state.latest_summary ?? "Continue locally so ReAgent can recover the scientific design without assuming a particular research domain."}</p><div className="input-readiness-list">{["Questions or hypotheses", "Inputs or materials", "Protocol", "Observations or expected outputs", "Evaluation criteria", "Reproducibility controls", "Resource constraints", "Compute constraints", "Network policy", "Assumptions", "Claim boundaries"].map((label) => <div key={label}><div><strong>{label}</strong><small>{blockValue(blocks, label) ?? "Recorded when the methodology checkpoint is reported."}</small></div><span>{blockValue(blocks, label) ? "Recorded" : "Pending"}</span></div>)}</div>{!methodologyDecision && !unsupported ? <div><p><strong>Approve experiment design</strong></p><p>This approves the scientific design so ReAgent can prepare the implementation. It does not yet run the experiment.</p><a className="button button-primary" href="#local-workflow">Approve experiment design locally</a></div> : null}</section>
+      <section className="plain-section" aria-labelledby="experiment-design-title"><p className="eyebrow">Experiment design</p><h2 id="experiment-design-title">What ReAgent understands</h2><p>{checkpointPresentation?.section === "design" ? checkpointPresentation.explanation : checkpointDetail ?? "Continue locally so ReAgent can recover the scientific design without assuming a particular research domain."}</p><div className="input-readiness-list">{["Questions or hypotheses", "Inputs or materials", "Protocol", "Observations or expected outputs", "Evaluation criteria", "Reproducibility controls", "Resource constraints", "Compute constraints", "Network policy", "Assumptions", "Claim boundaries"].map((label) => <div key={label}><div><strong>{label}</strong><small>{blockValue(blocks, label) ?? "Recorded when the methodology checkpoint is reported."}</small></div><span>{blockValue(blocks, label) ? "Recorded" : "Pending"}</span></div>)}</div>{designCheckpoint ? <div><p><strong>Approve experiment design</strong></p><p>This approves the scientific design so ReAgent can prepare the implementation. It does not run the experiment.</p><a className="button button-primary" href="#local-workflow">Approve experiment design</a></div> : null}</section>
 
-      {methodologyDecision ? <section className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">ReAgent needs your decision</p><h2>This choice affects the scientific design of the experiment.</h2><p>{state.latest_summary ?? "Review the unresolved methodology choice in the Local Workflow."}</p></div><aside className="current-action-next"><span>Next action</span><a className="button button-primary" href="#local-workflow">Review methodology</a></aside></section> : null}
+      {methodologyDecision || capabilityCheckpoint || designCheckpoint ? <section className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">Needs your attention</p><h2>{checkpointPresentation?.title}</h2><p>{checkpointPresentation?.explanation}</p>{checkpointDetail && checkpointDetail !== checkpointPresentation?.explanation ? <p>{checkpointDetail}</p> : null}</div><aside className="current-action-next"><span>Next action</span><a className="button button-primary" href="#local-workflow">{checkpointPresentation?.action}</a></aside></section> : null}
 
       {unsupported ? <section className="plain-section"><h2>ReAgent cannot prepare this experiment automatically yet.</h2><p>The research design is preserved. You can revise the experiment design, keep the current work and return later, or use an existing local project when that capability becomes available.</p></section> : null}
 
-      <section className="plain-section"><p className="eyebrow">Preparation</p><h2>How ReAgent will prepare this experiment</h2><div className="input-readiness-list"><div><div><strong>Preparation method</strong><small>{capability}</small></div><span>{unsupported ? "Unsupported" : "Reviewed"}</span></div>{resourceReadiness ? <div><div><strong>Research resources</strong><small>{resourceReadiness}</small></div><span>{resourceReadiness}</span></div> : resourceRequirements.map((requirement) => <div key={requirement.requirement_key}><div><strong>Required research resource</strong><small>{requirement.usage_description}</small></div><span>{requirement.required ? "Needs a source" : "Optional"}</span></div>)}{preparationRequirement ? <div><div><strong>What ReAgent needs to prepare</strong><small>{preparationRequirement}</small></div><span>{preparationRequirement}</span></div> : null}<div><div><strong>Implementation preparation</strong><small>ReAgent owns the managed Workflow-local preparation area.</small></div><span>{preparationStatus}</span></div><div><div><strong>Execution environment</strong><small>Runtime details remain local and are checked only when relevant.</small></div><span>{runtimeStatus}</span></div></div></section>
+      <section className="plain-section" aria-labelledby="preparation-title"><p className="eyebrow">Preparation</p><h2 id="preparation-title">How ReAgent will prepare this experiment</h2>{checkpointPresentation && ["resources", "preparation", "runtime"].includes(checkpointPresentation.section) ? <div className="output-highlight"><p className="attention-copy">{checkpoint === "PREPARATION_COMPLETE" ? "Ready" : "Needs attention"}</p><h3>{checkpointPresentation.title}</h3><p>{checkpointPresentation.explanation}</p></div> : null}<div className="input-readiness-list">
+        <div><div><strong>Preparation method</strong><small>{capability}</small></div><span>{unsupported ? "Unsupported" : capabilityCheckpoint ? "Needs your decision" : "Reviewed"}</span></div>
+        {resourceCheckpoint ? <div><div><strong>Research resources</strong><small>{checkpointDetail ?? EXPERIMENT_CHECKPOINTS.RESOURCE_READINESS_REQUIRED.explanation}</small></div><span>Needs attention</span></div> : resourceRequirements.length ? resourceRequirements.map((requirement) => <div key={requirement.requirement_key}><div><strong>Research resources</strong><small>{requirement.usage_description}</small></div><span>{lifecyclePastResources ? "Ready" : requirement.required ? "Needs a source" : "Optional"}</span></div>) : null}
+        {preparationRequirementCheckpoint ? <div><div><strong>What ReAgent needs to prepare</strong><small>{checkpointDetail ?? EXPERIMENT_CHECKPOINTS.PREPARATION_REQUIREMENT_UNMET.explanation}</small></div><span>Needs attention</span></div> : null}
+        <div><div><strong>Implementation preparation</strong><small>{checkpoint === "PREPARATION_COMPLETE" ? checkpointDetail ?? "The experiment implementation is prepared." : "ReAgent owns the managed Workflow-local preparation area."}</small></div><span>{lifecyclePastPreparation ? "Implementation prepared" : "Not yet prepared"}</span></div>
+        {approvalRequest ? <div><div><strong>Package validation</strong><small>The exact validated package was reported with this approval request.</small></div><span>Package validated</span></div> : null}
+        <div><div><strong>Execution environment</strong><small>{runtimeCheckpoint ? checkpointDetail ?? "No compatible execution environment is ready." : runSummary?.execution_environment ?? "Runtime details remain local and are checked only when relevant."}</small></div><span>{runtimeCheckpoint ? "Needs attention" : runSummary ? "Compatible environment reported" : lifecyclePastPreparation ? "Ready for local check" : "Checked after preparation"}</span></div>
+      </div></section>
 
-      <section className="plain-section"><p className="eyebrow">Ready to run</p><h2>Exact run summary</h2><div className="input-readiness-list"><div><div><strong>What will run</strong><small>{blockValue(blocks, "What will run") ?? "The exact prepared and validated local experiment."}</small></div><span>{artifact ? "Completed" : "Pending approval"}</span></div><div><div><strong>Inputs and resources</strong><small>{blockValue(blocks, "Run inputs") ?? "Only exact verified inputs declared by the approved design."}</small></div><span>{resourceReadiness ?? "Checked locally"}</span></div><div><div><strong>Network policy</strong><small>{blockValue(blocks, "Network policy") ?? "Network disabled"}</small></div><span>Bounded</span></div><div><div><strong>Expected outputs and evaluation</strong><small>{blockValue(blocks, "Evaluation plan") ?? "Capability-owned evaluation with exact output lineage."}</small></div><span>Declared</span></div></div><p><strong>Approve and run</strong> applies to this exact prepared experiment and one execution attempt. It does not approve future changed plans.</p></section>
+      {runCheckpoint ? <section className="plain-section" aria-labelledby="exact-run-title"><p className="eyebrow">Ready to run</p><h2 id="exact-run-title">Exact run summary</h2>{runSummary ? <div className="input-readiness-list">
+        <div><div><strong>What will run</strong><small>{runSummary.what_will_run}</small></div><span>Exact prepared run</span></div>
+        <div><div><strong>Research objective</strong><small>{runSummary.research_objective}</small></div><span>Exact input</span></div>
+        <div><div><strong>Preparation method</strong><small>{runSummary.preparation_method}</small></div><span>Reviewed</span></div>
+        <SummaryList label="Research resources" values={runSummary.research_resources} />
+        <div><div><strong>Execution environment</strong><small>{runSummary.execution_environment}</small></div><span>Reported locally</span></div>
+        <div><div><strong>Network policy</strong><small>{runSummary.network_policy === "DISABLED" ? "Network disabled" : "Bounded declared network access"}</small></div><span>Bounded</span></div>
+        <SummaryList label="Compute and runtime limits" values={runSummary.compute_limits} />
+        <SummaryList label="Expected outputs" values={runSummary.expected_outputs} />
+        <div><div><strong>Evaluation approach</strong><small>{runSummary.evaluation_approach}</small></div><span>Declared</span></div>
+        <SummaryList label="Important assumptions" values={runSummary.important_assumptions} />
+        <SummaryList label="Important limitations" values={runSummary.important_limitations} />
+      </div> : <p>The exact run summary has not yet been reported from Local Workspace.</p>}
+      {approvalStatus === "REQUESTED" ? <div className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">Experiment ready for approval</p><h3>Approve this exact prepared experiment</h3><p>This approves this exact prepared experiment for one local execution attempt. The browser records authorization; it does not start the local process.</p>{approvalError ? <p role="alert" className="attention-copy">{approvalError}</p> : null}</div><aside className="current-action-next"><span>Next action</span><button type="button" className="button button-primary" disabled={decisionPending} onClick={() => approvalRequest && approvalDecision.mutate({ request: approvalRequest, decision: "approve" })}>{decisionPending ? "Recording approval…" : "Approve this run"}</button><button type="button" className="button button-ghost" disabled={decisionPending} onClick={() => approvalRequest && approvalDecision.mutate({ request: approvalRequest, decision: "reject" })}>Request changes</button></aside></div> : null}
+      {approvalStatus === "APPROVED" ? <div className="current-action-panel" data-attention-state="NORMAL"><div className="current-action-main"><p className="attention-copy">Run approved</p><h3>This exact experiment is approved for one local execution.</h3><p>The Local Workflow will verify that the experiment has not changed, consume this one-use approval, and execute through the controlled local runner.</p></div><aside className="current-action-next"><span>Next action</span><a className="button button-primary" href="#local-workflow">Continue in Local Workspace</a></aside></div> : null}
+      {approvalStatus === "REJECTED" ? <div className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">Changes requested</p><h3>This run is not approved.</h3><p>Revise the prepared experiment locally before requesting approval again.</p></div></div> : null}
+      {approvalStatus === "SUPERSEDED" ? <div className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">The experiment changed</p><h3>Review the updated run.</h3><p>The prepared experiment changed after this approval request. Review the updated experiment before continuing.</p></div></div> : null}
+      {approvalStatus === "CONSUMED" ? <div className="current-action-panel" data-attention-state="NORMAL"><div className="current-action-main"><p className="attention-copy">Approval used for this execution</p><h3>The one-use authorization was consumed locally.</h3><p>Execution status will be reported separately from scientific evidence.</p></div></div> : null}
+      </section> : null}
 
-      <section id="local-workflow" className="run-local-details" aria-labelledby="local-workflow-title"><div><p className="eyebrow">Local Workflow</p><h2 id="local-workflow-title">Continue safely on this computer</h2><p>Local action is required because concrete research files and execution stay in the Local Workspace.</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label="Experiment local workflow command" /><p>Expected next state: ReAgent resumes from the exact saved checkpoint. Run the same command again after an Owner checkpoint.</p></div></section>
+      <section id="local-workflow" className="run-local-details" aria-labelledby="local-workflow-title"><div><p className="eyebrow">Local Workflow</p><h2 id="local-workflow-title">Continue safely on this computer</h2><p>{localReason}</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label="Experiment local workflow command" /><p>Expected next state: ReAgent resumes from the exact saved checkpoint. Use this same command after an Owner checkpoint.</p></div></section>
 
       <section className="plain-section" aria-labelledby="experiment-results-title"><p className="eyebrow">Results</p><h2 id="experiment-results-title">Experiment result</h2><div className="input-readiness-list"><div><div><strong>Process outcome</strong><small>Whether the bounded process completed.</small></div><span>{statusText(executionOutcome, "Not run")}</span></div><div><div><strong>Evaluation validity</strong><small>Whether the Capability accepted the result evidence.</small></div><span>{statusText(evaluationValidity, "Pending")}</span></div><div><div><strong>Scientific evidence</strong><small>Evidence sufficiency remains separate from process completion.</small></div><span>{statusText(evidenceStatus, "Pending")}</span></div></div>{artifact ? <ExperimentPresentationView artifact={artifact} /> : <p>Local result presentation has not yet been reported.</p>}</section>
 
-      {artifact || state.action.next_action.code === "REVIEW_RESULT" ? <section className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">Result review</p><h2>Does this accurately represent the experiment and its limitations?</h2><p>Review the findings, evaluation validity, scientific evidence, limitations, output references, and execution warnings before finalizing.</p></div><aside className="current-action-next"><span>Next action</span><a className="button button-primary" href="#local-workflow">Review and finalize locally</a></aside></section> : null}
+      {artifact || resultReviewCheckpoint ? <section className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">Experiment result ready for review</p><h2>Does this accurately represent the experiment and its limitations?</h2><p>Review the findings, evaluation validity, scientific evidence, limitations, output references, and execution warnings before finalizing.</p></div><aside className="current-action-next"><span>Next action</span><a className="button button-primary" href="#local-workflow">Review result</a></aside></section> : null}
     </> : null}
 
-    <details className="technical-details"><summary>Technical details</summary><dl><div><dt>Workflow</dt><dd><code>{instance.workflow_definition_id}@{instance.workflow_version}</code></dd></div><div><dt>Capsule</dt><dd><code>{instance.capsule_id}@{instance.capsule_version}</code></dd></div><div><dt>Workflow instance</dt><dd><code>{instance.workflow_instance_id}</code></dd></div>{ideaBinding ? <div><dt>Research objective Artifact</dt><dd><code>{ideaBinding.artifact_id}</code></dd></div> : null}{requirements.map((requirement) => <div key={requirement.requirement_key}><dt>Input requirement</dt><dd><code>{requirement.requirement_key}</code></dd></div>)}{artifact ? <><div><dt>Artifact schema</dt><dd><code>{artifact.artifact_schema_version}</code></dd></div><div><dt>Artifact checksum</dt><dd><code>{artifact.content_checksum}</code></dd></div></> : null}{presentation ? <div><dt>Presentation checksum</dt><dd><code>{presentation.presentation_checksum}</code></dd></div> : null}</dl></details>
+    <details className="technical-details"><summary>Technical details</summary><dl>
+      <div><dt>Workflow Definition</dt><dd><code>{instance.workflow_definition_id}@{instance.workflow_version}</code></dd></div>
+      <div><dt>Capsule</dt><dd><code>{instance.capsule_id}@{instance.capsule_version}</code></dd></div>
+      <div><dt>Workflow Instance</dt><dd><code>{instance.workflow_instance_id}</code></dd></div>
+      <div><dt>Current checkpoint</dt><dd><code>{checkpoint ?? "Not currently reported"}</code></dd></div>
+      <div><dt>Research Objective</dt><dd><code>{ideaBinding?.artifact_id ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      {requirements.map((requirement) => <div key={requirement.requirement_key}><dt>Input requirement</dt><dd><code>{requirement.requirement_key}</code></dd></div>)}
+      <div><dt>Capability</dt><dd><code>{approvalRequest?.capability_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      <div><dt>Validated package</dt><dd><code>{approvalRequest?.validated_package_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      <div><dt>Runtime compatibility</dt><dd><code>{approvalRequest?.runtime_compatibility_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      <div><dt>Design Approval</dt><dd><code>Not yet reported from Local Workspace</code></dd></div>
+      <div><dt>Run Approval request</dt><dd><code>{approvalRequest?.request_id ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      <div><dt>Run Approval status</dt><dd><code>{approvalStatus ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      <div><dt>Execution Plan</dt><dd><code>{approvalRequest?.execution_plan_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      {artifact ? <><div><dt>Artifact schema</dt><dd><code>{artifact.artifact_schema_version}</code></dd></div><div><dt>Artifact checksum</dt><dd><code>{artifact.content_checksum}</code></dd></div></> : <div><dt>Artifact</dt><dd><code>Not yet reported from Local Workspace</code></dd></div>}
+      {presentation ? <div><dt>Presentation checksum</dt><dd><code>{presentation.presentation_checksum}</code></dd></div> : <div><dt>Presentation</dt><dd><code>Not yet reported from Local Workspace</code></dd></div>}
+    </dl></details>
   </div>;
 }
 

@@ -17,6 +17,8 @@ export const queryKeys = {
   projectResources: (projectId: string) => ["projects", projectId, "resources"] as const,
   resourceBindings: (projectId: string, workflowInstanceId: string) =>
     ["projects", projectId, "workflow-instances", workflowInstanceId, "resource-bindings"] as const,
+  controlledLocalRunApproval: (projectId: string, workflowInstanceId: string) =>
+    ["projects", projectId, "workflow-instances", workflowInstanceId, "controlled-local-run-approval"] as const,
   workflows: ["workflows"] as const,
   runs: ["runs"] as const,
   run: (runId: string) => ["runs", runId] as const,

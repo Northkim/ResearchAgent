@@ -8,6 +8,7 @@ import type {
   ApprovalStatus,
   CreateCatalogRunRequest,
   CreateLocalProjectRequest,
+  ControlledLocalRunApproval,
   ProjectWorkflowInstance,
   WorkflowRunStatus,
 } from "@/types/api";
@@ -185,6 +186,51 @@ export function useWorkflowResourceBindings(projectId: string, workflowInstanceI
     queryKey: queryKeys.resourceBindings(projectId, workflowInstanceId),
     queryFn: () => apiClient.listWorkflowResourceBindings(projectId, workflowInstanceId),
     retry: false,
+  });
+}
+
+export function useControlledLocalRunApproval(projectId: string, workflowInstanceId: string) {
+  return useQuery({
+    queryKey: queryKeys.controlledLocalRunApproval(projectId, workflowInstanceId),
+    queryFn: () => apiClient.observeControlledLocalRunApproval(projectId, workflowInstanceId),
+    retry: false,
+  });
+}
+
+export function useControlledLocalRunApprovalDecision(
+  projectId: string,
+  workflowInstanceId: string,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ request, decision }: {
+      request: ControlledLocalRunApproval;
+      decision: "approve" | "reject";
+    }) => apiClient.decideControlledLocalRunApproval(
+      projectId,
+      workflowInstanceId,
+      request.request_id,
+      decision,
+      {
+        execution_plan_checksum: request.execution_plan_checksum,
+        request_checksum: request.request_checksum,
+        idempotency_key: `owner-${decision}-${request.request_id}`,
+        ...(decision === "reject"
+          ? { reason: "Owner requested changes before local execution." }
+          : {}),
+      },
+    ),
+    onSuccess: (request) => {
+      queryClient.setQueryData(
+        queryKeys.controlledLocalRunApproval(projectId, workflowInstanceId),
+        {
+          request,
+          next_action: request.status === "APPROVED"
+            ? "CONSUME_APPROVAL_LOCALLY"
+            : "REVISE_OR_KEEP_EXPERIMENT",
+        },
+      );
+    },
   });
 }
 
