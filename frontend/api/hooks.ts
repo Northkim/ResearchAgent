@@ -74,6 +74,14 @@ export function useWorkflowDefinitions() {
   });
 }
 
+export function useWorkflowDefinition(workflowDefinitionId: string) {
+  return useQuery({
+    queryKey: queryKeys.workflowDefinition(workflowDefinitionId),
+    queryFn: () => apiClient.getWorkflowDefinition(workflowDefinitionId),
+    enabled: Boolean(workflowDefinitionId),
+  });
+}
+
 export function useProjectWorkflowInstances(projectId: string) {
   return useQuery({
     queryKey: queryKeys.projectWorkflowInstances(projectId),
@@ -194,9 +202,16 @@ export function useBindWorkflowResource(projectId: string, workflowInstanceId: s
   return useMutation({
     mutationFn: (payload: Parameters<typeof apiClient.bindWorkflowResource>[2]) =>
       apiClient.bindWorkflowResource(projectId, workflowInstanceId, payload),
-    onSuccess: async () => queryClient.invalidateQueries({
-      queryKey: queryKeys.resourceBindings(projectId, workflowInstanceId),
-    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.resourceBindings(projectId, workflowInstanceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", projectId, "progress"],
+        }),
+      ]);
+    },
   });
 }
 

@@ -130,7 +130,11 @@ function arrangeWorkflowDetail(
   vi.spyOn(apiClient, "getProject").mockResolvedValue(project);
   vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(progress);
   vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue(workflowInstancesFixture);
-  vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue(workflowCatalogFixture);
+  vi.spyOn(apiClient, "getWorkflowDefinition").mockResolvedValue({
+    ...workflowCatalogFixture.items[0],
+    versions: [workflowCatalogFixture.items[0].recommended_version!],
+    capsules: [workflowCatalogFixture.items[0].recommended_capsule!],
+  });
 }
 
 test("leads the Project Overview with the current research action", async () => {
@@ -224,6 +228,122 @@ test("Workflow Detail visibly opens human-labeled exact run instructions", async
   expect(screen.getByText(/runs the exact Literature Search Workflow/)).toBeVisible();
   expect(screen.getByRole("button", { name: "Copy Literature Search exact command" })).toBeEnabled();
   expect(screen.getByRole("heading", { name: "Run Literature Search in your Local Workspace" })).not.toHaveTextContent("wfi-");
+});
+
+test("Workflow Detail resolves Artifact inputs from the exact pinned Workflow version", async () => {
+  const experimentInstanceId = `wfi-${"e".repeat(32)}`;
+  const experimentInstance = {
+    ...workflowInstancesFixture.items[0],
+    workflow_instance_id: experimentInstanceId,
+    workflow_definition_id: "reproduction-experiment-local-experimental",
+    workflow_version: "0.4.0",
+    capsule_id: `capsule-${"a".repeat(32)}`,
+    capsule_version: "0.7.0",
+    display_name: "Reproduction & Experiment",
+    resource_requirements: [{
+      requirement_key: "source_repository",
+      resource_kind: "SOURCE_REPOSITORY" as const,
+      required: true,
+      cardinality_min: 1,
+      cardinality_max: 1,
+      allowed_providers: ["GITHUB" as const],
+      usage_description: "One exact owner-staged local Experiment Package; Cloud metadata alone is not execution readiness.",
+    }],
+  };
+  const resourceAction: WorkflowActionProjection = {
+    ...runAction,
+    stage: { code: "RESOURCE_BINDING", label: "Required Resource not bound" },
+    attention_state: "OWNER_ACTION_REQUIRED",
+    blocker: {
+      code: "REQUIRED_RESOURCE_NOT_BOUND",
+      message: "Bind the exact required Resource before local staging: source repository.",
+    },
+    next_action: {
+      surface: "BROWSER",
+      code: "SELECT_RESOURCE",
+      label: "Bind exact Resource",
+      description: "Select or register the exact required Resource metadata for this Workflow.",
+    },
+  };
+  const experimentProgress: ProjectProgress = {
+    ...runProgress,
+    attention: {
+      ...runProgress.attention,
+      recommended_workflow_instance_id: experimentInstanceId,
+      recommended_workflow_label: "Reproduction & Experiment",
+      action: resourceAction,
+    },
+    instances: [{
+      ...runProgress.instances[0],
+      workflow_instance_id: experimentInstanceId,
+      workflow_definition_id: experimentInstance.workflow_definition_id,
+      workflow_definition_version: "0.4.0",
+      workflow_display_name: "Reproduction & Experiment",
+      instance_display_name: "Reproduction & Experiment",
+      capsule_id: experimentInstance.capsule_id,
+      capsule_version: "0.7.0",
+      readiness: "WAITING_FOR_RESOURCE",
+      next_action: "SELECT_RESOURCE",
+      action: resourceAction,
+    }],
+  };
+  vi.spyOn(apiClient, "getProject").mockResolvedValue(runProject);
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(experimentProgress);
+  vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue({
+    ...workflowInstancesFixture,
+    items: [experimentInstance],
+  });
+  vi.spyOn(apiClient, "getWorkflowDefinition").mockResolvedValue({
+    workflow_definition_id: experimentInstance.workflow_definition_id,
+    stable_workflow_key: experimentInstance.workflow_definition_id,
+    display_name: "Reproduction & Experiment",
+    description: "Run a bounded local experiment.",
+    lifecycle: "AVAILABLE",
+    creatable: true,
+    allows_multiple_instances: true,
+    recommended_version: {
+      version: "0.3.0",
+      contract_checksum: `sha256:${"3".repeat(64)}`,
+      input_schema_id: "experiment-input/v0.3",
+      output_schema_id: "experiment-record/v1",
+      review_status: "REVIEWED",
+      core_capability_maturity: "SCAFFOLD_CORE",
+      published_at: "2026-08-09T00:00:00Z",
+      artifact_requirements: [
+        { requirement_key: "research_idea", artifact_type: "selected-research-idea/v1", schema_constraint: "selected-research-idea/v1", required: true, target_relative_path: "inputs/selected-research-idea.json" },
+        { requirement_key: "literature_library", artifact_type: "selected-paper-library/v1", schema_constraint: "selected-paper-library/v1", required: false, target_relative_path: "inputs/selected-papers.json" },
+      ],
+    },
+    recommended_capsule: null,
+    versions: [{
+      version: "0.4.0",
+      contract_checksum: `sha256:${"4".repeat(64)}`,
+      input_schema_id: "real-experiment-input/v0.1",
+      output_schema_id: "experiment-record/v2",
+      review_status: "REVIEWED",
+      core_capability_maturity: "REVIEWED_CORE",
+      published_at: "2026-08-14T00:00:00Z",
+      artifact_requirements: [
+        { requirement_key: "research_idea", artifact_type: "selected-research-idea/v1", schema_constraint: "selected-research-idea/v1", required: true, target_relative_path: "inputs/selected-research-idea.json" },
+      ],
+      resource_requirements: experimentInstance.resource_requirements,
+    }],
+    capsules: [],
+  });
+  vi.spyOn(apiClient, "listProjectResources").mockResolvedValue({ items: [], total: 0, offset: 0, limit: 100 });
+  vi.spyOn(apiClient, "listWorkflowResourceBindings").mockResolvedValue({ items: [], total: 0 });
+
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={experimentInstanceId} /></Providers>);
+
+  expect(await screen.findByText("Selected research idea")).toBeVisible();
+  expect(screen.queryByText("Selected literature")).not.toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Choose the Experiment Package source" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Choose package source" })).toHaveAttribute("href", "#resources");
+  expect(screen.getByRole("heading", { name: "Experiment Package" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Register or choose a source" })).toBeVisible();
+  expect(screen.getByText(/one exact Experiment Package/i)).toBeVisible();
+  expect(screen.queryByText(/scaffold version/i)).not.toBeInTheDocument();
+  expect(screen.queryByText(/runs the exact Reproduction & Experiment Workflow/i)).not.toBeInTheDocument();
 });
 
 test("Workflow Detail sends SETUP to Project help without presenting a sync command", async () => {

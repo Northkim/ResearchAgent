@@ -3260,3 +3260,63 @@ long-lived Workspace evidence. Alembic remains sole head `20260815_0023`.
 
 Next product phase: W1 Real Writing. Do not continue Experiment hardening or
 begin W1 automatically.
+
+## D1 Real Experiment entry Resource presentation correction (2026-08-17)
+
+The D1 Owner journey exposed a mismatch between the released Real Experiment
+0.4.0 contract and Workflow Detail. The frontend used the catalog's historical
+recommended 0.3.0 Artifact requirements, described Resource requirements as
+optional scaffold behavior, and Cloud Progress could advertise RUN without
+considering required Resource bindings.
+
+The bounded correction preserves Real Experiment Definition 0.4.0, Capsule
+0.7.0, `experiment-record/v2`, the ResourceReference persistence model, and the
+Local Runner. Workflow Detail now fetches the Workflow Definition detail and
+selects the exact version pinned by the Workflow Instance. Real Experiment
+therefore shows only required `selected-research-idea/v1`, not the historical
+optional literature input. The exact API Resource requirement now renders
+`source_repository`, `SOURCE_REPOSITORY`, required cardinality 1..1, GITHUB,
+and its owner-staged purpose.
+
+Derived Progress now considers exact required Resource requirements and active
+Cloud bindings. A missing binding yields `SELECT_RESOURCE`; an exact bound
+Resource yields conservative `STAGE_RESOURCE`, not RUN. Cloud does not claim
+that local bytes are staged, verified, or drift-free because that truth remains
+only in `.reagent/resource-index.json`. Workflow Detail explains the supported
+already-local package, exact Cloud metadata/binding, and public `resource stage`
+handoff. The Local Runner remains the sole authority that allows execution or
+fails with unresolved/drift errors. Workflows without required Resources retain
+their existing ready-to-RUN projection.
+
+Verification: focused backend/component tests passed; affected progress/API
+suites passed `68`; all frontend Vitest passed `17 files / 45 tests`; TypeScript,
+ESLint, production Next.js build, compileall, Alembic sole head `20260815_0026`,
+and `git diff --check` passed. Evidence reaches E3 for controlled derived
+service/API collaborators and E1 component behavior; verifier independence is
+LIMITED. No controlled browser or Owner retest is claimed. No Project,
+Workspace, Artifact, Resource, Workflow Instance, database row, migration,
+immutable publication, Experiment Package, or Experiment execution was changed.
+
+### D1 Experiment Package owner-facing UX follow-up
+
+The Resource correction now presents the released Real Experiment prerequisite
+as a three-step Owner flow: prepare the local Experiment Package, register or
+choose its exact GitHub source, then stage and verify it locally. Primary copy
+no longer asks a research Owner to manipulate ResourceReference metadata.
+GitHub is fixed by the exact 1..1 `SOURCE_REPOSITORY` requirement; the visible
+fields are Package name, GitHub repository, Commit SHA, and Package SHA-256.
+The existing create/bind APIs and exact `resource stage` command are unchanged.
+
+Raw requirement, provider, Resource, binding, revision, and checksum identities
+remain recoverable under Technical details. The page explicitly keeps package
+bytes, staging, verification, and drift truth in the Local Workspace and does
+not imply Cloud network resolution or local execution. Generic non-Experiment
+Resource presentation retains its metadata-only/no-network boundary.
+
+Focused frontend regression passed `3 files / 17 tests`; full frontend Vitest
+passed `17 files / 46 tests`; TypeScript, ESLint, production build, and
+`git diff --check` passed. The first production build attempt was sandbox-
+blocked because Turbopack could not bind an internal local port; the unchanged
+build passed under normal build permission. No backend, contract, persistence,
+runtime, network, Project, Resource, or Experiment state changed in this UX
+follow-up. Owner production retest remains the D1 gate.

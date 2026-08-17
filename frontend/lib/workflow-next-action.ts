@@ -10,6 +10,8 @@ export type WorkflowNextActionCode =
   | "WAIT_FOR_UPSTREAM"
   | "SELECT_INPUT"
   | "MATERIALIZE"
+  | "SELECT_RESOURCE"
+  | "STAGE_RESOURCE"
   | "RUN"
   | "CONTINUE"
   | "REVIEW_RESULT"
@@ -40,6 +42,8 @@ export function deriveWorkflowNextAction({
       WAIT_FOR_UPSTREAM: ["Complete an upstream workflow", `Required results are not available yet: ${(progress.missing_required_inputs ?? []).join(", ")}.`, 20],
       SELECT_INPUT: ["Select exact inputs", "Choose specific compatible results. ReAgent never selects the latest result implicitly.", 30],
       MATERIALIZE: ["Prepare selected inputs locally", "Materialize verified copies in the Local Workspace. The browser cannot verify local bytes.", 40],
+      SELECT_RESOURCE: ["Choose the required source", "Choose one exact registered source before local staging.", 45],
+      STAGE_RESOURCE: ["Stage and verify the Experiment Package", "Use the owner-staged package command in the Local Workspace before running.", 48],
       RUN: ["Run this Workflow locally", "Open the Local Workspace to start this independent Workflow.", 50],
       CONTINUE: ["Continue this Workflow", progress.latest_summary ?? "Continue from its saved local memory.", 60],
       REVIEW_RESULT: ["Review the latest result", "Inspect the immutable result and choose the next workflow explicitly.", 80],

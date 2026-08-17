@@ -89,6 +89,12 @@ class ProjectProgressAggregationService:
         for report in reports:
             by_instance[report.workflow_instance_id].append(report)
         all_requirements = self._uow.artifact_references.list_requirements()
+        all_resource_requirements = (
+            self._uow.resource_references.list_requirements()
+        )
+        resource_bindings = self._uow.resource_references.list_project_bindings(
+            project_id
+        )
         projection_items = []
         for instance in instances:
             definition_version = definition_versions.get(
@@ -106,7 +112,13 @@ class ProjectProgressAggregationService:
                     if item.workflow_definition_id == instance.workflow_definition_id
                     and item.workflow_version == instance.workflow_version
                 ),
+                resource_requirements=tuple(
+                    item for item in all_resource_requirements
+                    if item.workflow_definition_id == instance.workflow_definition_id
+                    and item.workflow_version == instance.workflow_version
+                ),
                 dependency_bindings=dependency_bindings,
+                resource_bindings=resource_bindings,
                 artifacts=tuple(artifacts.values()),
                 friendly_label=friendly_labels[instance.workflow_instance_id],
             ))
@@ -203,7 +215,9 @@ class ProjectProgressAggregationService:
         current_manifest_revision: int,
         acknowledgements,
         requirements,
+        resource_requirements,
         dependency_bindings,
+        resource_bindings,
         artifacts,
         friendly_label: str,
     ) -> WorkflowInstanceProgressProjection:
@@ -268,6 +282,20 @@ class ProjectProgressAggregationService:
             for item in required
             if item.requirement_key in active_bindings
         )
+        active_resource_bindings = {
+            item.requirement_key: item
+            for item in resource_bindings
+            if item.workflow_instance_id == instance.workflow_instance_id
+            and item.state.value == "ACTIVE"
+        }
+        required_resources = tuple(
+            item for item in resource_requirements if item.required
+        )
+        missing_resources = tuple(
+            item.requirement_key
+            for item in required_resources
+            if item.requirement_key not in active_resource_bindings
+        )
         result_count = sum(
             artifact.producer_workflow_instance_id == instance.workflow_instance_id
             and artifact.state.value not in {"MISSING", "INCOMPATIBLE"}
@@ -278,6 +306,8 @@ class ProjectProgressAggregationService:
             installation_state=installation_state,
             missing=missing,
             compatible_counts=compatible_counts,
+            missing_resources=missing_resources,
+            required_resource_count=len(required_resources),
             report_count=len(accepted),
             research_status=(record.status.value if record is not None else "NOT_STARTED"),
             result_count=result_count,
@@ -312,6 +342,7 @@ class ProjectProgressAggregationService:
             readiness=readiness,
             next_action=next_action,
             missing=missing,
+            missing_resources=missing_resources,
             latest_artifact=latest_artifact,
         )
         return WorkflowInstanceProgressProjection(
@@ -359,7 +390,11 @@ class ProjectProgressAggregationService:
         )
 
 
-def _readiness(*, lifecycle, installation_state, missing, compatible_counts, report_count, research_status, result_count, stable_key):
+def _readiness(
+    *, lifecycle, installation_state, missing, compatible_counts,
+    missing_resources=(), required_resource_count=0, report_count,
+    research_status, result_count, stable_key,
+):
     if lifecycle == "RETIRED":
         return "RETIRED", "REVIEW_RESULT"
     if installation_state == "UNKNOWN":
@@ -378,6 +413,12 @@ def _readiness(*, lifecycle, installation_state, missing, compatible_counts, rep
         )
     if report_count:
         return "IN_PROGRESS", "CONTINUE"
+    if missing_resources:
+        return "WAITING_FOR_RESOURCE", "SELECT_RESOURCE"
+    if required_resource_count:
+        # Resource staging, verification, and drift remain Local Workspace truth.
+        # Cloud can prove the exact binding but must not advertise RUN as ready.
+        return "NEEDS_RESOURCE_STAGING", "STAGE_RESOURCE"
     if compatible_counts:
         # Cloud knows the exact bindings, but local materialization remains local truth.
         return "NEEDS_MATERIALIZATION", "MATERIALIZE"
@@ -403,6 +444,8 @@ _ACTION_CONTENT = {
     "WAIT_FOR_UPSTREAM": ("INFORMATIONAL", "Wait for required Output", "Complete the upstream research needed by this Workflow."),
     "SELECT_INPUT": ("BROWSER", "Choose exact input", "Select one exact compatible Output; ReAgent never selects latest implicitly."),
     "MATERIALIZE": ("LOCAL", "Prepare inputs locally", "Materialize verified copies in the Local Workspace before running."),
+    "SELECT_RESOURCE": ("BROWSER", "Bind exact Resource", "Select or register the exact required Resource metadata for this Workflow."),
+    "STAGE_RESOURCE": ("LOCAL", "Stage and verify Resource", "Stage and verify the exact owner-provided package in the Local Workspace before running."),
     "RUN": ("LOCAL", "Start in Local Workspace", "Run this Workflow through the public local Workspace command."),
     "CONTINUE": ("LOCAL", "Continue in Local Workspace", "Continue from the Workflow's durable local state with the qualified Agent."),
     "REVIEW_RESULT": ("BROWSER", "Review Output", "Inspect the exact produced Output and its limitations."),
@@ -413,7 +456,7 @@ _ACTION_CONTENT = {
 def _workflow_action(
     *, project_id, workflow_definition_id, output_schema_id, lifecycle,
     research_status, latest_summary, continuation_reason, installation_state,
-    readiness, next_action, missing, latest_artifact,
+    readiness, next_action, missing, missing_resources=(), latest_artifact,
 ) -> WorkflowActionProjection:
     del project_id  # Route construction remains a frontend navigation concern.
     expected = _expected_output(output_schema_id)
@@ -520,6 +563,27 @@ def _workflow_action(
             ), next_action=_next_action(next_action), expected_output=expected,
             latest_output=latest,
         )
+    if readiness == "WAITING_FOR_RESOURCE":
+        names = ", ".join(_human_requirement(item) for item in missing_resources)
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("RESOURCE_BINDING", "Required Resource not bound"),
+            actor="OWNER", attention_state="OWNER_ACTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "REQUIRED_RESOURCE_NOT_BOUND",
+                f"Bind the exact required Resource before local staging: {names}.",
+            ), next_action=_next_action(next_action), expected_output=expected,
+            latest_output=latest,
+        )
+    if readiness == "NEEDS_RESOURCE_STAGING":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("RESOURCE_STAGING", "Resource must be staged locally"),
+            actor="OWNER", attention_state="ATTENTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "LOCAL_RESOURCE_READINESS_REQUIRED",
+                "Cloud knows the exact Resource binding, but only the Local Workspace can stage, verify, and detect drift in its bytes.",
+            ), next_action=_next_action(next_action), expected_output=expected,
+            latest_output=latest,
+        )
     if research_status == "COMPLETED" or readiness == "RESULT_READY":
         return WorkflowActionProjection(
             stage=WorkflowStageProjection("COMPLETED", _stage_label(workflow_definition_id, "COMPLETED")),
@@ -537,6 +601,7 @@ def _workflow_action(
         )
     labels = {
         "NEEDS_MATERIALIZATION": ("INPUT_PREPARATION", "Inputs selected"),
+        "NEEDS_RESOURCE_STAGING": ("RESOURCE_STAGING", "Resource must be staged locally"),
         "READY_TO_RUN": ("READY", "Ready to start"),
     }
     stage_code, stage_label = labels.get(readiness, ("UNKNOWN", "State needs review"))
@@ -710,7 +775,7 @@ def _friendly_labels(instances, definitions) -> dict[str, str]:
 
 def _next_action_priority(value: str) -> int:
     # Project guidance prefers one actionable step over cards that are waiting.
-    return {"SETUP": 5, "SYNC": 10, "SELECT_INPUT": 20, "MATERIALIZE": 30, "RUN": 40, "CONTINUE": 50, "REVISE_MANUSCRIPT": 60, "REVIEW_RESULT": 70, "WAIT_FOR_UPSTREAM": 90}.get(value, 99)
+    return {"SETUP": 5, "SYNC": 10, "SELECT_INPUT": 20, "MATERIALIZE": 30, "SELECT_RESOURCE": 35, "STAGE_RESOURCE": 38, "RUN": 40, "CONTINUE": 50, "REVISE_MANUSCRIPT": 60, "REVIEW_RESULT": 70, "WAIT_FOR_UPSTREAM": 90}.get(value, 99)
 
 
 def _workflow_path_priority(definition_id: str) -> int:

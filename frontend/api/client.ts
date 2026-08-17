@@ -27,6 +27,7 @@ import type {
   ProjectResourceReference,
   WorkflowResourceBinding,
   WorkflowResourceBindingPage,
+  WorkflowCatalogDetail,
 } from "@/types/api";
 
 const API_BASE = "/backend";
@@ -146,6 +147,10 @@ export const apiClient = {
 
   listWorkflowDefinitions(): Promise<WorkflowCatalogPage> {
     return request("/workflow-definitions");
+  },
+
+  getWorkflowDefinition(workflowDefinitionId: string): Promise<WorkflowCatalogDetail> {
+    return request(`/workflow-definitions/${encodeURIComponent(workflowDefinitionId)}`);
   },
 
   listProjectWorkflowInstances(projectId: string): Promise<ProjectWorkflowInstancePage> {

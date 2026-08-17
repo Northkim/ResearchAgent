@@ -8,7 +8,7 @@ import {
   useProject,
   useProjectProgress,
   useProjectWorkflowInstances,
-  useWorkflowDefinitions,
+  useWorkflowDefinition,
 } from "@/api/hooks";
 import { formatDateTime } from "@/lib/format";
 
@@ -116,6 +116,20 @@ export function presentWorkflowAction(
     task: "Prepare the workflow inputs",
     reason: "The selected inputs need to be copied into the local workspace.",
     actionLabel: "Prepare inputs",
+  };
+  if (code === "SELECT_RESOURCE") return {
+    attention: "Experiment Package source needed",
+    stage: "Package source setup",
+    task: "Choose the Experiment Package source",
+    reason: "Register or choose the exact GitHub source for the local Experiment Package before staging it.",
+    actionLabel: "Choose package source",
+  };
+  if (code === "STAGE_RESOURCE") return {
+    attention: "Local resource preparation required",
+    stage: "Resource staging",
+    task: "Stage and verify the Experiment Package",
+    reason: "Cloud knows the exact binding; the Local Workspace must verify the package bytes before execution.",
+    actionLabel: "View staging instructions",
   };
   if (code === "RUN") return {
     attention: "Ready to continue locally",
@@ -244,20 +258,22 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
   const project = useProject(projectId);
   const instances = useProjectWorkflowInstances(projectId);
   const progress = useProjectProgress(projectId, { workflowInstanceId });
-  const catalog = useWorkflowDefinitions();
+  const instance = instances.data?.items.find((item) => item.workflow_instance_id === workflowInstanceId);
+  const definition = useWorkflowDefinition(instance?.workflow_definition_id ?? "");
 
-  if (project.isLoading || instances.isLoading || progress.isLoading || catalog.isLoading) {
+  if (project.isLoading || instances.isLoading || progress.isLoading || definition.isLoading) {
     return <LoadingState label="Loading Workflow Detail" />;
   }
-  if (project.isError || !project.data || instances.isError || !instances.data || progress.isError || !progress.data || catalog.isError || !catalog.data) {
+  if (project.isError || !project.data || instances.isError || !instances.data || progress.isError || !progress.data || definition.isError || !definition.data) {
     return <ErrorState title="Workflow Detail unavailable" />;
   }
 
-  const instance = instances.data.items.find((item) => item.workflow_instance_id === workflowInstanceId);
   const state = progress.data.instances.find((item) => item.workflow_instance_id === workflowInstanceId);
   if (!instance || !state) return <ErrorState title="Workflow not found" />;
-  const definition = catalog.data.items.find((item) => item.workflow_definition_id === instance.workflow_definition_id);
-  const requirements = definition?.recommended_version?.artifact_requirements ?? [];
+  const pinnedVersion = definition.data.versions.find((item) => item.version === instance.workflow_version);
+  if (!pinnedVersion) return <ErrorState title="Pinned Workflow contract unavailable" />;
+  const requirements = pinnedVersion.artifact_requirements ?? [];
+  const resourceRequirements = pinnedVersion.resource_requirements ?? instance.resource_requirements ?? [];
   const dependencies = progress.data.dependency_edges.filter((edge) => edge.consumer_workflow_instance_id === workflowInstanceId);
   const visibleRequirements = requirements.filter((requirement) => (
     requirement.required
@@ -272,6 +288,8 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
     ? "#inputs"
       : state.action.next_action.code === "REVIEW_RESULT"
         ? `/projects/${projectId}/outputs`
+      : state.action.next_action.code === "SELECT_RESOURCE" || state.action.next_action.code === "STAGE_RESOURCE"
+        ? "#resources"
       : state.action.next_action.surface === "LOCAL" ? "#run-locally" : undefined;
   const presentation = presentWorkflowAction(state.action, state.workflow_display_name, state.latest_summary ?? "");
   const revealRunInstructions = state.action.next_action.code === "RUN"
@@ -288,7 +306,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
     <div className="page-stack workflow-detail-page">
       <p className="breadcrumb"><Link href={`/projects/${projectId}`}>{project.data.name}</Link><span>/</span><Link href={`/projects/${projectId}/workflows`}>Workflows</Link><span>/</span><strong>{state.friendly_instance_label ?? state.instance_display_name}</strong></p>
       <header className="workflow-detail-header">
-        <div><p className="eyebrow">{state.workflow_display_name} workflow</p><h1>{state.friendly_instance_label ?? state.instance_display_name}</h1><p>{workflowDescription(state.workflow_display_name, definition?.description)}</p></div>
+        <div><p className="eyebrow">{state.workflow_display_name} workflow</p><h1>{state.friendly_instance_label ?? state.instance_display_name}</h1><p>{workflowDescription(state.workflow_display_name, definition.data.description)}</p></div>
         <Link href={`/projects/${projectId}/workflows`} className="button button-ghost">All Workflows</Link>
       </header>
       <ProjectNavigation projectId={projectId} active="Workflows" />
@@ -334,6 +352,14 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
         </div>
       </div>
 
+      {resourceRequirements.length ? (
+        <WorkflowResourceSetup
+          projectId={projectId}
+          instance={instance}
+          requirements={resourceRequirements}
+        />
+      ) : null}
+
       {command ? (
         <details
           id="run-locally"
@@ -353,8 +379,6 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
         </details>
       ) : null}
 
-      {(instance.resource_requirements ?? []).length ? <details className="secondary-control"><summary>Resources</summary><WorkflowResourceSetup projectId={projectId} instance={instance} requirements={instance.resource_requirements ?? []} /></details> : null}
-
       <details className="technical-details">
         <summary>Technical Details</summary>
         <dl>
@@ -365,6 +389,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
           <div><dt>Desired / installed</dt><dd>{state.desired_state.replaceAll("_", " ")} / {state.installation_state.replaceAll("_", " ")}</dd></div>
           <div><dt>Readiness</dt><dd>{state.readiness?.replaceAll("_", " ") ?? "Unknown"}</dd></div>
           {requirements.map((requirement) => <div key={requirement.requirement_key}><dt>Input requirement</dt><dd><code>{requirement.requirement_key}</code></dd></div>)}
+          {resourceRequirements.map((requirement) => <div key={requirement.requirement_key}><dt>Resource requirement</dt><dd><code>{requirement.requirement_key}</code> · {requirement.required ? "required" : "optional"}</dd></div>)}
           {dependencies.map((dependency) => <div key={dependency.requirement_key}><dt>Bound Artifact</dt><dd><code>{dependency.artifact_id}</code></dd></div>)}
           {state.action.latest_output ? <div><dt>Output checksum</dt><dd><code>{state.action.latest_output.checksum}</code></dd></div> : null}
         </dl>

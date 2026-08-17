@@ -442,6 +442,11 @@ export interface WorkflowCatalogPage {
   total: number;
 }
 
+export interface WorkflowCatalogDetail extends WorkflowCatalogItem {
+  versions: WorkflowVersionCatalog[];
+  capsules: CapsuleVersionCatalog[];
+}
+
 export interface ProjectWorkflowInstance {
   workflow_instance_id: string;
   project_id: string;
@@ -540,7 +545,7 @@ export interface WorkflowInstanceProgress {
   installation_manifest_revision: number | null;
   sync_uncertainty: string;
   readiness?: string;
-  next_action?: "SETUP" | "SYNC" | "WAIT_FOR_UPSTREAM" | "SELECT_INPUT" | "MATERIALIZE" | "RUN" | "CONTINUE" | "REVIEW_RESULT" | "REVISE_MANUSCRIPT";
+  next_action?: "SETUP" | "SYNC" | "WAIT_FOR_UPSTREAM" | "SELECT_INPUT" | "MATERIALIZE" | "SELECT_RESOURCE" | "STAGE_RESOURCE" | "RUN" | "CONTINUE" | "REVIEW_RESULT" | "REVISE_MANUSCRIPT";
   missing_required_inputs?: string[];
   compatible_input_counts?: Record<string, number>;
   bound_required_inputs?: string[];

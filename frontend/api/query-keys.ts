@@ -6,6 +6,8 @@ export const queryKeys = {
     ["projects", projectId, "progress", workflowInstanceId ?? "ALL", offset] as const,
   projectProgressReports: (projectId: string) => ["projects", projectId, "progress-reports"] as const,
   workflowDefinitions: ["workflow-definitions"] as const,
+  workflowDefinition: (workflowDefinitionId: string) =>
+    ["workflow-definitions", workflowDefinitionId] as const,
   projectWorkflowInstances: (projectId: string) =>
     ["projects", projectId, "workflow-instances"] as const,
   projectArtifactReferences: (projectId: string, artifactType: string) =>

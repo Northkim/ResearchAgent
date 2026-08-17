@@ -331,3 +331,71 @@ def test_readiness_distinguishes_upstream_selection_materialization_and_review_r
     assert _readiness(missing=(), compatible_counts={}, **common) == ("READY_TO_RUN", "RUN")
     review = {**common, "stable_key": "review-local-experimental", "research_status": "COMPLETED", "result_count": 1}
     assert _readiness(missing=(), compatible_counts={"manuscript": 2}, **review) == ("RESULT_READY", "REVISE_MANUSCRIPT")
+
+
+def test_required_resource_blocks_cloud_run_without_changing_resource_authority():
+    common = dict(
+        lifecycle="ACTIVE",
+        installation_state="ACKNOWLEDGED_CURRENT",
+        missing=(),
+        compatible_counts={"research_idea": 1},
+        report_count=0,
+        research_status="NOT_STARTED",
+        result_count=0,
+        stable_key="reproduction-experiment-local-experimental",
+        required_resource_count=1,
+    )
+    missing = _readiness(
+        missing_resources=("source_repository",),
+        **common,
+    )
+    assert missing == ("WAITING_FOR_RESOURCE", "SELECT_RESOURCE")
+    missing_action = _workflow_action(
+        project_id="project-resource-projection",
+        workflow_definition_id="reproduction-experiment-local-experimental",
+        output_schema_id="experiment-record/v2",
+        lifecycle="ACTIVE",
+        research_status="NOT_STARTED",
+        latest_summary=None,
+        continuation_reason=None,
+        installation_state="ACKNOWLEDGED_CURRENT",
+        readiness=missing[0],
+        next_action=missing[1],
+        missing=(),
+        missing_resources=("source_repository",),
+        latest_artifact=None,
+    )
+    assert missing_action.stage.code == "RESOURCE_BINDING"
+    assert missing_action.blocker is not None
+    assert missing_action.blocker.code == "REQUIRED_RESOURCE_NOT_BOUND"
+    assert missing_action.next_action.code == "SELECT_RESOURCE"
+    assert missing_action.next_action.code != "RUN"
+
+    bound = _readiness(missing_resources=(), **common)
+    assert bound == ("NEEDS_RESOURCE_STAGING", "STAGE_RESOURCE")
+    bound_action = _workflow_action(
+        project_id="project-resource-projection",
+        workflow_definition_id="reproduction-experiment-local-experimental",
+        output_schema_id="experiment-record/v2",
+        lifecycle="ACTIVE",
+        research_status="NOT_STARTED",
+        latest_summary=None,
+        continuation_reason=None,
+        installation_state="ACKNOWLEDGED_CURRENT",
+        readiness=bound[0],
+        next_action=bound[1],
+        missing=(),
+        latest_artifact=None,
+    )
+    assert bound_action.stage.code == "RESOURCE_STAGING"
+    assert bound_action.blocker is not None
+    assert bound_action.blocker.code == "LOCAL_RESOURCE_READINESS_REQUIRED"
+    assert bound_action.next_action.code == "STAGE_RESOURCE"
+    assert bound_action.next_action.code != "RUN"
+
+    no_resources = _readiness(
+        missing_resources=(),
+        required_resource_count=0,
+        **{key: value for key, value in common.items() if key != "required_resource_count"},
+    )
+    assert no_resources == ("NEEDS_MATERIALIZATION", "MATERIALIZE")

@@ -21,6 +21,11 @@ afterEach(() => vi.restoreAllMocks());
 function arrange() {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
   vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue(workflowCatalogFixture);
+  vi.spyOn(apiClient, "getWorkflowDefinition").mockResolvedValue({
+    ...workflowCatalogFixture.items[0],
+    versions: [workflowCatalogFixture.items[0].recommended_version!],
+    capsules: [workflowCatalogFixture.items[0].recommended_capsule!],
+  });
   vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue(workflowInstancesFixture);
   vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
 }
