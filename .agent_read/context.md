@@ -54,6 +54,32 @@ release defects.
 another phase automatically. The durable release and demonstration handoff is
 `.agent_read/progress/2026-08-16_final_owner_release_handoff.md`.
 
+## EP-A Experiment preparation contract foundation
+
+The Owner has separately authorized and completed only EP-A, an unpublished
+contract foundation for a future non-programmer-default Experiment path.
+Historical Experiment 0.4.0 / Capsule 0.7.0 / `experiment-record/v2` remains
+immutable and supported. No Workflow/Capsule publication, migration, API,
+frontend, runner, ResourceReference, network, Project, Workspace, package, or
+experiment state changed.
+
+Local contracts now define checksum-bound `reagent.experiment-methodology/v0.1`,
+design approval limited to implementation preparation,
+`reagent.prepared-experiment-package/v0.1`, a shared
+`ValidatedExperimentPackage`, and one-use run-approval identity for future use.
+Prepared-package origins are REAGENT_PREPARED, LOCAL_PROJECT, or
+EXTERNAL_EXACT_PACKAGE; Git is optional supporting provenance and package
+content checksums remain authoritative. The reserved Builder family is
+`SKLEARN_TABULAR_CLASSIFICATION_V1`; no Builder exists yet.
+
+Unpublished `experiment-record/v3` validation and bounded
+`reagent.artifact-presentation.experiment-record/v0.1` presentation validation
+are isolated from v2. The reserved, unpublished downstream chain is Writing
+0.5/0.7 -> manuscript v4, Review 0.4/0.6 -> review v3, and Writing Revision
+0.6/0.8 -> manuscript v5. Exact-type incompatibility with historical v2-only
+consumers remains explicit. `EP_A_STATUS = READY_FOR_OWNER_REVIEW`; EP-B, EP-C,
+EP-D, D1 continuation, publication, and execution remain unauthorized.
+
 ## FE-M desktop controlled-state coherence correction
 
 The accepted FE-M desktop layout remains unchanged. The Owner-review fixture now

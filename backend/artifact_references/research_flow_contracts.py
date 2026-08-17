@@ -15,6 +15,13 @@ from types import MappingProxyType
 from typing import Any, Callable, Mapping
 
 from backend.project_workspaces.contracts import CoreCapabilityMaturity
+from backend.workflow_packages.experiment_preparation_contracts import (
+    DesignApproval,
+    ExperimentMethodology,
+    ExperimentPreparationContractError,
+    PreparedPackageReceipt,
+    RunApprovalFoundation,
+)
 from backend.workflow_packages.serialization import canonical_hash, canonical_json, sha256_bytes
 
 SELECTED_RESEARCH_IDEA_TYPE = "selected-research-idea/v1"
@@ -33,6 +40,11 @@ EXPERIMENT_RECORD_TYPE = "experiment-record/v1"
 EXPERIMENT_RECORD_SCHEMA = "experiment-record/v1"
 EXPERIMENT_RECORD_V2_TYPE = "experiment-record/v2"
 EXPERIMENT_RECORD_V2_SCHEMA = "experiment-record/v2"
+EXPERIMENT_RECORD_V3_TYPE = "experiment-record/v3"
+EXPERIMENT_RECORD_V3_SCHEMA = "experiment-record/v3"
+MANUSCRIPT_DRAFT_V4_TYPE = "manuscript-draft/v4"
+REVIEW_REPORT_V3_TYPE = "review-report/v3"
+MANUSCRIPT_DRAFT_V5_TYPE = "manuscript-draft/v5"
 SELECTED_PAPER_LIBRARY_TYPE = "selected-paper-library/v1"
 CANDIDATE_IDEAS_SCHEMA = "candidate-ideas/v0.1"
 JSON_MEDIA_TYPE = "application/json"
@@ -96,6 +108,16 @@ class FutureWorkflowContract:
     inputs: tuple[FutureDependency, ...]
     output_artifact_type: str
     production_seeded: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ReservedForwardWorkflowContract:
+    stable_key: str
+    workflow_version: str
+    capsule_version: str
+    inputs: tuple[FutureDependency, ...]
+    output_artifact_type: str
+    published: bool = False
 
 
 def validate_selected_research_idea(
@@ -984,6 +1006,144 @@ def validate_experiment_record_v2(
         "execution": {**execution, "argv": argv, "stdout": stdout, "stderr": stderr},
         "evaluation": {**evaluation, "metrics": metrics, "raw_result": raw_result},
         "result_status": result["result_status"],
+        "limitations": limitations,
+    }
+
+
+def validate_experiment_record_v3(
+    value: Mapping[str, Any],
+    *,
+    producer_maturity: CoreCapabilityMaturity | None = None,
+) -> dict[str, Any]:
+    """Validate the unpublished provider-neutral forward Experiment record."""
+
+    result = _object(value, "experiment record v3")
+    _exact_keys(result, {
+        "schema", "core_capability_maturity", "mode", "source_artifacts",
+        "methodology_contract", "design_approval", "prepared_package",
+        "approved_execution_plan", "run_approval", "execution", "evaluation",
+        "result_status", "owner_review", "presentation_summary", "limitations",
+    }, "experiment record v3")
+    if result["schema"] != EXPERIMENT_RECORD_V3_SCHEMA:
+        raise ResearchFlowContractError("experiment record v3 schema mismatch")
+    maturity = _maturity(result["core_capability_maturity"])
+    _require_producer_maturity(maturity, producer_maturity)
+    if maturity is not CoreCapabilityMaturity.REVIEWED_CORE:
+        raise ResearchFlowContractError("experiment record v3 requires REVIEWED_CORE")
+    if result["mode"] not in {"REAGENT_PREPARED", "LOCAL_PROJECT", "EXTERNAL_EXACT_PACKAGE"}:
+        raise ResearchFlowContractError("experiment record v3 mode is invalid")
+    sources = _artifact_ref_list(result["source_artifacts"], "experiment v3 sources")
+    if len(sources) != 1 or sources[0]["artifact_type"] != SELECTED_RESEARCH_IDEA_TYPE:
+        raise ResearchFlowContractError("experiment record v3 requires one exact selected Idea")
+    try:
+        methodology = ExperimentMethodology.from_mapping(result["methodology_contract"])
+        design_approval = DesignApproval.from_mapping(result["design_approval"])
+        design_approval.validate_methodology(methodology)
+        prepared = PreparedPackageReceipt.from_mapping(result["prepared_package"])
+    except ExperimentPreparationContractError as error:
+        raise ResearchFlowContractError(str(error)) from error
+    if methodology.selected_idea.to_dict() != sources[0] or prepared.selected_idea.to_dict() != sources[0]:
+        raise ResearchFlowContractError("v3 methodology/package selected Idea lineage mismatch")
+    if prepared.origin_type.value != result["mode"]:
+        raise ResearchFlowContractError("v3 package origin differs from mode")
+
+    plan = _checksummed_value(result["approved_execution_plan"], "v3 execution plan")
+    plan_value = _object(plan["value"], "v3 execution plan value")
+    _exact_keys(plan_value, {
+        "package_receipt_checksum", "command", "runtime", "metrics",
+        "run_seed_scope", "execution_limits", "network_policy", "expected_outputs",
+    }, "v3 execution plan value")
+    try:
+        run_approval = RunApprovalFoundation.from_mapping(result["run_approval"])
+        run_approval.validate_execution_plan(plan_value, prepared)
+    except ExperimentPreparationContractError as error:
+        raise ResearchFlowContractError(str(error)) from error
+    if (
+        plan_value["package_receipt_checksum"] != prepared.receipt_checksum
+        or plan_value["command"] != list(run_approval.command)
+        or plan_value["runtime"] != run_approval.runtime.to_dict()
+        or plan_value["metrics"] != list(run_approval.metrics)
+        or plan_value["run_seed_scope"] != list(run_approval.run_seed_scope)
+        or plan_value["execution_limits"] != run_approval.execution_limits.to_dict()
+        or plan_value["network_policy"] != "DISABLED"
+        or plan_value["expected_outputs"] != list(run_approval.expected_outputs)
+    ):
+        raise ResearchFlowContractError("run approval differs from the exact execution plan")
+
+    execution = _object(result["execution"], "v3 execution")
+    _exact_keys(execution, {
+        "process_outcome", "execution_plan_checksum", "run_approval_checksum",
+        "started_at", "completed_at", "exit_code", "network_policy",
+        "stdout_checksum", "stderr_checksum",
+    }, "v3 execution")
+    if execution["process_outcome"] not in {"SUCCEEDED", "FAILED", "TIMED_OUT", "CANCELLED", "INTERRUPTED"}:
+        raise ResearchFlowContractError("v3 process outcome is invalid")
+    if execution["execution_plan_checksum"] != plan["sha256"] or execution["run_approval_checksum"] != run_approval.approval_checksum:
+        raise ResearchFlowContractError("v3 execution differs from exact approvals")
+    started = _time(execution["started_at"], "v3 execution start")
+    completed = _time(execution["completed_at"], "v3 execution completion")
+    if completed < started or execution["network_policy"] != "DISABLED":
+        raise ResearchFlowContractError("v3 execution time or network policy is invalid")
+    if execution["exit_code"] is not None and (isinstance(execution["exit_code"], bool) or not isinstance(execution["exit_code"], int)):
+        raise ResearchFlowContractError("v3 execution exit code is invalid")
+    _checksum(execution["stdout_checksum"], "v3 stdout checksum")
+    _checksum(execution["stderr_checksum"], "v3 stderr checksum")
+
+    evaluation = _object(result["evaluation"], "v3 evaluation")
+    _exact_keys(evaluation, {
+        "validity", "scientific_evidence_status", "metrics", "comparisons",
+        "robustness_summary", "summary",
+    }, "v3 evaluation")
+    if evaluation["validity"] not in {"VALID", "INVALID", "NOT_EVALUATED"}:
+        raise ResearchFlowContractError("v3 evaluation validity is invalid")
+    if evaluation["scientific_evidence_status"] not in {"SUFFICIENT_FOR_BOUNDED_CLAIMS", "LIMITED", "INSUFFICIENT", "UNAVAILABLE"}:
+        raise ResearchFlowContractError("v3 scientific evidence status is invalid")
+    metrics = _result_metrics(evaluation["metrics"])
+    comparisons = _string_list(evaluation["comparisons"], "v3 comparisons")
+    _nonempty(evaluation["robustness_summary"], "v3 robustness summary")
+    _nonempty(evaluation["summary"], "v3 evaluation summary")
+    if result["result_status"] not in {"SUCCEEDED", "FAILED", "PARTIAL"}:
+        raise ResearchFlowContractError("v3 result status is invalid")
+    if result["result_status"] == "SUCCEEDED" and (
+        execution["process_outcome"] != "SUCCEEDED" or execution["exit_code"] != 0 or evaluation["validity"] != "VALID"
+    ):
+        raise ResearchFlowContractError("successful v3 result lacks process and evaluation proof")
+    if evaluation["validity"] == "VALID" and evaluation["scientific_evidence_status"] == "UNAVAILABLE":
+        raise ResearchFlowContractError("valid evaluation cannot claim unavailable scientific evidence")
+    limitations = _string_list(result["limitations"], "v3 limitations")
+    presentation = _object(result["presentation_summary"], "v3 presentation summary")
+    _exact_keys(presentation, {"title", "summary", "key_findings"}, "v3 presentation summary")
+    _nonempty(presentation["title"], "v3 presentation title")
+    _nonempty(presentation["summary"], "v3 presentation summary")
+    findings = _string_list(presentation["key_findings"], "v3 key findings")
+
+    owner_review = _object(result["owner_review"], "v3 owner review")
+    _exact_keys(owner_review, {"decision", "reviewed_at", "reviewed_subject_checksum", "review_checksum"}, "v3 owner review")
+    _time(owner_review["reviewed_at"], "v3 owner review time")
+    reviewed_subject = canonical_hash({
+        "execution": execution, "evaluation": {**evaluation, "metrics": metrics, "comparisons": comparisons},
+        "result_status": result["result_status"], "limitations": limitations,
+    })
+    review_payload = dict(owner_review)
+    review_checksum = review_payload.pop("review_checksum")
+    if owner_review["decision"] != "FINALIZE" or owner_review["reviewed_subject_checksum"] != reviewed_subject:
+        raise ResearchFlowContractError("v3 Owner review does not bind the exact result")
+    _checksum(review_checksum, "v3 owner review checksum")
+    if canonical_hash(review_payload) != review_checksum:
+        raise ResearchFlowContractError("v3 Owner review checksum mismatch")
+    return {
+        "schema": EXPERIMENT_RECORD_V3_SCHEMA,
+        "core_capability_maturity": maturity.value,
+        "mode": result["mode"], "source_artifacts": sources,
+        "methodology_contract": methodology.to_dict(),
+        "design_approval": design_approval.to_dict(),
+        "prepared_package": prepared.to_dict(),
+        "approved_execution_plan": plan,
+        "run_approval": run_approval.to_dict(),
+        "execution": execution,
+        "evaluation": {**evaluation, "metrics": metrics, "comparisons": comparisons},
+        "result_status": result["result_status"], "owner_review": owner_review,
+        "presentation_summary": {**presentation, "key_findings": findings},
         "limitations": limitations,
     }
 
@@ -1900,6 +2060,15 @@ ARTIFACT_CONTRACTS: Mapping[str, ArtifactContract] = MappingProxyType({
     ),
 })
 
+# Contract-only reservation.  No Registry publication or production producer is
+# created by adding the forward validator here.
+FORWARD_ARTIFACT_CONTRACTS: Mapping[str, ArtifactContract] = MappingProxyType({
+    EXPERIMENT_RECORD_V3_TYPE: ArtifactContract(
+        EXPERIMENT_RECORD_V3_TYPE, EXPERIMENT_RECORD_V3_SCHEMA,
+        JSON_MEDIA_TYPE, validate_experiment_record_v3, False,
+    ),
+})
+
 FUTURE_WORKFLOW_CONTRACTS: Mapping[str, FutureWorkflowContract] = MappingProxyType({
     "writing": FutureWorkflowContract(
         stable_key="writing-local-experimental",
@@ -1930,5 +2099,35 @@ FUTURE_WORKFLOW_CONTRACTS: Mapping[str, FutureWorkflowContract] = MappingProxyTy
         ),
         output_artifact_type=EXPERIMENT_RECORD_TYPE,
         production_seeded=True,
+    ),
+})
+
+FORWARD_WORKFLOW_CONTRACTS: Mapping[str, ReservedForwardWorkflowContract] = MappingProxyType({
+    "initial-writing": ReservedForwardWorkflowContract(
+        stable_key="writing-local-experimental", workflow_version="0.5.0", capsule_version="0.7.0",
+        inputs=(
+            FutureDependency("research_idea", SELECTED_RESEARCH_IDEA_TYPE, True),
+            FutureDependency("literature_library", SELECTED_PAPER_LIBRARY_TYPE, True),
+            FutureDependency("experiment_record", EXPERIMENT_RECORD_V3_TYPE, True),
+        ), output_artifact_type=MANUSCRIPT_DRAFT_V4_TYPE,
+    ),
+    "review": ReservedForwardWorkflowContract(
+        stable_key="review-local-experimental", workflow_version="0.4.0", capsule_version="0.6.0",
+        inputs=(
+            FutureDependency("manuscript", MANUSCRIPT_DRAFT_V4_TYPE, True),
+            FutureDependency("research_idea", SELECTED_RESEARCH_IDEA_TYPE, False),
+            FutureDependency("literature_library", SELECTED_PAPER_LIBRARY_TYPE, False),
+            FutureDependency("experiment_record", EXPERIMENT_RECORD_V3_TYPE, False),
+        ), output_artifact_type=REVIEW_REPORT_V3_TYPE,
+    ),
+    "writing-revision": ReservedForwardWorkflowContract(
+        stable_key="writing-local-experimental", workflow_version="0.6.0", capsule_version="0.8.0",
+        inputs=(
+            FutureDependency("prior_manuscript", MANUSCRIPT_DRAFT_V4_TYPE, True),
+            FutureDependency("review_feedback", REVIEW_REPORT_V3_TYPE, True),
+            FutureDependency("research_idea", SELECTED_RESEARCH_IDEA_TYPE, True),
+            FutureDependency("literature_library", SELECTED_PAPER_LIBRARY_TYPE, True),
+            FutureDependency("experiment_record", EXPERIMENT_RECORD_V3_TYPE, True),
+        ), output_artifact_type=MANUSCRIPT_DRAFT_V5_TYPE,
     ),
 })
