@@ -3627,3 +3627,33 @@ ignored screenshots are under `frontend/test-results/gen-d-c2-e6/screenshots/`.
 The final qualification database was dropped; no backend, migration, contract,
 publication, architecture, Full Research, Path B, downstream, Terminal, or D1
 state changed. Alembic remains `20260817_0030`; D1 remains PAUSED.
+
+## GEN-D-C3 informed approval and completed-state closure (2026-08-17)
+
+Generic Experiment 0.6 now enforces evidence-before-approval in DOM and keyboard
+order. The top Run Approval task navigates to and focuses the complete exact-run
+summary; the existing controlled-local approve/reject controls appear once after
+that summary. Superseded plans use the same non-mutating review-first pattern.
+The top Result Review task focuses the scientific result, and the exact Local
+Owner-review/finalization handoff appears after findings, evidence, outputs, and
+limitations.
+
+Finalized state is derived from exact completed/browser-review projection rather
+than ProcessOutcome or free-text “Finalized” wording. Genuinely finalized results
+omit the active Local Workflow command, while `RESULT_REVIEW_REQUIRED` retains a
+truthful Local continuation. Detail rendering suppresses only explicitly known
+canonical objective/process/evaluation/evidence presentation blocks already
+rendered by Core; adapter-specific scalar/table/series/prose/reference content and
+typed Outputs previews remain intact.
+
+Frontend qualification passed `17 files / 60 tests`, TypeScript, ESLint, and the
+production build. Repository-native Playwright E6 passed `5/5` through system
+Chrome against real controlled FastAPI/Next.js and marked disposable PostgreSQL;
+fourteen screenshots are under
+`frontend/test-results/gen-d-c3-e6/screenshots/`. Both qualification databases
+were dropped. The fixture now acknowledges exact Workspace installation so its
+finalized states truthfully project browser review; the separate result-review
+fixture proves completed process with genuine Local continuation. No backend
+production, migration, contract, publication, architecture, Full Research,
+Path B, downstream, Terminal, or D1 state changed. Alembic remains
+`20260817_0030`; D1 remains PAUSED.

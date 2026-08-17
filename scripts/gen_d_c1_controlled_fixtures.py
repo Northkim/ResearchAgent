@@ -227,6 +227,30 @@ def seed(base_url: str, run_id: str, manifest_path: Path) -> None:
         })
         revision += 1
 
+    workspace_manifest = _request(base_url, f"/projects/{project_id}/manifest")
+    pin_keys = (
+        "workflow_instance_id", "workflow_definition_id", "workflow_definition_version",
+        "capsule_id", "capsule_version", "capsule_definition_checksum",
+    )
+    installed_capsules = [
+        {key: item[key] for key in pin_keys}
+        for item in workspace_manifest["manifest"]["workflow_instances"]
+    ]
+    _request(base_url, f"/projects/{project_id}/workspace/sync-ack", {
+        "schema_version": "reagent.capsule-installation-ack/v0.1",
+        "installation_id": "install-" + run_id,
+        "project_id": project_id,
+        "workspace_id": workspace_manifest["workspace_id"],
+        "manifest_revision": revision,
+        "manifest_checksum": workspace_manifest["canonical_checksum"],
+        "plan_checksum": HASH_A,
+        "installed_lock_schema": "reagent.workspace-installed-lock/v0.1",
+        "installed_lock_checksum": HASH_B,
+        "idempotency_key": str(uuid5(UUID(run_id), "gen-d-c3-workspace-installation")),
+        "installed_capsules": installed_capsules,
+        "installed_at": "2026-08-17T03:00:00Z",
+    })
+
     engine = create_postgres_engine(os.environ["REAGENT_DATABASE_URL"])
     uow = SQLAlchemyUnitOfWork(create_session_factory(engine))
     all_instances = [initial[IDEA], *instances.values(), *historical.values()]

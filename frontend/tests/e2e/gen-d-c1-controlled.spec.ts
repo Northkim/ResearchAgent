@@ -19,7 +19,7 @@ type Fixture = {
 
 test.describe.configure({ mode: "serial" });
 
-test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, request }) => {
+test("GEN-D-C3 informed approval and completed-state UX passes real E6", async ({ page, request }) => {
   requireIsolatedQualification();
   const backend = process.env.REAGENT_E2E_BACKEND_URL;
   const identity = process.env.REAGENT_E2E_QUALIFICATION_IDENTITY;
@@ -32,7 +32,7 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
     { cwd: resolve(process.cwd(), ".."), env: process.env, stdio: "inherit" },
   );
   const fixture = JSON.parse(readFileSync(manifestPath, "utf8")) as Fixture;
-  const screenshots = resolve(process.cwd(), "test-results", "gen-d-c2-e6", "screenshots");
+  const screenshots = resolve(process.cwd(), "test-results", "gen-d-c3-e6", "screenshots");
   mkdirSync(screenshots, { recursive: true, mode: 0o700 });
   const shot = async (name: string) => page.screenshot({ path: join(screenshots, `${name}.png`), fullPage: true });
   const detail = (name: string) => `/projects/${fixture.project_id}/workflows/${fixture.instances[name]}`;
@@ -132,15 +132,30 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
   await shot("06-runtime-incompatible-current-task");
 
   await page.goto(detail("run_approval"));
-  await expect(page.getByRole("heading", { name: "Exact run summary" })).toBeVisible();
+  const exactRun = page.getByRole("heading", { name: "Exact run summary" });
+  const reviewExactRun = page.getByRole("link", { name: "Review exact run" });
+  await expect(reviewExactRun).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Experiment ready for approval" }).locator("..").getByRole("button", { name: "Approve this run" })).toHaveCount(0);
+  const approvalBeforeReview = await request.get(`${backend}/projects/${fixture.project_id}/workflow-instances/${fixture.instances.run_approval}/run-approval`);
+  expect((await approvalBeforeReview.json()).request.status).toBe("REQUESTED");
+  await reviewExactRun.focus();
+  await page.keyboard.press("Enter");
+  await expect(exactRun).toBeFocused();
+  const approvalAfterReview = await request.get(`${backend}/projects/${fixture.project_id}/workflow-instances/${fixture.instances.run_approval}/run-approval`);
+  expect((await approvalAfterReview.json()).request.status).toBe("REQUESTED");
   await expect(page.getByText("A bounded categorical observation protocol.")).toBeVisible();
   await expect(page.getByText("This supports only a narrow categorical claim")).toBeVisible();
   const approve = page.getByRole("button", { name: "Approve this run" });
+  const requestChanges = page.getByRole("button", { name: "Request changes" });
   await expect(approve).toBeEnabled();
+  await expect(page.locator("#exact-run-title ~ .experiment-review-decision").getByRole("button", { name: "Approve this run" })).toBeVisible();
+  await expect(page.locator("#exact-run-title ~ .experiment-review-decision").getByRole("button", { name: "Request changes" })).toBeVisible();
   const runTask = page.getByRole("heading", { name: "Experiment ready for approval" });
-  expect((await runTask.boundingBox())!.y).toBeLessThan((await page.getByRole("heading", { name: "Exact run summary" }).boundingBox())!.y);
+  expect((await runTask.boundingBox())!.y).toBeLessThan((await exactRun.boundingBox())!.y);
+  expect((await approve.boundingBox())!.y).toBeGreaterThan((await exactRun.boundingBox())!.y);
+  expect((await requestChanges.boundingBox())!.y).toBeGreaterThan((await exactRun.boundingBox())!.y);
   expect((await approve.boundingBox())!.width).toBeGreaterThan(100);
-  await shot("08-run-approval-readable-task-card");
+  await shot("08-run-approval-evidence-before-controls");
   await approve.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("Run approved")).toBeVisible();
@@ -156,6 +171,7 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
   await expect(page.getByText("Revise the prepared experiment locally before requesting approval again.")).toBeVisible();
 
   await page.goto(detail("run_superseded"));
+  await expect(page.getByRole("link", { name: "Review exact run" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Approve this run" })).toBeVisible();
   const supersede = await request.post(`${backend}/projects/${fixture.project_id}/workflow-instances/${fixture.instances.run_superseded}/run-approvals`, { data: fixture.superseding_request });
   expect(supersede.ok()).toBe(true);
@@ -163,8 +179,17 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
   await expect(page.locator('[role="alert"]:not(#__next-route-announcer__)')).toContainText("The prepared experiment changed after approval.");
   await expect(page.getByRole("heading", { name: "The prepared experiment changed after approval" })).toBeVisible();
   await expect(page.getByText("Review the updated run before continuing.")).toBeVisible();
+  const reviewUpdatedRun = page.getByRole("link", { name: "Review updated run" });
+  await expect(reviewUpdatedRun).toBeVisible();
+  const changedBeforeReview = await request.get(`${backend}/projects/${fixture.project_id}/workflow-instances/${fixture.instances.run_superseded}/run-approval`);
+  expect((await changedBeforeReview.json()).request.status).toBe("REQUESTED");
+  await reviewUpdatedRun.click();
+  await expect(page.getByRole("heading", { name: "Exact run summary" })).toBeFocused();
+  const changedAfterReview = await request.get(`${backend}/projects/${fixture.project_id}/workflow-instances/${fixture.instances.run_superseded}/run-approval`);
+  expect((await changedAfterReview.json()).request.status).toBe("REQUESTED");
+  await expect(page.getByRole("button", { name: "Approve this run" })).toBeVisible();
   expect(await page.locator("body").innerText()).not.toContain("APPROVAL_SUPERSEDED");
-  await shot("09-changed-plan-readable-owner-language");
+  await shot("09-changed-plan-review-updated-run");
 
   await page.goto(detail("result_review"));
   const resultHeading = page.getByRole("heading", { name: "Experiment result", exact: true });
@@ -172,6 +197,16 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
   await expect(resultHeading).toBeVisible();
   await expect(page.getByText("The final category remained amber under the bounded transition.")).toBeVisible();
   await expect(reviewHeading).toBeVisible();
+  const reviewResult = page.getByRole("link", { name: "Review result below" });
+  await expect(reviewResult).toBeVisible();
+  await reviewResult.focus();
+  await page.keyboard.press("Enter");
+  await expect(resultHeading).toBeFocused();
+  const ownerReview = page.getByRole("heading", { name: /Does this record accurately represent the experiment, findings, evidence status, and limitations/ });
+  const limitations = page.getByText("Limitations", { exact: true });
+  await expect(ownerReview).toBeVisible();
+  expect((await limitations.boundingBox())!.y).toBeLessThan((await ownerReview.boundingBox())!.y);
+  await expect(page.getByRole("link", { name: "Continue result review locally" })).toBeVisible();
   await expect(page.getByText("Experiment history")).toBeVisible();
   await expect(page.getByText("Experiment history").locator("..")).not.toHaveAttribute("open", "");
   const resultBox = await resultHeading.boundingBox();
@@ -179,7 +214,7 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
   const historyBox = await page.getByText("Experiment history").boundingBox();
   expect(reviewBox!.y).toBeLessThan(resultBox!.y);
   expect(resultBox!.y).toBeLessThan(historyBox!.y);
-  await shot("11-result-review-result-prioritized");
+  await shot("11-result-review-evidence-before-local-decision");
 
   await page.goto(detail("non_ml"));
   await expect(page.getByText("The final category remained amber under the bounded transition.")).toBeVisible();
@@ -189,6 +224,10 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
   expect(nonMlText).not.toMatch(/accuracy|F1|Cross-validation|Robustness|dataset/i);
   expect(nonMlText).not.toContain("Recorded when the methodology checkpoint is reported.");
   await expect(page.getByRole("heading", { name: "Experiment completed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Local Workflow" })).toHaveCount(0);
+  await expect(page.getByText("COMPLETED", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("VALID", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("INSUFFICIENT", { exact: true })).toHaveCount(1);
   await shot("12-completed-non-ml-result-first");
 
   await page.goto(detail("sklearn"));
@@ -198,6 +237,9 @@ test("GEN-D-C2 task-first Generic Experiment UX passes real E6", async ({ page, 
   await expect(page.getByText("View chart data")).toBeVisible();
   await expect(page.getByRole("heading", { name: "How would you like to start?" })).toHaveCount(0);
   await expect(page.getByText("Experiment history").locator("..")).not.toHaveAttribute("open", "");
+  await expect(page.getByRole("heading", { name: "Local Workflow" })).toHaveCount(0);
+  await expect(page.getByText("VALID", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("SUFFICIENT", { exact: true })).toHaveCount(1);
   await shot("13-completed-sklearn-shaped-result-first");
 
   await page.goto(detail("completed_absent"));

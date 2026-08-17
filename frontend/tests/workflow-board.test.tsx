@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, test, vi } from "vitest";
 
@@ -87,7 +87,7 @@ function arrangeGenericExperiment(options: {
     ...projectProgressFixture.instances[0].action,
     stage: { code: options.completed ? "COMPLETED" : "OWNER_APPROVAL", label: options.completed ? "Evaluation complete" : "Methodology review" },
     next_action: {
-      surface: "LOCAL",
+      surface: options.completed ? "BROWSER" : "LOCAL",
       code: options.completed ? "REVIEW_RESULT" : "CONTINUE",
       label: options.completed ? "Review result" : "Review methodology",
       description: options.completed ? "Review the scientific result." : "Resolve the scientific design choice.",
@@ -515,10 +515,19 @@ test("Run Approval uses the controlled-local request and updates the Local hando
   const user = userEvent.setup();
   render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
 
-  expect(await screen.findByRole("heading", { name: "Exact run summary" })).toBeVisible();
+  const exactRunHeading = await screen.findByRole("heading", { name: "Exact run summary" });
+  const topTask = screen.getByRole("heading", { name: "Experiment ready for approval" }).closest("section") as HTMLElement;
+  const reviewRun = within(topTask).getByRole("link", { name: "Review exact run" });
+  expect(within(topTask).queryByRole("button", { name: "Approve this run" })).not.toBeInTheDocument();
+  await user.click(reviewRun);
+  await waitFor(() => expect(exactRunHeading).toHaveFocus());
+  expect(decide).not.toHaveBeenCalled();
   expect(await screen.findByText("A bounded categorical observation protocol.")).toBeVisible();
   expect(screen.getByText("This fixture supports a narrow categorical claim")).toBeVisible();
   const approve = screen.getByRole("button", { name: "Approve this run" });
+  const requestChanges = screen.getByRole("button", { name: "Request changes" });
+  expect(exactRunHeading.compareDocumentPosition(approve) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(exactRunHeading.compareDocumentPosition(requestChanges) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   approve.focus();
   await user.keyboard("{Enter}");
 
@@ -558,7 +567,13 @@ test("Run Approval offers bounded rejection and translates changed-plan failures
   expect(await screen.findByRole("alert")).toHaveTextContent("The prepared experiment changed after approval.");
   expect(screen.getByRole("heading", { name: "The prepared experiment changed after approval" })).toBeVisible();
   expect(screen.getByText("Review the updated run before continuing.")).toBeVisible();
-  expect(screen.queryByRole("button", { name: "Approve this run" })).not.toBeInTheDocument();
+  const decide = vi.mocked(apiClient.decideControlledLocalRunApproval);
+  decide.mockClear();
+  const reviewUpdated = screen.getByRole("link", { name: "Review updated run" });
+  await userEvent.click(reviewUpdated);
+  await waitFor(() => expect(screen.getByRole("heading", { name: "Exact run summary" })).toHaveFocus());
+  expect(decide).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Approve this run" })).toBeEnabled();
   expect(screen.queryByText(/checksum mismatch/i)).not.toBeInTheDocument();
 });
 
@@ -625,21 +640,29 @@ test("generic Experiment renders categorical non-ML evidence and separates scien
     { kind: "SERIES", label: "Categorical sequence", value: [{ x: "Start", y: "amber" }, { x: "Finish", y: "green" }] },
     { kind: "PROSE", label: "Limitations", value: "This bounded fixture supports only a narrow categorical claim." },
   ]);
-  arrangeGenericExperiment({ artifact, completed: true, summary: "Evaluation complete; Owner result review is required." });
+  arrangeGenericExperiment({ artifact, completed: true, summary: "RESULT_REVIEW_REQUIRED: Owner review of the bounded evaluated result is required." });
   render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
 
   expect(await screen.findByText("The final category was stable, but the observation set was too small for a broad claim.")).toBeVisible();
-  expect(screen.getAllByText("COMPLETED").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("VALID").length).toBeGreaterThan(0);
-  expect(screen.getAllByText("INSUFFICIENT").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("COMPLETED")).toHaveLength(1);
+  expect(screen.getAllByText("VALID")).toHaveLength(1);
+  expect(screen.getAllByText("INSUFFICIENT")).toHaveLength(1);
   expect(screen.getAllByRole("table").length).toBeGreaterThanOrEqual(2);
   expect(screen.getByText("View chart data")).toBeVisible();
   expect(screen.getByRole("heading", { name: "Experiment result ready for review" })).toBeVisible();
   expect(screen.getByText(/Does this result record accurately represent the experiment and its limitations/)).toBeVisible();
-  const result = screen.getByRole("heading", { name: "Experiment result" });
+  const result = screen.getByRole("heading", { name: /^Experiment result$/ });
+  const reviewBelow = screen.getByRole("link", { name: "Review result below" });
+  await userEvent.click(reviewBelow);
+  await waitFor(() => expect(result).toHaveFocus());
   const history = screen.getByText("Experiment history");
   expect(result.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   expect(history.closest("details")).not.toHaveAttribute("open");
+  const limitation = screen.getByText("This bounded fixture supports only a narrow categorical claim.");
+  const finalReview = screen.getByRole("link", { name: "Continue result review locally" });
+  expect(limitation.compareDocumentPosition(finalReview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Record the result review locally" })).toBeVisible();
+  expect(screen.getByText("One recommended command")).toBeVisible();
   expect(screen.getAllByText("Changed since verification").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Environment changed since validation").length).toBeGreaterThanOrEqual(1);
   expect(screen.getAllByText("Compatible observation tool available").length).toBeGreaterThanOrEqual(1);
@@ -656,6 +679,9 @@ test("generic Experiment renders only reported methodology fields inside complet
   arrangeGenericExperiment({ artifact, completed: true, summary: "Finalized controlled result." });
   render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
 
+  expect(await screen.findByRole("heading", { name: "Experiment completed" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "Continue safely on this computer" })).not.toBeInTheDocument();
+  expect(screen.queryByText("One recommended command")).not.toBeInTheDocument();
   const history = await screen.findByText("Experiment history");
   await userEvent.click(history);
   expect(screen.getAllByText("Protocol", { exact: true }).some((item) => item.tagName === "STRONG")).toBe(true);
