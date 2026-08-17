@@ -2,6 +2,47 @@
 
 Last updated: 2026-08-17
 
+## GEN-B generic Experiment coordinator and Capability isolation (2026-08-17)
+
+GEN-B is implemented as an unpublished internal integration seam. The generic
+coordinator now advances exact objective/methodology through Capability support
+and Owner-preserving selection, Design Approval, opaque Capability-owned
+specification validation, distinct Resource/preparation/runtime requirements,
+independent candidate-package validation, generic runtime compatibility, exact
+execution planning, one-use approval, existing-runner handoff, Capability-owned
+evaluation, Owner result review, and generic `experiment-record/v4` assembly.
+It adds no Workflow/Capsule/Artifact publication, migration, API, frontend,
+Cloud persistence, environment manager, scientific dependency, or real run.
+
+Capabilities are supplied only as immutable exact descriptor/implementation
+bindings through a bounded resolver; there is no registry, discovery, import
+search, network, or latest selection. Expected Owner/action boundaries return
+typed checkpoints. A checksum-only local continuation receipt derives its stage
+from exact durable facts without embedding the opaque domain specification.
+Candidate preparation uses a fresh Core-owned root and promotion occurs only
+after Core independently verifies paths, tree bytes, manifest/launch/dependency
+identity, Capability/spec/Resource/runtime lineage, links, special files, case
+collisions, and bounds. The runtime candidate list is explicit and local-only;
+the coordinator does not install or scan PATH.
+
+The forward sklearn reference Capability is isolated in a new wrapper and is
+classified `REFERENCE_EXPERIMENT_CAPABILITY`. Only that wrapper imports the
+frozen sklearn builder; importing it loads neither NumPy nor sklearn. A test-only
+non-ML textual/categorical Capability proves zero/multiple Resources and
+dependencies, non-Python runtime, no metric/CV/dataset assumptions, fake
+bounded-runner handoff, insufficient/invalid evaluation, optional PRESENT, and
+generic v4 assembly.
+
+Focused GEN-B/GEN-A/frozen contract regression is `56 passed`; GEN-B-focused is
+`10 passed`; frozen Experiment 0.4 is `9 passed` under its supported macOS
+no-egress boundary. Compile, dependency scan, historical source checksums,
+`git diff --check`, and Alembic sole head `20260817_0027` pass. A broad backend
+fail-fast run reached `337 passed, 7 skipped` before the existing R3C PostgreSQL
+suite required an unset disposable test database; no Owner database was used.
+Evidence is E2/internal synthetic with verifier independence `LIMITED`.
+Experiment 0.5/0.8/v3 and 0.4/0.7/v2 remain immutable. D1 remains paused; GEN-C
+has not begun.
+
 ## GEN-A generic Experiment contract foundation (2026-08-17)
 
 GEN-A is implemented as unpublished, forward-only contract code. It does not
