@@ -35,6 +35,12 @@ from .generic_experiment_contracts import (
     EXPERIMENT_RECORD_V4_SCHEMA,
     ExperimentRecordV4,
 )
+from .generic_experiment_v5_contracts import (
+    EXPERIMENT_RECORD_V5_SCHEMA,
+    BOUNDED_SCIENTIFIC_EVIDENCE_SCHEMA,
+    ExperimentRecordV5,
+    validate_experiment_record_v5,
+)
 from backend.workflow_packages.serialization import to_json_value
 
 
@@ -55,9 +61,19 @@ GENERIC_EXPERIMENT_ARTIFACT_CONTRACTS = MappingProxyType({
         True,
     ),
 })
+GENERIC_EXPERIMENT_V5_ARTIFACT_CONTRACTS = MappingProxyType({
+    EXPERIMENT_RECORD_V5_SCHEMA: ArtifactContract(
+        EXPERIMENT_RECORD_V5_SCHEMA,
+        EXPERIMENT_RECORD_V5_SCHEMA,
+        "application/json",
+        validate_experiment_record_v5,
+        True,
+    ),
+})
 PRODUCTION_ARTIFACT_CONTRACTS = MappingProxyType({
     **ARTIFACT_CONTRACTS,
     **GENERIC_EXPERIMENT_ARTIFACT_CONTRACTS,
+    **GENERIC_EXPERIMENT_V5_ARTIFACT_CONTRACTS,
 })
 
 __all__ = [
@@ -76,6 +92,7 @@ __all__ = [
     "WorkflowArtifactRequirement",
     "ARTIFACT_CONTRACTS",
     "GENERIC_EXPERIMENT_ARTIFACT_CONTRACTS",
+    "GENERIC_EXPERIMENT_V5_ARTIFACT_CONTRACTS",
     "PRODUCTION_ARTIFACT_CONTRACTS",
     "FUTURE_WORKFLOW_CONTRACTS",
     "ResearchFlowContractError",
@@ -83,6 +100,7 @@ __all__ = [
     "validate_experiment_record",
     "validate_experiment_record_v2",
     "validate_experiment_record_v4",
+    "validate_experiment_record_v5",
     "validate_manuscript_draft",
     "validate_manuscript_draft_v2",
     "validate_review_report",

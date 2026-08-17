@@ -3657,3 +3657,31 @@ fixture proves completed process with genuine Local continuation. No backend
 production, migration, contract, publication, architecture, Full Research,
 Path B, downstream, Terminal, or D1 state changed. Alembic remains
 `20260817_0030`; D1 remains PAUSED.
+
+## EP-D0 materializable Experiment evidence carrier (2026-08-18)
+
+The downstream evidence gap is closed through forward immutable Experiment
+`0.7.0`, Capsule `0.10.0`, and `experiment-record/v5`. V5 keeps the exact v4
+lifecycle record and adds canonical checksummed bounded scientific evidence with
+PROSE, SCALAR, TABLE, SERIES, FIGURE_REFERENCE, and OUTPUT_REFERENCE blocks. The
+Artifact binds exact Capability/evaluation/result-payload lineage and preserves
+process outcome, evaluation validity, scientific evidence status, claim boundaries,
+and limitations as distinct authorities. Generic Core validates structure and
+lineage only; the reference scientific Capability owns its result projection.
+
+Cloud Artifact presentation remains optional UI metadata and is not downstream
+evidence. A normal exact VERIFIED_COPY materialization carries the complete bounded
+evidence to a consumer without presentation or sibling reads. Raw/large outputs,
+code, logs, credentials, private paths, datasets, and packages remain Local and
+outside v5.
+
+Migration `20260818_0031` publishes the forward Definition/Capsule/v5 additively
+with no ORM change and `default_project_setup=false`; Experiment 0.6/v4 and Full
+Research remain recommended/unchanged. Marked disposable PostgreSQL upgrade,
+downgrade/re-upgrade, Alembic check, readback, conflict, and cleanup passed. The
+copied public Workspace CLI synced/materialized v5 through real loopback API state,
+and the controlled downstream fixture read findings from v5 alone. Historical
+0.4/0.5/0.6 and controlled-local approval regressions passed. Real Codex was not
+rerun because the accepted initial interaction is unchanged; no real scientific
+Experiment ran. D1 remains PAUSED. Safe next phase is an Owner-authorized EP-D1
+retry consuming exact `experiment-record/v5`; do not start it automatically.

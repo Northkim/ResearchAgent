@@ -3424,7 +3424,7 @@ def _make_manifest(
         proxy = "NO NETWORK; REVIEWED LOCAL BUILDER; LOCAL FOREGROUND EXECUTION ONLY"
     elif (
         workflow_id == EXPERIMENT_WORKFLOW_ID
-        and workflow_version == "0.6.0"
+        and workflow_version in {"0.6.0", "0.7.0"}
     ):
         skill_id = "sklearn-tabular-classification-preparation-local-builtin"
         skill_root = f"workflow/skills/{skill_id}"
@@ -3542,7 +3542,7 @@ def _make_manifest(
         "calculate_sha256", "follow_AGENT_md", "launch_codex_cli",
         "progress.upload/v0.2",
     ]
-    if workflow_version in {REAL_EXPERIMENT_WORKFLOW_VERSION, "0.6.0"}:
+    if workflow_version in {REAL_EXPERIMENT_WORKFLOW_VERSION, "0.6.0", "0.7.0"}:
         required_capabilities.extend((
             "execute_one_local_foreground_process",
             "enforce_child_no_egress",

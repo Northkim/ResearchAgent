@@ -158,6 +158,10 @@ SUPPORTED_CAPSULE_PINS = {
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
+    ("reproduction-experiment-local-experimental", "0.7.0", "0.10.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -4708,9 +4712,10 @@ def run_workflow(
         is_prepared_experiment = pin == (
             "reproduction-experiment-local-experimental", "0.5.0", "0.8.0"
         )
-        is_generic_experiment = pin == (
-            "reproduction-experiment-local-experimental", "0.6.0", "0.9.0"
-        )
+        is_generic_experiment = pin in {
+            ("reproduction-experiment-local-experimental", "0.6.0", "0.9.0"),
+            ("reproduction-experiment-local-experimental", "0.7.0", "0.10.0"),
+        }
         is_real_writing = pin == (
             "writing-local-experimental", "0.3.0", "0.5.0"
         )
