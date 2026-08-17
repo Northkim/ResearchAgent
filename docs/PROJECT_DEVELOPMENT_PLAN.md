@@ -22,6 +22,31 @@ Initial V1 uses three parts:
 - an existing Claude Code or Codex Agent Harness performs the research, writes
   outputs, and produces Progress Reports.
 
+### Current forward Experiment governance
+
+ADR 0043 preserves Experiment Definition 0.5.0 / Capsule 0.8.0 /
+`experiment-record/v3` as the immutable `SKLEARN_REFERENCE_SLICE`. It is a
+bounded reference capability and not the generic default Experiment product.
+The forward Experiment Core remains research-domain-agnostic: ReAgent owns the
+generic lifecycle, exact objective/input and capability identity, Resource
+readiness, approvals, package identity, runtime compatibility, bounded
+execution, normalized status, provenance, and finalization, while Codex and
+exact reviewed Experiment Capabilities own domain-specific implementation and
+evaluation knowledge. Domain-specific implementation specifications and
+evaluators are capability-owned and are not parsed as generic Core semantics.
+
+The intended forward scope is generic local computational experiments within
+the controlled-local execution boundary. It does not currently claim generic
+wet-lab, human-subject, physical robotics/hardware, remote HPC,
+distributed/cloud, interactive notebook, or hostile untrusted-code execution.
+
+The reserved, unpublished forward identities are Experiment 0.6.0, Capsule
+0.9.0, and `experiment-record/v4`. No forward publication or GEN implementation
+is authorized by the reference-slice freeze. Capability priority must not
+silently select between materially different scientific implementations; ADR
+0043 defines the required Owner-selection boundary. Historical Experiment
+0.4/0.7/v2 and the 0.5 reference slice remain immutable.
+
 The cloud does not execute concrete research in teacher-aligned V1. PostgreSQL
 may be authoritative for Cloud Project State—project/package/Skill/progress/
 proxy metadata—but not for hidden concrete Local Task State. The exact folder

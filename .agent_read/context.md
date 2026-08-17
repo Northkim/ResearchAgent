@@ -1,6 +1,60 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-16
+Last updated: 2026-08-17
+
+## Experiment 0.5 sklearn reference-slice freeze
+
+Experiment Definition 0.5.0 / Capsule 0.8.0 / `experiment-record/v3` and
+`SKLEARN_TABULAR_CLASSIFICATION_V1` are preserved as the
+`SKLEARN_REFERENCE_SLICE`, not the generic default Experiment product. ADR 0042
+remains the historical authority for why the constrained slice was built. ADR
+0043 supersedes only its default-path interpretation and ratifies a
+research-domain-agnostic forward Experiment Core using the reserved, unpublished
+0.6.0 / Capsule 0.9.0 / `experiment-record/v4` identities.
+
+The forward scope is generic local computational experiments within the
+controlled-local boundary. It does not claim generic wet-lab, human-subject,
+physical hardware/robotics, remote HPC, distributed/cloud, interactive notebook,
+or hostile untrusted-code execution. Codex and reviewed Experiment Capabilities
+understand domain-specific experiments; ReAgent Core understands lifecycle,
+identity, Resource readiness, approvals, runtime compatibility, bounded
+execution, normalized status, provenance, and finalization.
+
+Within the immutable reference slice, the only automatic Builder is the deterministic reviewed
+`SKLEARN_TABULAR_CLASSIFICATION_V1` family: scikit-learn Wine, KNN,
+raw/StandardScaler/MinMaxScaler conditions, repeated stratified CV, accuracy,
+macro-F1, controlled seeds, and a bounded neighbor grid. Codex produces the
+methodology proposal and typed specification only after material scientific
+questions are resolved; the Builder—not Codex—renders executable bytes. Exact
+design and run approvals are checksum-bound. Preparation receipts, package
+validation, execution/evaluation evidence, and one-use approval consumption are
+durable; resume after execution returns to Owner result review without rerun.
+The unchanged Experiment 0.4 process engine supplies no-egress foreground
+execution, limits, credential scrubbing, and truthful process outcomes.
+
+The additive Alembic head is `20260817_0027`. Disposable PostgreSQL upgrade,
+`alembic check`, publication assertions, downgrade to 0026, and re-upgrade pass;
+the disposable database was dropped. Focused EP-B1 tests pass, and the combined
+historical/affected regression is 144 passed. A generated KNN/Wine package ran
+successfully in an already-installed auxiliary environment with all three
+conditions, two metrics, and nine robustness entries.
+
+The reference-slice freeze reverified 20 focused contract/schema tests, both
+guarded PostgreSQL publication assertions, the explicit 0027→0026→0027 cycle,
+all 9 historical Experiment 0.4 regressions, source compilation, and unchanged
+0.5 contract/Capsule checksums. Supported-runtime scientific execution and the
+real Codex Owner lifecycle remain pending; no dependency was installed and no
+KNN/Wine run occurred during the freeze.
+
+`REFERENCE_SLICE_SUPPORTED_RUNTIME_QUALIFICATION = PENDING`: the supported `reagent-dev` runtime does
+not currently contain NumPy/scikit-learn, and no dependency installation is
+permitted during preparation/execution. The required real Codex lifecycle is
+also paused at its real Owner methodology checkpoint; consequential fold,
+repeat, seed, and neighbor choices must not be fabricated. EP-B2, EP-C, EP-D,
+current D1 Project mutation, and D1 continuation remain unauthorized.
+`REFERENCE_SLICE_CONTRACT_REGRESSION = PASS`;
+`GENERIC_DEFAULT_STATUS = NOT_EXPERIMENT_0_5`; `D1 = PAUSED`; no GEN
+implementation has begun.
 
 ## Final Owner-approved controlled-local release
 

@@ -16,7 +16,10 @@ from backend.artifact_references.research_flow_contracts import (
     validate_experiment_record_v3,
 )
 from backend.workflow_packages.experiment_preparation_contracts import (
-    DesignApproval, PackageOrigin, RunApprovalFoundation,
+    DesignApproval, ExperimentMethodology, PackageOrigin, RunApprovalFoundation,
+)
+from backend.workflow_packages.sklearn_tabular_builder import (
+    SklearnTabularClassificationSpec,
 )
 from backend.workflow_packages.serialization import canonical_hash
 from backend.workflow_packages.tests.test_experiment_preparation_contracts import (
@@ -25,7 +28,22 @@ from backend.workflow_packages.tests.test_experiment_preparation_contracts impor
 
 
 def _record(origin: PackageOrigin = PackageOrigin.REAGENT_PREPARED) -> dict:
-    method = methodology()
+    initial = methodology()
+    method = ExperimentMethodology.create(
+        selected_idea=initial.selected_idea,
+        frozen_scientific_requirements=initial.frozen_scientific_requirements,
+        implementation_decisions=initial.implementation_decisions,
+        unresolved_methodological_decisions=(), dataset=initial.dataset,
+        experiment_conditions=initial.experiment_conditions,
+        evaluation_protocol=initial.evaluation_protocol, metrics=initial.metrics,
+        robustness_analysis=initial.robustness_analysis,
+        leakage_controls=initial.leakage_controls, seeds=initial.seeds,
+        repetitions=initial.repetitions,
+        compute_runtime_bounds=initial.compute_runtime_bounds,
+        network_policy=initial.network_policy, assumptions=initial.assumptions,
+        claim_boundaries=initial.claim_boundaries,
+        expected_scientific_outputs=initial.expected_scientific_outputs,
+    )
     design = DesignApproval.create(method, approved_at="2026-08-17T00:01:00Z")
     package = receipt(origin)
     plan_value = {
@@ -68,11 +86,44 @@ def _record(origin: PackageOrigin = PackageOrigin.REAGENT_PREPARED) -> dict:
         "decision": "FINALIZE", "reviewed_at": "2026-08-17T00:05:00Z",
         "reviewed_subject_checksum": reviewed,
     }
+    specification = SklearnTabularClassificationSpec.create(
+        methodology_checksum=method.methodology_checksum,
+        dataset="SKLEARN_WINE", estimator="KNEIGHBORS_CLASSIFIER",
+        conditions=("RAW", "STANDARD_SCALER", "MINMAX_SCALER"), n_neighbors=5,
+        cv_splits=3, cv_repeats=method.repetitions, cv_seed=method.seeds[0],
+        metrics=("accuracy", "macro_f1"), robustness_neighbors=(3, 5, 7),
+        result_schema="reagent.experiment-result/v0.2",
+    )
+    package_value = package.to_dict()
+    if origin is PackageOrigin.REAGENT_PREPARED:
+        package_value["implementation_specification_checksum"] = specification.specification_checksum
+        payload = dict(package_value); payload.pop("receipt_checksum")
+        package_value["receipt_checksum"] = canonical_hash(payload)
+        from backend.workflow_packages.experiment_preparation_contracts import PreparedPackageReceipt
+        package = PreparedPackageReceipt.from_mapping(package_value)
+        plan_value["package_receipt_checksum"] = package.receipt_checksum
+        plan = {"sha256": canonical_hash(plan_value), "value": plan_value}
+        approval = RunApprovalFoundation.create(
+            prepared_package_receipt_checksum=package.receipt_checksum,
+            execution_plan_checksum=plan["sha256"], command=tuple(plan_value["command"]),
+            runtime=runtime(), metrics=tuple(plan_value["metrics"]),
+            run_seed_scope=tuple(plan_value["run_seed_scope"]), execution_limits=bounds(),
+            expected_outputs=tuple(plan_value["expected_outputs"]),
+            approved_at="2026-08-17T00:02:00Z",
+        )
+        execution["execution_plan_checksum"] = plan["sha256"]
+        execution["run_approval_checksum"] = approval.approval_checksum
+        reviewed = canonical_hash({"execution": execution, "evaluation": evaluation, "result_status": "SUCCEEDED", "limitations": limitations})
+        review_payload["reviewed_subject_checksum"] = reviewed
     return {
         "schema": "experiment-record/v3", "core_capability_maturity": "REVIEWED_CORE",
         "mode": origin.value, "source_artifacts": [method.selected_idea.to_dict()],
         "methodology_contract": method.to_dict(), "design_approval": design.to_dict(),
         "prepared_package": package.to_dict(), "approved_execution_plan": plan,
+        "implementation_specification": ({
+            "sha256": canonical_hash(specification.to_dict()),
+            "value": specification.to_dict(),
+        } if origin is PackageOrigin.REAGENT_PREPARED else None),
         "run_approval": approval.to_dict(), "execution": execution,
         "evaluation": evaluation, "result_status": "SUCCEEDED",
         "owner_review": {**review_payload, "review_checksum": canonical_hash(review_payload)},
@@ -101,8 +152,8 @@ def test_v3_rejects_checksum_drift_and_remains_isolated_from_v2() -> None:
         validate_experiment_record_v3(value)
     with pytest.raises(ResearchFlowContractError, match="experiment record v2"):
         validate_experiment_record_v2(_record())
-    assert "experiment-record/v3" not in ARTIFACT_CONTRACTS
-    assert FORWARD_ARTIFACT_CONTRACTS["experiment-record/v3"].production_producer_available is False
+    assert ARTIFACT_CONTRACTS["experiment-record/v3"].production_producer_available is True
+    assert FORWARD_ARTIFACT_CONTRACTS["experiment-record/v3"].production_producer_available is True
 
 
 def test_v3_keeps_process_evaluation_evidence_and_limitations_distinct() -> None:

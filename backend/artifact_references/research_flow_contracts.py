@@ -23,6 +23,9 @@ from backend.workflow_packages.experiment_preparation_contracts import (
     RunApprovalFoundation,
 )
 from backend.workflow_packages.serialization import canonical_hash, canonical_json, sha256_bytes
+from backend.workflow_packages.sklearn_tabular_builder import (
+    SklearnTabularClassificationSpec,
+)
 
 SELECTED_RESEARCH_IDEA_TYPE = "selected-research-idea/v1"
 SELECTED_RESEARCH_IDEA_SCHEMA = "selected-research-idea/v1"
@@ -1021,6 +1024,7 @@ def validate_experiment_record_v3(
     _exact_keys(result, {
         "schema", "core_capability_maturity", "mode", "source_artifacts",
         "methodology_contract", "design_approval", "prepared_package",
+        "implementation_specification",
         "approved_execution_plan", "run_approval", "execution", "evaluation",
         "result_status", "owner_review", "presentation_summary", "limitations",
     }, "experiment record v3")
@@ -1046,6 +1050,25 @@ def validate_experiment_record_v3(
         raise ResearchFlowContractError("v3 methodology/package selected Idea lineage mismatch")
     if prepared.origin_type.value != result["mode"]:
         raise ResearchFlowContractError("v3 package origin differs from mode")
+    implementation_specification = result["implementation_specification"]
+    if result["mode"] == "REAGENT_PREPARED":
+        specification = _checksummed_value(
+            implementation_specification, "v3 implementation specification"
+        )
+        specification_value = _object(
+            specification["value"], "v3 implementation specification value"
+        )
+        try:
+            typed_specification = SklearnTabularClassificationSpec.from_mapping(
+                specification_value
+            )
+            typed_specification.validate_methodology(methodology)
+        except ExperimentPreparationContractError as error:
+            raise ResearchFlowContractError(str(error)) from error
+        if typed_specification.specification_checksum != prepared.implementation_specification_checksum:
+            raise ResearchFlowContractError("v3 implementation specification differs from prepared package")
+    elif implementation_specification is not None:
+        raise ResearchFlowContractError("non-generated v3 package must not claim an implementation specification")
 
     plan = _checksummed_value(result["approved_execution_plan"], "v3 execution plan")
     plan_value = _object(plan["value"], "v3 execution plan value")
@@ -1138,6 +1161,7 @@ def validate_experiment_record_v3(
         "methodology_contract": methodology.to_dict(),
         "design_approval": design_approval.to_dict(),
         "prepared_package": prepared.to_dict(),
+        "implementation_specification": implementation_specification,
         "approved_execution_plan": plan,
         "run_approval": run_approval.to_dict(),
         "execution": execution,
@@ -2058,14 +2082,18 @@ ARTIFACT_CONTRACTS: Mapping[str, ArtifactContract] = MappingProxyType({
         EXPERIMENT_RECORD_V2_TYPE, EXPERIMENT_RECORD_V2_SCHEMA,
         JSON_MEDIA_TYPE, validate_experiment_record_v2, True,
     ),
+    EXPERIMENT_RECORD_V3_TYPE: ArtifactContract(
+        EXPERIMENT_RECORD_V3_TYPE, EXPERIMENT_RECORD_V3_SCHEMA,
+        JSON_MEDIA_TYPE, validate_experiment_record_v3, True,
+    ),
 })
 
-# Contract-only reservation.  No Registry publication or production producer is
-# created by adding the forward validator here.
+# Forward downstream consumers remain reserved; the Experiment 0.5 producer is
+# published independently in EP-B1.
 FORWARD_ARTIFACT_CONTRACTS: Mapping[str, ArtifactContract] = MappingProxyType({
     EXPERIMENT_RECORD_V3_TYPE: ArtifactContract(
         EXPERIMENT_RECORD_V3_TYPE, EXPERIMENT_RECORD_V3_SCHEMA,
-        JSON_MEDIA_TYPE, validate_experiment_record_v3, False,
+        JSON_MEDIA_TYPE, validate_experiment_record_v3, True,
     ),
 })
 

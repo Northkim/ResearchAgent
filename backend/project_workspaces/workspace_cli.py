@@ -150,6 +150,10 @@ SUPPORTED_CAPSULE_PINS = {
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
+    ("reproduction-experiment-local-experimental", "0.5.0", "0.8.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -4579,6 +4583,9 @@ def run_workflow(
             ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
             ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
         }
+        is_prepared_experiment = pin == (
+            "reproduction-experiment-local-experimental", "0.5.0", "0.8.0"
+        )
         is_real_writing = pin == (
             "writing-local-experimental", "0.3.0", "0.5.0"
         )
@@ -4591,7 +4598,7 @@ def run_workflow(
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
         local_reports: list[dict[str, Any]] = []
-        if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review or is_writing_revision):
+        if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_prepared_experiment or is_real_writing or is_real_review or is_writing_revision):
             readiness = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -4778,6 +4785,23 @@ def run_workflow(
                 command.append("--preflight-only")
             if codex_executable is not None:
                 command.extend(["--codex-executable", codex_executable])
+        elif is_prepared_experiment:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                prepared_experiment=True,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
         elif is_scaffold:
             if pin in {
                 ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"),
@@ -4868,7 +4892,7 @@ def run_workflow(
             check=False,
         )
         if completed.returncode != 0:
-            if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_real_writing or is_real_review or is_writing_revision):
+            if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_prepared_experiment or is_real_writing or is_real_review or is_writing_revision):
                 recovered = _evaluate_local_progress_readiness(
                     workspace=workspace,
                     descriptor=descriptor,
@@ -4906,7 +4930,7 @@ def run_workflow(
                 "Workflow local Harness did not complete successfully",
                 EXIT_VALIDATION,
             )
-        if not preflight_only and (is_real_experiment or is_real_writing or is_real_review or is_writing_revision):
+        if not preflight_only and (is_real_experiment or is_prepared_experiment or is_real_writing or is_real_review or is_writing_revision):
             recovered = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -5291,11 +5315,13 @@ def _prepare_scaffold_input_provenance(
     workflow_instance_id: str, transport: Any, real_experiment: bool = False,
     real_writing: bool = False, real_review: bool = False,
     writing_revision: bool = False,
+    prepared_experiment: bool = False,
 ) -> None:
-    if sum((real_experiment, real_writing, real_review, writing_revision)) > 1:
+    if sum((real_experiment, real_writing, real_review, writing_revision, prepared_experiment)) > 1:
         raise _identity("LOCAL_CAPSULE_DRIFT", "reviewed Workflow descriptor is ambiguous")
     descriptor_path = (
-        "workflow/real-experiment.json" if real_experiment
+        "workflow/prepared-experiment.json" if prepared_experiment
+        else "workflow/real-experiment.json" if real_experiment
         else "workflow/real-writing.json" if real_writing
         else "workflow/real-review.json" if real_review
         else "workflow/writing-revision.json" if writing_revision
@@ -5304,7 +5330,7 @@ def _prepare_scaffold_input_provenance(
     config = _read_json(capsule / descriptor_path)
     if (
         config.get("core_capability_maturity")
-        != ("REVIEWED_CORE" if (real_experiment or real_writing or real_review or writing_revision) else "SCAFFOLD_CORE")
+        != ("REVIEWED_CORE" if (real_experiment or prepared_experiment or real_writing or real_review or writing_revision) else "SCAFFOLD_CORE")
         or config.get("workflow_id") not in {
             "writing-local-experimental", "review-local-experimental",
             "reproduction-experiment-local-experimental",
@@ -5386,12 +5412,14 @@ def _prepare_scaffold_input_provenance(
             "artifact_type": item["artifact_type"],
             "sha256": item["expected_checksum"],
         }
-        if not (real_experiment or real_writing or real_review or writing_revision):
+        if not (real_experiment or prepared_experiment or real_writing or real_review or writing_revision):
             records[key]["relative_path"] = item["target_relative_path"]
     _atomic_write_json(capsule / "memory/input-provenance.json", {
         "schema_version": (
             "reagent.real-experiment-input-provenance/v0.1"
             if real_experiment
+            else "reagent.prepared-experiment-input-provenance/v0.1"
+            if prepared_experiment
             else "reagent.real-writing-input-provenance/v0.1"
             if real_writing
             else "reagent.real-review-input-provenance/v0.1"
@@ -5844,6 +5872,7 @@ def _evaluate_local_progress_readiness(
     } and pin not in {
         ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
         ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
+        ("reproduction-experiment-local-experimental", "0.5.0", "0.8.0"),
         ("writing-local-experimental", "0.3.0", "0.5.0"),
         ("writing-local-experimental", "0.4.0", "0.6.0"),
         ("review-local-experimental", "0.3.0", "0.5.0"),

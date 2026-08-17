@@ -405,6 +405,7 @@ class PreparedPackageReceipt(SerializableContract):
     workflow_capsule: WorkflowCapsuleIdentity
     harness: HarnessIdentity | None
     builder: BuilderIdentity | None
+    implementation_specification_checksum: str | None
     git: SanitizedGitProvenance | None
     package_tree_checksum: str
     manifest_checksum: str
@@ -423,11 +424,18 @@ class PreparedPackageReceipt(SerializableContract):
             raise ExperimentPreparationContractError("Prepared-package receipt identity is invalid")
         if (self.origin_type is PackageOrigin.REAGENT_PREPARED) != (self.builder is not None):
             raise ExperimentPreparationContractError("Only ReAgent-prepared packages require Builder identity")
+        if (self.origin_type is PackageOrigin.REAGENT_PREPARED) != (self.implementation_specification_checksum is not None):
+            raise ExperimentPreparationContractError("Only ReAgent-prepared packages require implementation-spec identity")
         if self.origin_type is PackageOrigin.REAGENT_PREPARED and self.git is not None:
             raise ExperimentPreparationContractError("ReAgent-prepared packages do not require Git provenance")
         for field in ("package_tree_checksum", "manifest_checksum", "entrypoint_checksum", "dependency_checksum"):
             try:
                 require_sha256(getattr(self, field), field)
+            except ValueError as error:
+                raise ExperimentPreparationContractError(str(error)) from error
+        if self.implementation_specification_checksum is not None:
+            try:
+                require_sha256(self.implementation_specification_checksum, "Implementation specification checksum")
             except ValueError as error:
                 raise ExperimentPreparationContractError(str(error)) from error
         _time(self.prepared_at, "Preparation time")

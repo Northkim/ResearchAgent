@@ -79,6 +79,7 @@ def receipt(origin: PackageOrigin, *, git=None) -> PreparedPackageReceipt:
     return PreparedPackageReceipt.create(
         origin_type=origin, selected_idea=idea(), workflow_capsule=workflow(),
         harness=HarnessIdentity("CODEX", "1", "session-bounded"), builder=builder, git=git,
+        implementation_specification_checksum=(SHA_D if builder is not None else None),
         package_tree_checksum=SHA_A, manifest_checksum=SHA_B,
         entrypoint_checksum=SHA_C, dependency_checksum=SHA_D, runtime=runtime(),
         prepared_at="2026-08-17T00:00:00Z",

@@ -30,6 +30,8 @@ from backend.workflow_packages.production_workflows import (
     EXPERIMENT_RESOURCE_CAPSULE_VERSION,
     EXPERIMENT_RESOURCE_WORKFLOW_VERSION,
     REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+    PREPARED_EXPERIMENT_CAPSULE_VERSION,
+    PREPARED_EXPERIMENT_WORKFLOW_VERSION,
     REAL_EXPERIMENT_CAPSULE_VERSION,
     REAL_EXPERIMENT_WORKFLOW_VERSION,
     REAL_WRITING_CAPSULE_VERSION,
@@ -66,6 +68,7 @@ from backend.workflow_packages.production_workflows import (
     build_experiment_scaffold_v0_5_package,
     build_real_experiment_v0_6_package,
     build_real_experiment_v0_7_package,
+    build_prepared_experiment_v0_8_package,
     build_real_writing_v0_5_package,
     build_real_review_v0_5_package,
     build_writing_revision_v0_6_package,
@@ -715,6 +718,16 @@ class WorkspaceSyncApplicationService:
                 f"real-experiment-{project.project_id}-"
                 f"{instance.workflow_instance_id}-v"
                 f"{instance.capsule_version.removesuffix('.0')}"
+            )
+        elif (
+            instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
+            and instance.workflow_version == PREPARED_EXPERIMENT_WORKFLOW_VERSION
+            and instance.capsule_version == PREPARED_EXPERIMENT_CAPSULE_VERSION
+        ):
+            builder = build_prepared_experiment_v0_8_package
+            package_id = (
+                f"prepared-experiment-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.8"
             )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")

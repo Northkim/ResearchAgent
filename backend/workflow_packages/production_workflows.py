@@ -94,6 +94,8 @@ REAL_EXPERIMENT_WORKFLOW_VERSION = "0.4.0"
 REAL_EXPERIMENT_CAPSULE_VERSION = "0.6.0"
 REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION = "0.7.0"
 REAL_EXPERIMENT_PROMPT_VERSION = "0.1.0"
+PREPARED_EXPERIMENT_WORKFLOW_VERSION = "0.5.0"
+PREPARED_EXPERIMENT_CAPSULE_VERSION = "0.8.0"
 REAL_WRITING_WORKFLOW_VERSION = "0.3.0"
 REAL_WRITING_CAPSULE_VERSION = "0.5.0"
 REAL_WRITING_PROMPT_VERSION = "0.1.0"
@@ -122,6 +124,7 @@ REVIEW_REPORT_TYPE = "review-report/v1"
 REVIEW_REPORT_V2_TYPE = "review-report/v2"
 EXPERIMENT_RECORD_TYPE = "experiment-record/v1"
 EXPERIMENT_RECORD_V2_TYPE = "experiment-record/v2"
+EXPERIMENT_RECORD_V3_TYPE = "experiment-record/v3"
 
 SCAFFOLD_INPUT_TARGETS = {
     "research_idea": "inputs/selected-research-idea.json",
@@ -266,6 +269,78 @@ def real_experiment_workflow_document() -> dict[str, Any]:
         },
         "immutable_versioning": "experiment-record/v1 and prior Capsules remain unchanged",
     }
+
+
+def prepared_experiment_workflow_document() -> dict[str, Any]:
+    """Reviewed default non-programmer Experiment preparation path."""
+
+    return {
+        "schema_version": "local-workflow/v0.2",
+        "experimental_status": EXPERIMENTAL_STATUS,
+        "workflow_type": "Reproduction & Experiment",
+        "workflow_id": EXPERIMENT_WORKFLOW_ID,
+        "workflow_version": PREPARED_EXPERIMENT_WORKFLOW_VERSION,
+        "execution_owner": "codex-coordinated-local-workspace",
+        "hosted_agent_runtime_required": False,
+        "network_boundary": "ENFORCED_LOCAL_NO_EGRESS",
+        "core_capability_maturity": "REVIEWED_CORE",
+        "supported_mode": "PREPARE_WITH_REAGENT",
+        "input_requirements": [_scaffold_requirement(
+            "research_idea", SELECTED_RESEARCH_IDEA_TYPE, required=True
+        )],
+        "resource_requirements": [],
+        "stages": [
+            "INPUT", "METHODOLOGY_REVIEW", "DESIGN_APPROVAL",
+            "IMPLEMENTATION_PREPARATION", "PACKAGE_VALIDATION",
+            "EXECUTION_PLAN", "RUN_APPROVAL", "EXECUTION",
+            "RESULT_EVALUATION", "OWNER_REVIEW", "COMPLETED",
+        ],
+        "builder_family": "SKLEARN_TABULAR_CLASSIFICATION_V1",
+        "artifact_outputs": [scaffold_output_contract(EXPERIMENT_RECORD_V3_TYPE)],
+        "execution_policy": {
+            "attempts_per_approval": 1, "automatic_retry": False,
+            "process_model": "ONE_LOCAL_FOREGROUND_PROCESS",
+            "network_policy": "DISABLED", "dependency_installation": False,
+            "hostile_code_containment_claimed": False,
+        },
+        "immutable_versioning": "Experiment 0.4/0.7 and experiment-record/v2 remain unchanged",
+    }
+
+
+def prepared_experiment_contract_checksum() -> str:
+    return canonical_hash(prepared_experiment_workflow_document())
+
+
+def prepared_experiment_capsule_checksum() -> str:
+    package_root = Path(__file__).resolve().parent
+    backend_root = package_root.parent
+    source_paths = {
+        "prepared_experiment_runtime": package_root / "prepared_experiment_runtime.py",
+        "prepared_experiment_validator": package_root / "prepared_experiment_validator.py",
+        "sklearn_tabular_builder": package_root / "sklearn_tabular_builder.py",
+        "experiment_preparation_contracts": package_root / "experiment_preparation_contracts.py",
+        "validated_experiment_package": package_root / "validated_experiment_package.py",
+        "security": package_root / "security.py", "serialization": package_root / "serialization.py",
+        "research_flow_contracts": backend_root / "artifact_references/research_flow_contracts.py",
+        "workspace_contracts": backend_root / "project_workspaces/contracts.py",
+    }
+
+    return canonical_hash({
+        "generator_version": f"reagent-{EXPERIMENT_WORKFLOW_ID}-compiler/{PREPARED_EXPERIMENT_CAPSULE_VERSION}",
+        "workflow_checksum": prepared_experiment_contract_checksum(),
+        "source_checksums": {
+            name: sha256_bytes(path.read_bytes())
+            for name, path in sorted(source_paths.items())
+        },
+        "artifact_output": EXPERIMENT_RECORD_V3_TYPE,
+        "builder_family": "SKLEARN_TABULAR_CLASSIFICATION_V1",
+        "execution_boundary": "ONE_APPROVED_LOCAL_NO_EGRESS_ATTEMPT",
+    })
+
+
+PREPARED_EXPERIMENT_CONTRACT_CHECKSUM = prepared_experiment_contract_checksum()
+PREPARED_EXPERIMENT_CAPSULE_CHECKSUM = prepared_experiment_capsule_checksum()
+PREPARED_EXPERIMENT_CAPSULE_ID = "capsule-" + PREPARED_EXPERIMENT_CAPSULE_CHECKSUM[7:39]
 
 
 def real_writing_workflow_document() -> dict[str, Any]:
@@ -2919,6 +2994,126 @@ def _real_experiment_v0_7_validator_source(source: bytes) -> bytes:
     return text.replace(old, new, 1).encode("utf-8")
 
 
+def _prepared_experiment_files(
+    *, project_id: str, project_name: str, research_topic: str,
+    package_id: str, package_checksum: str,
+) -> dict[str, FileSpec]:
+    from backend.artifact_references import research_flow_contracts
+    from backend.project_workspaces import contracts as workspace_contracts
+    from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    from . import (
+        experiment_preparation_contracts, prepared_experiment_runtime,
+        prepared_experiment_validator, real_experiment_runtime, security,
+        serialization, sklearn_tabular_builder, validated_experiment_package,
+    )
+
+    workflow = prepared_experiment_workflow_document()
+    skill = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+    skill_files = skill.content_files()
+    skill_root = f"workflow/skills/{skill.skill_id}"
+    workflow_capsule = {
+        "workflow_definition_id": EXPERIMENT_WORKFLOW_ID,
+        "workflow_version": PREPARED_EXPERIMENT_WORKFLOW_VERSION,
+        "workflow_checksum": PREPARED_EXPERIMENT_CONTRACT_CHECKSUM,
+        "capsule_id": PREPARED_EXPERIMENT_CAPSULE_ID,
+        "capsule_version": PREPARED_EXPERIMENT_CAPSULE_VERSION,
+        "capsule_checksum": PREPARED_EXPERIMENT_CAPSULE_CHECKSUM,
+    }
+    contract = {
+        "schema": "reagent.prepared-experiment-workflow/v0.1",
+        "mode": "PREPARE_WITH_REAGENT",
+        "workflow_id": EXPERIMENT_WORKFLOW_ID,
+        "core_capability_maturity": "REVIEWED_CORE",
+        "input_requirements": workflow["input_requirements"],
+        "output_artifact_type": EXPERIMENT_RECORD_V3_TYPE,
+        "network_policy": "DISABLED",
+        "builder_family": "SKLEARN_TABULAR_CLASSIFICATION_V1",
+        "workflow_capsule": workflow_capsule,
+    }
+    project = {
+        "schema_version": "local-project-input/v0.1", "project_id": project_id,
+        "project_name": project_name, "selected_workflow": EXPERIMENT_WORKFLOW_ID,
+    }
+    context = {
+        "schema": "reagent.prepared-experiment-context/v0.1",
+        "stage": "INPUT", "result_status": None, "latest_artifact": None,
+        "updated_at": DETERMINISTIC_GENERATED_AT,
+    }
+    draft = {
+        "execution_round": 1, "harness_type": "codex", "harness_version": None,
+        "harness_session_id": "prepared-experiment-attempt-1",
+        "previous_report_id": None, "previous_report_checksum": None,
+        "started_at": DETERMINISTIC_GENERATED_AT,
+        "completed_at": DETERMINISTIC_GENERATED_AT,
+        "status": "IN_PROGRESS", "completed_work": [], "current_state": "INPUT",
+        "next_recommended_action": "Review the exact selected Idea and prepare Experiment methodology",
+        "continuation_reason": None, "warnings": [], "errors": [],
+        "unresolved_questions": [],
+        "continuation_instructions": ["Resume the same public Workflow command; approved decisions are durable."],
+    }
+    agent = """# ReAgent Prepared Experiment — REVIEWED_CORE
+
+This Capsule implements the default PREPARE_WITH_REAGENT path. Use only the exact
+materialized selected Idea. Codex performs methodology reasoning and asks the
+Owner only about material scientific choices. The reviewed deterministic Builder,
+not Codex, renders executable Python. Package bytes stay local. Design and run
+approvals are checksum-bound. The unchanged bounded Experiment runner owns the
+single no-egress process attempt. Never install dependencies, use Git, enable
+network, read sibling Capsules, silently change the scientific scope, or retry.
+"""
+    prompt = """# Prepare Experiment methodology
+
+Recover frozen scientific requirements from the exact selected Idea. Separate
+scientific requirements, non-material implementation decisions, and unresolved
+methodological decisions. The first supported family is only scikit-learn Wine
+classification with KNN, raw/StandardScaler/MinMaxScaler conditions, leakage-safe
+repeated stratified CV, accuracy, macro-F1, controlled seeds, and a bounded
+neighbor sweep. Ask the Owner about consequential unspecified choices. Do not
+write code; the reviewed deterministic Builder owns implementation bytes.
+"""
+    files: dict[str, FileSpec] = {
+        "AGENT.md": FileSpec(agent.encode(), "text/markdown", "prepared Experiment authority", False, "INSTRUCTION"),
+        "AGENTS.md": FileSpec(b"# Codex shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Codex shim", False, "INSTRUCTION"),
+        "CLAUDE.md": FileSpec(b"# Harness shim\n\nRead and follow `AGENT.md`.\n", "text/markdown", "Harness shim", False, "INSTRUCTION"),
+        "README.md": FileSpec(b"# Prepared Experiment Capsule\n\nRun through the public Local Workspace command.\n", "text/markdown", "overview", False, "INSTRUCTION"),
+        "reagent_local.py": FileSpec(Path(prepared_experiment_runtime.__file__).read_bytes(), "text/x-python", "resumable preparation runtime", False, "INSTRUCTION"),
+        "bounded_runner.py": FileSpec(Path(real_experiment_runtime.__file__).read_bytes(), "text/x-python", "unchanged bounded Experiment runner", False, "INSTRUCTION"),
+        "validate_package.py": FileSpec(Path(prepared_experiment_validator.__file__).read_bytes(), "text/x-python", "prepared Experiment validator", False, "INSTRUCTION"),
+        "progress_report.py": FileSpec(_scaffold_progress_source(), "text/x-python", "Progress v0.2 helper", False, "INSTRUCTION"),
+        "workflow/AGENT.md": FileSpec(b"# Prepared Experiment Workflow\n\nPreserve exact Idea and approval identity.\n", "text/markdown", "workflow instructions", False, "INSTRUCTION"),
+        "workflow/workflow.json": FileSpec(_json(workflow), "application/json", "pinned Workflow", False, "CONFIGURATION"),
+        "workflow/prepared-experiment.json": FileSpec(_json(contract), "application/json", "preparation contract", False, "CONFIGURATION"),
+        "workflow/prompts/prepare-experiment.md": FileSpec(prompt.encode(), "text/markdown", "methodology method", False, "INSTRUCTION"),
+        f"{skill_root}/SKILL.md": FileSpec(skill_files["SKILL.md"], "text/markdown", "reviewed provenance Skill", False, "INSTRUCTION"),
+        f"{skill_root}/skill.json": FileSpec(skill_files["skill.json"], "application/json", "reviewed provenance Skill contract", False, "CONFIGURATION"),
+        "workflow/artifact-inputs.json": FileSpec(_json({"schema_version": "reagent.artifact-input-contract/v0.1", "requirements": workflow["input_requirements"]}), "application/json", "exact Idea input contract", False, "CONFIGURATION"),
+        "workflow/artifact-outputs.json": FileSpec(_json({"schema_version": "reagent.artifact-output-contract/v0.1", **scaffold_output_contract(EXPERIMENT_RECORD_V3_TYPE), "producer_core_capability_maturity": "REVIEWED_CORE", "validity_point": "OWNER_REVIEWED_CHECKSUM_APPROVED_ATTEMPT"}), "application/json", "experiment-record/v3 output contract", False, "CONFIGURATION"),
+        "inputs/project.json": FileSpec(_json(project), "application/json", "immutable Project identity", False, "INPUT"),
+        "outputs/README.md": FileSpec(b"# Prepared Experiment outputs\n\nOnly validated content-addressed experiment-record/v3 files are outputs.\n", "text/markdown", "output policy", False, "OUTPUT"),
+        "memory/context.md": FileSpec(("# Prepared Experiment Context\n\n```json\n" + canonical_json(context) + "\n```\n").encode(), "text/markdown", "durable preparation state", True, "STATE"),
+        "memory/progress/report-draft.json": FileSpec(_json(draft), "application/json", "Progress draft", True, "STATE"),
+        "memory/progress/reports/README.md": FileSpec(b"# Append-only Progress Reports\n", "text/markdown", "Progress policy", False, "STATE"),
+        "memory/progress/receipts/README.md": FileSpec(b"# Verified upload receipts\n", "text/markdown", "receipt policy", False, "STATE"),
+    }
+    modules = {
+        "backend/workflow_packages/experiment_preparation_contracts.py": experiment_preparation_contracts,
+        "backend/workflow_packages/security.py": security,
+        "backend/workflow_packages/serialization.py": serialization,
+        "backend/workflow_packages/sklearn_tabular_builder.py": sklearn_tabular_builder,
+        "backend/workflow_packages/validated_experiment_package.py": validated_experiment_package,
+        "backend/project_workspaces/contracts.py": workspace_contracts,
+        "backend/artifact_references/research_flow_contracts.py": research_flow_contracts,
+    }
+    for relative, module in modules.items():
+        files[f"runtime_lib/{relative}"] = FileSpec(Path(module.__file__).read_bytes(), "text/x-python", "reviewed runtime contract", False, "INSTRUCTION")
+    for relative in (
+        "backend/__init__.py", "backend/workflow_packages/__init__.py",
+        "backend/project_workspaces/__init__.py", "backend/artifact_references/__init__.py",
+    ):
+        files[f"runtime_lib/{relative}"] = FileSpec(b"", "text/x-python", "runtime package marker", False, "INSTRUCTION")
+    return files
+
+
 def _real_experiment_v0_7_files(**kwargs) -> dict[str, FileSpec]:
     """Render the input-validation bugfix without changing Capsule 0.6."""
 
@@ -3201,6 +3396,32 @@ def _make_manifest(
         ),)
         continuation = "ONE ATTEMPT PER EXACT OWNER APPROVAL; NO AUTOMATIC RETRY"
         proxy = "NO NETWORK; OWNER-STAGED TRUSTED PACKAGE; LOCAL FOREGROUND EXECUTION ONLY"
+    elif (
+        workflow_id == EXPERIMENT_WORKFLOW_ID
+        and workflow_version == PREPARED_EXPERIMENT_WORKFLOW_VERSION
+    ):
+        from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
+
+        asset = RESEARCH_ARTIFACT_PROVENANCE_SKILL
+        skill_path = f"workflow/skills/{asset.skill_id}/SKILL.md"
+        skills = (SkillPin(
+            name=asset.skill_id, semantic_version=asset.version,
+            source_type="BUNDLED_REAGENT_ORIGINAL",
+            source_identity=asset.content_source_identity,
+            checksum=asset.content_checksum, relative_path=skill_path,
+            required_capabilities=asset.required_capabilities,
+        ),)
+        prompt_path = "workflow/prompts/prepare-experiment.md"
+        prompt_id = "prepared-experiment-methodology"
+        prompt_version = "0.1.0"
+        outputs = ()
+        inputs = (PackageInputManifest(
+            "local-project-display", "inputs/project.json",
+            sha256_bytes(files["inputs/project.json"].content), True,
+            "application/json", "CLOUD_SUPPLIED",
+        ),)
+        continuation = "RESUMABLE METHODOLOGY AND TWO EXACT OWNER APPROVALS; ONE ATTEMPT"
+        proxy = "NO NETWORK; REVIEWED LOCAL BUILDER; LOCAL FOREGROUND EXECUTION ONLY"
     else:
         config = json.loads(files["workflow/scaffold.json"].content)
         if workflow_version in {
@@ -3742,6 +3963,18 @@ def build_real_experiment_v0_7_package(**kwargs) -> BuildResult:
         template_id=EXPERIMENT_TEMPLATE_ID,
         workflow_version=REAL_EXPERIMENT_WORKFLOW_VERSION,
         capsule_version=REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+        **kwargs,
+    )
+
+
+def build_prepared_experiment_v0_8_package(**kwargs) -> BuildResult:
+    return _build_scaffold_package(
+        renderer=_prepared_experiment_files,
+        workflow_id=EXPERIMENT_WORKFLOW_ID,
+        workflow_type="Reproduction & Experiment",
+        template_id=EXPERIMENT_TEMPLATE_ID,
+        workflow_version=PREPARED_EXPERIMENT_WORKFLOW_VERSION,
+        capsule_version=PREPARED_EXPERIMENT_CAPSULE_VERSION,
         **kwargs,
     )
 
