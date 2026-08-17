@@ -2,6 +2,48 @@
 
 Last updated: 2026-08-17
 
+## GEN-A generic Experiment contract foundation (2026-08-17)
+
+GEN-A is implemented as unpublished, forward-only contract code. It does not
+publish Experiment 0.6, Capsule 0.9, or `experiment-record/v4`, and it adds no
+coordinator, runner, migration, API, persistence, frontend, dependency, network,
+or Project/Workspace behavior. D1 remains paused.
+
+The generic lifecycle now has deterministic local contracts for an exact
+Research Objective reference (currently still limited to
+`selected-research-idea/v1`), domain-neutral methodology v0.2 and preparation-
+only Design Approval, exact reviewed Experiment Capability identity and bounded
+operations, capability support/selection evidence that preserves material Owner
+decisions, and a checksum-only Capability-owned implementation-specification
+reference. Scientific/domain fields remain outside Core.
+
+The existing ResourceReference/Workflow ResourceRequirement/binding/index
+authority is reused through a checksum-bound Experiment Resource bridge; no
+parallel Resource model exists. Preparation requirements are distinct from
+language-neutral runtime requirement/candidate/compatibility evidence. Local
+launcher paths remain local-only; Cloud-bound compatibility uses portable
+runtime/environment checksums.
+
+Prepared/validated Experiment Package v0.2 removes Python, fixed-entrypoint, and
+single-lock assumptions while preserving bounded relative paths, independent
+validation, exact Capability/Resource/runtime/objective/methodology lineage, and
+Path A/future Path B convergence. Capability evaluation owns domain semantics;
+Core keeps only exact lineage plus conservative process, evaluation-validity,
+evidence, and limitation states. Safe presentation primitives support prose,
+scalar, table, series, and exact figure/output references without requiring
+numeric metrics. The unpublished generic `experiment-record/v4` validator
+references only these generic identities.
+
+Focused and frozen contract regression is `83 passed`; compile checks and
+Alembic sole-head `20260817_0027` pass. A deliberately non-ML textual/categorical
+fixture proves no dataset, metric, CV, robustness, Python, or sklearn field is
+required. Experiment 0.5 contract checksum
+`sha256:23b6e3cae5746c8589927d2380595df61d01c6fb3f487cf47e09753f3ef8b600`
+and Capsule 0.8 checksum
+`sha256:5e02c832357355b6036b7e21cfbae3061306b16268d04ee75c764c56c759bd98`
+remain exact. Verification evidence is E2 contract-level and verifier
+independence is LIMITED; no execution or publication qualification is claimed.
+
 ## Experiment 0.5 sklearn reference-slice freeze
 
 Experiment Definition 0.5.0 / Capsule 0.8.0 / `experiment-record/v3` and
@@ -53,8 +95,8 @@ also paused at its real Owner methodology checkpoint; consequential fold,
 repeat, seed, and neighbor choices must not be fabricated. EP-B2, EP-C, EP-D,
 current D1 Project mutation, and D1 continuation remain unauthorized.
 `REFERENCE_SLICE_CONTRACT_REGRESSION = PASS`;
-`GENERIC_DEFAULT_STATUS = NOT_EXPERIMENT_0_5`; `D1 = PAUSED`; no GEN
-implementation has begun.
+`GENERIC_DEFAULT_STATUS = NOT_EXPERIMENT_0_5`; `D1 = PAUSED`; GEN-A contract
+foundation is present, while GEN-B/GEN-C/GEN-D have not begun.
 
 ## Final Owner-approved controlled-local release
 

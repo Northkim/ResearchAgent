@@ -25,6 +25,7 @@ def _receipt() -> PreparedPackageReceipt:
         ),
         harness=HarnessIdentity("CODEX", "1", "session-1"),
         builder=BuilderIdentity(BuilderFamily.SKLEARN_TABULAR_CLASSIFICATION_V1, "1", SHA[3]),
+        implementation_specification_checksum=SHA[3],
         git=None, package_tree_checksum=SHA[0], manifest_checksum=SHA[1],
         entrypoint_checksum=SHA[2], dependency_checksum=SHA[3],
         runtime=RuntimeIdentity("PYTHON", "3.12", SHA[4]),
@@ -70,7 +71,8 @@ def test_both_preparation_paths_converge_on_one_validated_package_contract() -> 
     local_receipt = PreparedPackageReceipt.create(
         origin_type=PackageOrigin.LOCAL_PROJECT, selected_idea=source.selected_idea,
         workflow_capsule=source.workflow_capsule, harness=source.harness,
-        builder=None, git=None, package_tree_checksum=source.package_tree_checksum,
+        builder=None, implementation_specification_checksum=None, git=None,
+        package_tree_checksum=source.package_tree_checksum,
         manifest_checksum=source.manifest_checksum,
         entrypoint_checksum=source.entrypoint_checksum,
         dependency_checksum=source.dependency_checksum, runtime=source.runtime,
