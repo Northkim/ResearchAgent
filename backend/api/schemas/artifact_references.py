@@ -9,6 +9,15 @@ from pydantic import Field
 from .common import StrictDTO
 
 
+class ArtifactPresentationResponse(StrictDTO):
+    schema_identity: str
+    artifact_id: str
+    artifact_checksum: str
+    presentation_checksum: str
+    payload: dict
+    reported_at: datetime
+
+
 class ArtifactReferenceResponse(StrictDTO):
     schema_version: str
     artifact_id: str
@@ -32,6 +41,9 @@ class ArtifactReferenceResponse(StrictDTO):
     retired_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    presentation: ArtifactPresentationResponse | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ArtifactReferencePageResponse(StrictDTO):

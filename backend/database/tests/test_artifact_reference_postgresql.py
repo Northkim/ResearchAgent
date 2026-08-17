@@ -5,14 +5,19 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+import os
 from threading import Barrier
 
+from alembic import command
+from alembic.config import Config
 import pytest
-from sqlalchemy import event
+from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from backend.application.errors import ApplicationNotFoundError
 from backend.artifact_references.contracts import (
     ArtifactDeclaration,
+    ArtifactPresentation,
     CompatibilityMode,
     MaterializationMode,
     WorkflowArtifactRequirement,
@@ -21,6 +26,7 @@ from backend.artifact_references.errors import ArtifactReferenceConflictError
 from backend.artifact_references.service import ArtifactReferenceService
 from backend.local_projects.contracts import LocalProject
 from backend.database.orm import LocalArtifactReferenceORM, UploadedProgressReportORM
+from backend.database.disposable import require_disposable_database
 from backend.progress_reports.service import ProgressReportService
 from backend.progress_reports.tests.factories import HASH_A, HASH_B, native_report, upload_envelope
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
@@ -48,6 +54,91 @@ ARTIFACT_ID = "artifact-" + "9" * 32
 ARTIFACT_TYPE = "test.paper-library"
 ARTIFACT_SCHEMA = "reagent.artifact.test-paper-library/v1.0"
 NOW = datetime(2026, 8, 7, 12, tzinfo=UTC)
+
+
+def test_gen_d_presentation_migration_downgrade_and_reupgrade() -> None:
+    database_url = os.environ.get("REAGENT_TEST_DATABASE_URL")
+    identity = os.environ.get("REAGENT_TEST_DATABASE_IDENTITY")
+    if not database_url or not identity:
+        pytest.skip("dedicated disposable PostgreSQL database is required")
+    engine = create_engine(database_url)
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", database_url)
+    presentation_columns = {
+        "presentation_schema_id", "presentation_checksum",
+        "presentation_json", "presentation_reported_at",
+    }
+    try:
+        require_disposable_database(
+            engine, database_url=database_url, expected_identity=identity
+        )
+        assert _migration_revision(engine) == "20260817_0029"
+        assert presentation_columns <= _artifact_columns(engine)
+        command.downgrade(config, "20260817_0028")
+        assert _migration_revision(engine) == "20260817_0028"
+        assert presentation_columns.isdisjoint(_artifact_columns(engine))
+        command.upgrade(config, "20260817_0029")
+        assert _migration_revision(engine) == "20260817_0029"
+        assert presentation_columns <= _artifact_columns(engine)
+        checks = inspect(engine).get_check_constraints("local_artifact_references")
+        presentation_checks = [
+            item for item in checks
+            if "presentation_" in str(item.get("sqltext", ""))
+        ]
+        assert len(presentation_checks) == 3
+        assert any("octet_length" in item["sqltext"] for item in presentation_checks)
+        assert any("sha256" in item["sqltext"] for item in presentation_checks)
+    finally:
+        engine.dispose()
+
+
+def _artifact_columns(engine) -> set[str]:
+    return {
+        item["name"]
+        for item in inspect(engine).get_columns("local_artifact_references")
+    }
+
+
+def _migration_revision(engine) -> str:
+    with engine.connect() as connection:
+        return str(connection.scalar(text("SELECT version_num FROM alembic_version")))
+
+
+def test_postgresql_artifact_presentation_roundtrip_and_all_or_none_constraint(
+    sql_uow_factory, tmp_path,
+) -> None:
+    _seed(sql_uow_factory)
+    scope = sql_uow_factory()
+    _progress_service(scope, tmp_path / "presentation-progress").upload(
+        upload_envelope(_report()),
+        workflow_instance_id=PRODUCER_ID,
+        artifact_declarations=(_declaration(),),
+    )
+    scope.close()
+
+    scope = sql_uow_factory()
+    presentation = ArtifactPresentation(
+        artifact_id=ARTIFACT_ID,
+        artifact_checksum=HASH_B,
+        schema_identity="reagent.artifact-presentation.experiment-record/v0.2",
+        presentation_checksum=HASH_A,
+        payload={"schema": "reagent.artifact-presentation.experiment-record/v0.2"},
+        reported_at=NOW,
+    )
+    scope.artifact_references.add_presentation(presentation)
+    scope.commit()
+    scope.close()
+
+    reloaded = sql_uow_factory()
+    assert reloaded.artifact_references.get_presentation(ARTIFACT_ID) == presentation
+    with pytest.raises(IntegrityError):
+        reloaded.session.execute(text(
+            "UPDATE local_artifact_references "
+            "SET presentation_json = NULL WHERE artifact_id = :artifact_id"
+        ), {"artifact_id": ARTIFACT_ID})
+        reloaded.commit()
+    reloaded.rollback()
+    reloaded.close()
 
 
 def test_postgresql_artifact_promotion_reload_immutability_and_rollback(

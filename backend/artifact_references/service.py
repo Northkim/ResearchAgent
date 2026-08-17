@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
+import re
 from typing import Any
 from uuid import UUID, uuid5
 
@@ -15,12 +16,20 @@ from backend.application.errors import (
 from backend.persistence.ports import UnitOfWork
 from backend.progress_reports.contracts import NormalizedProgressRecord, UploadedProgressReport
 from backend.workflow_packages.serialization import canonical_hash
+from backend.workflow_packages.serialization import canonical_json, to_json_value
+from backend.artifact_references.generic_experiment_contracts import (
+    GenericExperimentArtifactError,
+    GenericExperimentPresentation,
+    PresentationBlock,
+    PresentationKind,
+)
 
 from .contracts import (
     ARTIFACT_PAGE_SCHEMA,
     MATERIALIZATION_PLAN_SCHEMA,
     ArtifactDeclaration,
     ArtifactDependencyBinding,
+    ArtifactPresentation,
     ArtifactMaterializationPlan,
     ArtifactReference,
     ArtifactState,
@@ -318,6 +327,7 @@ class ArtifactReferenceService:
                 _artifact_document(
                     item,
                     maturities[item.producer_workflow_instance_id],
+                    self._uow.artifact_references.get_presentation(item.artifact_id),
                 )
                 for item in values
             ],
@@ -326,6 +336,68 @@ class ArtifactReferenceService:
             "total": total,
             "has_more": offset + len(values) < total,
         }
+
+    def report_presentation(
+        self, *, project_id: str, artifact_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Accept one immutable, exact-bound, bounded presentation companion."""
+
+        project = self._uow.project_manifests.get_project(project_id)
+        if project is None:
+            raise ApplicationCodedNotFoundError(
+                "Project not found", code="PROJECT_NOT_FOUND"
+            )
+        artifact = self._uow.artifact_references.get_artifact(artifact_id)
+        if artifact is None or artifact.project_id != project_id:
+            raise ApplicationCodedNotFoundError(
+                "Artifact not found", code="ARTIFACT_NOT_FOUND"
+            )
+        if (
+            artifact.artifact_type != "experiment-record/v4"
+            or artifact.artifact_schema_version != "experiment-record/v4"
+        ):
+            raise ApplicationCodedValidationError(
+                "Only generic Experiment v4 supports this presentation contract",
+                code="ARTIFACT_PRESENTATION_INVALID",
+            )
+        normalized = _validate_generic_experiment_presentation(payload)
+        if (
+            normalized["artifact_id"] != artifact.artifact_id
+            or normalized["artifact_checksum"] != artifact.content_checksum
+        ):
+            raise ApplicationCodedConflictError(
+                "Presentation does not bind the exact current Artifact",
+                code="ARTIFACT_PRESENTATION_ARTIFACT_MISMATCH",
+            )
+        existing = self._uow.artifact_references.get_presentation(artifact_id)
+        if existing is not None:
+            if (
+                existing.artifact_checksum != artifact.content_checksum
+                or existing.schema_identity != normalized["schema"]
+                or existing.presentation_checksum != normalized["presentation_checksum"]
+                or to_json_value(existing.payload) != normalized
+            ):
+                raise ApplicationCodedConflictError(
+                    "Artifact presentation is immutable and already differs",
+                    code="ARTIFACT_PRESENTATION_CONFLICT",
+                )
+            return _presentation_document(existing)
+        presentation = ArtifactPresentation(
+            artifact_id=artifact.artifact_id,
+            artifact_checksum=artifact.content_checksum,
+            schema_identity=normalized["schema"],
+            presentation_checksum=normalized["presentation_checksum"],
+            payload=normalized,
+            reported_at=_aware(self._clock()),
+        )
+        try:
+            self._uow.artifact_references.add_presentation(presentation)
+        except ArtifactReferenceConflictError as error:
+            raise ApplicationCodedConflictError(
+                str(error), code="ARTIFACT_PRESENTATION_CONFLICT"
+            ) from error
+        self._uow.commit()
+        return _presentation_document(presentation)
 
     def bind_dependency(
         self,
@@ -662,7 +734,9 @@ def _matches_output_contract(
 
 
 def _artifact_document(
-    item: ArtifactReference, producer_core_capability_maturity: str
+    item: ArtifactReference,
+    producer_core_capability_maturity: str,
+    presentation: ArtifactPresentation | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": "reagent.artifact-reference/v0.1",
@@ -687,7 +761,93 @@ def _artifact_document(
         "retired_at": None if item.retired_at is None else _utc_text(item.retired_at),
         "created_at": _utc_text(item.created_at),
         "updated_at": _utc_text(item.updated_at),
+        "presentation": (
+            None if presentation is None else _presentation_document(presentation)
+        ),
     }
+
+
+def _presentation_document(presentation: ArtifactPresentation) -> dict[str, Any]:
+    return {
+        "schema_identity": presentation.schema_identity,
+        "artifact_id": presentation.artifact_id,
+        "artifact_checksum": presentation.artifact_checksum,
+        "presentation_checksum": presentation.presentation_checksum,
+        "payload": to_json_value(presentation.payload),
+        "reported_at": _utc_text(presentation.reported_at),
+    }
+
+
+_PRESENTATION_SECRET = re.compile(
+    r"(?i)(?:api[_ -]?key|access[_ -]?token|password|secret|bearer)\s*[:=]"
+)
+_PRESENTATION_LOG = re.compile(r"(?i)\b(?:stdout|stderr)\s*:")
+_PRESENTATION_LOCAL_PATH = re.compile(
+    r"(?:^|[\s\"'])(?:/[A-Za-z0-9._-]+){2,}(?:[\s\"',.;:]|$)"
+)
+
+
+def _validate_generic_experiment_presentation(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != {
+        "schema", "artifact_id", "artifact_checksum", "blocks",
+        "presentation_checksum",
+    }:
+        raise ApplicationCodedValidationError(
+            "Experiment presentation shape is invalid",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    blocks = value.get("blocks")
+    if not isinstance(blocks, list):
+        raise ApplicationCodedValidationError(
+            "Experiment presentation blocks are invalid",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    try:
+        candidate = GenericExperimentPresentation(
+            artifact_id=value["artifact_id"],
+            artifact_checksum=value["artifact_checksum"],
+            blocks=tuple(
+                PresentationBlock(
+                    kind=PresentationKind(item["kind"]),
+                    label=item["label"],
+                    value=item["value"],
+                )
+                for item in blocks
+                if isinstance(item, dict) and set(item) == {"kind", "label", "value"}
+            ),
+        )
+    except (KeyError, TypeError, ValueError, GenericExperimentArtifactError) as error:
+        raise ApplicationCodedValidationError(
+            "Experiment presentation content is invalid",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        ) from error
+    if len(candidate.blocks) != len(blocks):
+        raise ApplicationCodedValidationError(
+            "Experiment presentation block shape is invalid",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    normalized = to_json_value(candidate)
+    if value["schema"] != normalized["schema"] or value["presentation_checksum"] != normalized["presentation_checksum"]:
+        raise ApplicationCodedValidationError(
+            "Experiment presentation checksum or schema is invalid",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    serialized = canonical_json(normalized)
+    if len(serialized.encode("utf-8")) > 65_536:
+        raise ApplicationCodedValidationError(
+            "Experiment presentation exceeds its size bound",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    if (
+        _PRESENTATION_SECRET.search(serialized)
+        or _PRESENTATION_LOG.search(serialized)
+        or _PRESENTATION_LOCAL_PATH.search(serialized)
+    ):
+        raise ApplicationCodedValidationError(
+            "Experiment presentation contains local paths, credentials, or raw logs",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    return normalized
 
 
 def binding_document(binding: ArtifactDependencyBinding) -> dict[str, Any]:

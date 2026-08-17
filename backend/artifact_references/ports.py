@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 
 from .contracts import (
     ArtifactDependencyBinding,
+    ArtifactPresentation,
     ArtifactReference,
     WorkflowArtifactRequirement,
 )
@@ -42,6 +43,12 @@ class ArtifactReferenceRepository(ABC):
 
     @abstractmethod
     def list_for_progress(self, receipt_id: str) -> tuple[ArtifactReference, ...]: ...
+
+    @abstractmethod
+    def get_presentation(self, artifact_id: str) -> ArtifactPresentation | None: ...
+
+    @abstractmethod
+    def add_presentation(self, presentation: ArtifactPresentation) -> None: ...
 
     @abstractmethod
     def add_requirement(self, requirement: WorkflowArtifactRequirement) -> None: ...

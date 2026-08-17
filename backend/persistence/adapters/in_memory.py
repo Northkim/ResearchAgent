@@ -11,6 +11,7 @@ from backend.domain.models import ApprovalRequest, ArtifactMetadata, Checkpoint,
 from backend.domain.services import ExecutionState
 from backend.artifact_references.contracts import (
     ArtifactDependencyBinding,
+    ArtifactPresentation,
     ArtifactReference,
     WorkflowArtifactRequirement,
 )
@@ -120,6 +121,7 @@ class InMemoryDatabase:
         str, WorkspaceInstallationAcknowledgement
     ] = field(default_factory=dict)
     local_artifact_references: dict[str, ArtifactReference] = field(default_factory=dict)
+    artifact_presentations: dict[str, ArtifactPresentation] = field(default_factory=dict)
     workflow_artifact_requirements: dict[
         tuple[str, str, str], WorkflowArtifactRequirement
     ] = field(default_factory=dict)
@@ -331,6 +333,21 @@ class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
             ),
             key=lambda item: (item.relative_path, item.artifact_id),
         ))
+
+    def get_presentation(self, artifact_id: str) -> ArtifactPresentation | None:
+        return self._uow._artifact_presentations.get(artifact_id)
+
+    def add_presentation(self, presentation: ArtifactPresentation) -> None:
+        if presentation.artifact_id not in self._uow._local_artifact_references:
+            raise ValueError("Artifact does not exist")
+        existing = self.get_presentation(presentation.artifact_id)
+        if existing is not None and existing.immutable_identity() != presentation.immutable_identity():
+            raise ArtifactReferenceConflictError(
+                "Artifact presentation is immutable and already differs"
+            )
+        if existing is None:
+            self._uow._artifact_presentations[presentation.artifact_id] = presentation
+            self._uow._dirty_artifact_presentations.add(presentation.artifact_id)
 
     def add_requirement(self, requirement: WorkflowArtifactRequirement) -> None:
         key = (
@@ -1694,6 +1711,10 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.local_artifact_references[artifact_id] = (
                 self._local_artifact_references[artifact_id]
             )
+        for artifact_id in self._dirty_artifact_presentations:
+            self.database.artifact_presentations[artifact_id] = (
+                self._artifact_presentations[artifact_id]
+            )
         for key in self._dirty_workflow_artifact_requirements:
             self.database.workflow_artifact_requirements[key] = (
                 self._workflow_artifact_requirements[key]
@@ -1883,6 +1904,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._local_artifact_references = dict(
             self.database.local_artifact_references
         )
+        self._artifact_presentations = dict(self.database.artifact_presentations)
         self._workflow_artifact_requirements = dict(
             self.database.workflow_artifact_requirements
         )
@@ -1932,6 +1954,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_capsule_artifacts: set[str] = set()
         self._dirty_installation_acknowledgements: set[str] = set()
         self._dirty_local_artifact_references: set[str] = set()
+        self._dirty_artifact_presentations: set[str] = set()
         self._dirty_workflow_artifact_requirements: set[tuple[str, str, str]] = set()
         self._dirty_artifact_dependency_bindings: set[str] = set()
         self._dirty_project_resource_references: set[str] = set()

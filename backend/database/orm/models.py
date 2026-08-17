@@ -1212,6 +1212,21 @@ class LocalArtifactReferenceORM(Base):
         CheckConstraint(
             "cloud_metadata_available", name="local_artifact_reference_cloud_metadata"
         ),
+        CheckConstraint(
+            "(presentation_schema_id IS NULL AND presentation_checksum IS NULL "
+            "AND presentation_json IS NULL AND presentation_reported_at IS NULL) OR "
+            "(presentation_schema_id IS NOT NULL AND presentation_checksum IS NOT NULL "
+            "AND presentation_json IS NOT NULL AND presentation_reported_at IS NOT NULL)",
+            name="local_artifact_reference_presentation_all_or_none",
+        ),
+        CheckConstraint(
+            "presentation_checksum IS NULL OR presentation_checksum ~ '^sha256:[0-9a-f]{64}$'",
+            name="local_artifact_reference_presentation_checksum",
+        ),
+        CheckConstraint(
+            "presentation_json IS NULL OR octet_length(presentation_json::text) <= 65536",
+            name="local_artifact_reference_presentation_size",
+        ),
         Index(
             "ix_local_artifact_references_project_produced",
             "project_id", "produced_at", "artifact_id",
@@ -1243,6 +1258,12 @@ class LocalArtifactReferenceORM(Base):
     content_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
     cloud_metadata_available: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    presentation_schema_id: Mapped[str | None] = mapped_column(String(200))
+    presentation_checksum: Mapped[str | None] = mapped_column(String(71))
+    presentation_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    presentation_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     produced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

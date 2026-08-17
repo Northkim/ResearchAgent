@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ from backend.workflow_packages.security import require_relative_path, require_sh
 ARTIFACT_REFERENCE_SCHEMA = "reagent.artifact-reference/v0.1"
 ARTIFACT_PAGE_SCHEMA = "reagent.artifact-reference-page/v0.1"
 MATERIALIZATION_PLAN_SCHEMA = "reagent.artifact-materialization-plan/v0.1"
+EXPERIMENT_PRESENTATION_SCHEMA = "reagent.artifact-presentation.experiment-record/v0.2"
 
 _ARTIFACT_ID = re.compile(r"^artifact-[0-9a-f]{32}$")
 _PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
@@ -174,6 +176,37 @@ class ArtifactReference:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactPresentation:
+    """One immutable bounded Cloud presentation for one exact local Artifact."""
+
+    artifact_id: str
+    artifact_checksum: str
+    schema_identity: str
+    presentation_checksum: str
+    payload: Mapping[str, Any]
+    reported_at: datetime
+
+    def __post_init__(self) -> None:
+        _match(self.artifact_id, _ARTIFACT_ID, "artifact_id")
+        require_sha256(self.artifact_checksum, "artifact_checksum")
+        if self.schema_identity != EXPERIMENT_PRESENTATION_SCHEMA:
+            raise ValueError("presentation schema identity is unsupported")
+        require_sha256(self.presentation_checksum, "presentation_checksum")
+        object.__setattr__(self, "payload", _freeze_presentation_json(self.payload))
+        _aware(self.reported_at, "reported_at")
+
+    def immutable_identity(self) -> tuple[Any, ...]:
+        return (
+            self.artifact_id,
+            self.artifact_checksum,
+            self.schema_identity,
+            self.presentation_checksum,
+            self.payload,
+            self.reported_at,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowArtifactRequirement:
     workflow_definition_id: str
     workflow_version: str
@@ -277,6 +310,20 @@ def freeze_json(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, bool)):
         return value
     raise ValueError("metadata contains a non-canonical JSON value")
+
+
+def _freeze_presentation_json(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return MappingProxyType({
+            str(key): _freeze_presentation_json(item) for key, item in value.items()
+        })
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze_presentation_json(item) for item in value)
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if isinstance(value, float) and math.isfinite(value):
+        return value
+    raise ValueError("presentation contains a non-canonical JSON value")
 
 
 def _match(value: str, pattern: re.Pattern[str], name: str) -> None:

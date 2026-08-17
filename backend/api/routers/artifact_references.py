@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Query, status
 
 from backend.artifact_references.service import binding_document
@@ -16,8 +18,28 @@ from ..schemas import (
     ArtifactMaterializationPlanResponse,
     ArtifactReferencePageResponse,
 )
+from ..schemas.artifact_references import ArtifactPresentationResponse
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["local-artifact-references"])
+
+
+@router.put(
+    "/artifacts/{artifact_id}/presentation",
+    response_model=ArtifactPresentationResponse,
+)
+async def report_artifact_presentation(
+    project_id: str,
+    artifact_id: str,
+    payload: dict[str, Any],
+    services: ProgressServicesDependency,
+) -> ArtifactPresentationResponse:
+    return ArtifactPresentationResponse.model_validate(
+        services.artifact_references.report_presentation(
+            project_id=project_id,
+            artifact_id=artifact_id,
+            payload=payload,
+        )
+    )
 
 
 @router.get("/artifacts", response_model=ArtifactReferencePageResponse)

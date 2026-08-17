@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from backend.artifact_references.contracts import (
     ArtifactDependencyBinding,
+    ArtifactPresentation,
     ArtifactReference,
     ArtifactState,
     CompatibilityMode,
@@ -14,6 +15,7 @@ from backend.artifact_references.contracts import (
     MaterializationMode,
     WorkflowArtifactRequirement,
 )
+from backend.workflow_packages.serialization import to_json_value
 from backend.artifact_references.errors import ArtifactReferenceConflictError
 from backend.artifact_references.ports import ArtifactReferenceRepository
 from backend.database.orm import (
@@ -159,6 +161,49 @@ class SQLAlchemyArtifactReferenceRepository(ArtifactReferenceRepository):
         )
         rows.sort(key=lambda row: (row.relative_path, row.artifact_id))
         return tuple(_artifact(row) for row in rows)
+
+    def get_presentation(self, artifact_id: str) -> ArtifactPresentation | None:
+        row = next(
+            (
+                item
+                for item in pending_instances(self.session, LocalArtifactReferenceORM)
+                if item.artifact_id == artifact_id
+            ),
+            None,
+        ) or self.session.get(LocalArtifactReferenceORM, artifact_id)
+        if row is None or row.presentation_json is None:
+            return None
+        return ArtifactPresentation(
+            artifact_id=row.artifact_id,
+            artifact_checksum=row.content_checksum,
+            schema_identity=row.presentation_schema_id,
+            presentation_checksum=row.presentation_checksum,
+            payload=row.presentation_json,
+            reported_at=row.presentation_reported_at,
+        )
+
+    def add_presentation(self, presentation: ArtifactPresentation) -> None:
+        row = next(
+            (
+                item
+                for item in pending_instances(self.session, LocalArtifactReferenceORM)
+                if item.artifact_id == presentation.artifact_id
+            ),
+            None,
+        ) or self.session.get(LocalArtifactReferenceORM, presentation.artifact_id)
+        if row is None:
+            raise ValueError("Artifact does not exist")
+        existing = self.get_presentation(presentation.artifact_id)
+        if existing is not None:
+            if existing.immutable_identity() != presentation.immutable_identity():
+                raise ArtifactReferenceConflictError(
+                    "Artifact presentation is immutable and already differs"
+                )
+            return
+        row.presentation_schema_id = presentation.schema_identity
+        row.presentation_checksum = presentation.presentation_checksum
+        row.presentation_json = to_json_value(presentation.payload)
+        row.presentation_reported_at = presentation.reported_at
 
     def add_requirement(self, requirement: WorkflowArtifactRequirement) -> None:
         existing = self.get_requirement(

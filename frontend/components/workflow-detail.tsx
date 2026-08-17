@@ -2,11 +2,21 @@
 
 import Link from "next/link";
 import { useRef, useState } from "react";
-import type { WorkflowActionProjection } from "@/types/api";
+import type {
+  CanonicalArtifactReference,
+  LocalProject,
+  ProjectProgress,
+  ProjectWorkflowInstance,
+  WorkflowActionProjection,
+  WorkflowArtifactRequirement,
+  WorkflowInstanceProgress,
+  WorkflowResourceRequirement,
+} from "@/types/api";
 
 import {
   useProject,
   useProjectProgress,
+  useProjectArtifactReferences,
   useProjectWorkflowInstances,
   useWorkflowDefinition,
 } from "@/api/hooks";
@@ -252,6 +262,151 @@ function localCommand(code: string, workflowInstanceId: string): string | null {
   return null;
 }
 
+type ExperimentPresentationBlock = {
+  kind: "PROSE" | "SCALAR" | "TABLE" | "SERIES" | "FIGURE_REFERENCE" | "OUTPUT_REFERENCE";
+  label: string;
+  value: unknown;
+};
+
+type ExperimentPresentation = {
+  schema_identity: string;
+  artifact_id: string;
+  artifact_checksum: string;
+  presentation_checksum: string;
+  payload: {
+    schema: string;
+    artifact_id: string;
+    artifact_checksum: string;
+    blocks: ExperimentPresentationBlock[];
+    presentation_checksum: string;
+  };
+  reported_at: string;
+};
+
+type PresentedArtifact = CanonicalArtifactReference & {
+  presentation?: ExperimentPresentation | null;
+};
+
+function experimentPresentation(artifact: CanonicalArtifactReference | undefined): ExperimentPresentation | null {
+  const value = (artifact as PresentedArtifact | undefined)?.presentation;
+  if (
+    !value
+    || value.schema_identity !== "reagent.artifact-presentation.experiment-record/v0.2"
+    || value.artifact_id !== artifact?.artifact_id
+    || value.artifact_checksum !== artifact.content_checksum
+    || value.payload?.presentation_checksum !== value.presentation_checksum
+    || !Array.isArray(value.payload?.blocks)
+  ) return null;
+  return value;
+}
+
+function blockValue(blocks: ExperimentPresentationBlock[], label: string): string | null {
+  const block = blocks.find((item) => item.label.toLocaleLowerCase() === label.toLocaleLowerCase());
+  if (!block || !["string", "number", "boolean"].includes(typeof block.value)) return null;
+  return String(block.value);
+}
+
+function statusText(value: string | null, fallback: string): string {
+  return value?.replaceAll("_", " ") ?? fallback;
+}
+
+function PresentationBlockView({ block }: { block: ExperimentPresentationBlock }) {
+  if (block.kind === "PROSE") return <section className="plain-section"><h3>{block.label}</h3><p>{String(block.value)}</p></section>;
+  if (block.kind === "SCALAR") return <dl className="input-readiness-list"><div><div><strong>{block.label}</strong></div><span>{String(block.value ?? "Not reported")}</span></div></dl>;
+  if (block.kind === "TABLE" && block.value && typeof block.value === "object") {
+    const table = block.value as { columns?: unknown[]; rows?: unknown[][] };
+    const columns = Array.isArray(table.columns) ? table.columns : [];
+    const rows = Array.isArray(table.rows) ? table.rows : [];
+    return <section className="plain-section"><h3>{block.label}</h3><div style={{ overflowX: "auto" }} tabIndex={0}><table><thead><tr>{columns.map((column, index) => <th key={index} scope="col">{String(column)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{String(cell ?? "—")}</td>)}</tr>)}</tbody></table></div></section>;
+  }
+  if (block.kind === "SERIES" && Array.isArray(block.value)) {
+    const points = block.value as { x: unknown; y: unknown }[];
+    const numeric = points.every((point) => typeof point.y === "number" && Number.isFinite(point.y));
+    const values = numeric ? points.map((point) => Number(point.y)) : [];
+    const minimum = values.length ? Math.min(...values) : 0;
+    const maximum = values.length ? Math.max(...values) : 1;
+    const span = maximum - minimum || 1;
+    const polyline = values.map((value, index) => `${10 + (index * 280) / Math.max(1, values.length - 1)},${90 - ((value - minimum) * 70) / span}`).join(" ");
+    return <figure className="plain-section"><figcaption><h3>{block.label}</h3></figcaption>{numeric ? <svg viewBox="0 0 300 100" role="img" aria-label={`${block.label} series chart`} style={{ maxWidth: 520, width: "100%" }}><polyline points={polyline} fill="none" stroke="currentColor" strokeWidth="3" /></svg> : null}<details><summary>View chart data</summary><div style={{ overflowX: "auto" }}><table><thead><tr><th scope="col">Point</th><th scope="col">Value</th></tr></thead><tbody>{points.map((point, index) => <tr key={index}><td>{String(point.x)}</td><td>{String(point.y)}</td></tr>)}</tbody></table></div></details></figure>;
+  }
+  return <section className="plain-section"><h3>{block.label}</h3><p>Validated {block.kind === "FIGURE_REFERENCE" ? "figure" : "output"} reference available. Local research bytes remain in the Workspace.</p></section>;
+}
+
+export function ExperimentPresentationView({ artifact }: { artifact: CanonicalArtifactReference }) {
+  const presentation = experimentPresentation(artifact);
+  if (!presentation) return <section className="plain-section"><h3>Experiment result</h3><p>Local result presentation has not yet been reported.</p></section>;
+  return <div className="page-stack" aria-label="Experiment result presentation">{presentation.payload.blocks.map((block, index) => <PresentationBlockView key={`${block.label}-${index}`} block={block} />)}</div>;
+}
+
+function GenericExperimentDetail({
+  project,
+  instance,
+  state,
+  progress,
+  requirements,
+  resourceRequirements,
+}: {
+  project: LocalProject;
+  instance: ProjectWorkflowInstance;
+  state: WorkflowInstanceProgress;
+  progress: ProjectProgress;
+  requirements: WorkflowArtifactRequirement[];
+  resourceRequirements: WorkflowResourceRequirement[];
+}) {
+  const [pathASelected, setPathASelected] = useState(state.report_count > 0);
+  const artifacts = useProjectArtifactReferences(project.project_id, "experiment-record/v4");
+  const artifact = artifacts.data?.artifacts.find((item) => item.producer_workflow_instance_id === instance.workflow_instance_id);
+  const presentation = experimentPresentation(artifact);
+  const blocks = presentation?.payload.blocks ?? [];
+  const ideaBinding = progress.dependency_edges.find((edge) => edge.consumer_workflow_instance_id === instance.workflow_instance_id && edge.artifact_type === "selected-research-idea/v1");
+  const ideaProducer = progress.instances.find((item) => item.workflow_instance_id === ideaBinding?.producer_workflow_instance_id);
+  const objective = blockValue(blocks, "Research objective") ?? ideaProducer?.latest_summary ?? project.research_topic;
+  const unsupported = /AUTOMATIC_PREPARATION_UNSUPPORTED|cannot prepare this experiment automatically/i.test(state.latest_summary ?? "");
+  const methodologyDecision = /METHODOLOGY_DECISION_REQUIRED|owner.*decision|unresolved/i.test(state.latest_summary ?? "") || (state.action.stage.code === "OWNER_APPROVAL" && !artifact);
+  const capability = blockValue(blocks, "Preparation method") ?? "Reviewed preparation method selected from the compatible installed set";
+  const resourceReadiness = blockValue(blocks, "Resource readiness");
+  const preparationRequirement = blockValue(blocks, "Preparation requirement");
+  const preparationStatus = blockValue(blocks, "Preparation status") ?? (state.report_count ? "In progress" : "Not started");
+  const runtimeStatus = blockValue(blocks, "Execution environment") ?? "Checked after the experiment is prepared";
+  const executionOutcome = blockValue(blocks, "Process outcome") ?? (artifact ? "Completed" : "Not run");
+  const evaluationValidity = blockValue(blocks, "Evaluation validity") ?? (artifact ? "Not reported" : "Pending execution");
+  const evidenceStatus = blockValue(blocks, "Scientific evidence status") ?? (artifact ? "Not reported" : "Pending evaluation");
+  const command = `python reagent_local.py run . --workflow-instance ${instance.workflow_instance_id}`;
+
+  return <div className="page-stack workflow-detail-page">
+    <p className="breadcrumb"><Link href={`/projects/${project.project_id}`}>{project.name}</Link><span>/</span><Link href={`/projects/${project.project_id}/workflows`}>Workflows</Link><span>/</span><strong>Reproduction &amp; Experiment</strong></p>
+    <header className="workflow-detail-header"><div><p className="eyebrow">Reproduction &amp; Experiment</p><h1>Prepare and run an experiment</h1><p>Turn an exact research objective into a reproducible local computational experiment.</p></div><Link href={`/projects/${project.project_id}/workflows`} className="button button-ghost">All Workflows</Link></header>
+    <ProjectNavigation projectId={project.project_id} active="Workflows" />
+
+    <section className="plain-section" aria-labelledby="research-objective-title"><p className="eyebrow">Research objective</p><h2 id="research-objective-title">{objective}</h2><p>{objective}</p><p className="muted-copy">Source · Selected research idea · exact version recorded</p>{ideaProducer ? <Link className="text-link" href={`/projects/${project.project_id}/workflows/${ideaProducer.workflow_instance_id}`}>View research idea →</Link> : null}</section>
+
+    <section className="plain-section" aria-labelledby="experiment-start-title"><p className="eyebrow">Start</p><h2 id="experiment-start-title">How would you like to start?</h2><div className="workflow-support-grid">
+      <article className="output-highlight"><p className="attention-copy">Recommended</p><h3>Prepare a new experiment with ReAgent</h3><p>ReAgent will help turn the research objective into a reproducible local experiment. No existing code or Git repository is required.</p><button type="button" className="button button-primary" aria-pressed={pathASelected} onClick={() => setPathASelected(true)}>{pathASelected ? "Selected" : "Choose this path"}</button></article>
+      <article className="output-highlight"><p className="attention-copy">Coming next</p><h3>Use an existing local project</h3><p>Start from research code or files already on this computer. Git is optional.</p><button type="button" className="button button-ghost" disabled>Not available in this build</button></article>
+    </div></section>
+
+    {pathASelected ? <>
+      <section className="plain-section" aria-labelledby="experiment-design-title"><p className="eyebrow">Experiment design</p><h2 id="experiment-design-title">What ReAgent understands</h2><p>{state.latest_summary ?? "Continue locally so ReAgent can recover the scientific design without assuming a particular research domain."}</p><div className="input-readiness-list">{["Questions or hypotheses", "Inputs or materials", "Protocol", "Observations or expected outputs", "Evaluation criteria", "Reproducibility controls", "Resource constraints", "Compute constraints", "Network policy", "Assumptions", "Claim boundaries"].map((label) => <div key={label}><div><strong>{label}</strong><small>{blockValue(blocks, label) ?? "Recorded when the methodology checkpoint is reported."}</small></div><span>{blockValue(blocks, label) ? "Recorded" : "Pending"}</span></div>)}</div>{!methodologyDecision && !unsupported ? <div><p><strong>Approve experiment design</strong></p><p>This approves the scientific design so ReAgent can prepare the implementation. It does not yet run the experiment.</p><a className="button button-primary" href="#local-workflow">Approve experiment design locally</a></div> : null}</section>
+
+      {methodologyDecision ? <section className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">ReAgent needs your decision</p><h2>This choice affects the scientific design of the experiment.</h2><p>{state.latest_summary ?? "Review the unresolved methodology choice in the Local Workflow."}</p></div><aside className="current-action-next"><span>Next action</span><a className="button button-primary" href="#local-workflow">Review methodology</a></aside></section> : null}
+
+      {unsupported ? <section className="plain-section"><h2>ReAgent cannot prepare this experiment automatically yet.</h2><p>The research design is preserved. You can revise the experiment design, keep the current work and return later, or use an existing local project when that capability becomes available.</p></section> : null}
+
+      <section className="plain-section"><p className="eyebrow">Preparation</p><h2>How ReAgent will prepare this experiment</h2><div className="input-readiness-list"><div><div><strong>Preparation method</strong><small>{capability}</small></div><span>{unsupported ? "Unsupported" : "Reviewed"}</span></div>{resourceReadiness ? <div><div><strong>Research resources</strong><small>{resourceReadiness}</small></div><span>{resourceReadiness}</span></div> : resourceRequirements.map((requirement) => <div key={requirement.requirement_key}><div><strong>Required research resource</strong><small>{requirement.usage_description}</small></div><span>{requirement.required ? "Needs a source" : "Optional"}</span></div>)}{preparationRequirement ? <div><div><strong>What ReAgent needs to prepare</strong><small>{preparationRequirement}</small></div><span>{preparationRequirement}</span></div> : null}<div><div><strong>Implementation preparation</strong><small>ReAgent owns the managed Workflow-local preparation area.</small></div><span>{preparationStatus}</span></div><div><div><strong>Execution environment</strong><small>Runtime details remain local and are checked only when relevant.</small></div><span>{runtimeStatus}</span></div></div></section>
+
+      <section className="plain-section"><p className="eyebrow">Ready to run</p><h2>Exact run summary</h2><div className="input-readiness-list"><div><div><strong>What will run</strong><small>{blockValue(blocks, "What will run") ?? "The exact prepared and validated local experiment."}</small></div><span>{artifact ? "Completed" : "Pending approval"}</span></div><div><div><strong>Inputs and resources</strong><small>{blockValue(blocks, "Run inputs") ?? "Only exact verified inputs declared by the approved design."}</small></div><span>{resourceReadiness ?? "Checked locally"}</span></div><div><div><strong>Network policy</strong><small>{blockValue(blocks, "Network policy") ?? "Network disabled"}</small></div><span>Bounded</span></div><div><div><strong>Expected outputs and evaluation</strong><small>{blockValue(blocks, "Evaluation plan") ?? "Capability-owned evaluation with exact output lineage."}</small></div><span>Declared</span></div></div><p><strong>Approve and run</strong> applies to this exact prepared experiment and one execution attempt. It does not approve future changed plans.</p></section>
+
+      <section id="local-workflow" className="run-local-details" aria-labelledby="local-workflow-title"><div><p className="eyebrow">Local Workflow</p><h2 id="local-workflow-title">Continue safely on this computer</h2><p>Local action is required because concrete research files and execution stay in the Local Workspace.</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label="Experiment local workflow command" /><p>Expected next state: ReAgent resumes from the exact saved checkpoint. Run the same command again after an Owner checkpoint.</p></div></section>
+
+      <section className="plain-section" aria-labelledby="experiment-results-title"><p className="eyebrow">Results</p><h2 id="experiment-results-title">Experiment result</h2><div className="input-readiness-list"><div><div><strong>Process outcome</strong><small>Whether the bounded process completed.</small></div><span>{statusText(executionOutcome, "Not run")}</span></div><div><div><strong>Evaluation validity</strong><small>Whether the Capability accepted the result evidence.</small></div><span>{statusText(evaluationValidity, "Pending")}</span></div><div><div><strong>Scientific evidence</strong><small>Evidence sufficiency remains separate from process completion.</small></div><span>{statusText(evidenceStatus, "Pending")}</span></div></div>{artifact ? <ExperimentPresentationView artifact={artifact} /> : <p>Local result presentation has not yet been reported.</p>}</section>
+
+      {artifact || state.action.next_action.code === "REVIEW_RESULT" ? <section className="current-action-panel" data-attention-state="OWNER_ACTION_REQUIRED"><div className="current-action-main"><p className="attention-copy">Result review</p><h2>Does this accurately represent the experiment and its limitations?</h2><p>Review the findings, evaluation validity, scientific evidence, limitations, output references, and execution warnings before finalizing.</p></div><aside className="current-action-next"><span>Next action</span><a className="button button-primary" href="#local-workflow">Review and finalize locally</a></aside></section> : null}
+    </> : null}
+
+    <details className="technical-details"><summary>Technical details</summary><dl><div><dt>Workflow</dt><dd><code>{instance.workflow_definition_id}@{instance.workflow_version}</code></dd></div><div><dt>Capsule</dt><dd><code>{instance.capsule_id}@{instance.capsule_version}</code></dd></div><div><dt>Workflow instance</dt><dd><code>{instance.workflow_instance_id}</code></dd></div>{ideaBinding ? <div><dt>Research objective Artifact</dt><dd><code>{ideaBinding.artifact_id}</code></dd></div> : null}{requirements.map((requirement) => <div key={requirement.requirement_key}><dt>Input requirement</dt><dd><code>{requirement.requirement_key}</code></dd></div>)}{artifact ? <><div><dt>Artifact schema</dt><dd><code>{artifact.artifact_schema_version}</code></dd></div><div><dt>Artifact checksum</dt><dd><code>{artifact.content_checksum}</code></dd></div></> : null}{presentation ? <div><dt>Presentation checksum</dt><dd><code>{presentation.presentation_checksum}</code></dd></div> : null}</dl></details>
+  </div>;
+}
+
 export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: string; workflowInstanceId: string }) {
   const [runInstructionsOpen, setRunInstructionsOpen] = useState(false);
   const runInstructionsRef = useRef<HTMLDetailsElement>(null);
@@ -274,6 +429,19 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
   if (!pinnedVersion) return <ErrorState title="Pinned Workflow contract unavailable" />;
   const requirements = pinnedVersion.artifact_requirements ?? [];
   const resourceRequirements = pinnedVersion.resource_requirements ?? instance.resource_requirements ?? [];
+  if (
+    instance.workflow_definition_id === "reproduction-experiment-local-experimental"
+    && instance.workflow_version === "0.6.0"
+  ) {
+    return <GenericExperimentDetail
+      project={project.data}
+      instance={instance}
+      state={state}
+      progress={progress.data}
+      requirements={requirements}
+      resourceRequirements={resourceRequirements}
+    />;
+  }
   const dependencies = progress.data.dependency_edges.filter((edge) => edge.consumer_workflow_instance_id === workflowInstanceId);
   const visibleRequirements = requirements.filter((requirement) => (
     requirement.required

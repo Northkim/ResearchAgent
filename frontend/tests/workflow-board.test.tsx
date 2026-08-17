@@ -30,6 +30,150 @@ function arrange() {
   vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
 }
 
+const genericExperimentId = `wfi-${"6".repeat(32)}`;
+
+function arrangeGenericExperiment(options: {
+  summary?: string;
+  artifact?: Record<string, unknown>;
+  completed?: boolean;
+} = {}) {
+  arrange();
+  const instance = {
+    ...workflowInstancesFixture.items[0],
+    workflow_instance_id: genericExperimentId,
+    workflow_definition_id: "reproduction-experiment-local-experimental",
+    workflow_version: "0.6.0",
+    capsule_id: `capsule-${"9".repeat(32)}`,
+    capsule_version: "0.9.0",
+    display_name: "Reproduction & Experiment",
+  };
+  vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue({
+    ...workflowInstancesFixture,
+    total: 2,
+    items: [instance, workflowInstancesFixture.items[0]],
+  });
+  const genericVersion = {
+    ...workflowCatalogFixture.items[0].recommended_version!,
+    version: "0.6.0",
+    input_schema_id: "selected-research-idea/v1",
+    output_schema_id: "experiment-record/v4",
+    artifact_requirements: [{
+      workflow_definition_id: "reproduction-experiment-local-experimental",
+      workflow_version: "0.6.0",
+      requirement_key: "selected-research-idea",
+      artifact_type: "selected-research-idea/v1",
+      compatibility_mode: "EXACT",
+      schema_constraint: "selected-research-idea/v1",
+      cardinality_min: 1,
+      cardinality_max: 1,
+      required: true,
+      materialization_mode: "VERIFIED_COPY",
+      target_relative_path: "inputs/selected-research-idea.json",
+    }],
+    resource_requirements: [],
+  };
+  vi.spyOn(apiClient, "getWorkflowDefinition").mockResolvedValue({
+    ...workflowCatalogFixture.items[0],
+    workflow_definition_id: "reproduction-experiment-local-experimental",
+    stable_workflow_key: "REPRODUCTION_EXPERIMENT",
+    display_name: "Reproduction & Experiment",
+    recommended_version: genericVersion,
+    versions: [genericVersion],
+    capsules: [],
+  } as never);
+  const action = {
+    ...projectProgressFixture.instances[0].action,
+    stage: { code: options.completed ? "COMPLETED" : "OWNER_APPROVAL", label: options.completed ? "Evaluation complete" : "Methodology review" },
+    next_action: {
+      surface: "LOCAL",
+      code: options.completed ? "REVIEW_RESULT" : "CONTINUE",
+      label: options.completed ? "Review result" : "Review methodology",
+      description: options.completed ? "Review the scientific result." : "Resolve the scientific design choice.",
+    },
+  };
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue({
+    ...projectProgressFixture,
+    active_workflow_count: 2,
+    instances: [{
+      ...projectProgressFixture.instances[0],
+      workflow_instance_id: genericExperimentId,
+      workflow_definition_id: "reproduction-experiment-local-experimental",
+      workflow_definition_version: "0.6.0",
+      workflow_display_name: "Reproduction & Experiment",
+      instance_display_name: "Reproduction & Experiment",
+      capsule_id: `capsule-${"9".repeat(32)}`,
+      capsule_version: "0.9.0",
+      latest_summary: options.summary ?? "METHODOLOGY_DECISION_REQUIRED: choose whether the comparison uses matched or independent observations.",
+      report_count: options.completed ? 1 : 0,
+      action,
+    }, projectProgressFixture.instances[0]],
+    dependency_edges: [{
+      binding_id: "binding-selected-idea",
+      consumer_workflow_instance_id: genericExperimentId,
+      requirement_key: "selected-research-idea",
+      artifact_id: `artifact-${"b".repeat(32)}`,
+      expected_checksum: `sha256:${"b".repeat(64)}`,
+      state: "ACTIVE",
+      producer_workflow_instance_id: workflowInstanceId,
+      artifact_type: "selected-research-idea/v1",
+      artifact_schema_version: "selected-research-idea/v1",
+      produced_at: "2026-08-17T01:00:00Z",
+    }],
+  } as never);
+  vi.spyOn(apiClient, "listProjectArtifactReferences").mockResolvedValue({
+    schema_version: "reagent.artifact-reference-page/v0.1",
+    project_id: localProjectFixture.project_id,
+    artifacts: options.artifact ? [options.artifact] : [],
+    offset: 0,
+    limit: 100,
+    total: options.artifact ? 1 : 0,
+    has_more: false,
+  } as never);
+}
+
+function experimentArtifact(blocks: Array<Record<string, unknown>>) {
+  const checksum = `sha256:${"4".repeat(64)}`;
+  const presentationChecksum = `sha256:${"5".repeat(64)}`;
+  return {
+    schema_version: "reagent.artifact-reference/v0.1",
+    artifact_id: `artifact-${"4".repeat(32)}`,
+    project_id: localProjectFixture.project_id,
+    producer_workflow_instance_id: genericExperimentId,
+    producer_progress_receipt_id: "receipt-generic-v4",
+    producer_progress_report_id: "report-generic-v4",
+    producer_execution_round: 1,
+    producer_capsule_id: `capsule-${"9".repeat(32)}`,
+    producer_capsule_version: "0.9.0",
+    producer_core_capability_maturity: "REVIEWED_CORE",
+    artifact_type: "experiment-record/v4",
+    artifact_schema_version: "experiment-record/v4",
+    media_type: "application/json",
+    state: "LOCAL_AVAILABLE",
+    relative_path: "outputs/experiment-record-v4.json",
+    content_checksum: checksum,
+    size_bytes: 4096,
+    cloud_metadata_available: true,
+    produced_at: "2026-08-17T01:30:00Z",
+    retired_at: null,
+    created_at: "2026-08-17T01:30:00Z",
+    updated_at: "2026-08-17T01:30:00Z",
+    presentation: {
+      schema_identity: "reagent.artifact-presentation.experiment-record/v0.2",
+      artifact_id: `artifact-${"4".repeat(32)}`,
+      artifact_checksum: checksum,
+      presentation_checksum: presentationChecksum,
+      payload: {
+        schema: "reagent.artifact-presentation.experiment-record/v0.2",
+        artifact_id: `artifact-${"4".repeat(32)}`,
+        artifact_checksum: checksum,
+        blocks,
+        presentation_checksum: presentationChecksum,
+      },
+      reported_at: "2026-08-17T01:31:00Z",
+    },
+  };
+}
+
 test("renders projection-driven Workflow rows and keeps planned definitions disabled", async () => {
   arrange();
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
@@ -230,4 +374,88 @@ test("Outputs presents exact Artifact identity as secondary provenance", async (
   expect(screen.getByText(`artifact-${"a".repeat(32)}`)).toBeInTheDocument();
   expect(screen.getByText("Technical Details").closest("details")).not.toHaveAttribute("open");
   expect(screen.getByRole("link", { name: "Outputs" })).toHaveAttribute("aria-current", "page");
+});
+
+test("generic Experiment starts from the objective and a truthful two-path decision", async () => {
+  arrangeGenericExperiment();
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: localProjectFixture.progress!.current_state_summary })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "How would you like to start?" })).toBeVisible();
+  expect(screen.getByText("Selected research idea · exact version recorded", { exact: false })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Not available in this build" })).toBeDisabled();
+  expect(screen.getByText(/Git is optional\./)).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "What ReAgent understands" })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Choose this path" }));
+  expect(screen.getByRole("heading", { name: "What ReAgent understands" })).toBeVisible();
+  expect(screen.getByText("ReAgent needs your decision")).toBeVisible();
+  expect(screen.getByText(/affects the scientific design/)).toBeVisible();
+  expect(screen.getByText("One recommended command")).toBeVisible();
+  expect(screen.getByText("Technical details").closest("details")).not.toHaveAttribute("open");
+  expect(screen.queryByText(/ResourceReference|provider locator|package tree hash/i)).not.toBeInTheDocument();
+});
+
+test("generic Experiment renders categorical non-ML evidence and separates scientific status", async () => {
+  const artifact = experimentArtifact([
+    { kind: "PROSE", label: "Research objective", value: "Determine whether a bounded state machine preserves category order." },
+    { kind: "SCALAR", label: "Process outcome", value: "COMPLETED" },
+    { kind: "SCALAR", label: "Evaluation validity", value: "VALID" },
+    { kind: "SCALAR", label: "Scientific evidence status", value: "INSUFFICIENT" },
+    { kind: "SCALAR", label: "Resource readiness", value: "Changed since verification" },
+    { kind: "SCALAR", label: "Preparation requirement", value: "Compatible observation tool available" },
+    { kind: "SCALAR", label: "Preparation status", value: "Package validated" },
+    { kind: "SCALAR", label: "Execution environment", value: "Environment changed since validation" },
+    { kind: "PROSE", label: "Key findings", value: "The final category was stable, but the observation set was too small for a broad claim." },
+    { kind: "TABLE", label: "Observed categories", value: { columns: ["Step", "Category"], rows: [["Start", "amber"], ["Finish", "green"]] } },
+    { kind: "SERIES", label: "Categorical sequence", value: [{ x: "Start", y: "amber" }, { x: "Finish", y: "green" }] },
+    { kind: "PROSE", label: "Limitations", value: "This bounded fixture supports only a narrow categorical claim." },
+  ]);
+  arrangeGenericExperiment({ artifact, completed: true, summary: "Evaluation complete; Owner result review is required." });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  expect(await screen.findByText("The final category was stable, but the observation set was too small for a broad claim.")).toBeVisible();
+  expect(screen.getAllByText("COMPLETED").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("VALID").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("INSUFFICIENT").length).toBeGreaterThan(0);
+  expect(screen.getAllByRole("table").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("View chart data")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Does this accurately represent the experiment and its limitations?" })).toBeVisible();
+  expect(screen.getAllByText("Changed since verification").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("Environment changed since validation").length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText("Compatible observation tool available").length).toBeGreaterThanOrEqual(1);
+  expect(screen.queryByText(/Metrics|Cross-validation|Robustness|Seeds/)).not.toBeInTheDocument();
+});
+
+test("generic Experiment translates unsupported automatic preparation without plumbing", async () => {
+  arrangeGenericExperiment({
+    summary: "AUTOMATIC_PREPARATION_UNSUPPORTED: no reviewed preparation method supports the exact methodology.",
+  });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+  await userEvent.click(await screen.findByRole("button", { name: "Choose this path" }));
+
+  expect(screen.getByRole("heading", { name: "ReAgent cannot prepare this experiment automatically yet." })).toBeVisible();
+  expect(screen.getByText(/research design is preserved/i)).toBeVisible();
+  expect(screen.queryByText(/write.*Python|provide.*manifest|enter.*checksum/i)).not.toBeInTheDocument();
+});
+
+test("Outputs uses the same bounded renderer for sklearn-shaped scalar and comparison evidence", async () => {
+  const artifact = experimentArtifact([
+    { kind: "PROSE", label: "Research objective", value: "Compare reviewed classification configurations on a controlled reference fixture." },
+    { kind: "SCALAR", label: "Evaluation validity", value: "VALID" },
+    { kind: "SCALAR", label: "Scientific evidence status", value: "SUFFICIENT" },
+    { kind: "SCALAR", label: "Held-out score", value: 0.91 },
+    { kind: "TABLE", label: "Configuration comparison", value: { columns: ["Configuration", "Score"], rows: [["A", 0.87], ["B", 0.91]] } },
+    { kind: "SERIES", label: "Comparison series", value: [{ x: "A", y: 0.87 }, { x: "B", y: 0.91 }] },
+    { kind: "PROSE", label: "Key findings", value: "Configuration B was stronger in the controlled reference fixture." },
+    { kind: "PROSE", label: "Limitations", value: "No scientific dependency was executed for this presentation qualification." },
+  ]);
+  arrangeGenericExperiment({ artifact, completed: true });
+  render(<Providers><ProjectOutputs projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Experiment result" })).toBeVisible();
+  expect(screen.getAllByText("0.91").length).toBeGreaterThanOrEqual(2);
+  expect(screen.getByText("Configuration B was stronger in the controlled reference fixture.")).toBeVisible();
+  expect(screen.getByRole("img", { name: "Comparison series series chart" })).toBeVisible();
+  expect(screen.getByText("View chart data")).toBeVisible();
 });

@@ -3520,3 +3520,39 @@ blocked because Turbopack could not bind an internal local port; the unchanged
 build passed under normal build permission. No backend, contract, persistence,
 runtime, network, Project, Resource, or Experiment state changed in this UX
 follow-up. Owner production retest remains the D1 gate.
+## GEN-D generic Experiment Owner UX and Cloud presentation (2026-08-17)
+
+GEN-D implementation is complete through E4 but remains E6-unqualified because
+the in-app Browser runtime exposed no available browser session. Exact
+Experiment 0.6 now has a task-first Workflow Detail page: objective first,
+“How would you like to start?” first decision, recommended managed Path A, and a
+truthful disabled existing-local-project Path B. Scientific methodology,
+Capability, Resources, preparation, runtime, exact-run approval, evidence,
+limitations, result review, one Local command area, and Technical details are
+presented in Owner language. Historical/non-Experiment detail routes retain
+their existing view.
+
+Cloud stores only an immutable <=65,536-byte typed presentation companion on
+the existing exact Artifact Reference row. Migration `20260817_0029` adds four
+nullable all-or-none columns; the report API validates exact Artifact binding,
+schema/checksum, safe primitive shapes, size, private paths, credentials, code,
+and logs. Artifact bytes remain Local. Outputs and Workflow Detail render actual
+v4 prose/scalars/tables/series and safe references, with lifecycle, evaluation
+validity, and scientific evidence shown separately. A missing companion says
+truthfully that Local presentation has not been reported.
+
+Disposable PostgreSQL base→0029, Alembic check, downgrade/re-upgrade,
+persistence/readback, and cleanup passed `20` tests. Backend partition passed
+`970` with `63` environment skips; frontend passed `17 files / 50 tests`,
+typecheck, ESLint, and production build. Experiment 0.4 no-egress passed `9`;
+generic public Workspace regression passed `4`; frozen 0.4/0.5 and Capsule 0.9
+sources are unchanged. The readiness probe’s stale expected head was corrected
+to `0029` and exact 0.6/0.9 publication.
+
+The controlled app and disposable four-state GEN-D fixture reached readiness,
+but Browser discovery returned an empty available-browser list. This is
+`BLOCKED_ENVIRONMENT`, not E6 PASS; no screenshots or Owner acceptance are
+claimed. All controlled processes, databases, and runtime directories were
+removed. Full Research remains unchanged and D1 remains PAUSED. Safe next
+action: provide an in-app Browser session and rerun only the controlled E6 UX
+qualification; do not begin downstream compatibility.

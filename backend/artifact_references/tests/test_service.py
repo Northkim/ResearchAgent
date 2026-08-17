@@ -5,14 +5,25 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from fastapi.testclient import TestClient
 
-from backend.application.errors import ApplicationConflictError, ApplicationValidationError
+from backend.api import ApplicationContainer, create_app
+from backend.application.errors import (
+    ApplicationConflictError,
+    ApplicationValidationError,
+)
 from backend.artifact_references.contracts import (
     ArtifactDeclaration,
+    ArtifactReference,
     ArtifactState,
     CompatibilityMode,
     MaterializationMode,
     WorkflowArtifactRequirement,
+)
+from backend.artifact_references.generic_experiment_contracts import (
+    GenericExperimentPresentation,
+    PresentationBlock,
+    PresentationKind,
 )
 from backend.artifact_references.service import ArtifactReferenceService
 from backend.local_projects.contracts import LocalProject
@@ -36,6 +47,7 @@ from backend.project_workspaces.contracts import (
     WorkflowReviewStatus,
 )
 from backend.research.adapters import LocalFilesystemArtifactStorage
+from backend.workflow_packages.serialization import to_json_value
 
 PROJECT_ID = "project-11111111111111111111111111111111"
 PRODUCER_ID = "wfi-22222222222222222222222222222222"
@@ -196,6 +208,44 @@ def _declaration(**changes) -> ArtifactDeclaration:
     return ArtifactDeclaration(**values)
 
 
+def _v4_artifact(database: InMemoryDatabase) -> ArtifactReferenceService:
+    uow = _seed(database)
+    uow.artifact_references.add_artifact(ArtifactReference(
+        artifact_id=ARTIFACT_ID,
+        project_id=PROJECT_ID,
+        producer_workflow_instance_id=PRODUCER_ID,
+        producer_progress_receipt_id="receipt-v4",
+        producer_progress_report_id="report-v4",
+        producer_execution_round=1,
+        producer_capsule_id=PRODUCER_CAPSULE,
+        producer_capsule_version="1.0.0",
+        artifact_type="experiment-record/v4",
+        artifact_schema_version="experiment-record/v4",
+        media_type="application/json",
+        state=ArtifactState.LOCAL_AVAILABLE,
+        relative_path="outputs/experiment-record-v4.json",
+        content_checksum=HASH_B,
+        size_bytes=4096,
+        cloud_metadata_available=True,
+        produced_at=NOW,
+        retired_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    ))
+    uow.commit()
+    return ArtifactReferenceService(
+        unit_of_work=InMemoryUnitOfWork(database), clock=lambda: NOW
+    )
+
+
+def _presentation(*blocks: PresentationBlock) -> dict:
+    return to_json_value(GenericExperimentPresentation(
+        artifact_id=ARTIFACT_ID,
+        artifact_checksum=HASH_B,
+        blocks=blocks,
+    ))
+
+
 def test_progress_promotes_exact_artifact_and_retry_is_idempotent(tmp_path) -> None:
     database = InMemoryDatabase()
     uow = _seed(database)
@@ -258,7 +308,6 @@ def test_progress_artifact_mutation_unknown_type_and_cross_instance_fail_closed(
             workflow_instance_id=PRODUCER_ID,
             artifact_declarations=(_declaration(content_checksum=HASH_A),),
         )
-
     other_database = InMemoryDatabase()
     other_uow = _seed(other_database)
     other, _ = _progress_service(other_uow, tmp_path / "other")
@@ -271,6 +320,152 @@ def test_progress_artifact_mutation_unknown_type_and_cross_instance_fail_closed(
     assert other_database.progress_reports == {}
     assert other_database.local_artifact_references == {}
 
+
+def test_v4_presentation_is_exact_bounded_immutable_and_visible() -> None:
+    database = InMemoryDatabase()
+    service = _v4_artifact(database)
+    payload = _presentation(
+        PresentationBlock(
+            kind=PresentationKind.PROSE,
+            label="Key findings",
+            value="The observed category remained stable across all bounded trials.",
+        ),
+        PresentationBlock(
+            kind=PresentationKind.SCALAR,
+            label="Scientific evidence status",
+            value="SUFFICIENT",
+        ),
+        PresentationBlock(
+            kind=PresentationKind.TABLE,
+            label="Observed states",
+            value={"columns": ["Trial", "State"], "rows": [["A", "stable"]]},
+        ),
+        PresentationBlock(
+            kind=PresentationKind.SERIES,
+            label="State sequence",
+            value=[{"x": "start", "y": 1}, {"x": "finish", "y": 1}],
+        ),
+        PresentationBlock(
+            kind=PresentationKind.OUTPUT_REFERENCE,
+            label="Bounded output",
+            value={"output_id": "output-observations", "checksum": HASH_A},
+        ),
+    )
+
+    reported = service.report_presentation(
+        project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=payload
+    )
+    replay = ArtifactReferenceService(
+        unit_of_work=InMemoryUnitOfWork(database), clock=lambda: NOW
+    ).report_presentation(
+        project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=payload
+    )
+    page = ArtifactReferenceService(
+        unit_of_work=InMemoryUnitOfWork(database), clock=lambda: NOW
+    ).list_artifacts(
+        project_id=PROJECT_ID,
+        producer_workflow_instance_id=None,
+        artifact_type="experiment-record/v4",
+        state=None,
+        offset=0,
+        limit=25,
+    )
+
+    assert replay == reported
+    assert page["artifacts"][0]["presentation"]["presentation_checksum"] == payload["presentation_checksum"]
+    assert page["artifacts"][0]["presentation"]["payload"]["blocks"][0]["label"] == "Key findings"
+
+    changed = dict(payload)
+    changed["presentation_checksum"] = HASH_A
+    with pytest.raises(ApplicationValidationError):
+        service.report_presentation(
+            project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=changed
+        )
+
+
+def test_v4_presentation_http_report_and_readback_path() -> None:
+    database = InMemoryDatabase()
+    _v4_artifact(database)
+    payload = _presentation(PresentationBlock(
+        kind=PresentationKind.PROSE,
+        label="Key findings",
+        value="The bounded HTTP reporting path preserved this finding.",
+    ))
+    client = TestClient(create_app(ApplicationContainer(
+        unit_of_work_factory=lambda: InMemoryUnitOfWork(database)
+    )))
+
+    response = client.put(
+        f"/projects/{PROJECT_ID}/artifacts/{ARTIFACT_ID}/presentation",
+        json=payload,
+    )
+    page = client.get(
+        f"/projects/{PROJECT_ID}/artifacts?artifact_type=experiment-record/v4"
+    )
+
+    assert response.status_code == 200, response.text
+    assert page.status_code == 200, page.text
+    assert page.json()["artifacts"][0]["presentation"]["payload"] == payload
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "/Users/owner/private/results.txt",
+        "/private/tmp/experiment-output.txt",
+        "password=not-a-real-secret",
+        "stdout: raw process output",
+        "```python\nprint('research code')\n```",
+        "Traceback: raw failure log",
+    ),
+)
+def test_v4_presentation_rejects_local_paths_credentials_code_and_logs(value: str) -> None:
+    service = _v4_artifact(InMemoryDatabase())
+    payload = _presentation(PresentationBlock(
+        kind=PresentationKind.PROSE,
+        label="Key findings",
+        value="Safe bounded finding",
+    ))
+    payload["blocks"][0]["value"] = value
+    with pytest.raises(ApplicationValidationError):
+        service.report_presentation(
+            project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=payload
+        )
+
+
+def test_v4_presentation_rejects_stale_artifact_binding_and_unbounded_shape() -> None:
+    service = _v4_artifact(InMemoryDatabase())
+    block = PresentationBlock(
+        kind=PresentationKind.PROSE, label="Finding", value="Bounded textual evidence."
+    )
+    stale = to_json_value(GenericExperimentPresentation(
+        artifact_id=ARTIFACT_ID, artifact_checksum=HASH_A, blocks=(block,)
+    ))
+    with pytest.raises(ApplicationConflictError):
+        service.report_presentation(
+            project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=stale
+        )
+
+    invalid = _presentation(block)
+    invalid["blocks"] = [{
+        "kind": "TABLE",
+        "label": "Too wide",
+        "value": {"columns": [str(index) for index in range(21)], "rows": []},
+    }]
+    with pytest.raises(ApplicationValidationError):
+        service.report_presentation(
+            project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=invalid
+        )
+
+    oversized = _presentation(block)
+    oversized["blocks"] = [
+        {"kind": "PROSE", "label": f"Finding {index}", "value": "x" * 2_000}
+        for index in range(40)
+    ]
+    with pytest.raises(ApplicationValidationError):
+        service.report_presentation(
+            project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=oversized
+        )
 
 def test_exact_dependency_binding_plan_and_explicit_rebind(tmp_path) -> None:
     database = InMemoryDatabase()
