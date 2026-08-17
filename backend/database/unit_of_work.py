@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from sqlalchemy import case, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
@@ -41,6 +42,12 @@ from backend.database.orm import (
     WorkflowResourceBindingORM,
     WorkflowResourceRequirementORM,
     WorkflowRunORM,
+)
+from backend.database.orm.models import ControlledLocalRunApprovalORM
+from backend.controlled_local_run_approvals import (
+    ControlledLocalApprovalStatus,
+    ControlledLocalRunApproval,
+    ControlledLocalRunSummary,
 )
 from backend.execution_events.ports import ExecutionEventStore
 from backend.persistence.ports import (
@@ -92,6 +99,114 @@ _STALE_CONSTRAINTS = {
 }
 
 
+class SQLAlchemyControlledLocalRunApprovalRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(
+        self, request_id: str, *, for_update: bool = False
+    ) -> ControlledLocalRunApproval | None:
+        statement = select(ControlledLocalRunApprovalORM).where(
+            ControlledLocalRunApprovalORM.request_id == request_id
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self.session.scalar(statement)
+        return None if row is None else self._contract(row)
+
+    def get_current(
+        self, project_id: str, workflow_instance_id: str, *, for_update: bool = False
+    ) -> ControlledLocalRunApproval | None:
+        statement = (
+            select(ControlledLocalRunApprovalORM)
+            .where(
+                ControlledLocalRunApprovalORM.project_id == project_id,
+                ControlledLocalRunApprovalORM.workflow_instance_id
+                == workflow_instance_id,
+            )
+            .order_by(
+                case(
+                    (
+                        ControlledLocalRunApprovalORM.status.in_(
+                            ("REQUESTED", "APPROVED")
+                        ),
+                        2,
+                    ),
+                    (ControlledLocalRunApprovalORM.status == "SUPERSEDED", 0),
+                    else_=1,
+                ).desc(),
+                ControlledLocalRunApprovalORM.created_at.desc(),
+                ControlledLocalRunApprovalORM.request_id.desc(),
+            )
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        row = self.session.scalar(statement)
+        return None if row is None else self._contract(row)
+
+    def add(self, request: ControlledLocalRunApproval) -> None:
+        self.session.add(self._row(request))
+
+    def save(self, request: ControlledLocalRunApproval) -> None:
+        row = self.session.get(ControlledLocalRunApprovalORM, request.request_id)
+        if row is None:
+            raise DuplicateEntityError("Controlled-local Run Approval does not exist")
+        self._apply(row, request)
+
+    @staticmethod
+    def _row(value: ControlledLocalRunApproval) -> ControlledLocalRunApprovalORM:
+        row = ControlledLocalRunApprovalORM(request_id=value.request_id)
+        SQLAlchemyControlledLocalRunApprovalRepository._apply(row, value)
+        return row
+
+    @staticmethod
+    def _apply(row: ControlledLocalRunApprovalORM, value: ControlledLocalRunApproval) -> None:
+        row.project_id = value.project_id
+        row.workflow_instance_id = value.workflow_instance_id
+        row.schema = value.schema
+        row.research_objective_checksum = value.research_objective_checksum
+        row.execution_plan_checksum = value.execution_plan_checksum
+        row.validated_package_checksum = value.validated_package_checksum
+        row.runtime_compatibility_checksum = value.runtime_compatibility_checksum
+        row.capability_checksum = value.capability_checksum
+        row.summary_json = value.summary.to_dict()
+        row.summary_checksum = value.summary.summary_checksum
+        row.request_checksum = value.request_checksum
+        row.created_at = value.created_at
+        row.status = value.status.value
+        row.owner_actor = value.owner_actor
+        row.decision_reason = value.decision_reason
+        row.decision_idempotency_key = value.decision_idempotency_key
+        row.decided_at = value.decided_at
+        row.approval_checksum = value.approval_checksum
+        row.consumed_attempt_id = value.consumed_attempt_id
+        row.consumed_at = value.consumed_at
+        row.consumption_checksum = value.consumption_checksum
+
+    @staticmethod
+    def _contract(row: ControlledLocalRunApprovalORM) -> ControlledLocalRunApproval:
+        return ControlledLocalRunApproval(
+            request_id=row.request_id, project_id=row.project_id,
+            workflow_instance_id=row.workflow_instance_id,
+            research_objective_checksum=row.research_objective_checksum,
+            execution_plan_checksum=row.execution_plan_checksum,
+            validated_package_checksum=row.validated_package_checksum,
+            runtime_compatibility_checksum=row.runtime_compatibility_checksum,
+            capability_checksum=row.capability_checksum,
+            summary=ControlledLocalRunSummary.from_mapping(row.summary_json),
+            created_at=row.created_at, request_checksum=row.request_checksum,
+            status=ControlledLocalApprovalStatus(row.status),
+            owner_actor=row.owner_actor, decision_reason=row.decision_reason,
+            decision_idempotency_key=row.decision_idempotency_key,
+            decided_at=row.decided_at, approval_checksum=row.approval_checksum,
+            consumed_attempt_id=row.consumed_attempt_id,
+            consumed_at=row.consumed_at,
+            consumption_checksum=row.consumption_checksum,
+            schema=row.schema,
+        )
+
+
 class SQLAlchemyUnitOfWork(UnitOfWork):
     """One SQLAlchemy Session and transaction shared by every repository."""
 
@@ -112,6 +227,9 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._workspace_sync = SQLAlchemyWorkspaceSyncRepository(self.session)
         self._artifact_references = SQLAlchemyArtifactReferenceRepository(self.session)
         self._resource_references = SQLAlchemyResourceReferenceRepository(self.session)
+        self.controlled_local_run_approvals = (
+            SQLAlchemyControlledLocalRunApprovalRepository(self.session)
+        )
 
     @property
     def workflows(self) -> WorkflowRepository:
@@ -221,6 +339,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(WorkflowDefinitionVersionSkillPinORM)
         self._flush_type(LocalWorkflowCapsuleVersionORM)
         self._flush_type(ProjectWorkflowInstanceORM)
+        self._flush_type(ControlledLocalRunApprovalORM)
         self._flush_type(ProjectResourceReferenceORM)
         self._flush_type(ProjectDesiredManifestORM)
         self._flush_type(ProjectManifestEntryORM)

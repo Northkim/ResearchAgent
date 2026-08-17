@@ -8,8 +8,14 @@ from backend.project_workspaces.contracts import (
     WorkflowDefinitionLifecycle,
     WorkflowReviewStatus,
 )
+from backend.controlled_local_run_approvals import (
+    ControlledLocalRunApproval,
+    ControlledLocalRunApprovalService,
+    ControlledLocalRunSummary,
+)
+from backend.application.errors import ApplicationCodedValidationError
 
-from ..dependencies import LocalProductServicesDependency
+from ..dependencies import LocalProductServicesDependency, UnitOfWorkDependency
 from ..schemas.project_workspaces import (
     CapsuleVersionCatalogResponse,
     CreateWorkflowInstanceRequest,
@@ -36,9 +42,23 @@ from ..schemas.project_workspaces import (
     WorkspaceSyncAcknowledgementResponse,
     WorkspaceSyncPlanRequest,
     WorkspaceSyncPlanResponse,
+    ControlledLocalRunApprovalReportRequest,
+    ControlledLocalRunApprovalDecisionRequest,
+    ControlledLocalRunApprovalConsumeRequest,
+    ControlledLocalRunApprovalResponse,
+    ControlledLocalRunApprovalProjectionResponse,
+    ControlledLocalRunApprovalConsumptionResponse,
 )
 
 router = APIRouter(tags=["project-workspaces"])
+
+
+def _controlled_approval_service(services, unit_of_work):
+    return ControlledLocalRunApprovalService(
+        repository=unit_of_work.controlled_local_run_approvals,
+        instance_resolver=services.project_workspaces.get_instance,
+        commit_callback=unit_of_work.commit,
+    )
 
 
 def _catalog_response(definition, service, resource_service) -> WorkflowCatalogResponse:
@@ -496,3 +516,146 @@ async def acknowledge_workspace_sync(
         document=request.model_dump(),
     )
     return WorkspaceSyncAcknowledgementResponse.from_contract(acknowledgement)
+
+
+@router.post(
+    "/projects/{project_id}/workflow-instances/{instance_id}/run-approvals",
+    response_model=ControlledLocalRunApprovalResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def report_controlled_local_run_approval(
+    project_id: str,
+    instance_id: str,
+    request: ControlledLocalRunApprovalReportRequest,
+    services: LocalProductServicesDependency,
+    unit_of_work: UnitOfWorkDependency,
+) -> ControlledLocalRunApprovalResponse:
+    try:
+        summary = ControlledLocalRunSummary.from_mapping(
+            request.summary.model_dump(by_alias=True)
+        )
+        value = ControlledLocalRunApproval(
+            request_id=request.request_id,
+            project_id=request.project_id,
+            workflow_instance_id=request.workflow_instance_id,
+            research_objective_checksum=request.research_objective_checksum,
+            execution_plan_checksum=request.execution_plan_checksum,
+            validated_package_checksum=request.validated_package_checksum,
+            runtime_compatibility_checksum=request.runtime_compatibility_checksum,
+            capability_checksum=request.capability_checksum,
+            summary=summary,
+            created_at=request.created_at,
+            request_checksum=request.request_checksum,
+            schema=request.schema_id,
+        )
+    except ValueError as error:
+        raise ApplicationCodedValidationError(
+            str(error), code="RUN_APPROVAL_REQUEST_INVALID"
+        ) from error
+    if value.project_id != project_id or value.workflow_instance_id != instance_id:
+        raise ApplicationCodedValidationError(
+            "Run Approval body differs from its Project route",
+            code="RUN_APPROVAL_SCOPE_MISMATCH",
+        )
+    return ControlledLocalRunApprovalResponse.from_contract(
+        _controlled_approval_service(services, unit_of_work).report(value)
+    )
+
+
+@router.get(
+    "/projects/{project_id}/workflow-instances/{instance_id}/run-approval",
+    response_model=ControlledLocalRunApprovalProjectionResponse,
+)
+async def observe_controlled_local_run_approval(
+    project_id: str,
+    instance_id: str,
+    services: LocalProductServicesDependency,
+    unit_of_work: UnitOfWorkDependency,
+) -> ControlledLocalRunApprovalProjectionResponse:
+    value = _controlled_approval_service(services, unit_of_work).observe(
+        project_id, instance_id
+    )
+    actions = {
+        None: "REPORT_EXACT_RUN_APPROVAL_REQUEST",
+        "REQUESTED": "OWNER_APPROVAL_REQUIRED",
+        "APPROVED": "CONSUME_APPROVAL_LOCALLY",
+        "REJECTED": "REVISE_OR_KEEP_EXPERIMENT",
+        "CONSUMED": "EXECUTE_APPROVED_ATTEMPT_LOCALLY",
+        "SUPERSEDED": "REPORT_CURRENT_EXACT_RUN_APPROVAL_REQUEST",
+    }
+    return ControlledLocalRunApprovalProjectionResponse(
+        request=(
+            None if value is None
+            else ControlledLocalRunApprovalResponse.from_contract(value)
+        ),
+        next_action=actions[None if value is None else value.status.value],
+    )
+
+
+@router.post(
+    "/projects/{project_id}/workflow-instances/{instance_id}/run-approvals/"
+    "{request_id}/approve",
+    response_model=ControlledLocalRunApprovalResponse,
+)
+async def approve_controlled_local_run(
+    project_id: str,
+    instance_id: str,
+    request_id: str,
+    request: ControlledLocalRunApprovalDecisionRequest,
+    services: LocalProductServicesDependency,
+    unit_of_work: UnitOfWorkDependency,
+) -> ControlledLocalRunApprovalResponse:
+    return ControlledLocalRunApprovalResponse.from_contract(
+        _controlled_approval_service(services, unit_of_work).approve(
+            project_id, instance_id, request_id,
+            execution_plan_checksum=request.execution_plan_checksum,
+            request_checksum=request.request_checksum,
+            idempotency_key=request.idempotency_key,
+        )
+    )
+
+
+@router.post(
+    "/projects/{project_id}/workflow-instances/{instance_id}/run-approvals/"
+    "{request_id}/reject",
+    response_model=ControlledLocalRunApprovalResponse,
+)
+async def reject_controlled_local_run(
+    project_id: str,
+    instance_id: str,
+    request_id: str,
+    request: ControlledLocalRunApprovalDecisionRequest,
+    services: LocalProductServicesDependency,
+    unit_of_work: UnitOfWorkDependency,
+) -> ControlledLocalRunApprovalResponse:
+    return ControlledLocalRunApprovalResponse.from_contract(
+        _controlled_approval_service(services, unit_of_work).reject(
+            project_id, instance_id, request_id,
+            execution_plan_checksum=request.execution_plan_checksum,
+            request_checksum=request.request_checksum,
+            idempotency_key=request.idempotency_key,
+            reason=request.reason,
+        )
+    )
+
+
+@router.post(
+    "/projects/{project_id}/workflow-instances/{instance_id}/run-approvals/"
+    "{request_id}/consume",
+    response_model=ControlledLocalRunApprovalConsumptionResponse,
+)
+async def consume_controlled_local_run(
+    project_id: str,
+    instance_id: str,
+    request_id: str,
+    request: ControlledLocalRunApprovalConsumeRequest,
+    services: LocalProductServicesDependency,
+    unit_of_work: UnitOfWorkDependency,
+) -> ControlledLocalRunApprovalConsumptionResponse:
+    return ControlledLocalRunApprovalConsumptionResponse.from_contract(
+        _controlled_approval_service(services, unit_of_work).consume(
+            project_id, instance_id, request_id,
+            execution_plan_checksum=request.execution_plan_checksum,
+            attempt_id=request.attempt_id,
+        )
+    )

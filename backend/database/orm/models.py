@@ -331,6 +331,92 @@ class ProjectWorkflowInstanceORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ControlledLocalRunApprovalORM(Base):
+    """Exact Owner authorization metadata; never a Cloud execution command."""
+
+    __tablename__ = "controlled_local_run_approvals"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_controlled_local_approvals_instance_scope",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "project_id", "workflow_instance_id", "execution_plan_checksum",
+            "request_checksum", name="uq_controlled_local_approvals_exact_request",
+        ),
+        UniqueConstraint(
+            "request_checksum", name="uq_controlled_local_approvals_request_checksum"
+        ),
+        CheckConstraint(
+            "status IN ('REQUESTED','APPROVED','REJECTED','CONSUMED','SUPERSEDED')",
+            name="controlled_local_approval_status",
+        ),
+        CheckConstraint(
+            "(status = 'REQUESTED' AND owner_actor IS NULL AND decided_at IS NULL "
+            "AND approval_checksum IS NULL AND decision_idempotency_key IS NULL "
+            "AND consumed_attempt_id IS NULL AND consumed_at IS NULL "
+            "AND consumption_checksum IS NULL) OR "
+            "(status IN ('APPROVED','REJECTED') AND owner_actor IS NOT NULL "
+            "AND decided_at IS NOT NULL AND approval_checksum IS NOT NULL "
+            "AND decision_idempotency_key IS NOT NULL AND consumed_attempt_id IS NULL "
+            "AND consumed_at IS NULL AND consumption_checksum IS NULL) OR "
+            "(status = 'CONSUMED' AND owner_actor IS NOT NULL AND decided_at IS NOT NULL "
+            "AND approval_checksum IS NOT NULL AND consumed_attempt_id IS NOT NULL "
+            "AND consumed_at IS NOT NULL AND consumption_checksum IS NOT NULL) OR "
+            "(status = 'SUPERSEDED' AND consumed_attempt_id IS NULL "
+            "AND consumed_at IS NULL AND consumption_checksum IS NULL)",
+            name="controlled_local_approval_state_fields",
+        ),
+        CheckConstraint(
+            "persistence_version > 0",
+            name="controlled_local_approval_persistence_version_positive",
+        ),
+        Index(
+            "uq_controlled_local_approvals_active_instance",
+            "project_id", "workflow_instance_id", unique=True,
+            postgresql_where=text("status IN ('REQUESTED','APPROVED')"),
+        ),
+        Index(
+            "ix_controlled_local_approvals_instance_created",
+            "project_id", "workflow_instance_id", "created_at",
+        ),
+    )
+
+    request_id: Mapped[str] = mapped_column(String(37), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    schema: Mapped[str] = mapped_column(String(100), nullable=False)
+    research_objective_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    execution_plan_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    validated_package_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    runtime_compatibility_checksum: Mapped[str | None] = mapped_column(String(71))
+    capability_checksum: Mapped[str | None] = mapped_column(String(71))
+    summary_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    summary_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    request_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    owner_actor: Mapped[str | None] = mapped_column(String(120))
+    decision_reason: Mapped[str | None] = mapped_column(String(500))
+    decision_idempotency_key: Mapped[str | None] = mapped_column(String(100))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approval_checksum: Mapped[str | None] = mapped_column(String(71))
+    consumed_attempt_id: Mapped[str | None] = mapped_column(String(40))
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    consumption_checksum: Mapped[str | None] = mapped_column(String(71))
+    persistence_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    __mapper_args__ = {
+        "version_id_col": persistence_version,
+        "version_id_generator": lambda value: (value or 0) + 1,
+    }
+
+
 class ProjectORM(Base):
     """Canonical cloud Project identity and Desired Manifest revision head."""
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import Field
@@ -15,6 +16,7 @@ from backend.project_workspaces.contracts import (
     WorkspaceBootstrapDescriptor,
 )
 from backend.workflow_packages.serialization import to_json_value
+from backend.controlled_local_run_approvals import consumption_receipt
 from backend.project_workspaces.bootstrap import workspace_bootstrap_document
 from backend.project_workspaces.sync import (
     WorkspaceSyncPlan,
@@ -427,3 +429,101 @@ class WorkspaceSyncAcknowledgementResponse(StrictDTO):
     @classmethod
     def from_contract(cls, value):
         return cls.model_validate(acknowledgement_document(value))
+
+
+class ControlledLocalRunSummaryRequest(StrictDTO):
+    schema_id: str = Field(
+        alias="schema", serialization_alias="schema",
+        pattern=r"^reagent\.controlled-local-run-approval-summary/v0\.1$",
+    )
+    what_will_run: str = Field(min_length=1, max_length=1000)
+    research_objective: str = Field(min_length=1, max_length=1000)
+    preparation_method: str = Field(min_length=1, max_length=1000)
+    research_resources: list[str] = Field(max_length=20)
+    execution_environment: str = Field(min_length=1, max_length=1000)
+    network_policy: str = Field(pattern=r"^(DISABLED|BOUNDED_DECLARED)$")
+    compute_limits: list[str] = Field(max_length=20)
+    expected_outputs: list[str] = Field(max_length=20)
+    evaluation_approach: str = Field(min_length=1, max_length=1000)
+    important_assumptions: list[str] = Field(max_length=20)
+    important_limitations: list[str] = Field(max_length=20)
+    summary_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ControlledLocalRunApprovalReportRequest(StrictDTO):
+    schema_id: str = Field(
+        alias="schema", serialization_alias="schema",
+        pattern=r"^reagent\.controlled-local-run-approval/v0\.1$",
+    )
+    request_id: str = Field(pattern=r"^clra-[0-9a-f]{32}$")
+    project_id: str = Field(pattern=r"^project-[0-9a-f]{32}$")
+    workflow_instance_id: str = Field(pattern=r"^wfi-[0-9a-f]{32}$")
+    research_objective_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    execution_plan_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    validated_package_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    runtime_compatibility_checksum: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    capability_checksum: str | None = Field(
+        default=None, pattern=r"^sha256:[0-9a-f]{64}$"
+    )
+    summary: ControlledLocalRunSummaryRequest
+    created_at: datetime
+    request_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+
+
+class ControlledLocalRunApprovalDecisionRequest(StrictDTO):
+    execution_plan_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    request_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    idempotency_key: str = Field(min_length=1, max_length=100)
+    reason: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class ControlledLocalRunApprovalConsumeRequest(StrictDTO):
+    execution_plan_checksum: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    attempt_id: str = Field(pattern=r"^attempt-[0-9a-f]{32}$")
+
+
+class ControlledLocalRunApprovalResponse(StrictDTO):
+    schema_id: str = Field(alias="schema", serialization_alias="schema")
+    request_id: str
+    project_id: str
+    workflow_instance_id: str
+    research_objective_checksum: str
+    execution_plan_checksum: str
+    validated_package_checksum: str
+    runtime_compatibility_checksum: str | None
+    capability_checksum: str | None
+    summary: dict[str, Any]
+    created_at: str
+    request_checksum: str
+    status: str
+    owner_actor: str | None
+    decision_reason: str | None
+    decision_idempotency_key: str | None
+    decided_at: str | None
+    approval_checksum: str | None
+    consumed_attempt_id: str | None
+    consumed_at: str | None
+    consumption_checksum: str | None
+
+    @classmethod
+    def from_contract(cls, value):
+        return cls.model_validate(value.to_dict())
+
+
+class ControlledLocalRunApprovalProjectionResponse(StrictDTO):
+    request: ControlledLocalRunApprovalResponse | None
+    next_action: str
+
+
+class ControlledLocalRunApprovalConsumptionResponse(StrictDTO):
+    approval: ControlledLocalRunApprovalResponse
+    receipt: dict[str, Any]
+
+    @classmethod
+    def from_contract(cls, value):
+        return cls(
+            approval=ControlledLocalRunApprovalResponse.from_contract(value),
+            receipt=consumption_receipt(value),
+        )

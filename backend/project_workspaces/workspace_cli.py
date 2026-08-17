@@ -1815,6 +1815,40 @@ class HTTPWorkspaceSyncTransport:
             f"{workflow_instance_id}/resource-bindings"
         )
 
+    def report_run_approval(
+        self, project_id: str, workflow_instance_id: str, document: dict[str, Any]
+    ) -> dict[str, Any]:
+        _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        return self._json_request(
+            "POST",
+            f"/projects/{project_id}/workflow-instances/"
+            f"{workflow_instance_id}/run-approvals",
+            document,
+        )
+
+    def observe_run_approval(
+        self, project_id: str, workflow_instance_id: str
+    ) -> dict[str, Any]:
+        _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        return self._json_get(
+            f"/projects/{project_id}/workflow-instances/"
+            f"{workflow_instance_id}/run-approval"
+        )
+
+    def consume_run_approval(
+        self, project_id: str, workflow_instance_id: str, request_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
+        if not isinstance(request_id, str) or not re.fullmatch(r"clra-[0-9a-f]{32}", request_id):
+            raise _identity("RUN_APPROVAL_INVALID", "Run Approval request identity is invalid")
+        return self._json_request(
+            "POST",
+            f"/projects/{project_id}/workflow-instances/"
+            f"{workflow_instance_id}/run-approvals/{request_id}/consume",
+            payload,
+        )
+
     def literature_execution_mode(
         self, project_id: str, package_identity: dict[str, str]
     ) -> dict[str, Any]:
@@ -2069,6 +2103,88 @@ class HTTPWorkspaceSyncTransport:
             # Upload-only sessions are short-lived and report-scoped. Cleanup
             # failure never replaces an already known upload outcome.
             return
+
+
+def controlled_local_run_approval_handoff(
+    *, transport: Any, project_id: str, workflow_instance_id: str,
+    request_id: str, attempt_id: str,
+    current_plan_checksum: Callable[[], str],
+    bounded_runner_handoff: Callable[[dict[str, Any], dict[str, Any]], Any],
+) -> Any:
+    """Consume one exact Cloud authorization, then invoke only the local handoff.
+
+    The current plan is checked both before consumption and immediately before
+    the supplied existing-runner boundary.  A post-consumption drift leaves the
+    authorization consumed and deliberately does not invoke the runner.
+    """
+
+    plan_before = current_plan_checksum()
+    _checksum(plan_before, "execution_plan_checksum")
+    projection = _object(
+        transport.observe_run_approval(project_id, workflow_instance_id),
+        "Run Approval projection",
+    )
+    if set(projection) != {"request", "next_action"}:
+        raise _identity("RUN_APPROVAL_INVALID", "Run Approval projection fields mismatch")
+    approval = _object(projection.get("request"), "Run Approval request")
+    if (
+        approval.get("request_id") != request_id
+        or approval.get("project_id") != project_id
+        or approval.get("workflow_instance_id") != workflow_instance_id
+    ):
+        raise _identity("RUN_APPROVAL_INVALID", "Run Approval scope is invalid")
+    if approval.get("status") != "APPROVED":
+        raise _identity("RUN_APPROVAL_NOT_APPROVED", "Exact Run Approval is not approved")
+    if approval.get("execution_plan_checksum") != plan_before:
+        raise _identity("APPROVAL_INVALIDATED", "Current execution plan differs from approval")
+    _checksum(approval.get("request_checksum"), "request_checksum")
+    _checksum(approval.get("approval_checksum"), "approval_checksum")
+    consumed = _object(
+        transport.consume_run_approval(
+            project_id, workflow_instance_id, request_id,
+            {"execution_plan_checksum": plan_before, "attempt_id": attempt_id},
+        ),
+        "Run Approval consumption",
+    )
+    if set(consumed) != {"approval", "receipt"}:
+        raise _identity("RUN_APPROVAL_INVALID", "Run Approval consumption fields mismatch")
+    consumed_approval = _object(consumed["approval"], "Consumed Run Approval")
+    receipt = _object(consumed["receipt"], "Run Approval consumption receipt")
+    receipt_fields = {
+        "schema", "request_id", "approval_checksum", "execution_plan_checksum",
+        "attempt_id", "consumed_at", "consumption_checksum",
+    }
+    if set(receipt) != receipt_fields:
+        raise _identity("RUN_APPROVAL_INVALID", "Run Approval receipt fields mismatch")
+    checksum_payload = dict(receipt)
+    receipt_checksum = checksum_payload.pop("consumption_checksum")
+    if (
+        receipt.get("schema")
+        != "reagent.controlled-local-run-approval-consumption/v0.1"
+        or receipt.get("request_id") != request_id
+        or receipt.get("approval_checksum") != approval.get("approval_checksum")
+        or receipt.get("execution_plan_checksum") != plan_before
+        or receipt.get("attempt_id") != attempt_id
+        or consumed_approval.get("status") != "CONSUMED"
+        or consumed_approval.get("request_id") != request_id
+        or consumed_approval.get("project_id") != project_id
+        or consumed_approval.get("workflow_instance_id") != workflow_instance_id
+        or consumed_approval.get("request_checksum") != approval.get("request_checksum")
+        or consumed_approval.get("approval_checksum") != approval.get("approval_checksum")
+        or consumed_approval.get("execution_plan_checksum") != plan_before
+        or consumed_approval.get("consumed_attempt_id") != attempt_id
+        or consumed_approval.get("consumption_checksum") != receipt_checksum
+        or canonical_hash(checksum_payload) != receipt_checksum
+    ):
+        raise _identity("RUN_APPROVAL_INVALID", "Run Approval receipt identity is invalid")
+    plan_at_handoff = current_plan_checksum()
+    _checksum(plan_at_handoff, "execution_plan_checksum")
+    if plan_at_handoff != plan_before:
+        raise _identity(
+            "APPROVAL_INVALIDATED",
+            "Execution plan changed after approval consumption; runner was not invoked",
+        )
+    return bounded_runner_handoff(consumed_approval, receipt)
 
 
 class _WorkspaceWriteLock:

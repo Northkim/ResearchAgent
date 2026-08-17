@@ -72,6 +72,8 @@ def test_gen_d_presentation_migration_downgrade_and_reupgrade() -> None:
         require_disposable_database(
             engine, database_url=database_url, expected_identity=identity
         )
+        assert _migration_revision(engine) == "20260817_0030"
+        command.downgrade(config, "20260817_0029")
         assert _migration_revision(engine) == "20260817_0029"
         assert presentation_columns <= _artifact_columns(engine)
         command.downgrade(config, "20260817_0028")
@@ -88,6 +90,8 @@ def test_gen_d_presentation_migration_downgrade_and_reupgrade() -> None:
         assert len(presentation_checks) == 3
         assert any("octet_length" in item["sqltext"] for item in presentation_checks)
         assert any("sha256" in item["sqltext"] for item in presentation_checks)
+        command.upgrade(config, "20260817_0030")
+        assert _migration_revision(engine) == "20260817_0030"
     finally:
         engine.dispose()
 

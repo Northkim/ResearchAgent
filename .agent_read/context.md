@@ -3556,3 +3556,26 @@ claimed. All controlled processes, databases, and runtime directories were
 removed. Full Research remains unchanged and D1 remains PAUSED. Safe next
 action: provide an in-app Browser session and rerun only the controlled E6 UX
 qualification; do not begin downstream compatibility.
+
+## GEN-D-R1 controlled-local Run Approval handshake (2026-08-17)
+
+Experiment 0.6 now has a dedicated Cloud authorization handshake at
+`reagent.controlled-local-run-approval/v0.1`. Local reports an exact
+plan-checksum-bound, bounded summary; the loopback single-Owner browser API can
+approve or reject; Local observes and atomically consumes one approval for one
+attempt before the existing bounded-runner handoff. Cloud never dispatches an
+Experiment process, and the frozen hosted `/approvals` subsystem is unchanged.
+
+Migration `20260817_0030` adds only the Project/Workflow-Instance-scoped
+approval table. Exact replay and same-attempt consumption retry are idempotent;
+a different attempt loses deterministically, superseded/rejected requests fail
+closed, and plan drift prevents runner handoff. A consumed authorization is not
+recycled after drift or launch failure. Summary validation rejects source,
+logs, credentials, HTML, and absolute local paths.
+
+Marker-protected disposable PostgreSQL qualification passed upgrade,
+Alembic check, downgrade/re-upgrade, restart/readback, and concurrent
+consumption; every disposable database was dropped. Historical 0.4/0.5/0.6
+publication bytes and hosted approval semantics are unchanged. GEN-D-C1 UI
+wiring remains explicitly deferred, Full Research is unchanged, and D1 remains
+PAUSED.

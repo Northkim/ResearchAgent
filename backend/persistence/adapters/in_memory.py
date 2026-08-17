@@ -9,6 +9,7 @@ from typing import Any
 from backend.domain.enums import ApprovalRequestStatus, WorkflowRunStatus
 from backend.domain.models import ApprovalRequest, ArtifactMetadata, Checkpoint, Workflow
 from backend.domain.services import ExecutionState
+from backend.controlled_local_run_approvals import ControlledLocalRunApproval
 from backend.artifact_references.contracts import (
     ArtifactDependencyBinding,
     ArtifactPresentation,
@@ -137,6 +138,51 @@ class InMemoryDatabase:
     workflow_resource_bindings: dict[str, WorkflowResourceBinding] = field(
         default_factory=dict
     )
+    controlled_local_run_approvals: dict[str, ControlledLocalRunApproval] = field(
+        default_factory=dict
+    )
+
+
+class InMemoryControlledLocalRunApprovalRepository:
+    def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
+        self._uow = unit_of_work
+
+    def get(
+        self, request_id: str, *, for_update: bool = False
+    ) -> ControlledLocalRunApproval | None:
+        del for_update
+        return self._uow._controlled_local_run_approvals.get(request_id)
+
+    def get_current(
+        self, project_id: str, workflow_instance_id: str, *, for_update: bool = False
+    ) -> ControlledLocalRunApproval | None:
+        del for_update
+        values = [
+            item for item in self._uow._controlled_local_run_approvals.values()
+            if item.project_id == project_id
+            and item.workflow_instance_id == workflow_instance_id
+        ]
+        priority = {
+            "REQUESTED": 2, "APPROVED": 2, "SUPERSEDED": 0,
+            "REJECTED": 1, "CONSUMED": 1,
+        }
+        return max(
+            values,
+            key=lambda item: (priority[item.status.value], item.created_at, item.request_id),
+        ) if values else None
+
+    def add(self, request: ControlledLocalRunApproval) -> None:
+        existing = self.get(request.request_id)
+        if existing is not None and existing != request:
+            raise DuplicateEntityError("Controlled-local Run Approval identity conflict")
+        self._uow._controlled_local_run_approvals[request.request_id] = request
+        self._uow._dirty_controlled_local_run_approvals.add(request.request_id)
+
+    def save(self, request: ControlledLocalRunApproval) -> None:
+        if self.get(request.request_id) is None:
+            raise DuplicateEntityError("Controlled-local Run Approval does not exist")
+        self._uow._controlled_local_run_approvals[request.request_id] = request
+        self._uow._dirty_controlled_local_run_approvals.add(request.request_id)
 
 
 class InMemoryResourceReferenceRepository(ResourceReferenceRepository):
@@ -1599,6 +1645,9 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._workspace_sync_repository = InMemoryWorkspaceSyncRepository(self)
         self._artifact_reference_repository = InMemoryArtifactReferenceRepository(self)
         self._resource_reference_repository = InMemoryResourceReferenceRepository(self)
+        self.controlled_local_run_approvals = (
+            InMemoryControlledLocalRunApprovalRepository(self)
+        )
         self._refresh()
 
     @property
@@ -1734,6 +1783,10 @@ class InMemoryUnitOfWork(UnitOfWork):
         for binding_id in self._dirty_workflow_resource_bindings:
             self.database.workflow_resource_bindings[binding_id] = (
                 self._workflow_resource_bindings[binding_id]
+            )
+        for request_id in self._dirty_controlled_local_run_approvals:
+            self.database.controlled_local_run_approvals[request_id] = (
+                self._controlled_local_run_approvals[request_id]
             )
         self._refresh()
 
@@ -1920,6 +1973,9 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._workflow_resource_bindings = dict(
             self.database.workflow_resource_bindings
         )
+        self._controlled_local_run_approvals = dict(
+            self.database.controlled_local_run_approvals
+        )
         self._base_checkpoint_counts = {
             run_id: len(records)
             for run_id, records in self.database.checkpoint_records.items()
@@ -1960,4 +2016,5 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_project_resource_references: set[str] = set()
         self._dirty_workflow_resource_requirements: set[tuple[str, str, str]] = set()
         self._dirty_workflow_resource_bindings: set[str] = set()
+        self._dirty_controlled_local_run_approvals: set[str] = set()
         self._manifest_revision_expected: dict[str, int] = {}
