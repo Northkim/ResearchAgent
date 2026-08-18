@@ -545,6 +545,39 @@ def ensure_production_workflow_foundation(
             raise WorkflowFoundationConflictError(
                 "Real Review Artifact requirement immutable-content conflict"
             )
+    from .forward_downstream import (
+        artifact_requirements as forward_artifact_requirements,
+        capsule_version as forward_capsule_version,
+        definition_version as forward_definition_version,
+    )
+    from backend.workflow_packages.forward_downstream_publication import (
+        INITIAL_WRITING_VERSION, REVIEW_VERSION as FORWARD_REVIEW_VERSION,
+        WRITING_REVISION_VERSION as FORWARD_REVISION_VERSION,
+    )
+    for role, workflow_id, workflow_version in (
+        ("initial-writing", WRITING_WORKFLOW_ID, INITIAL_WRITING_VERSION),
+        ("review", REVIEW_WORKFLOW_ID, FORWARD_REVIEW_VERSION),
+        ("revision", WRITING_WORKFLOW_ID, FORWARD_REVISION_VERSION),
+    ):
+        repository.add_definition_version(forward_definition_version(role, timestamp))
+        repository.add_capsule_version(forward_capsule_version(role, timestamp))
+        for pin in production_skill_pins(workflow_id, workflow_version, timestamp):
+            if pin.skill_id == RESEARCH_ARTIFACT_PROVENANCE_SKILL_ID:
+                repository.add_workflow_skill_pin(replace(
+                    pin,
+                    purpose="Preserve exact v5 evidence and downstream Artifact provenance.",
+                ))
+        for requirement in forward_artifact_requirements(role, timestamp):
+            existing = uow.artifact_references.get_requirement(
+                requirement.workflow_definition_id, requirement.workflow_version,
+                requirement.requirement_key,
+            )
+            if existing is None:
+                uow.artifact_references.add_requirement(requirement)
+            elif _requirement_content(existing) != _requirement_content(requirement):
+                raise WorkflowFoundationConflictError(
+                    "Forward downstream Artifact requirement immutable-content conflict"
+                )
     return (
         literature_definition,
         literature_version,

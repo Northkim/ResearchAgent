@@ -3286,7 +3286,7 @@ def _make_manifest(
         proxy = "NO PROVIDER CAPABILITY; LOCAL INTERACTIVE HARNESS ONLY"
     elif (
         workflow_id == WRITING_WORKFLOW_ID
-        and workflow_version == WRITING_REVISION_WORKFLOW_VERSION
+        and workflow_version in {WRITING_REVISION_WORKFLOW_VERSION, "0.6.0"}
     ):
         from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
 
@@ -3312,7 +3312,7 @@ def _make_manifest(
         proxy = "NO NETWORK; EXACT CAUSAL REVIEW AND BOUND EVIDENCE; LOCAL CODEX REVISION ONLY"
     elif (
         workflow_id == WRITING_WORKFLOW_ID
-        and workflow_version == REAL_WRITING_WORKFLOW_VERSION
+        and workflow_version in {REAL_WRITING_WORKFLOW_VERSION, "0.5.0"}
     ):
         from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
 
@@ -3340,7 +3340,7 @@ def _make_manifest(
         proxy = "NO NETWORK; EXACT BOUND ARTIFACTS; LOCAL CODEX WRITING ONLY"
     elif (
         workflow_id == REVIEW_WORKFLOW_ID
-        and workflow_version == REAL_REVIEW_WORKFLOW_VERSION
+        and workflow_version in {REAL_REVIEW_WORKFLOW_VERSION, "0.4.0"}
     ):
         from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
 

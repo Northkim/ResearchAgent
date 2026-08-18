@@ -3685,3 +3685,22 @@ and the controlled downstream fixture read findings from v5 alone. Historical
 rerun because the accepted initial interaction is unchanged; no real scientific
 Experiment ran. D1 remains PAUSED. Safe next phase is an Owner-authorized EP-D1
 retry consuming exact `experiment-record/v5`; do not start it automatically.
+
+## EP-D1 exact v5 downstream chain (2026-08-18)
+
+EP-D1 publishes role-aware Initial Writing `0.5.0` / Capsule `0.7.0` producing
+`manuscript-draft/v4`, Review `0.4.0` / Capsule `0.6.0` producing
+`review-report/v3`, and Writing Revision `0.6.0` / Capsule `0.8.0` producing
+`manuscript-draft/v5`. The only forward Experiment evidence role is exact
+materialized `experiment-record/v5`; Cloud presentation is never evidence.
+
+Forward validators preserve process outcome, evaluation validity, evidence
+sufficiency, claim boundaries, limitations, and exact evidence-block identities.
+Initial Writing and Review are role recommendations; Revision remains explicit and
+creates a new instance from the exact parent Draft and causal Review. Immutable
+historical source bytes and the Full Research preset remain unchanged.
+
+Migration `20260818_0032` is additive and schema-free. Controlled full-chain,
+recovery, public Workspace, marked PostgreSQL, wrong-version, historical, and real
+Codex checkpoint evidence passed. No Owner decision was fabricated. D1 remains
+PAUSED. Safe next action is Owner review of EP-D1; EP-D2 is not started.

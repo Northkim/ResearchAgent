@@ -84,6 +84,17 @@ from backend.workflow_packages.generic_experiment_v5_publication import (
     GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
     build_generic_experiment_v0_10_package,
 )
+from backend.workflow_packages.forward_downstream_publication import (
+    INITIAL_WRITING_CAPSULE_VERSION as FORWARD_WRITING_CAPSULE_VERSION,
+    INITIAL_WRITING_VERSION as FORWARD_WRITING_VERSION,
+    REVIEW_CAPSULE_VERSION as FORWARD_REVIEW_CAPSULE_VERSION,
+    REVIEW_VERSION as FORWARD_REVIEW_VERSION,
+    WRITING_REVISION_CAPSULE_VERSION as FORWARD_REVISION_CAPSULE_VERSION,
+    WRITING_REVISION_VERSION as FORWARD_REVISION_VERSION,
+    build_initial_writing_v0_7_package,
+    build_review_v0_6_package,
+    build_writing_revision_v0_8_package,
+)
 
 from .contracts import (
     CapsuleArtifactStatus,
@@ -664,6 +675,13 @@ class WorkspaceSyncApplicationService:
             )
         elif (
             instance.workflow_definition_id == WRITING_WORKFLOW_ID
+            and instance.workflow_version == FORWARD_REVISION_VERSION
+            and instance.capsule_version == FORWARD_REVISION_CAPSULE_VERSION
+        ):
+            builder = build_writing_revision_v0_8_package
+            package_id = f"forward-writing-revision-{project.project_id}-{instance.workflow_instance_id}-v0.8"
+        elif (
+            instance.workflow_definition_id == WRITING_WORKFLOW_ID
             and instance.workflow_version == REAL_WRITING_WORKFLOW_VERSION
             and instance.capsule_version == REAL_WRITING_CAPSULE_VERSION
         ):
@@ -672,6 +690,13 @@ class WorkspaceSyncApplicationService:
                 f"real-writing-{project.project_id}-"
                 f"{instance.workflow_instance_id}-v0.5"
             )
+        elif (
+            instance.workflow_definition_id == WRITING_WORKFLOW_ID
+            and instance.workflow_version == FORWARD_WRITING_VERSION
+            and instance.capsule_version == FORWARD_WRITING_CAPSULE_VERSION
+        ):
+            builder = build_initial_writing_v0_7_package
+            package_id = f"forward-writing-{project.project_id}-{instance.workflow_instance_id}-v0.7"
         elif (
             instance.workflow_definition_id == REVIEW_WORKFLOW_ID
             and instance.workflow_version == REAL_REVIEW_WORKFLOW_VERSION
@@ -682,6 +707,13 @@ class WorkspaceSyncApplicationService:
                 f"real-review-{project.project_id}-"
                 f"{instance.workflow_instance_id}-v0.5"
             )
+        elif (
+            instance.workflow_definition_id == REVIEW_WORKFLOW_ID
+            and instance.workflow_version == FORWARD_REVIEW_VERSION
+            and instance.capsule_version == FORWARD_REVIEW_CAPSULE_VERSION
+        ):
+            builder = build_review_v0_6_package
+            package_id = f"forward-review-{project.project_id}-{instance.workflow_instance_id}-v0.6"
         elif (
             instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
             and instance.workflow_version == EXPERIMENT_RESOURCE_WORKFLOW_VERSION
@@ -796,6 +828,9 @@ class WorkspaceSyncApplicationService:
                 REAL_EXPERIMENT_WORKFLOW_VERSION,
                 REAL_WRITING_WORKFLOW_VERSION,
                 WRITING_REVISION_WORKFLOW_VERSION,
+                FORWARD_WRITING_VERSION,
+                FORWARD_REVIEW_VERSION,
+                FORWARD_REVISION_VERSION,
                 GENERIC_EXPERIMENT_WORKFLOW_VERSION,
                 GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
             }

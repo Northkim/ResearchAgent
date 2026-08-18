@@ -102,6 +102,14 @@ SUPPORTED_CAPSULE_PINS = {
         "writing-scaffold-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.5.0", "0.7.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
+    ("writing-local-experimental", "0.6.0", "0.8.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
     ("review-local-experimental", "0.1.0", "0.1.0"): (
         "review-scaffold-package-experimental",
         False,
@@ -119,6 +127,10 @@ SUPPORTED_CAPSULE_PINS = {
         False,
     ),
     ("review-local-experimental", "0.3.0", "0.5.0"): (
+        "review-scaffold-package-experimental",
+        False,
+    ),
+    ("review-local-experimental", "0.4.0", "0.6.0"): (
         "review-scaffold-package-experimental",
         False,
     ),
@@ -4716,15 +4728,18 @@ def run_workflow(
             ("reproduction-experiment-local-experimental", "0.6.0", "0.9.0"),
             ("reproduction-experiment-local-experimental", "0.7.0", "0.10.0"),
         }
-        is_real_writing = pin == (
-            "writing-local-experimental", "0.3.0", "0.5.0"
-        )
-        is_real_review = pin == (
-            "review-local-experimental", "0.3.0", "0.5.0"
-        )
-        is_writing_revision = pin == (
-            "writing-local-experimental", "0.4.0", "0.6.0"
-        )
+        is_real_writing = pin in {
+            ("writing-local-experimental", "0.3.0", "0.5.0"),
+            ("writing-local-experimental", "0.5.0", "0.7.0"),
+        }
+        is_real_review = pin in {
+            ("review-local-experimental", "0.3.0", "0.5.0"),
+            ("review-local-experimental", "0.4.0", "0.6.0"),
+        }
+        is_writing_revision = pin in {
+            ("writing-local-experimental", "0.4.0", "0.6.0"),
+            ("writing-local-experimental", "0.6.0", "0.8.0"),
+        }
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
         local_reports: list[dict[str, Any]] = []
