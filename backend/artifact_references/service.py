@@ -39,10 +39,14 @@ from .contracts import (
 )
 from .errors import ArtifactReferenceConflictError
 from .upstream_presentations import (
+    MANUSCRIPT_PRESENTATION_SCHEMA,
     PAPER_LIBRARY_PRESENTATION_SCHEMA,
+    REVIEW_PRESENTATION_SCHEMA,
     RESEARCH_IDEA_PRESENTATION_SCHEMA,
     UpstreamPresentationError,
+    validate_manuscript_presentation,
     validate_paper_library_presentation,
+    validate_review_presentation,
     validate_research_idea_presentation,
 )
 
@@ -855,6 +859,10 @@ _PRESENTATION_VALIDATORS = {
         "reagent.artifact-presentation.experiment-record/v0.2",
     ): _validate_generic_experiment_presentation,
     (
+        "experiment-record/v5",
+        "reagent.artifact-presentation.experiment-record/v0.2",
+    ): _validate_generic_experiment_presentation,
+    (
         "selected-paper-library/v1",
         PAPER_LIBRARY_PRESENTATION_SCHEMA,
     ): validate_paper_library_presentation,
@@ -862,6 +870,9 @@ _PRESENTATION_VALIDATORS = {
         "selected-research-idea/v1",
         RESEARCH_IDEA_PRESENTATION_SCHEMA,
     ): validate_research_idea_presentation,
+    ("manuscript-draft/v4", MANUSCRIPT_PRESENTATION_SCHEMA): validate_manuscript_presentation,
+    ("manuscript-draft/v5", MANUSCRIPT_PRESENTATION_SCHEMA): validate_manuscript_presentation,
+    ("review-report/v3", REVIEW_PRESENTATION_SCHEMA): validate_review_presentation,
 }
 
 
@@ -887,6 +898,12 @@ def _validate_registered_presentation(*, artifact, value: Any) -> dict[str, Any]
             "Artifact presentation content is invalid",
             code="ARTIFACT_PRESENTATION_INVALID",
         ) from error
+
+
+def require_compatible_artifact(requirement, artifact) -> None:
+    """Expose the exact binding compatibility guard to product orchestrators."""
+
+    _require_compatible(requirement, artifact)
 
 
 def binding_document(binding: ArtifactDependencyBinding) -> dict[str, Any]:

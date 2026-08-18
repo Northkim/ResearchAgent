@@ -22,6 +22,17 @@ type DesiredManifest = {
   };
 };
 
+type EpD2ProjectFixture = {
+  project_id: string;
+  project_name: string;
+  instances: Record<string, string>;
+};
+
+type EpD2FixtureManifest = {
+  eligible: EpD2ProjectFixture;
+  completed: EpD2ProjectFixture;
+};
+
 const checksumA = `sha256:${"a".repeat(64)}`;
 const checksumB = `sha256:${"b".repeat(64)}`;
 
@@ -198,7 +209,7 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
       const workflowProgress = page.locator(".overview-workflow-list");
       await expect(workflowProgress.locator("div").filter({ hasText: "Literature Search" }).first().getByText("Completed", { exact: true })).toBeVisible();
       await expect(workflowProgress.locator("div").filter({ hasText: "Idea Discovery" }).first().getByText("Completed", { exact: true })).toBeVisible();
-      await expect(workflowProgress.locator("div").filter({ hasText: "Writing" }).first().getByText("Needs your review", { exact: true })).toBeVisible();
+      await expect(workflowProgress.locator("div").filter({ hasText: "Initial Writing" }).first().getByText("Needs your review", { exact: true })).toBeVisible();
       await expect(workflowProgress.getByText("Blocked", { exact: true })).toHaveCount(0);
       await expect(page.locator("#outputs").getByText("Selected research idea", { exact: true })).toBeVisible();
       await expect(page.getByText(/UTC/)).toHaveCount(0);
@@ -208,18 +219,17 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
       if (viewport.width === 1440) await page.screenshot({ path: join(screenshotRoot, "overview__1440x900.png"), fullPage: false });
 
       await page.goto(`/projects/${fixture.project_id}/workflows/${fixture.instances["writing-local-experimental"]}`);
-      await expect(page.getByRole("heading", { name: "Writing", exact: true })).toBeVisible();
-      await expect(page.getByRole("heading", { name: "Review the writing outline" })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Review outline" })).toBeVisible();
-      await expect(page.locator(".current-action-meta").getByText("Outline approval", { exact: true })).toBeVisible();
+      await expect(page.getByText("Initial Writing", { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Prepare an evidence-bound manuscript" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Review the outline locally" })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Continue locally" })).toBeVisible();
       const inputs = page.locator("#inputs");
       const inputRows = inputs.locator(".input-readiness-list > div");
       await expect(inputRows.filter({ hasText: "Selected literature" }).getByText("Ready", { exact: true })).toBeVisible();
       await expect(inputRows.filter({ hasText: "Selected research idea" }).getByText("Ready", { exact: true })).toBeVisible();
-      await expect(inputRows.filter({ hasText: "Experiment result" }).getByText("Optional · Not provided", { exact: true })).toBeVisible();
       await expect(inputs.getByText("Missing", { exact: true })).toHaveCount(0);
-      await expect(page.locator("details#run-locally")).not.toHaveAttribute("open");
-      await expect(page.getByText("Technical Details").locator(".." )).not.toHaveAttribute("open");
+      await expect(page.getByRole("heading", { name: "Continue in the Local Workspace" })).toBeVisible();
+      await expect(page.locator("details.technical-details")).not.toHaveAttribute("open");
       await expect(page.getByText(/Owner acts now|Continue at owner checkpoint|Run the exact public command locally|placeholder research core|Artifact flow/i)).toHaveCount(0);
       await assertSafeViewport();
       if (viewport.width === 1440) await page.screenshot({ path: join(screenshotRoot, "workflow__1440x900.png"), fullPage: false });
@@ -259,7 +269,7 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
   }
 });
 
-test("EP-D2-U1 qualifies bounded upstream Outputs and exact-selection previews", async ({ page, request }) => {
+test("EP-D2-U1 qualifies bounded upstream Outputs and exact-selection previews", async ({ page }) => {
   const backend = process.env.REAGENT_E2E_BACKEND_URL!;
   const identity = process.env.REAGENT_E2E_QUALIFICATION_IDENTITY!;
   const runtime = process.env.REAGENT_LOCAL_RUNTIME_DIR!;
@@ -308,36 +318,109 @@ test("EP-D2-U1 qualifies bounded upstream Outputs and exact-selection previews",
 
   const writingDetail = `/projects/${fixture.project_id}/workflows/${fixture.instances["writing-local-experimental"]}`;
   await page.goto(writingDetail);
-  const writingBindings = page.getByText("Manage input bindings").locator("..");
-  await writingBindings.locator("summary").click();
+  const writingBindings = page.getByLabel("Exact workflow input setup");
+  await expect(writingBindings).toBeVisible();
   await expect(writingBindings.getByText("Bounded archival classification study")).toBeVisible();
   await expect(writingBindings.getByRole("heading", { name: "Compare archival classification practices" })).toBeVisible();
+  const literatureChoices = writingBindings.locator("fieldset").filter({ hasText: "literature library" });
+  const literatureRadios = literatureChoices.getByRole("radio");
+  await expect(literatureRadios).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) await expect(literatureRadios.nth(index)).not.toBeChecked();
   await shot("03-writing-literature-idea-selection-previews");
 
-  const catalogResponse = await request.get(`${backend}/workflow-definitions/reproduction-experiment-local-experimental`);
-  expect(catalogResponse.ok()).toBe(true);
-  const catalog = await catalogResponse.json();
-  const capsule = catalog.capsules.find((item: { capsule_version: string }) => item.capsule_version === "0.10.0");
-  const manifestResponse = await request.get(`${backend}/projects/${fixture.project_id}/manifest`);
-  const manifest = await manifestResponse.json();
-  const created = await request.post(`${backend}/projects/${fixture.project_id}/workflow-instances`, { data: {
-    workflow_definition_id: "reproduction-experiment-local-experimental",
-    workflow_version: "0.7.0", capsule_id: capsule.capsule_id,
-    capsule_version: "0.10.0", base_revision: manifest.manifest_revision,
-  } });
-  expect(created.ok()).toBe(true);
-  const experiment = await created.json();
-  const artifactsResponse = await request.get(`${backend}/projects/${fixture.project_id}/artifacts?artifact_type=selected-research-idea%2Fv1`);
-  const ideaArtifact = (await artifactsResponse.json()).artifacts[0];
-  const binding = await request.post(`${backend}/projects/${fixture.project_id}/workflow-instances/${experiment.workflow_instance_id}/artifact-dependencies`, { data: {
-    requirement_key: "research_idea", artifact_id: ideaArtifact.artifact_id,
-    idempotency_key: "00000000-0000-4000-8000-0000000000a1",
-  } });
-  expect(binding.ok()).toBe(true);
-  await page.goto(`/projects/${fixture.project_id}/workflows/${experiment.workflow_instance_id}`);
-  const experimentBindings = page.getByText("Manage input bindings").locator("..");
-  await experimentBindings.locator("summary").click();
-  await expect(experimentBindings.getByRole("heading", { name: "Compare archival classification practices" })).toBeVisible();
-  await expect(experimentBindings.getByText("The evidence is limited to metadata and abstracts.")).toBeVisible();
-  await shot("04-idea-exact-selection-for-experiment");
+});
+
+test("EP-D2 qualifies the forward Full Research Owner journey", async ({ page, request }) => {
+  const backend = process.env.REAGENT_E2E_BACKEND_URL!;
+  const identity = process.env.REAGENT_E2E_QUALIFICATION_IDENTITY!;
+  const runtime = process.env.REAGENT_LOCAL_RUNTIME_DIR!;
+  const repository = resolve(process.cwd(), "..");
+  const manifestPath = join(runtime, "ep-d2-fixtures.json");
+  execFileSync("conda", [
+    "run", "--no-capture-output", "-n", "reagent-dev", "python", "-m",
+    "scripts.b0_controlled_fixtures", "--api-url", backend, "--run-id", identity,
+    "--manifest", manifestPath, "--scenario", "ep-d2",
+  ], { cwd: repository, env: process.env, stdio: "inherit" });
+  const fixture = JSON.parse(readFileSync(manifestPath, "utf8")) as EpD2FixtureManifest;
+  const screenshotRoot = resolve(process.cwd(), "test-results", "ep-d2-e6", "screenshots");
+  mkdirSync(screenshotRoot, { recursive: true, mode: 0o700 });
+  const shot = (name: string) => page.screenshot({ path: join(screenshotRoot, `${name}.png`), fullPage: true });
+
+  await page.goto(`/projects/${fixture.eligible.project_id}/workflows`);
+  const initialRows = page.locator("article.workflow-work-row");
+  await expect(initialRows).toHaveCount(5);
+  for (const role of ["Literature Search", "Idea Discovery", "Reproduction & Experiment", "Initial Writing", "Review"]) {
+    await expect(initialRows.getByRole("heading", { name: role, exact: true })).toBeVisible();
+  }
+  await expect(initialRows.getByRole("heading", { name: "Writing Revision", exact: true })).toHaveCount(0);
+  await shot("01-full-research-five-forward-workflows");
+
+  await page.goto(`/projects/${fixture.completed.project_id}/workflows/${fixture.completed.instances.writing}`);
+  await expect(page.getByRole("heading", { name: "Manuscript completed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Bounded archival comparison manuscript" })).toBeVisible();
+  await expect(page.getByText("The complete manuscript remains in the Local Workspace.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Continue in the Local Workspace" })).toHaveCount(0);
+  await shot("02-initial-writing-completed-task-first");
+
+  await page.goto(`/projects/${fixture.eligible.project_id}/workflows/${fixture.eligible.instances.review}`);
+  await expect(page.getByRole("heading", { name: "Review completed" })).toBeVisible();
+  const reviewIssue = page.getByText("The abstract-only evidence boundary is implicit.");
+  const revisionButton = page.getByRole("button", { name: "Start manuscript revision" });
+  await expect(reviewIssue).toBeVisible();
+  await expect(revisionButton).toBeVisible();
+  expect(await reviewIssue.evaluate((node, action) => Boolean(node.compareDocumentPosition(action as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await revisionButton.elementHandle())).toBe(true);
+  await shot("03-review-evidence-before-revision-action");
+  await revisionButton.click();
+  await page.waitForURL(new RegExp(`/projects/${fixture.eligible.project_id}/workflows/wfi-`));
+  await expect(page.getByText("Writing Revision", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revision source" })).toBeVisible();
+  const revisedInstances = await request.get(`${backend}/projects/${fixture.eligible.project_id}/workflow-instances`);
+  expect(revisedInstances.ok()).toBe(true);
+  const afterAction = await revisedInstances.json() as { items: Array<{ workflow_definition_id: string; workflow_version: string }> };
+  expect(afterAction.items.filter((item) => item.workflow_definition_id === "writing-local-experimental" && item.workflow_version === "0.6.0")).toHaveLength(1);
+  await shot("04-writing-revision-created-task-first");
+
+  await page.goto(`/projects/${fixture.eligible.project_id}/workflows`);
+  const postRevisionRows = page.locator("article.workflow-work-row");
+  await expect(postRevisionRows).toHaveCount(6);
+  await expect(postRevisionRows.getByRole("heading", { name: "Initial Writing", exact: true })).toHaveCount(1);
+  await expect(postRevisionRows.getByRole("heading", { name: "Writing Revision", exact: true })).toHaveCount(1);
+  await shot("05-post-revision-role-aware-board");
+
+  await page.goto(`/projects/${fixture.completed.project_id}/workflows/${fixture.completed.instances.revision}`);
+  await expect(page.getByRole("heading", { name: "Revision completed" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revised bounded archival comparison manuscript" })).toBeVisible();
+  await expect(page.getByText("issue-limitation-1: addressed")).toBeVisible();
+  await expect(page.getByText("0 unresolved Review issues.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Continue in the Local Workspace" })).toHaveCount(0);
+  await shot("06-revision-completed-with-disposition");
+
+  await page.goto(`/projects/${fixture.completed.project_id}/outputs`);
+  await expect(page.getByRole("heading", { name: "Initial manuscript", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Review report", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revised manuscript", exact: true })).toBeVisible();
+  await expect(page.getByText("Full-text evidence remains unavailable.").first()).toBeVisible();
+  await expect(page.locator("details").filter({ hasText: "Technical Details" }).first()).not.toHaveAttribute("open");
+  await shot("07-downstream-typed-outputs");
+
+  await page.goto(`/projects/${fixture.eligible.project_id}/outputs`);
+  await expect(page.getByText("Local preview has not yet been reported.")).toBeVisible();
+  await expect(page.getByText("The complete research product remains in the Local Workspace.")).toBeVisible();
+  await shot("08-downstream-presentation-absent");
+
+  await page.goto(`/projects/${fixture.completed.project_id}`);
+  await expect(page.getByRole("heading", { name: "Recent activity" })).toBeVisible();
+  const recentActivity = page.getByRole("region", { name: "Recent activity" });
+  await expect(recentActivity.getByText("Writing Revision", { exact: true })).toBeVisible();
+  await expect(recentActivity.getByText("Review", { exact: true })).toBeVisible();
+  const overviewWorkflows = page.locator(".overview-workflow-list");
+  await expect(overviewWorkflows.getByText("Initial Writing", { exact: true })).toBeVisible();
+  await expect(overviewWorkflows.getByText("Writing Revision", { exact: true })).toBeVisible();
+  await shot("09-overview-role-aware-writing-labels");
+  await page.goto(`/projects/${fixture.completed.project_id}/progress`);
+  await expect(page.getByRole("heading", { name: `${fixture.completed.project_name} Activity` })).toBeVisible();
+  const activity = page.locator(".project-progress-history");
+  await expect(activity.getByRole("heading", { name: "Initial Writing", exact: true })).toBeVisible();
+  await expect(activity.getByRole("heading", { name: "Writing Revision", exact: true })).toBeVisible();
+  await shot("10-forward-activity-and-role-labels");
 });

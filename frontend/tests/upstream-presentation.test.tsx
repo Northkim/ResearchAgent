@@ -13,12 +13,16 @@ afterEach(() => vi.restoreAllMocks());
 
 const projectId = `project-${"1".repeat(32)}`;
 
-function artifact(type: "selected-paper-library/v1" | "selected-research-idea/v1", suffix: string, payload?: Record<string, unknown>): CanonicalArtifactReference {
+function artifact(type: string, suffix: string, payload?: Record<string, unknown>): CanonicalArtifactReference {
   const artifactId = `artifact-${suffix.repeat(32)}`;
   const checksum = `sha256:${suffix.repeat(64)}`;
-  const schema = type === "selected-paper-library/v1"
-    ? "reagent.artifact-presentation.selected-paper-library/v0.1"
-    : "reagent.artifact-presentation.selected-research-idea/v0.1";
+  const schema = {
+    "selected-paper-library/v1": "reagent.artifact-presentation.selected-paper-library/v0.1",
+    "selected-research-idea/v1": "reagent.artifact-presentation.selected-research-idea/v0.1",
+    "manuscript-draft/v4": "reagent.artifact-presentation.manuscript-draft/v0.1",
+    "manuscript-draft/v5": "reagent.artifact-presentation.manuscript-draft/v0.1",
+    "review-report/v3": "reagent.artifact-presentation.review-report/v0.1",
+  }[type] ?? "reagent.artifact-presentation.experiment-record/v0.2";
   return {
     schema_version: "reagent.artifact-reference/v0.1",
     artifact_id: artifactId,
@@ -134,4 +138,33 @@ test("presentation absence is truthful and does not block exact multi-candidate 
   expect(screen.getByText("Preview not yet reported from Local Workspace.")).toBeVisible();
   expect(screen.getByRole("button", { name: "Confirm exact input" })).toBeDisabled();
   expect(screen.queryByText(/sha256:/)).not.toBeInTheDocument();
+});
+
+test("manuscript and Review previews prioritize bounded content over identities", () => {
+  const manuscript = {
+    mode: "INITIAL", title: "A bounded manuscript", summary: "Reports one exact categorical observation.",
+    sections: ["Introduction", "Results", "Limitations"],
+    evidence_coverage: { claim_count: 2, supported_claim_count: 1, planned_claim_count: 0, unavailable_claim_count: 1 },
+    result_availability: "AVAILABLE", limitations: ["The result is narrowly bounded."],
+    owner_review_status: "APPROVED", changed_sections: [], change_summary: null,
+    issue_dispositions: [], unresolved_issue_count: 0,
+  };
+  const { rerender } = render(<ArtifactPresentationPreview artifact={artifact("manuscript-draft/v4", "c", manuscript)} />);
+  expect(screen.getByRole("heading", { name: manuscript.title })).toBeVisible();
+  expect(screen.getByText(/1 supported/)).toBeVisible();
+  expect(screen.getByText(/complete manuscript remains in the Local Workspace/)).toBeVisible();
+  expect(screen.queryByText(/sha256:/)).not.toBeInTheDocument();
+
+  const review = {
+    reviewed_manuscript: { artifact_id: `artifact-${"c".repeat(32)}`, artifact_type: "manuscript-draft/v4", artifact_checksum: `sha256:${"c".repeat(64)}` },
+    scope: "Claims and exact supporting evidence.", status: "REVISION_REQUIRED",
+    summary: "One bounded revision is required.",
+    issues: [{ issue_id: "issue-1", severity: "MINOR", blocking: true, anchor: "Results", rationale: "State the limitation.", requested_revision: "Add the retained limitation." }],
+    requested_revisions: ["Add the retained limitation."], unresolved_evidence_gaps: [],
+    reproducibility_findings: [], limitations: ["Exact supplied evidence only."], owner_review_status: "APPROVED",
+  };
+  rerender(<ArtifactPresentationPreview artifact={artifact("review-report/v3", "d", review)} />);
+  expect(screen.getByText("One bounded revision is required.")).toBeVisible();
+  expect(screen.getByText(/minor issue/)).toBeVisible();
+  expect(screen.getAllByText("Add the retained limitation.").length).toBeGreaterThan(0);
 });

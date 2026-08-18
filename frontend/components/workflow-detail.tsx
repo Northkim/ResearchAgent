@@ -22,6 +22,7 @@ import {
   useProjectWorkflowInstances,
   useWorkflowDefinition,
 } from "@/api/hooks";
+import { apiClient } from "@/api/client";
 import { formatDateTime } from "@/lib/format";
 
 import { CopyCommand } from "./copy-command";
@@ -684,6 +685,113 @@ function GenericExperimentDetail({
   </div>;
 }
 
+function downstreamRole(instance: ProjectWorkflowInstance) {
+  if (instance.workflow_definition_id === "review-local-experimental") return "REVIEW" as const;
+  return instance.workflow_version === "0.6.0" ? "REVISION" as const : "INITIAL" as const;
+}
+
+function downstreamTask(role: "INITIAL" | "REVIEW" | "REVISION", stage: string, completed: boolean): { title: string; next: string } {
+  if (completed) return role === "INITIAL"
+    ? { title: "Manuscript completed", next: "Review the bounded manuscript preview." }
+    : role === "REVIEW"
+      ? { title: "Review completed", next: "Review the issues before starting a revision." }
+      : { title: "Revision completed", next: "Review the revised manuscript and unresolved issues." };
+  const tasks: Record<string, { title: string; next: string }> = role === "INITIAL" ? {
+    INPUT_REVIEW: { title: "Review the evidence boundary", next: "ReAgent will prepare the writing brief." },
+    WRITING_BRIEF: { title: "Review the writing brief", next: "ReAgent will build the evidence map." },
+    EVIDENCE_MAP: { title: "Review the evidence map", next: "ReAgent will prepare the manuscript outline." },
+    OUTLINE: { title: "Review the outline locally", next: "Approved sections will be drafted locally." },
+    OWNER_APPROVAL: { title: "Review the outline locally", next: "Approved sections will be drafted locally." },
+    SECTION_DRAFTING: { title: "Continue drafting locally", next: "ReAgent will validate claim and citation support." },
+    CLAIM_CITATION_CHECK: { title: "Continue the claim audit locally", next: "The manuscript will be prepared for Owner review." },
+    OWNER_REVIEW: { title: "Review the manuscript locally", next: "Approval finalizes one immutable manuscript." },
+  } : role === "REVIEW" ? {
+    INPUT_REVIEW: { title: "Review the manuscript evidence boundary", next: "ReAgent will define the Review scope." },
+    REVIEW_SCOPE: { title: "Review the scope locally", next: "ReAgent will audit claims and evidence." },
+    CLAIM_EVIDENCE_AUDIT: { title: "Continue the evidence audit locally", next: "ReAgent will structure bounded Review issues." },
+    METHOD_RESULT_AUDIT: { title: "Continue the result audit locally", next: "ReAgent will preserve validity and evidence limits." },
+    CITATION_REPRODUCIBILITY_AUDIT: { title: "Continue the reproducibility audit", next: "ReAgent will structure the Review issues." },
+    STRUCTURED_ISSUES: { title: "Review the structured issues locally", next: "The Review will be prepared for final Owner review." },
+    OWNER_REVIEW: { title: "Review the report locally", next: "Approval finalizes one immutable Review report." },
+  } : {
+    INPUT_REVIEW: { title: "Review the revision sources", next: "ReAgent will reconcile the exact Review issues." },
+    ISSUE_RECONCILIATION: { title: "Resolve Review issue decisions", next: "ReAgent will prepare a bounded revision plan." },
+    REVISION_PLAN: { title: "Review the revision plan locally", next: "Approved changes will be applied to a new manuscript." },
+    OWNER_APPROVAL: { title: "Review the revision plan locally", next: "Approved changes will be applied to a new manuscript." },
+    DRAFT_REVISION: { title: "Continue revision locally", next: "ReAgent will recheck claims and citations." },
+    CLAIM_CITATION_RECHECK: { title: "Continue the claim audit locally", next: "The revised manuscript will be prepared for review." },
+    OWNER_REVIEW: { title: "Review the revised manuscript locally", next: "Approval finalizes a new immutable manuscript." },
+  };
+  return tasks[stage] ?? { title: `Continue ${role === "INITIAL" ? "writing" : role === "REVIEW" ? "Review" : "revision"} locally`, next: "ReAgent will resume from the exact saved checkpoint." };
+}
+
+function DownstreamWorkflowDetail({
+  project, instance, state, progress, artifacts, requirements, instances, manifestRevision,
+}: {
+  project: LocalProject;
+  instance: ProjectWorkflowInstance;
+  state: WorkflowInstanceProgress;
+  progress: ProjectProgress;
+  artifacts: CanonicalArtifactReference[];
+  requirements: WorkflowArtifactRequirement[];
+  instances: ProjectWorkflowInstance[];
+  manifestRevision: number;
+}) {
+  const role = downstreamRole(instance);
+  const [revisionPending, setRevisionPending] = useState(false);
+  const [revisionError, setRevisionError] = useState<string | null>(null);
+  const dependencies = progress.dependency_edges.filter((edge) => edge.consumer_workflow_instance_id === instance.workflow_instance_id && edge.state === "ACTIVE");
+  const latestArtifact = artifacts.find((item) => item.artifact_id === state.action.latest_output?.artifact_id)
+    ?? artifacts.find((item) => item.producer_workflow_instance_id === instance.workflow_instance_id);
+  const completed = Boolean(latestArtifact && ["manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5"].includes(latestArtifact.artifact_type));
+  const task = downstreamTask(role, state.action.stage.code, completed);
+  const command = completed ? null : localCommand(state.action.next_action.code, instance.workflow_instance_id);
+  const roleName = role === "INITIAL" ? "Initial Writing" : role === "REVIEW" ? "Review" : "Writing Revision";
+  const sourceTitle = role === "INITIAL" ? "Research inputs" : role === "REVIEW" ? "Manuscript under review" : "Revision source";
+  const sourceRows = requirements.filter((requirement) => requirement.required || dependencies.some((edge) => edge.requirement_key === requirement.requirement_key));
+  const reviewPresentationReady = role === "REVIEW"
+    && latestArtifact?.presentation?.schema_identity === "reagent.artifact-presentation.review-report/v0.1";
+  const parentDependency = dependencies.find((edge) => edge.requirement_key === "manuscript");
+  const canStartRevision = completed && reviewPresentationReady && parentDependency && latestArtifact;
+
+  const startRevision = async () => {
+    if (!canStartRevision) return;
+    setRevisionPending(true); setRevisionError(null);
+    try {
+      const revision = await apiClient.startWritingRevision(project.project_id, {
+        parent_manuscript_artifact_id: parentDependency.artifact_id,
+        causal_review_artifact_id: latestArtifact.artifact_id,
+        base_revision: manifestRevision,
+      });
+      window.location.assign(`/projects/${project.project_id}/workflows/${revision.workflow_instance_id}`);
+    } catch (error) {
+      setRevisionError(error instanceof Error ? error.message : "Revision could not be started.");
+      setRevisionPending(false);
+    }
+  };
+
+  return <div className="page-stack workflow-detail-page">
+    <p className="breadcrumb"><Link href={`/projects/${project.project_id}`}>{project.name}</Link><span>/</span><Link href={`/projects/${project.project_id}/workflows`}>Workflows</Link><span>/</span><strong>{roleName}</strong></p>
+    <header className="workflow-detail-header"><div><p className="eyebrow">{roleName}</p><h1>{role === "INITIAL" ? "Prepare an evidence-bound manuscript" : role === "REVIEW" ? "Audit the manuscript evidence" : "Revise from the exact Review"}</h1></div><Link href={`/projects/${project.project_id}/workflows`} className="button button-ghost">All Workflows</Link></header>
+    <ProjectNavigation projectId={project.project_id} active="Workflows" />
+
+    <section id="inputs" className="plain-section" aria-labelledby="downstream-sources-title"><p className="eyebrow">Source</p><h2 id="downstream-sources-title">{sourceTitle}</h2>
+      <div className="input-readiness-list">{sourceRows.map((requirement) => { const bound = dependencies.find((edge) => edge.requirement_key === requirement.requirement_key); return <div key={requirement.requirement_key}><div><strong>{requirementLabel(requirement.artifact_type)}</strong><small>{bound ? "Exact input selected" : requirement.required ? "Required before work can continue" : "Optional evidence not selected"}</small></div><span>{bound ? "Ready" : requirement.required ? "Missing" : "Optional"}</span></div>; })}</div>
+      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /> : null}
+    </section>
+
+    <section className="current-action-panel" aria-labelledby="downstream-current-task"><div className="current-action-main"><p className="attention-copy">{completed ? "Completed" : state.action.attention_state === "OWNER_ACTION_REQUIRED" ? "Needs your review" : "Current task"}</p><h2 id="downstream-current-task">{task.title}</h2><p>{task.next}</p></div>{!completed && command ? <aside className="current-action-next"><span>Primary action</span><a className="button button-primary" href="#local-workflow">Continue locally</a></aside> : null}</section>
+
+    {latestArtifact ? <section className="plain-section" aria-labelledby="downstream-preview-title"><h2 id="downstream-preview-title">{role === "INITIAL" ? "Initial manuscript" : role === "REVIEW" ? "Review summary and issues" : "Revised manuscript"}</h2><ArtifactPresentationPreview artifact={latestArtifact} /></section> : <section className="plain-section"><h2>{role === "REVIEW" ? "Review summary" : "Evidence summary"}</h2><p>{role === "INITIAL" ? "The manuscript preview will appear after exact local finalization." : role === "REVIEW" ? "Structured issues will appear after the Review is finalized locally." : "The revised manuscript preview will appear after finalization."}</p></section>}
+
+    {canStartRevision ? <section className="plain-section" aria-labelledby="start-revision-title"><p className="eyebrow">Next step</p><h2 id="start-revision-title">Revise this manuscript</h2><p>Create one new Revision from the exact manuscript and Review shown above.</p><button type="button" className="button button-primary" disabled={revisionPending} onClick={startRevision}>{revisionPending ? "Starting revision…" : "Start manuscript revision"}</button>{revisionError ? <p role="alert">{revisionError}</p> : null}</section> : null}
+
+    {command ? <section id="local-workflow" className="run-local-details" aria-labelledby="downstream-local-title"><div><p className="eyebrow">Local Workflow</p><h2 id="downstream-local-title">Continue in the Local Workspace</h2><p>Research content and Agent reasoning remain on this computer.</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label={`${roleName} local workflow command`} /><p>Expected next state: {task.next} Run the same command to resume saved work.</p></div></section> : null}
+
+    <details className="technical-details"><summary>Technical details</summary><dl><div><dt>Workflow Definition</dt><dd><code>{instance.workflow_definition_id}@{instance.workflow_version}</code></dd></div><div><dt>Capsule</dt><dd><code>{instance.capsule_id}@{instance.capsule_version}</code></dd></div><div><dt>Workflow Instance</dt><dd><code>{instance.workflow_instance_id}</code></dd></div>{dependencies.map((edge) => <div key={edge.requirement_key}><dt>{edge.requirement_key}</dt><dd><code>{edge.artifact_id}</code></dd></div>)}{latestArtifact ? <><div><dt>Artifact type</dt><dd><code>{latestArtifact.artifact_type}</code></dd></div><div><dt>Artifact checksum</dt><dd><code>{latestArtifact.content_checksum}</code></dd></div></> : null}</dl></details>
+  </div>;
+}
+
 export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: string; workflowInstanceId: string }) {
   const [runInstructionsOpen, setRunInstructionsOpen] = useState(false);
   const runInstructionsRef = useRef<HTMLDetailsElement>(null);
@@ -709,7 +817,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
   const resourceRequirements = pinnedVersion.resource_requirements ?? instance.resource_requirements ?? [];
   if (
     instance.workflow_definition_id === "reproduction-experiment-local-experimental"
-    && instance.workflow_version === "0.6.0"
+    && (instance.workflow_version === "0.6.0" || instance.workflow_version === "0.7.0")
   ) {
     return <GenericExperimentDetail
       project={project.data}
@@ -718,6 +826,23 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
       progress={progress.data}
       requirements={requirements}
       resourceRequirements={resourceRequirements}
+    />;
+  }
+  if (
+    (instance.workflow_definition_id === "writing-local-experimental" && ["0.5.0", "0.6.0"].includes(instance.workflow_version))
+    || (instance.workflow_definition_id === "review-local-experimental" && instance.workflow_version === "0.4.0")
+  ) {
+    if (artifacts.isLoading) return <LoadingState label={`Loading ${instance.display_name}`} />;
+    if (artifacts.isError || !artifacts.data) return <ErrorState title="Workflow output unavailable" />;
+    return <DownstreamWorkflowDetail
+      project={project.data}
+      instance={instance}
+      state={state}
+      progress={progress.data}
+      artifacts={artifacts.data.artifacts}
+      requirements={requirements}
+      instances={instances.data.items}
+      manifestRevision={instances.data.manifest_revision}
     />;
   }
   const dependencies = progress.data.dependency_edges.filter((edge) => edge.consumer_workflow_instance_id === workflowInstanceId);

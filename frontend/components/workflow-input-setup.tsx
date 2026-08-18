@@ -45,7 +45,7 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
               {projection?.friendly_instance_label ?? producer?.display_name ?? "Upstream workflow"} · {formatDateTime(artifact.produced_at)}
               <small>{projection?.core_capability_maturity === "SCAFFOLD_CORE" ? "Scaffold Core" : "Reviewed Core"} · result …{artifact.artifact_id.slice(-8)}</small>
             </span>
-            {artifact.artifact_type === "selected-paper-library/v1" || artifact.artifact_type === "selected-research-idea/v1" ? <ArtifactPresentationPreview artifact={artifact} compact selection /> : null}
+            {["selected-paper-library/v1", "selected-research-idea/v1", "experiment-record/v5", "manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5"].includes(artifact.artifact_type) ? <ArtifactPresentationPreview artifact={artifact} compact selection /> : null}
           </label>
         );
       })}

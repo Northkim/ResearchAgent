@@ -12,7 +12,9 @@ from typing import Any, Mapping
 
 from backend.workflow_packages.security import require_relative_path, require_sha256
 from .upstream_presentations import (
+    MANUSCRIPT_PRESENTATION_SCHEMA,
     PAPER_LIBRARY_PRESENTATION_SCHEMA,
+    REVIEW_PRESENTATION_SCHEMA,
     RESEARCH_IDEA_PRESENTATION_SCHEMA,
 )
 
@@ -24,6 +26,8 @@ ARTIFACT_PRESENTATION_SCHEMAS = frozenset({
     EXPERIMENT_PRESENTATION_SCHEMA,
     PAPER_LIBRARY_PRESENTATION_SCHEMA,
     RESEARCH_IDEA_PRESENTATION_SCHEMA,
+    MANUSCRIPT_PRESENTATION_SCHEMA,
+    REVIEW_PRESENTATION_SCHEMA,
 })
 
 _ARTIFACT_ID = re.compile(r"^artifact-[0-9a-f]{32}$")

@@ -193,6 +193,12 @@ PAPER_LIBRARY_PRESENTATION_SCHEMA = (
 RESEARCH_IDEA_PRESENTATION_SCHEMA = (
     "reagent.artifact-presentation.selected-research-idea/v0.1"
 )
+MANUSCRIPT_PRESENTATION_SCHEMA = (
+    "reagent.artifact-presentation.manuscript-draft/v0.1"
+)
+REVIEW_PRESENTATION_SCHEMA = (
+    "reagent.artifact-presentation.review-report/v0.1"
+)
 RESOURCE_INDEX = ".reagent/resource-index.json"
 RESOURCE_ROOT = "resources"
 MATERIALIZATION_RECEIPTS_ROOT = ".reagent/receipts/materializations"
@@ -3142,7 +3148,72 @@ def _paper_evidence_limitation(availability: str) -> str:
     return f"Evidence availability is limited to the reported {availability.lower().replace('_', ' ')} scope."
 
 
-def _project_upstream_presentation(
+def _projection_reference(value: Any, expected_type: str | None = None) -> dict[str, str]:
+    if not isinstance(value, dict):
+        raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Artifact lineage is invalid", EXIT_VALIDATION)
+    artifact_type = value.get("artifact_type")
+    if expected_type is not None and artifact_type != expected_type:
+        raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Artifact lineage type is invalid", EXIT_VALIDATION)
+    _match(value.get("artifact_id"), ARTIFACT_ID, "artifact_id")
+    _checksum(value.get("sha256"), "Artifact lineage checksum")
+    return {
+        "artifact_id": value["artifact_id"],
+        "artifact_type": artifact_type,
+        "artifact_checksum": value["sha256"],
+    }
+
+
+def _manuscript_summary(content: Any, title: str) -> tuple[str, list[str]]:
+    text = _bounded_projection_text(content, "manuscript content", 2_000_000)
+    sections: list[str] = []
+    paragraphs: list[str] = []
+    in_code = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("```"):
+            in_code = not in_code
+            continue
+        if in_code or not line:
+            continue
+        heading = re.match(r"^#{1,6}\s+(.+)$", line)
+        if heading:
+            label = re.sub(r"[*_`\[\]]", "", heading.group(1)).strip()
+            if label and label != title and label not in sections and len(sections) < 30:
+                sections.append(_bounded_projection_text(label, "manuscript section", 200))
+            continue
+        plain = re.sub(r"!\[[^]]*\]\([^)]*\)|\[([^]]+)\]\([^)]*\)", r"\1", line)
+        plain = re.sub(r"[*_`>#~-]", "", plain).strip()
+        if plain:
+            paragraphs.append(plain)
+        if sum(len(item) for item in paragraphs) >= 1_500:
+            break
+    summary = " ".join(paragraphs)[:2_000].strip() or f"Completed manuscript: {title}."
+    return _bounded_projection_text(summary, "manuscript summary", 2_000), sections
+
+
+def _source_presentations(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, dict) or len(value) > 10:
+        raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Manuscript source lineage is invalid", EXIT_VALIDATION)
+    result: list[dict[str, str]] = []
+    for role, reference in value.items():
+        projected = _projection_reference(reference)
+        if projected["artifact_type"] not in {
+            "selected-research-idea/v1", "selected-paper-library/v1", "experiment-record/v5",
+        }:
+            raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Manuscript source type is invalid", EXIT_VALIDATION)
+        result.append({"role": _bounded_projection_text(role, "source role", 80), **projected})
+    return result
+
+
+def _optional_issue_text(item: dict[str, Any], keys: tuple[str, ...], maximum: int) -> str | None:
+    for key in keys:
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return _bounded_projection_text(value, key.replace("_", " "), maximum)
+    return None
+
+
+def _project_artifact_presentation(
     *, artifact: dict[str, Any], content: bytes
 ) -> dict[str, Any] | None:
     """Derive one deterministic, bounded UI projection from exact Artifact bytes."""
@@ -3265,12 +3336,167 @@ def _project_upstream_presentation(
                 "artifact_checksum": source.get("sha256"),
             },
         }
+    elif artifact_type in {"manuscript-draft/v4", "manuscript-draft/v5"}:
+        value = _artifact_json(content, expected_schema=artifact_type)
+        title = _bounded_projection_text(value.get("title"), "manuscript title", 500)
+        summary, sections = _manuscript_summary(value.get("content_markdown"), title)
+        claims = value.get("claims")
+        if not isinstance(claims, list) or len(claims) > 100_000:
+            raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Manuscript claims are invalid", EXIT_VALIDATION)
+        counts = {"SUPPORTED": 0, "PLANNED": 0, "UNAVAILABLE": 0}
+        for claim in claims:
+            if not isinstance(claim, dict):
+                raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Manuscript claim is invalid", EXIT_VALIDATION)
+            if claim.get("support_status") in counts:
+                counts[claim["support_status"]] += 1
+        limitations = _bounded_projection_texts(
+            value.get("limitations"), "manuscript limitations", count=20, length=500
+        )
+        revision = artifact_type == "manuscript-draft/v5"
+        sources: list[dict[str, str]] = []
+        parent = review = change_summary = None
+        dispositions: list[dict[str, str]] = []
+        changed_sections: list[str] = []
+        unresolved = 0
+        if revision:
+            raw_support = value.get("supporting_artifacts")
+            if not isinstance(raw_support, list) or len(raw_support) > 10:
+                raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Revision support lineage is invalid", EXIT_VALIDATION)
+            for index, reference in enumerate(raw_support):
+                projected = _projection_reference(reference)
+                sources.append({"role": f"supporting_evidence_{index + 1}", **projected})
+            parent = _projection_reference(value.get("prior_manuscript"), "manuscript-draft/v4")
+            review = _projection_reference(value.get("causal_review"), "review-report/v3")
+            accounting = value.get("issue_accounting")
+            if not isinstance(accounting, list) or len(accounting) > 100:
+                raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Revision issue accounting is invalid", EXIT_VALIDATION)
+            for entry in accounting:
+                if not isinstance(entry, dict):
+                    raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Revision issue accounting is invalid", EXIT_VALIDATION)
+                dispositions.append({
+                    "issue_id": _bounded_projection_text(entry.get("issue_id"), "Review issue identity", 160),
+                    "disposition": _bounded_projection_text(entry.get("disposition"), "Review issue disposition", 80),
+                })
+            plan_box = value.get("revision_plan")
+            plan = plan_box.get("value") if isinstance(plan_box, dict) else None
+            if isinstance(plan, list):
+                for entry in plan:
+                    if isinstance(entry, dict) and isinstance(entry.get("affected_section"), str):
+                        section = _bounded_projection_text(entry["affected_section"], "changed section", 200)
+                        if section not in changed_sections and len(changed_sections) < 30:
+                            changed_sections.append(section)
+            unresolved = value.get("remaining_blocking_issue_count")
+            if isinstance(unresolved, bool) or not isinstance(unresolved, int) or not 0 <= unresolved <= 100:
+                raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Revision unresolved issue count is invalid", EXIT_VALIDATION)
+            addressed = sum(item["disposition"] == "ADDRESSED" for item in dispositions)
+            change_summary = f"{addressed} of {len(dispositions)} Review issues addressed; {unresolved} remain unresolved."
+            limitations = list(dict.fromkeys([
+                *limitations,
+                *_bounded_projection_texts(value.get("revision_limitations"), "revision limitations", count=20, length=500),
+            ]))[:20]
+        else:
+            sources = _source_presentations(value.get("source_artifacts"))
+        payload = {
+            "schema": MANUSCRIPT_PRESENTATION_SCHEMA,
+            "artifact_id": artifact["artifact_id"],
+            "artifact_checksum": artifact["content_checksum"],
+            "mode": "REVISION" if revision else "INITIAL",
+            "title": title,
+            "summary": summary,
+            "sections": sections,
+            "evidence_coverage": {
+                "claim_count": len(claims),
+                "supported_claim_count": counts["SUPPORTED"],
+                "planned_claim_count": counts["PLANNED"],
+                "unavailable_claim_count": counts["UNAVAILABLE"],
+            },
+            "result_availability": "AVAILABLE" if value.get("experiment_evidence_available") is True else "UNAVAILABLE",
+            "limitations": limitations,
+            "owner_review_status": "APPROVED" if isinstance(value.get("owner_review"), dict) else "NOT_REPORTED",
+            "source_artifacts": sources,
+            "parent_manuscript": parent,
+            "causal_review": review,
+            "changed_sections": changed_sections,
+            "change_summary": change_summary,
+            "issue_dispositions": dispositions,
+            "unresolved_issue_count": unresolved,
+        }
+    elif artifact_type == "review-report/v3":
+        value = _artifact_json(content, expected_schema=artifact_type)
+        issues = value.get("issues")
+        if not isinstance(issues, list) or len(issues) > 100:
+            raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Review issues are invalid", EXIT_VALIDATION)
+        projected_issues: list[dict[str, Any]] = []
+        requested: list[str] = []
+        reproducibility: list[str] = []
+        for raw in issues:
+            if not isinstance(raw, dict):
+                raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Review issue is invalid", EXIT_VALIDATION)
+            blocking = raw.get("blocking")
+            if not isinstance(blocking, bool):
+                raise WorkspaceCLIError(
+                    "LOCAL_ARTIFACT_DRIFT", "Review issue blocking state is invalid", EXIT_VALIDATION
+                )
+            requested_revision = _optional_issue_text(raw, ("requested_revision", "requested_change"), 1_000)
+            rationale = _optional_issue_text(raw, ("rationale", "description"), 1_000)
+            anchor = _optional_issue_text(raw, ("manuscript_anchor", "claim_anchor", "anchor"), 300)
+            projected_issues.append({
+                "issue_id": _bounded_projection_text(raw.get("issue_id"), "Review issue identity", 160),
+                "severity": _bounded_projection_text(raw.get("severity"), "Review issue severity", 20),
+                "blocking": blocking,
+                "anchor": anchor,
+                "rationale": rationale,
+                "requested_revision": requested_revision,
+            })
+            if requested_revision:
+                requested.append(requested_revision)
+            if raw.get("category") == "REPRODUCIBILITY" and rationale:
+                reproducibility.append(rationale)
+        scope_box = value.get("review_scope")
+        scope_value = scope_box.get("value") if isinstance(scope_box, dict) else None
+        scope = None
+        if isinstance(scope_value, dict):
+            scope = _optional_issue_text(scope_value, ("summary", "scope", "focus"), 1_500)
+            reported = scope_value.get("reproducibility_findings")
+            if isinstance(reported, list):
+                reproducibility.extend(_bounded_projection_texts(reported, "reproducibility finding", count=30, length=500))
+        if scope is None:
+            scope = "Exact manuscript and selected supporting evidence."
+        gaps: list[str] = []
+        availability = value.get("evidence_availability")
+        if isinstance(availability, list):
+            for entry in availability:
+                if isinstance(entry, str):
+                    gaps.append(_bounded_projection_text(entry, "evidence gap", 500))
+                elif isinstance(entry, dict):
+                    text = _optional_issue_text(entry, ("gap", "limitation", "description"), 500)
+                    if text:
+                        gaps.append(text)
+        payload = {
+            "schema": REVIEW_PRESENTATION_SCHEMA,
+            "artifact_id": artifact["artifact_id"],
+            "artifact_checksum": artifact["content_checksum"],
+            "reviewed_manuscript": _projection_reference(value.get("source_manuscript"), "manuscript-draft/v4"),
+            "scope": scope,
+            "status": _bounded_projection_text(value.get("assessment"), "Review status", 80),
+            "summary": _bounded_projection_text(value.get("summary"), "Review summary", 2_000),
+            "issues": projected_issues,
+            "requested_revisions": list(dict.fromkeys(requested))[:30],
+            "unresolved_evidence_gaps": list(dict.fromkeys(gaps))[:30],
+            "reproducibility_findings": list(dict.fromkeys(reproducibility))[:30],
+            "limitations": _bounded_projection_texts(value.get("limitations"), "Review limitations", count=30, length=500),
+            "owner_review_status": "APPROVED" if isinstance(value.get("owner_review"), dict) else "NOT_REPORTED",
+        }
     else:
         return None
     return {**payload, "presentation_checksum": canonical_hash(payload)}
 
 
-def _report_upstream_presentations(
+# Preserve the qualified U1 helper seam while widening its exact registry.
+_project_upstream_presentation = _project_artifact_presentation
+
+
+def _report_artifact_presentations(
     *,
     descriptor: dict[str, Any],
     cloud_artifacts: list[dict[str, Any]],
@@ -3283,10 +3509,11 @@ def _report_upstream_presentations(
         source = verified_sources.get(artifact.get("artifact_id"))
         if source is None or artifact.get("artifact_type") not in {
             "selected-paper-library/v1", "selected-research-idea/v1",
+            "manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5",
         }:
             continue
         try:
-            payload = _project_upstream_presentation(
+            payload = _project_artifact_presentation(
                 artifact=artifact, content=source.read_bytes()
             )
         except WorkspaceCLIError:
@@ -3318,7 +3545,7 @@ def _report_upstream_presentations(
     return reported, tuple(warnings)
 
 
-def _report_completed_upstream_workflow_preview(
+def _report_completed_workflow_preview(
     *, workspace: Path, descriptor: dict[str, Any], installed: dict[str, Any], transport: Any
 ) -> tuple[int, tuple[str, ...]]:
     artifacts = _fetch_all_artifacts(transport, descriptor["project_id"])
@@ -3328,6 +3555,7 @@ def _report_completed_upstream_workflow_preview(
         and item.get("state") == "LOCAL_AVAILABLE"
         and item.get("artifact_type") in {
             "selected-paper-library/v1", "selected-research-idea/v1",
+            "manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5",
         }
     ]
     sources: dict[str, Path] = {}
@@ -3347,7 +3575,7 @@ def _report_completed_upstream_workflow_preview(
                 EXIT_VALIDATION,
             )
         sources[artifact["artifact_id"]] = source
-    return _report_upstream_presentations(
+    return _report_artifact_presentations(
         descriptor=descriptor,
         cloud_artifacts=relevant,
         verified_sources=sources,
@@ -3441,7 +3669,7 @@ def refresh_artifact_index(
         document = {**payload, "index_checksum": canonical_hash(payload)}
         _atomic_write_json(index_path, document)
         _read_artifact_index(index_path, descriptor)
-        reported, warnings = _report_upstream_presentations(
+        reported, warnings = _report_artifact_presentations(
             descriptor=descriptor,
             cloud_artifacts=cloud_artifacts,
             verified_sources=verified_sources,
@@ -5073,10 +5301,10 @@ def run_workflow(
                 if local_reports[-1]["status"] == "COMPLETED":
                     presentation_count = 0
                     presentation_warnings: tuple[str, ...] = ()
-                    if is_idea:
+                    if is_idea or is_real_writing or is_real_review or is_writing_revision:
                         try:
                             presentation_count, presentation_warnings = (
-                                _report_completed_upstream_workflow_preview(
+                                _report_completed_workflow_preview(
                                     workspace=workspace,
                                     descriptor=descriptor,
                                     installed=installed,
@@ -5459,10 +5687,12 @@ def run_workflow(
             )
         presentation_count = 0
         presentation_warnings: tuple[str, ...] = ()
-        if not preflight_only and (is_literature or is_idea):
+        if not preflight_only and (
+            is_literature or is_idea or is_real_writing or is_real_review or is_writing_revision
+        ):
             try:
                 presentation_count, presentation_warnings = (
-                    _report_completed_upstream_workflow_preview(
+                    _report_completed_workflow_preview(
                         workspace=workspace,
                         descriptor=descriptor,
                         installed=installed,
@@ -7126,11 +7356,17 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             if definition_id == WORKFLOW_ID and item["lifecycle"] == "ACTIVE"
             else None
         )
+        role_name = document["workflow_type"]
+        if definition_id == "writing-local-experimental":
+            if item["workflow_definition_version"] == "0.5.0":
+                role_name = "Initial Writing"
+            elif item["workflow_definition_version"] == "0.6.0":
+                role_name = "Writing Revision"
         seen_counts[definition_id] = seen_counts.get(definition_id, 0) + 1
         friendly_label = (
-            document["workflow_type"]
+            role_name
             if all_counts[definition_id] == 1
-            else f"{document['workflow_type']} #{seen_counts[definition_id]}"
+            else f"{role_name} #{seen_counts[definition_id]}"
         )
         if item["lifecycle"] != "ACTIVE":
             readiness = "RETAINED"
@@ -7186,7 +7422,7 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         workflows.append({
             "workflow_instance_id": item["workflow_instance_id"],
             "workflow_definition_id": item["workflow_definition_id"],
-            "display_name": document["workflow_type"],
+            "display_name": role_name,
             "instance_label": friendly_label,
             "core_capability_maturity": document.get("core_capability_maturity", "REVIEWED_CORE"),
             "workflow_version": item["workflow_definition_version"],

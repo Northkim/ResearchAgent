@@ -15,6 +15,27 @@ from backend.application.errors import (
 )
 from backend.local_projects import LocalProject
 from backend.persistence.ports import UnitOfWork
+from backend.artifact_references.contracts import (
+    ArtifactDependencyBinding,
+    DependencyBindingState,
+)
+from backend.artifact_references.service import require_compatible_artifact
+from backend.workflow_packages.forward_downstream_publication import (
+    INITIAL_WRITING_CAPSULE_ID,
+    INITIAL_WRITING_CAPSULE_VERSION,
+    INITIAL_WRITING_VERSION,
+    REVIEW_CAPSULE_ID as FORWARD_REVIEW_CAPSULE_ID,
+    REVIEW_CAPSULE_VERSION as FORWARD_REVIEW_CAPSULE_VERSION,
+    REVIEW_VERSION as FORWARD_REVIEW_VERSION,
+    WRITING_REVISION_CAPSULE_ID,
+    WRITING_REVISION_CAPSULE_VERSION,
+    WRITING_REVISION_VERSION,
+)
+from backend.workflow_packages.generic_experiment_v5_publication import (
+    GENERIC_EXPERIMENT_V5_CAPSULE_ID,
+    GENERIC_EXPERIMENT_V5_CAPSULE_VERSION,
+    GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
+)
 from backend.workflow_packages.production_workflows import (
     EXPERIMENT_WORKFLOW_ID,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
@@ -84,23 +105,25 @@ _FULL_RESEARCH_INITIAL_PINS = (
     ),
     (
         EXPERIMENT_WORKFLOW_ID,
-        REAL_EXPERIMENT_WORKFLOW_VERSION,
-        REAL_EXPERIMENT_V0_7_CAPSULE_ID,
-        REAL_EXPERIMENT_BUGFIX_CAPSULE_VERSION,
+        GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
+        GENERIC_EXPERIMENT_V5_CAPSULE_ID,
+        GENERIC_EXPERIMENT_V5_CAPSULE_VERSION,
     ),
     (
         WRITING_WORKFLOW_ID,
-        REAL_WRITING_WORKFLOW_VERSION,
-        REAL_WRITING_CAPSULE_ID,
-        REAL_WRITING_CAPSULE_VERSION,
+        INITIAL_WRITING_VERSION,
+        INITIAL_WRITING_CAPSULE_ID,
+        INITIAL_WRITING_CAPSULE_VERSION,
     ),
     (
         REVIEW_WORKFLOW_ID,
-        REAL_REVIEW_WORKFLOW_VERSION,
-        REAL_REVIEW_CAPSULE_ID,
-        REAL_REVIEW_CAPSULE_VERSION,
+        FORWARD_REVIEW_VERSION,
+        FORWARD_REVIEW_CAPSULE_ID,
+        FORWARD_REVIEW_CAPSULE_VERSION,
     ),
 )
+
+_REVISION_NAMESPACE = uuid.UUID("e5cded36-3180-5dfa-98dd-4da5952b8e0d")
 
 
 class ProjectWorkspaceApplicationService:
@@ -198,7 +221,7 @@ class ProjectWorkspaceApplicationService:
                 capsule_id=capsule.capsule_id,
                 capsule_version=capsule.capsule_version,
                 desired_state=WorkflowInstanceDesiredState.ACTIVE,
-                display_name=definition.display_name,
+                display_name=_product_role_name(definition.workflow_definition_id, version.version, definition.display_name),
                 created_manifest_revision=1,
                 retired_manifest_revision=None,
                 legacy_package_id=None,
@@ -511,6 +534,175 @@ class ProjectWorkspaceApplicationService:
             raise
         return instance
 
+    def start_writing_revision(
+        self,
+        *,
+        project_id: str,
+        parent_manuscript_artifact_id: str,
+        causal_review_artifact_id: str,
+        base_revision: int,
+    ) -> ProjectWorkflowInstance:
+        """Create one exact causal Revision, or return its equivalent replay."""
+
+        project = self._require_project(project_id)
+        definition, version, capsule = self._require_creatable_pin(
+            workflow_definition_id=WRITING_WORKFLOW_ID,
+            workflow_version=WRITING_REVISION_VERSION,
+            capsule_id=WRITING_REVISION_CAPSULE_ID,
+            capsule_version=WRITING_REVISION_CAPSULE_VERSION,
+        )
+        parent = self._uow.artifact_references.get_artifact(parent_manuscript_artifact_id)
+        review = self._uow.artifact_references.get_artifact(causal_review_artifact_id)
+        if parent is None or review is None or parent.project_id != project_id or review.project_id != project_id:
+            raise ApplicationCodedNotFoundError(
+                "Exact manuscript or Review Artifact not found",
+                code="ARTIFACT_REFERENCE_NOT_FOUND",
+            )
+        parent_instance = self.get_instance(project_id, parent.producer_workflow_instance_id)
+        review_instance = self.get_instance(project_id, review.producer_workflow_instance_id)
+        if (
+            parent.artifact_type != "manuscript-draft/v4"
+            or parent_instance.workflow_definition_id != WRITING_WORKFLOW_ID
+            or parent_instance.workflow_version != INITIAL_WRITING_VERSION
+            or review.artifact_type != "review-report/v3"
+            or review_instance.workflow_definition_id != REVIEW_WORKFLOW_ID
+            or review_instance.workflow_version != FORWARD_REVIEW_VERSION
+        ):
+            raise ApplicationCodedValidationError(
+                "Revision requires the exact forward manuscript and causal Review",
+                code="DEPENDENCY_INCOMPATIBLE",
+            )
+        parent_bindings = self._active_bindings(project_id, parent_instance.workflow_instance_id)
+        review_bindings = self._active_bindings(project_id, review_instance.workflow_instance_id)
+        if review_bindings.get("manuscript") is None or review_bindings["manuscript"].artifact_id != parent.artifact_id:
+            raise ApplicationCodedConflictError(
+                "Review does not causally bind the selected manuscript",
+                code="DEPENDENCY_BINDING_CONFLICT",
+            )
+        exact_artifacts = {
+            "prior_manuscript": parent,
+            "causal_review": review,
+        }
+        for key in ("research_idea", "literature_library", "experiment_record"):
+            parent_binding = parent_bindings.get(key)
+            review_binding = review_bindings.get(key)
+            if parent_binding is None:
+                if key == "experiment_record":
+                    continue
+                raise ApplicationCodedConflictError(
+                    "Parent manuscript evidence bindings are incomplete",
+                    code="DEPENDENCY_UNRESOLVED",
+                )
+            if review_binding is not None and review_binding.artifact_id != parent_binding.artifact_id:
+                raise ApplicationCodedConflictError(
+                    "Review evidence differs from the parent manuscript lineage",
+                    code="DEPENDENCY_BINDING_CONFLICT",
+                )
+            artifact = self._uow.artifact_references.get_artifact(parent_binding.artifact_id)
+            if artifact is None:
+                raise ApplicationCodedConflictError(
+                    "Parent manuscript evidence is unavailable",
+                    code="DEPENDENCY_UNRESOLVED",
+                )
+            exact_artifacts[key] = artifact
+        for key, artifact in exact_artifacts.items():
+            requirement = self._uow.artifact_references.get_requirement(
+                WRITING_WORKFLOW_ID, WRITING_REVISION_VERSION, key
+            )
+            if requirement is None:
+                raise ApplicationCodedConflictError(
+                    "Writing Revision input contract is unavailable",
+                    code="DEPENDENCY_UNRESOLVED",
+                )
+            require_compatible_artifact(requirement, artifact)
+
+        target_ids = {key: artifact.artifact_id for key, artifact in exact_artifacts.items()}
+        for existing in self._uow.workflow_foundation.list_workflow_instances(project_id):
+            if (
+                existing.desired_state is WorkflowInstanceDesiredState.ACTIVE
+                and existing.workflow_definition_id == WRITING_WORKFLOW_ID
+                and existing.workflow_version == WRITING_REVISION_VERSION
+                and {key: value.artifact_id for key, value in self._active_bindings(project_id, existing.workflow_instance_id).items()} == target_ids
+            ):
+                return existing
+
+        now = _utc(self._clock())
+        revision = base_revision + 1
+        instance_id = "wfi-" + uuid.uuid5(
+            _REVISION_NAMESPACE,
+            f"revision|project={project_id}|parent={parent.artifact_id}|review={review.artifact_id}",
+        ).hex
+        instance = ProjectWorkflowInstance(
+            workflow_instance_id=instance_id,
+            project_id=project_id,
+            workflow_definition_id=definition.workflow_definition_id,
+            workflow_version=version.version,
+            capsule_id=capsule.capsule_id,
+            capsule_version=capsule.capsule_version,
+            desired_state=WorkflowInstanceDesiredState.ACTIVE,
+            display_name="Writing Revision",
+            created_manifest_revision=revision,
+            retired_manifest_revision=None,
+            legacy_package_id=None,
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            next_revision = self._uow.project_manifests.compare_and_swap_revision(
+                project_id=project_id, base_revision=base_revision, updated_at=now
+            )
+            if next_revision != revision:
+                raise RuntimeError("manifest revision did not advance exactly once")
+            self._uow.workflow_foundation.add_workflow_instance(instance)
+            for key, artifact in exact_artifacts.items():
+                identity = uuid.uuid5(
+                    _REVISION_NAMESPACE,
+                    f"revision-binding|consumer={instance_id}|requirement={key}|artifact={artifact.artifact_id}",
+                )
+                self._uow.artifact_references.add_binding(ArtifactDependencyBinding(
+                    binding_id="artifact-binding-" + identity.hex,
+                    project_id=project_id,
+                    consumer_workflow_instance_id=instance_id,
+                    consumer_workflow_definition_id=WRITING_WORKFLOW_ID,
+                    consumer_workflow_version=WRITING_REVISION_VERSION,
+                    requirement_key=key,
+                    artifact_id=artifact.artifact_id,
+                    expected_checksum=artifact.content_checksum,
+                    state=DependencyBindingState.ACTIVE,
+                    idempotency_key=str(identity),
+                    created_at=now,
+                    updated_at=now,
+                    retired_at=None,
+                ))
+            instances = self._uow.workflow_foundation.list_workflow_instances(project_id)
+            manifest, entries = self._build_mutation_manifest(
+                project=project,
+                instances=instances,
+                revision=revision,
+                base_revision=base_revision,
+                operation_key=f"start-revision:{parent.artifact_id}:{review.artifact_id}",
+                now=now,
+            )
+            self._uow.project_manifests.add_manifest(manifest)
+            self._uow.project_manifests.add_manifest_entries(entries)
+            self._uow.commit()
+        except ManifestRevisionConflictError as error:
+            self._uow.rollback()
+            raise _revision_conflict(error) from error
+        except Exception:
+            self._uow.rollback()
+            raise
+        return instance
+
+    def _active_bindings(self, project_id: str, instance_id: str):
+        return {
+            item.requirement_key: item
+            for item in self._uow.artifact_references.list_bindings(
+                project_id, instance_id, limit=1_000
+            )
+            if item.state is DependencyBindingState.ACTIVE
+        }
+
     def retire_instance(
         self, *, project_id: str, instance_id: str, base_revision: int
     ) -> ProjectWorkflowInstance:
@@ -713,3 +905,13 @@ def _semver_key(value: str) -> tuple[int, int, int, str]:
     core, _, suffix = value.partition("-")
     major, minor, patch = core.split(".")
     return int(major), int(minor), int(patch), suffix
+
+
+def _product_role_name(workflow_definition_id: str, version: str, fallback: str) -> str:
+    if workflow_definition_id == WRITING_WORKFLOW_ID and version == INITIAL_WRITING_VERSION:
+        return "Initial Writing"
+    if workflow_definition_id == REVIEW_WORKFLOW_ID and version == FORWARD_REVIEW_VERSION:
+        return "Review"
+    if workflow_definition_id == EXPERIMENT_WORKFLOW_ID and version == GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION:
+        return "Reproduction & Experiment"
+    return fallback

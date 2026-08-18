@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Query, Response, status
+from pydantic import Field
 
 from backend.project_workspaces.contracts import (
     WorkflowDefinitionLifecycle,
@@ -49,8 +50,15 @@ from ..schemas.project_workspaces import (
     ControlledLocalRunApprovalProjectionResponse,
     ControlledLocalRunApprovalConsumptionResponse,
 )
+from ..schemas.common import StrictDTO
 
 router = APIRouter(tags=["project-workspaces"])
+
+
+class StartWritingRevisionRequest(StrictDTO):
+    parent_manuscript_artifact_id: str = Field(min_length=41, max_length=41)
+    causal_review_artifact_id: str = Field(min_length=41, max_length=41)
+    base_revision: int = Field(ge=1)
 
 
 def _controlled_approval_service(services, unit_of_work):
@@ -269,6 +277,30 @@ async def create_workflow_instance(
     services: LocalProductServicesDependency,
 ) -> WorkflowInstanceResponse:
     instance = services.project_workspaces.create_instance(
+        project_id=project_id,
+        **request.model_dump(),
+    )
+    return WorkflowInstanceResponse.from_contract(
+        instance,
+        services.project_workspaces.skill_projections_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
+        services.resource_references.requirements_for(
+            instance.workflow_definition_id, instance.workflow_version
+        ),
+    )
+
+
+@router.post(
+    "/projects/{project_id}/writing-revisions",
+    response_model=WorkflowInstanceResponse,
+)
+async def start_writing_revision(
+    project_id: str,
+    request: StartWritingRevisionRequest,
+    services: LocalProductServicesDependency,
+) -> WorkflowInstanceResponse:
+    instance = services.project_workspaces.start_writing_revision(
         project_id=project_id,
         **request.model_dump(),
     )

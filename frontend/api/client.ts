@@ -173,6 +173,17 @@ export const apiClient = {
     });
   },
 
+  startWritingRevision(projectId: string, payload: {
+    parent_manuscript_artifact_id: string;
+    causal_review_artifact_id: string;
+    base_revision: number;
+  }): Promise<ProjectWorkflowInstance> {
+    return request(`/projects/${encodeURIComponent(projectId)}/writing-revisions`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
   retireProjectWorkflowInstance(
     projectId: string,
     instanceId: string,
@@ -189,7 +200,7 @@ export const apiClient = {
     options: { artifactType?: string; workflowInstanceId?: string } = {},
   ): Promise<CanonicalArtifactPage> {
     return request(`/projects/${encodeURIComponent(projectId)}/artifacts${queryString({
-      artifact_type: options.artifactType,
+      artifact_type: options.artifactType === "all" ? undefined : options.artifactType,
       workflow_instance_id: options.workflowInstanceId,
       limit: 100,
     })}`);

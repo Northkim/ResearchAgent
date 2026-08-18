@@ -23,13 +23,17 @@ const OUTPUT_LABELS: Record<string, string> = {
   "experiment-record/v1": "Experiment record",
   "experiment-record/v2": "Experiment result",
   "experiment-record/v4": "Experiment result",
+  "experiment-record/v5": "Experiment result",
   manuscript_draft: "Manuscript draft",
   "manuscript-draft/v1": "Manuscript draft",
   "manuscript-draft/v2": "Initial manuscript draft",
   "manuscript-draft/v3": "Revised manuscript draft",
+  "manuscript-draft/v4": "Initial manuscript",
+  "manuscript-draft/v5": "Revised manuscript",
   review_report: "Review report",
   "review-report/v1": "Review report",
   "review-report/v2": "Structured review report",
+  "review-report/v3": "Review report",
 };
 
 function outputLabel(type: string, schema: string): string {
@@ -60,8 +64,8 @@ export function ProjectOutputs({ projectId }: { projectId: string }) {
               <article className="output-work-row" key={artifact.artifact_id}>
                 <div><p className="eyebrow">Output</p><h2>{outputLabel(artifact.artifact_type, artifact.artifact_schema_version)}</h2><p>Produced by <Link href={`/projects/${projectId}/workflows/${artifact.producer_workflow_instance_id}`}>{producer?.friendly_instance_label ?? producer?.workflow_display_name ?? "Project Workflow"}</Link>.</p></div>
                 <dl><div><dt>Outcome</dt><dd>{producer?.research_status.replaceAll("_", " ") ?? artifact.state.replaceAll("_", " ")}</dd></div><div><dt>Produced</dt><dd>{formatDateTime(artifact.produced_at)}</dd></div><div><dt>Round</dt><dd>{artifact.producer_execution_round}</dd></div>{report?.normalized_record?.warnings.length ? <div className="output-limitation"><dt>Limitation</dt><dd>{report.normalized_record.warnings[0]}</dd></div> : null}</dl>
-                {artifact.artifact_schema_version === "experiment-record/v4" ? <ExperimentPresentationView artifact={artifact} /> : null}
-                {artifact.artifact_schema_version === "selected-paper-library/v1" || artifact.artifact_schema_version === "selected-research-idea/v1" ? <ArtifactPresentationPreview artifact={artifact} /> : null}
+                {artifact.artifact_schema_version === "experiment-record/v4" || artifact.artifact_schema_version === "experiment-record/v5" ? <ExperimentPresentationView artifact={artifact} /> : null}
+                {["selected-paper-library/v1", "selected-research-idea/v1", "manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5"].includes(artifact.artifact_schema_version) ? <ArtifactPresentationPreview artifact={artifact} /> : null}
                 <details className="technical-details compact-technical-details"><summary>Technical Details</summary><dl><div><dt>Artifact ID</dt><dd><code>{artifact.artifact_id}</code></dd></div><div><dt>Schema</dt><dd><code>{artifact.artifact_schema_version}</code></dd></div><div><dt>Checksum</dt><dd><code>{artifact.content_checksum}</code></dd></div><div><dt>Capsule</dt><dd><code>{artifact.producer_capsule_id}@{artifact.producer_capsule_version}</code></dd></div><div><dt>Progress round</dt><dd>{artifact.producer_execution_round}</dd></div></dl></details>
               </article>
             );

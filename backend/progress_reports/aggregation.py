@@ -84,7 +84,9 @@ class ProjectProgressAggregationService:
                 limit=max(artifact_total, 1),
             )
         }
-        friendly_labels = _friendly_labels(instances, definitions)
+        friendly_labels = _friendly_labels(
+            instances, definitions, definition_versions
+        )
         by_instance: dict[str, list[UploadedProgressReport]] = defaultdict(list)
         for report in reports:
             by_instance[report.workflow_instance_id].append(report)
@@ -760,14 +762,28 @@ def _active_stage(workflow_definition_id: str, summary: str | None) -> WorkflowS
     )
 
 
-def _friendly_labels(instances, definitions) -> dict[str, str]:
+def _friendly_labels(instances, definitions, definition_versions) -> dict[str, str]:
     grouped = defaultdict(list)
     for item in instances:
-        grouped[item.workflow_definition_id].append(item)
+        definition_version = definition_versions.get(
+            (item.workflow_definition_id, item.workflow_version)
+        )
+        writing_role = (
+            definition_version.compatibility.get("writing_role")
+            if definition_version is not None
+            else None
+        )
+        base = {
+            "INITIAL": "Initial Writing",
+            "REVISION": "Writing Revision",
+        }.get(writing_role)
+        if base is None:
+            definition = definitions.get(item.workflow_definition_id)
+            base = definition.display_name if definition else item.display_name
+        grouped[(item.workflow_definition_id, base)].append(item)
     result = {}
-    for definition_id, values in grouped.items():
+    for (_definition_id, base), values in grouped.items():
         values.sort(key=lambda item: (item.created_at, item.workflow_instance_id))
-        base = definitions.get(definition_id).display_name if definitions.get(definition_id) else values[0].display_name
         for index, item in enumerate(values, 1):
             result[item.workflow_instance_id] = base if len(values) == 1 else f"{base} #{index}"
     return result

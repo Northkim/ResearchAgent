@@ -679,3 +679,39 @@ def test_selected_idea_preview_projection_is_deterministic_and_artifact_derived(
     assert first == second
     assert first["title"] == "Compare archival practices"
     assert first["literature_basis_count"] == 1
+
+
+def test_downstream_previews_are_deterministic_bounded_artifact_projections() -> None:
+    source = {
+        "research_idea": {"artifact_id": "artifact-" + "1" * 32, "artifact_type": "selected-research-idea/v1", "sha256": "sha256:" + "1" * 64},
+        "literature_library": {"artifact_id": "artifact-" + "2" * 32, "artifact_type": "selected-paper-library/v1", "sha256": "sha256:" + "2" * 64},
+    }
+    manuscript = {
+        "schema": "manuscript-draft/v4", "title": "Bounded field result",
+        "content_markdown": "# Bounded field result\n\n## Results\n\nA categorical observation remained within the reported boundary.",
+        "claims": [{"support_status": "SUPPORTED"}, {"support_status": "UNAVAILABLE"}],
+        "limitations": ["No full-text literature was supplied."],
+        "experiment_evidence_available": False, "owner_review": {"decision": "APPROVED"},
+        "source_artifacts": source,
+    }
+    content = workspace_cli.canonical_json(manuscript).encode()
+    artifact = {"artifact_id": "artifact-" + "3" * 32, "artifact_type": "manuscript-draft/v4", "content_checksum": workspace_cli.sha256_bytes(content)}
+    first = workspace_cli._project_artifact_presentation(artifact=artifact, content=content)
+    assert first == workspace_cli._project_artifact_presentation(artifact=artifact, content=content)
+    assert first["mode"] == "INITIAL" and first["sections"] == ["Results"]
+    assert first["evidence_coverage"]["unavailable_claim_count"] == 1
+
+    review = {
+        "schema": "review-report/v3",
+        "source_manuscript": {"artifact_id": artifact["artifact_id"], "artifact_type": "manuscript-draft/v4", "sha256": artifact["content_checksum"]},
+        "review_scope": {"sha256": "sha256:" + "4" * 64, "value": {"summary": "Claims and bounded evidence."}},
+        "assessment": "REVISION_REQUIRED", "summary": "Clarify one bounded limitation.",
+        "issues": [{"issue_id": "issue-1", "severity": "MINOR", "blocking": True, "rationale": "The limitation is implicit.", "requested_revision": "State the limitation."}],
+        "evidence_availability": [], "limitations": ["Exact supplied evidence only."],
+        "owner_review": {"decision": "APPROVED"},
+    }
+    review_content = workspace_cli.canonical_json(review).encode()
+    review_artifact = {"artifact_id": "artifact-" + "5" * 32, "artifact_type": "review-report/v3", "content_checksum": workspace_cli.sha256_bytes(review_content)}
+    projected = workspace_cli._project_artifact_presentation(artifact=review_artifact, content=review_content)
+    assert projected["issues"][0]["requested_revision"] == "State the limitation."
+    assert projected["reviewed_manuscript"]["artifact_id"] == artifact["artifact_id"]

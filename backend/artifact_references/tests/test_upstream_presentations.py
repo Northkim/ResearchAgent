@@ -6,10 +6,14 @@ from backend.application.errors import ApplicationConflictError, ApplicationVali
 from backend.artifact_references.contracts import ArtifactReference, ArtifactState
 from backend.artifact_references.service import ArtifactReferenceService
 from backend.artifact_references.upstream_presentations import (
+    MANUSCRIPT_PRESENTATION_SCHEMA,
     PAPER_LIBRARY_PRESENTATION_SCHEMA,
+    REVIEW_PRESENTATION_SCHEMA,
     RESEARCH_IDEA_PRESENTATION_SCHEMA,
     UpstreamPresentationError,
+    validate_manuscript_presentation,
     validate_paper_library_presentation,
+    validate_review_presentation,
     validate_research_idea_presentation,
 )
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
@@ -119,12 +123,88 @@ def _service_for(artifact_type: str) -> tuple[ArtifactReferenceService, InMemory
     ), database
 
 
+def _manuscript_payload(mode="INITIAL", **changes):
+    value = {
+        "schema": MANUSCRIPT_PRESENTATION_SCHEMA,
+        "artifact_id": ARTIFACT_ID,
+        "artifact_checksum": HASH_B,
+        "mode": mode,
+        "title": "A bounded manuscript",
+        "summary": "The manuscript reports exact bounded evidence and its limitations.",
+        "sections": ["Introduction", "Results", "Limitations"],
+        "evidence_coverage": {
+            "claim_count": 2, "supported_claim_count": 1,
+            "planned_claim_count": 0, "unavailable_claim_count": 1,
+        },
+        "result_availability": "AVAILABLE",
+        "limitations": ["The evidence supports only a bounded observation."],
+        "owner_review_status": "APPROVED",
+        "source_artifacts": [{
+            "role": "research_idea", "artifact_id": "artifact-" + "1" * 32,
+            "artifact_type": "selected-research-idea/v1", "artifact_checksum": HASH_A,
+        }],
+        "parent_manuscript": None,
+        "causal_review": None,
+        "changed_sections": [],
+        "change_summary": None,
+        "issue_dispositions": [],
+        "unresolved_issue_count": 0,
+    }
+    if mode == "REVISION":
+        value.update({
+            "parent_manuscript": {"artifact_id": "artifact-" + "2" * 32, "artifact_type": "manuscript-draft/v4", "artifact_checksum": HASH_A},
+            "causal_review": {"artifact_id": "artifact-" + "3" * 32, "artifact_type": "review-report/v3", "artifact_checksum": HASH_A},
+            "changed_sections": ["Results"], "change_summary": "One Review issue addressed.",
+            "issue_dispositions": [{"issue_id": "issue-1", "disposition": "ADDRESSED"}],
+        })
+    value.update(changes)
+    return {**value, "presentation_checksum": canonical_hash(value)}
+
+
+def _review_payload(**changes):
+    value = {
+        "schema": REVIEW_PRESENTATION_SCHEMA,
+        "artifact_id": ARTIFACT_ID,
+        "artifact_checksum": HASH_B,
+        "reviewed_manuscript": {"artifact_id": "artifact-" + "2" * 32, "artifact_type": "manuscript-draft/v4", "artifact_checksum": HASH_A},
+        "scope": "Exact manuscript and selected supporting evidence.",
+        "status": "REVISION_REQUIRED",
+        "summary": "One bounded wording revision is required.",
+        "issues": [{"issue_id": "issue-1", "severity": "MINOR", "blocking": True, "anchor": "Results", "rationale": "The boundary needs clearer wording.", "requested_revision": "State the limitation explicitly."}],
+        "requested_revisions": ["State the limitation explicitly."],
+        "unresolved_evidence_gaps": ["No full-text evidence is available."],
+        "reproducibility_findings": [],
+        "limitations": ["Review used exact supplied evidence only."],
+        "owner_review_status": "APPROVED",
+    }
+    value.update(changes)
+    return {**value, "presentation_checksum": canonical_hash(value)}
+
+
 def test_upstream_contracts_preserve_doi_stable_identity_and_generic_idea() -> None:
     papers = validate_paper_library_presentation(_paper_payload())
     idea = validate_research_idea_presentation(_idea_payload())
     assert [item["identifier_kind"] for item in papers["papers"]] == ["DOI", "PROVIDER_ID"]
     assert idea["research_question"].startswith("Where")
     assert "dataset" not in idea
+
+
+def test_downstream_contracts_preserve_small_initial_revision_and_review_previews() -> None:
+    initial = validate_manuscript_presentation(_manuscript_payload())
+    revision = validate_manuscript_presentation(_manuscript_payload("REVISION"))
+    review = validate_review_presentation(_review_payload())
+    assert initial["mode"] == "INITIAL" and initial["parent_manuscript"] is None
+    assert revision["issue_dispositions"] == [{"issue_id": "issue-1", "disposition": "ADDRESSED"}]
+    assert review["status"] == "REVISION_REQUIRED" and review["issues"][0]["severity"] == "MINOR"
+
+
+def test_downstream_contracts_reject_full_private_or_ambiguous_content() -> None:
+    with pytest.raises(UpstreamPresentationError):
+        validate_manuscript_presentation(_manuscript_payload(summary="/Users/owner/private.md"))
+    with pytest.raises(UpstreamPresentationError):
+        validate_review_presentation(_review_payload(summary="x" * 2_001))
+    with pytest.raises(UpstreamPresentationError):
+        validate_manuscript_presentation(_manuscript_payload(parent_manuscript={"artifact_id": "artifact-" + "2" * 32, "artifact_type": "manuscript-draft/v4", "artifact_checksum": HASH_A}))
 
 
 @pytest.mark.parametrize("unsafe", ("password=fictional", "/Users/owner/private.json", "<script>alert(1)</script>", "https://credential@example.test"))
@@ -159,3 +239,5 @@ def test_service_registry_is_exact_immutable_and_unknown_pairs_fail_closed() -> 
         service.report_presentation(
             project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=stale
         )
+    validate_manuscript_presentation,
+    validate_review_presentation,

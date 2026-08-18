@@ -28,3 +28,20 @@ test("preserves safe backend diagnostics without exposing a traceback", async ()
 test("exposes one fixed local client download URL", () => {
   expect(apiClient.localClientDownloadUrl()).toBe("/backend/local-client/reagent_local.py");
 });
+
+test("omits the frontend all sentinel while preserving exact Artifact type filters", async () => {
+  const fetch = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(
+    JSON.stringify({ artifacts: [], total: 0, offset: 0, limit: 100 }),
+    { status: 200, headers: { "Content-Type": "application/json" } },
+  ));
+
+  await apiClient.listProjectArtifactReferences("project-1", { artifactType: "all" });
+  await apiClient.listProjectArtifactReferences("project-1", {
+    artifactType: "manuscript-draft/v4",
+  });
+
+  expect(fetch.mock.calls[0]?.[0]).toBe("/backend/projects/project-1/artifacts?limit=100");
+  expect(fetch.mock.calls[1]?.[0]).toBe(
+    "/backend/projects/project-1/artifacts?artifact_type=manuscript-draft%2Fv4&limit=100",
+  );
+});

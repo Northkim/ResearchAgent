@@ -8,6 +8,9 @@ import { CopyCommand } from "./copy-command";
 
 const PAPER_SCHEMA = "reagent.artifact-presentation.selected-paper-library/v0.1";
 const IDEA_SCHEMA = "reagent.artifact-presentation.selected-research-idea/v0.1";
+const MANUSCRIPT_SCHEMA = "reagent.artifact-presentation.manuscript-draft/v0.1";
+const REVIEW_SCHEMA = "reagent.artifact-presentation.review-report/v0.1";
+const EXPERIMENT_SCHEMA = "reagent.artifact-presentation.experiment-record/v0.2";
 
 type PaperPresentation = {
   selected_count: number;
@@ -37,6 +40,34 @@ type IdeaPresentation = {
   risks: string[];
   validation_needed: string[];
   literature_basis_count: number;
+};
+
+export type ManuscriptPresentation = {
+  mode: "INITIAL" | "REVISION";
+  title: string;
+  summary: string;
+  sections: string[];
+  evidence_coverage: { claim_count: number; supported_claim_count: number; planned_claim_count: number; unavailable_claim_count: number };
+  result_availability: "AVAILABLE" | "UNAVAILABLE";
+  limitations: string[];
+  owner_review_status: "APPROVED" | "NOT_REPORTED";
+  changed_sections: string[];
+  change_summary: string | null;
+  issue_dispositions: Array<{ issue_id: string; disposition: string }>;
+  unresolved_issue_count: number;
+};
+
+export type ReviewPresentation = {
+  reviewed_manuscript: { artifact_id: string; artifact_type: string; artifact_checksum: string };
+  scope: string;
+  status: "NO_BLOCKING_ISSUES" | "REVISION_REQUIRED" | "INSUFFICIENT_EVIDENCE";
+  summary: string;
+  issues: Array<{ issue_id: string; severity: "MAJOR" | "MINOR"; blocking: boolean; anchor: string | null; rationale: string | null; requested_revision: string | null }>;
+  requested_revisions: string[];
+  unresolved_evidence_gaps: string[];
+  reproducibility_findings: string[];
+  limitations: string[];
+  owner_review_status: "APPROVED" | "NOT_REPORTED";
 };
 
 function exactPayload(artifact: CanonicalArtifactReference, schema: string): Record<string, unknown> | null {
@@ -96,6 +127,42 @@ function IdeaPreview({ value, compact }: { value: IdeaPresentation; compact: boo
   </section>;
 }
 
+function DownstreamMissing({ selection }: { selection: boolean }) {
+  return <div className="boundary-callout"><strong>{selection ? "Preview not yet reported from Local Workspace." : "Local preview has not yet been reported."}</strong><p>{selection ? "The exact Artifact remains available for explicit selection." : "The complete research product remains in the Local Workspace."}</p></div>;
+}
+
+function ManuscriptPreview({ value, compact }: { value: ManuscriptPresentation; compact: boolean }) {
+  const coverage = value.evidence_coverage;
+  return <section className="plain-section" aria-label={`${value.mode === "REVISION" ? "Revised" : "Initial"} manuscript preview`}>
+    <p className="eyebrow">{value.mode === "REVISION" ? "Revised manuscript" : "Initial manuscript"}</p>
+    <h3>{value.title}</h3><p>{value.summary}</p>
+    {value.sections.length ? <List title="Sections" values={value.sections.slice(0, compact ? 5 : value.sections.length)} /> : null}
+    <div className="input-readiness-list">
+      <div><div><strong>Evidence coverage</strong><small>{coverage.supported_claim_count} supported · {coverage.planned_claim_count} planned · {coverage.unavailable_claim_count} unavailable</small></div><span>{coverage.claim_count} claims</span></div>
+      <div><div><strong>Experiment result</strong><small>{value.result_availability === "AVAILABLE" ? "Exact experiment evidence is represented." : "No observed experiment result is represented."}</small></div><span>{value.result_availability.toLocaleLowerCase()}</span></div>
+    </div>
+    {value.mode === "REVISION" && value.change_summary ? <><p><strong>Revision summary:</strong> {value.change_summary}</p><List title="Changed sections" values={value.changed_sections} />{!compact ? <List title="Issue disposition" values={value.issue_dispositions.map((item) => `${item.issue_id}: ${item.disposition.replaceAll("_", " ").toLocaleLowerCase()}`)} /> : null}<p>{value.unresolved_issue_count} unresolved Review issue{value.unresolved_issue_count === 1 ? "" : "s"}.</p></> : null}
+    {!compact ? <List title="Unresolved limitations" values={value.limitations} /> : null}
+    <p className="muted-copy">The complete {value.mode === "REVISION" ? "revised " : ""}manuscript remains in the Local Workspace.</p>
+  </section>;
+}
+
+function ReviewPreview({ value, compact }: { value: ReviewPresentation; compact: boolean }) {
+  return <section className="plain-section" aria-label="Review report preview">
+    <p className="eyebrow">Review report</p><h3>{value.status.replaceAll("_", " ").toLocaleLowerCase()}</h3>
+    <p>{value.summary}</p><p><strong>Review scope:</strong> {value.scope}</p>
+    {value.issues.length ? <div className="page-stack" aria-label="Structured Review issues">{value.issues.slice(0, compact ? 3 : value.issues.length).map((issue) => <article className="output-highlight" key={issue.issue_id}><strong>{issue.severity.toLocaleLowerCase()} issue{issue.blocking ? " · blocking" : ""}</strong>{issue.anchor ? <p>{issue.anchor}</p> : null}{issue.rationale ? <p>{issue.rationale}</p> : null}{issue.requested_revision ? <p><strong>Requested revision:</strong> {issue.requested_revision}</p> : null}</article>)}</div> : <p>No structured issues were reported.</p>}
+    {!compact ? <><List title="Requested revisions" values={value.requested_revisions} /><List title="Unresolved evidence gaps" values={value.unresolved_evidence_gaps} /><List title="Reproducibility findings" values={value.reproducibility_findings} /><List title="Limitations" values={value.limitations} /></> : null}
+    <p className="muted-copy">The complete Review remains in the Local Workspace.</p>
+  </section>;
+}
+
+function ExperimentCandidatePreview({ value }: { value: { blocks?: Array<{ kind: string; label: string; value: unknown }> } }) {
+  const scalar = (label: string) => value.blocks?.find((item) => item.label.toLocaleLowerCase() === label)?.value;
+  const finding = value.blocks?.find((item) => item.kind === "PROSE" && !["research objective", "limitations"].includes(item.label.toLocaleLowerCase()));
+  return <section className="plain-section" aria-label="Experiment result preview"><p className="eyebrow">Experiment result</p><h3>{String(scalar("research objective") ?? "Bounded experiment result")}</h3><div className="input-readiness-list"><div><div><strong>Process outcome</strong></div><span>{String(scalar("process outcome") ?? "Not reported")}</span></div><div><div><strong>Evaluation validity</strong></div><span>{String(scalar("evaluation validity") ?? "Not reported")}</span></div><div><div><strong>Evidence status</strong></div><span>{String(scalar("scientific evidence status") ?? "Not reported")}</span></div></div>{finding ? <p><strong>{finding.label}:</strong> {String(finding.value)}</p> : null}</section>;
+}
+
 export function ArtifactPresentationPreview({ artifact, compact = false, selection = false }: { artifact: CanonicalArtifactReference; compact?: boolean; selection?: boolean }) {
   if (artifact.artifact_type === "selected-paper-library/v1") {
     const value = exactPayload(artifact, PAPER_SCHEMA);
@@ -104,6 +171,18 @@ export function ArtifactPresentationPreview({ artifact, compact = false, selecti
   if (artifact.artifact_type === "selected-research-idea/v1") {
     const value = exactPayload(artifact, IDEA_SCHEMA);
     return value ? <IdeaPreview value={value as unknown as IdeaPresentation} compact={compact} /> : <MissingPreview selection={selection} />;
+  }
+  if (artifact.artifact_type === "manuscript-draft/v4" || artifact.artifact_type === "manuscript-draft/v5") {
+    const value = exactPayload(artifact, MANUSCRIPT_SCHEMA);
+    return value ? <ManuscriptPreview value={value as unknown as ManuscriptPresentation} compact={compact} /> : <DownstreamMissing selection={selection} />;
+  }
+  if (artifact.artifact_type === "review-report/v3") {
+    const value = exactPayload(artifact, REVIEW_SCHEMA);
+    return value ? <ReviewPreview value={value as unknown as ReviewPresentation} compact={compact} /> : <DownstreamMissing selection={selection} />;
+  }
+  if (artifact.artifact_type === "experiment-record/v4" || artifact.artifact_type === "experiment-record/v5") {
+    const value = exactPayload(artifact, EXPERIMENT_SCHEMA);
+    return value ? <ExperimentCandidatePreview value={value as { blocks?: Array<{ kind: string; label: string; value: unknown }> }} /> : <DownstreamMissing selection={selection} />;
   }
   return null;
 }

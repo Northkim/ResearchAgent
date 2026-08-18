@@ -1,6 +1,27 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-17
+Last updated: 2026-08-18
+
+## EP-D2 retry qualification stop (2026-08-18)
+
+EP-D2 implementation reached E1–E5 and build qualification on baseline
+`e4b85c1c8ba327d24600e6009f7d1051df9bcaae`: bounded manuscript/review
+presentation companions, Local reporting, forward five-pin Full Research setup,
+task-first downstream pages, and exact idempotent Review-to-Revision creation are
+implemented in the uncommitted working tree. Focused backend is `53 passed`, focused
+frontend is `34 passed`, public preset/Workspace is `12 passed`, and marked disposable
+PostgreSQL is `4 passed`. TypeScript, ESLint, compileall, diff checks, and production
+Next.js build pass. Alembic remains `20260818_0032` with no migration.
+
+Repository-native E6 ran with real controlled FastAPI, Next.js, marked disposable
+PostgreSQL, and system Chrome, then stopped on a genuine product-width defect: the
+fresh forward Full Research board labels Initial Writing as generic `Writing`. Two
+older E6 assertions also expect the replaced generic Writing detail and need fixture
+alignment. Per the E6 freeze, product source was not patched after discovery and EP-D2
+was not committed. Current phase status is
+`FAIL_EP_D2_E6_INITIAL_WRITING_ROLE_LABEL`. D1 remains paused and untouched. The safe
+next action is an explicitly authorized narrow role-projection/E6-alignment follow-up,
+then focused E6 rerun; do not begin D1.
 
 ## GEN-C generic Experiment publication and public Local Workspace path (2026-08-17)
 
@@ -3725,3 +3746,52 @@ marked disposable PostgreSQL database. Four bounded U1 screenshots were captured
 The runner stopped application processes, dropped its database, and zero disposable
 database/runtime leftovers were verified. Full Research and D1 remain unchanged;
 safe next action is to retry EP-D2 from the clean U1 baseline.
+
+## EP-D2-F1 role-aware label qualification (2026-08-18)
+
+The shared Progress friendly-label projection now reads the exact published
+`compatibility.writing_role` authority: forward `INITIAL` renders as Initial
+Writing and `REVISION` as Writing Revision, while historical Writing versions
+without role metadata keep their reviewed label/ordinal behavior. Focused role,
+preset, Revision, component, TypeScript, scoped ESLint, compileall, Alembic, and
+production-build checks passed. The FE-M task-first assertion passed in real E6,
+and the fresh forward board rendered the exact five role-aware rows.
+
+Final E6 did not pass. A newly exposed EP-D2 product defect makes downstream
+Workflow Detail request `artifact_type=all`; the exact Artifact API treats that
+as a literal type and returns no Artifact, so a finalized manuscript appears
+unfinished and its bounded preview is absent. The U1 fixture also remained at
+its durable outline-review checkpoint, so merely removing its bindings did not
+produce the required `SELECT_INPUT` state. Product source was frozen once E6
+began; neither finding was patched or committed. The marked disposable database
+was dropped and controlled services stopped. Status is
+`EP_D2_F1_E6_NEW_PRODUCT_DEFECT`; D1 remains PAUSED.
+
+## EP-D2-F2 product-width closure (2026-08-18)
+
+EP-D2 is fully qualified for the controlled Owner-facing product width. The
+frontend-only `all` Artifact-list sentinel is no longer serialized as a literal
+`artifact_type`; omission returns all exact Project Artifact references while
+typed requests remain exact. Finalized `manuscript-draft/v4`, `review-report/v3`,
+and `manuscript-draft/v5` states therefore derive from their Artifact references
+even when optional presentation is absent.
+
+The U1 qualification fixture now represents genuine `SELECT_INPUT`: the forward
+Writing instance has no accepted Progress checkpoint or current required bindings,
+has exact compatible Literature and Idea candidates, and has a current Workspace
+acknowledgement. Role-aware Initial Writing/Writing Revision labels, exact causal
+Revision creation, the five-row forward Full Research preset, bounded upstream and
+downstream presentations, public Workspace qualification, and historical behavior
+remain unchanged.
+
+Focused frontend tests passed `30/30`; focused backend/API/foundation tests passed
+`49/49`; TypeScript, source-scoped ESLint, Python compileall, Alembic head, and the
+production Next.js build passed. Repository-native Playwright E6 passed `3/3`
+against real controlled FastAPI, Next.js, system Chrome, and a marked disposable
+PostgreSQL database. Thirteen bounded screenshots are under
+`frontend/test-results/ep-d2-u1-e6/screenshots/` and
+`frontend/test-results/ep-d2-e6/screenshots/`. The runner stopped controlled
+services, removed its runtime root, and dropped its verified disposable database.
+No migration, scientific contract, Experiment, or D1 state changed. Alembic remains
+`20260818_0032`; D1 remains PAUSED. Safe next action is the Owner-controlled D1
+journey; do not start it automatically.
