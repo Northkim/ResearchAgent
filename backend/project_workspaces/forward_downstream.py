@@ -74,7 +74,7 @@ def capsule_version(role: str, now: datetime) -> WorkflowCapsuleVersion:
     }[role]
     mutable = (
         "memory/context.md", "memory/progress", "memory/input-provenance.json",
-        *role_mutable, "memory/current-artifact.json", "memory/owner-review.json",
+        *role_mutable, "memory/owner-review.json", "memory/current-artifact.json",
         "outputs", "inputs",
     )
     return WorkflowCapsuleVersion(

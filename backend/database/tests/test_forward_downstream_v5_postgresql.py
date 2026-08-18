@@ -4,17 +4,28 @@ from __future__ import annotations
 
 from importlib import import_module
 import os
+from datetime import datetime, timezone
 
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import text
 
+from backend.api import ApplicationContainer, create_app
+from backend.database import SQLAlchemyUnitOfWork, create_session_factory
 from backend.database.disposable import require_disposable_database
+from backend.project_workspaces.application import _FULL_RESEARCH_INITIAL_PINS
+from backend.project_workspaces.forward_downstream import capsule_version
+from backend.project_workspaces.service import ensure_production_workflow_foundation
+from backend.database.repositories.workflow_foundation import _capsule_content
 from backend.workflow_packages.forward_downstream_publication import (
     INITIAL_WRITING_CAPSULE_CHECKSUM, INITIAL_WRITING_CAPSULE_ID,
+    INITIAL_WRITING_CAPSULE_VERSION, INITIAL_WRITING_VERSION,
     REVIEW_CAPSULE_CHECKSUM, REVIEW_CAPSULE_ID,
+    REVIEW_CAPSULE_VERSION, REVIEW_VERSION,
     WRITING_REVISION_CAPSULE_CHECKSUM, WRITING_REVISION_CAPSULE_ID,
+    WRITING_REVISION_CAPSULE_VERSION, WRITING_REVISION_VERSION,
     workflow_checksum,
 )
 
@@ -75,3 +86,128 @@ def test_forward_publication_is_exact_role_aware_and_reversible(postgres_engine)
         with pytest.raises(RuntimeError, match="already occupied"):
             import_module(MIGRATION)._assert_preconditions(connection)
 
+
+def test_published_capsules_match_source_and_foundation_replay_is_idempotent(
+    postgres_engine,
+) -> None:
+    session_factory = create_session_factory(postgres_engine)
+    uow = SQLAlchemyUnitOfWork(session_factory)
+    now = datetime(2026, 8, 18, tzinfo=timezone.utc)
+    identities = (
+        ("initial-writing", INITIAL_WRITING_CAPSULE_ID, INITIAL_WRITING_CAPSULE_VERSION),
+        ("review", REVIEW_CAPSULE_ID, REVIEW_CAPSULE_VERSION),
+        ("revision", WRITING_REVISION_CAPSULE_ID, WRITING_REVISION_CAPSULE_VERSION),
+    )
+    before = _foundation_counts(postgres_engine)
+    try:
+        for role, capsule_id, version in identities:
+            published = uow.workflow_foundation.get_capsule_version(capsule_id, version)
+            assert published is not None
+            assert _capsule_content(published) == _capsule_content(
+                capsule_version(role, now)
+            )
+        ensure_production_workflow_foundation(uow, now=now)
+        uow.commit()
+        assert _foundation_counts(postgres_engine) == before
+        ensure_production_workflow_foundation(uow, now=now)
+        uow.commit()
+        assert _foundation_counts(postgres_engine) == before
+    finally:
+        uow.close()
+
+
+def test_postgresql_project_creation_preserves_current_roles_and_presets(
+    postgres_engine, tmp_path,
+) -> None:
+    session_factory = create_session_factory(postgres_engine)
+    container = ApplicationContainer(
+        unit_of_work_factory=lambda: SQLAlchemyUnitOfWork(session_factory),
+        local_package_root=str(tmp_path / "packages"),
+    )
+    payload = {
+        "research_topic": "Foundation replay qualification",
+        "selected_workflow": "LITERATURE_SEARCH",
+    }
+    with TestClient(create_app(container)) as client:
+        literature = client.post("/projects", json={
+            **payload, "name": "F1 Literature", "workflow_setup": "literature-only",
+        })
+        assert literature.status_code == 201, literature.text
+        custom = client.post("/projects", json={
+            **payload,
+            "name": "F1 U1 custom",
+            "workflow_setup": "custom",
+            "custom_workflow_definition_ids": [
+                "literature-search-local-experimental",
+                "idea-discovery-local-experimental",
+                "writing-local-experimental",
+                "review-local-experimental",
+            ],
+        })
+        assert custom.status_code == 201, custom.text
+        full = client.post("/projects", json={
+            **payload, "name": "F1 Full Research", "workflow_setup": "full-research",
+        })
+        assert full.status_code == 201, full.text
+
+        literature_instances = _instances(client, literature.json()["project_id"])
+        custom_instances = _instances(client, custom.json()["project_id"])
+        full_instances = _instances(client, full.json()["project_id"])
+        assert len(literature_instances) == 1
+        assert {(item["workflow_definition_id"], item["workflow_version"], item["capsule_version"])
+                for item in custom_instances} == {
+            ("literature-search-local-experimental", "0.4.0", "0.6.0"),
+            ("idea-discovery-local-experimental", "0.2.0", "0.3.0"),
+            ("writing-local-experimental", INITIAL_WRITING_VERSION,
+             INITIAL_WRITING_CAPSULE_VERSION),
+            ("review-local-experimental", REVIEW_VERSION, REVIEW_CAPSULE_VERSION),
+        }
+        assert {(item["workflow_definition_id"], item["workflow_version"],
+                 item["capsule_id"], item["capsule_version"])
+                for item in full_instances} == set(_FULL_RESEARCH_INITIAL_PINS)
+        assert all(item["workflow_version"] != WRITING_REVISION_VERSION
+                   for item in (*custom_instances, *full_instances))
+
+        writing = client.get(
+            "/workflow-definitions/writing-local-experimental"
+        ).json()
+        review = client.get(
+            "/workflow-definitions/review-local-experimental"
+        ).json()
+        experiment = client.get(
+            "/workflow-definitions/reproduction-experiment-local-experimental"
+        ).json()
+        assert writing["recommended_version"]["version"] == INITIAL_WRITING_VERSION
+        assert review["recommended_version"]["version"] == REVIEW_VERSION
+        assert experiment["recommended_version"]["version"] == "0.6.0"
+    role_uow = SQLAlchemyUnitOfWork(session_factory)
+    try:
+        revision = role_uow.workflow_foundation.get_definition_version(
+            "writing-local-experimental", WRITING_REVISION_VERSION
+        )
+        experiment_v5 = role_uow.workflow_foundation.get_definition_version(
+            "reproduction-experiment-local-experimental", "0.7.0"
+        )
+        assert revision is not None and experiment_v5 is not None
+        assert revision.compatibility["writing_role"] == "REVISION"
+        assert revision.compatibility["default_project_setup"] is False
+        assert experiment_v5.compatibility["default_project_setup"] is False
+    finally:
+        role_uow.close()
+
+
+def _foundation_counts(engine) -> tuple[int, int, int, int, int]:
+    with engine.connect() as connection:
+        return tuple(connection.scalar(text(f"SELECT count(*) FROM {table}")) for table in (
+            "local_workflow_definitions",
+            "local_workflow_definition_versions",
+            "local_workflow_capsule_versions",
+            "workflow_definition_version_skill_pins",
+            "workflow_artifact_requirements",
+        ))
+
+
+def _instances(client: TestClient, project_id: str) -> list[dict[str, object]]:
+    response = client.get(f"/projects/{project_id}/workflow-instances")
+    assert response.status_code == 200, response.text
+    return response.json()["items"]
