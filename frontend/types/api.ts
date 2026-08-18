@@ -673,6 +673,14 @@ export interface CanonicalArtifactReference {
   retired_at: string | null;
   created_at: string;
   updated_at: string;
+  presentation?: {
+    schema_identity: string;
+    artifact_id: string;
+    artifact_checksum: string;
+    presentation_checksum: string;
+    payload: Record<string, unknown>;
+    reported_at: string;
+  } | null;
 }
 
 export interface CanonicalArtifactPage {

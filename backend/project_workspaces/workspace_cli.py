@@ -187,6 +187,12 @@ SYNC_LOCK = ".reagent/runtime/sync.lock"
 ACKNOWLEDGEMENTS_ROOT = ".reagent/acknowledgements"
 INSTALL_RECEIPTS_ROOT = ".reagent/receipts/installations"
 ARTIFACT_INDEX = ".reagent/artifact-index.json"
+PAPER_LIBRARY_PRESENTATION_SCHEMA = (
+    "reagent.artifact-presentation.selected-paper-library/v0.1"
+)
+RESEARCH_IDEA_PRESENTATION_SCHEMA = (
+    "reagent.artifact-presentation.selected-research-idea/v0.1"
+)
 RESOURCE_INDEX = ".reagent/resource-index.json"
 RESOURCE_ROOT = "resources"
 MATERIALIZATION_RECEIPTS_ROOT = ".reagent/receipts/materializations"
@@ -382,6 +388,8 @@ class ArtifactOperationResult:
     artifact_count: int
     materialized_count: int = 0
     consumer_workflow_instance_id: str | None = None
+    presentation_count: int = 0
+    warnings: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         value: dict[str, Any] = {
@@ -396,6 +404,10 @@ class ArtifactOperationResult:
             value["consumer_workflow_instance_id"] = (
                 self.consumer_workflow_instance_id
             )
+        if self.presentation_count:
+            value["presentation_count"] = self.presentation_count
+        if self.warnings:
+            value["warnings"] = list(self.warnings)
         return value
 
 
@@ -406,9 +418,11 @@ class WorkflowRunResult:
     workspace_id: str
     workflow_instance_id: str
     capsule_relative_path: str
+    presentation_count: int = 0
+    warnings: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "schema_version": "reagent.workflow-run-result/v0.1",
             "status": self.status,
             "project_id": self.project_id,
@@ -416,6 +430,11 @@ class WorkflowRunResult:
             "workflow_instance_id": self.workflow_instance_id,
             "capsule_relative_path": self.capsule_relative_path,
         }
+        if self.presentation_count:
+            value["presentation_count"] = self.presentation_count
+        if self.warnings:
+            value["warnings"] = list(self.warnings)
+        return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -1803,6 +1822,16 @@ class HTTPWorkspaceSyncTransport:
         query = urllib.parse.urlencode({"offset": offset, "limit": limit})
         return self._json_get(f"/projects/{project_id}/artifacts?{query}")
 
+    def report_artifact_presentation(
+        self, project_id: str, artifact_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        _match(artifact_id, ARTIFACT_ID, "artifact_id")
+        return self._json_request(
+            "PUT",
+            f"/projects/{project_id}/artifacts/{artifact_id}/presentation",
+            payload,
+        )
+
     def materialization_plan(
         self, project_id: str, consumer_workflow_instance_id: str
     ) -> dict[str, Any]:
@@ -3065,6 +3094,267 @@ def _validate_artifact_index(
     return value
 
 
+def _artifact_json(content: bytes, *, expected_schema: str) -> dict[str, Any]:
+    try:
+        value = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            "Finalized Artifact content is not valid canonical JSON",
+            EXIT_VALIDATION,
+        ) from error
+    if not isinstance(value, dict) or value.get("schema") != expected_schema:
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            "Finalized Artifact schema does not match Cloud metadata",
+            EXIT_VALIDATION,
+        )
+    return value
+
+
+def _bounded_projection_text(value: Any, label: str, maximum: int) -> str:
+    if not isinstance(value, str) or not value.strip() or len(value) > maximum:
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            f"Finalized Artifact {label} is outside presentation bounds",
+            EXIT_VALIDATION,
+        )
+    return value.strip()
+
+
+def _bounded_projection_texts(
+    value: Any, label: str, *, count: int, length: int
+) -> list[str]:
+    if not isinstance(value, list) or len(value) > count:
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            f"Finalized Artifact {label} is outside presentation bounds",
+            EXIT_VALIDATION,
+        )
+    return [_bounded_projection_text(item, label, length) for item in value]
+
+
+def _paper_evidence_limitation(availability: str) -> str:
+    if availability == "METADATA_AND_ABSTRACT":
+        return "Metadata and abstract only; full text is not represented."
+    if availability == "METADATA_ONLY":
+        return "Metadata only; no abstract or full text is represented."
+    return f"Evidence availability is limited to the reported {availability.lower().replace('_', ' ')} scope."
+
+
+def _project_upstream_presentation(
+    *, artifact: dict[str, Any], content: bytes
+) -> dict[str, Any] | None:
+    """Derive one deterministic, bounded UI projection from exact Artifact bytes."""
+
+    artifact_type = artifact["artifact_type"]
+    if artifact_type == "selected-paper-library/v1":
+        value = _artifact_json(content, expected_schema=artifact_type)
+        if set(value) != {"schema", "source_schemas", "source_checksums", "papers"}:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Selected paper library fields are invalid", EXIT_VALIDATION
+            )
+        raw_papers = value["papers"]
+        if not isinstance(raw_papers, list) or len(raw_papers) > 10_000:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Selected paper library is outside supported bounds", EXIT_VALIDATION
+            )
+        basis: list[str] = []
+        papers: list[dict[str, Any]] = []
+        for index, raw in enumerate(raw_papers):
+            if not isinstance(raw, dict) or set(raw) != {"candidate_id", "paper", "selection"}:
+                raise WorkspaceCLIError(
+                    "LOCAL_ARTIFACT_DRIFT", "Selected paper entry is invalid", EXIT_VALIDATION
+                )
+            paper = raw["paper"]
+            selection = raw["selection"]
+            if not isinstance(paper, dict) or not isinstance(selection, dict):
+                raise WorkspaceCLIError(
+                    "LOCAL_ARTIFACT_DRIFT", "Selected paper content is invalid", EXIT_VALIDATION
+                )
+            availability = _bounded_projection_text(
+                selection.get("evidence_availability"), "evidence availability", 100
+            )
+            if availability not in basis:
+                basis.append(availability)
+            if index >= 15:
+                continue
+            doi = paper.get("doi")
+            provider_id = paper.get("provider_id")
+            identifier_kind = "DOI" if isinstance(doi, str) and doi.strip() else "PROVIDER_ID"
+            identifier = doi if identifier_kind == "DOI" else provider_id
+            year = paper.get("publication_year")
+            if year is not None and (
+                isinstance(year, bool) or not isinstance(year, int) or not 1000 <= year <= 3000
+            ):
+                raise WorkspaceCLIError(
+                    "LOCAL_ARTIFACT_DRIFT", "Selected paper year is invalid", EXIT_VALIDATION
+                )
+            papers.append({
+                "title": _bounded_projection_text(paper.get("title"), "paper title", 500),
+                "authors": _bounded_projection_texts(
+                    paper.get("authors"), "paper authors", count=20, length=160
+                ),
+                "year": year,
+                "identifier_kind": identifier_kind,
+                "identifier": _bounded_projection_text(identifier, "paper identifier", 300),
+                "why_selected": _bounded_projection_text(
+                    selection.get("inclusion_reason"), "selection reason", 1_000
+                ),
+                "evidence_availability": availability,
+                "limitation": _paper_evidence_limitation(availability),
+            })
+        limitations = [
+            "The library contains selected metadata and available abstracts only; full text is not represented."
+        ]
+        payload = {
+            "schema": PAPER_LIBRARY_PRESENTATION_SCHEMA,
+            "artifact_id": artifact["artifact_id"],
+            "artifact_checksum": artifact["content_checksum"],
+            "selected_count": len(raw_papers),
+            "selection_status": "SELECTED",
+            "evidence_basis": basis[:4],
+            "limitations": limitations,
+            "papers": papers,
+            "papers_truncated": len(papers) < len(raw_papers),
+        }
+    elif artifact_type == "selected-research-idea/v1":
+        value = _artifact_json(content, expected_schema=artifact_type)
+        if set(value) != {
+            "schema", "core_capability_maturity", "source_candidate_ideas",
+            "source_literature_artifact", "selected_idea",
+        }:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Selected research idea fields are invalid", EXIT_VALIDATION
+            )
+        idea = value["selected_idea"]
+        source = value["source_literature_artifact"]
+        if not isinstance(idea, dict) or not isinstance(source, dict) or idea.get("status") != "selected":
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Selected research idea is invalid", EXIT_VALIDATION
+            )
+        basis = idea.get("literature_basis")
+        if not isinstance(basis, list) or not basis or len(basis) > 100:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Selected research idea basis is invalid", EXIT_VALIDATION
+            )
+        payload = {
+            "schema": RESEARCH_IDEA_PRESENTATION_SCHEMA,
+            "artifact_id": artifact["artifact_id"],
+            "artifact_checksum": artifact["content_checksum"],
+            "title": _bounded_projection_text(idea.get("title"), "idea title", 500),
+            "summary": _bounded_projection_text(idea.get("motivation"), "idea summary", 2_000),
+            "research_question": _bounded_projection_text(
+                idea.get("research_question"), "research question", 2_000
+            ),
+            "observed_gap": _bounded_projection_text(idea.get("observed_gap"), "observed gap", 2_000),
+            "proposed_direction": _bounded_projection_text(
+                idea.get("proposed_direction"), "proposed direction", 2_000
+            ),
+            "assumptions": _bounded_projection_texts(
+                idea.get("assumptions"), "assumptions", count=20, length=500
+            ),
+            "risks": _bounded_projection_texts(idea.get("risks"), "risks", count=20, length=500),
+            "validation_needed": _bounded_projection_texts(
+                idea.get("validation_needed"), "validation needed", count=20, length=500
+            ),
+            "literature_basis_count": len(basis),
+            "source_literature_artifact": {
+                "artifact_id": source.get("artifact_id"),
+                "artifact_type": source.get("artifact_type"),
+                "artifact_checksum": source.get("sha256"),
+            },
+        }
+    else:
+        return None
+    return {**payload, "presentation_checksum": canonical_hash(payload)}
+
+
+def _report_upstream_presentations(
+    *,
+    descriptor: dict[str, Any],
+    cloud_artifacts: list[dict[str, Any]],
+    verified_sources: dict[str, Path],
+    transport: Any,
+) -> tuple[int, tuple[str, ...]]:
+    reported = 0
+    warnings: list[str] = []
+    for artifact in cloud_artifacts:
+        source = verified_sources.get(artifact.get("artifact_id"))
+        if source is None or artifact.get("artifact_type") not in {
+            "selected-paper-library/v1", "selected-research-idea/v1",
+        }:
+            continue
+        try:
+            payload = _project_upstream_presentation(
+                artifact=artifact, content=source.read_bytes()
+            )
+        except WorkspaceCLIError:
+            warnings.append(
+                f"Result preview for {artifact['artifact_type']} was not generated because "
+                "the exact Artifact does not match the reviewed bounded preview shape."
+            )
+            continue
+        assert payload is not None
+        existing = artifact.get("presentation")
+        if isinstance(existing, dict):
+            if existing.get("payload") != payload:
+                raise WorkspaceCLIError(
+                    "ARTIFACT_PRESENTATION_CONFLICT",
+                    "Reported result preview differs from the exact local Artifact projection",
+                    EXIT_VALIDATION,
+                )
+            continue
+        try:
+            transport.report_artifact_presentation(
+                descriptor["project_id"], artifact["artifact_id"], payload
+            )
+            reported += 1
+        except (WorkspaceCLIError, AttributeError):
+            warnings.append(
+                f"Result preview for {artifact['artifact_type']} was not reported; "
+                "retry `python reagent_local.py artifact refresh .`."
+            )
+    return reported, tuple(warnings)
+
+
+def _report_completed_upstream_workflow_preview(
+    *, workspace: Path, descriptor: dict[str, Any], installed: dict[str, Any], transport: Any
+) -> tuple[int, tuple[str, ...]]:
+    artifacts = _fetch_all_artifacts(transport, descriptor["project_id"])
+    relevant = [
+        item for item in artifacts
+        if item.get("producer_workflow_instance_id") == installed["workflow_instance_id"]
+        and item.get("state") == "LOCAL_AVAILABLE"
+        and item.get("artifact_type") in {
+            "selected-paper-library/v1", "selected-research-idea/v1",
+        }
+    ]
+    sources: dict[str, Path] = {}
+    capsule_path = _safe_artifact_path(installed["relative_path"])
+    for artifact in relevant:
+        _validate_cloud_artifact(artifact, descriptor)
+        relative = _safe_artifact_path(artifact["relative_path"], root="outputs")
+        source = workspace / capsule_path / relative
+        checksum, size = _verified_regular_file(
+            source, allowed_root=workspace / capsule_path,
+            missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
+        )
+        if checksum != artifact["content_checksum"] or size != artifact["size_bytes"]:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT",
+                "Producer Artifact bytes no longer match Cloud metadata",
+                EXIT_VALIDATION,
+            )
+        sources[artifact["artifact_id"]] = source
+    return _report_upstream_presentations(
+        descriptor=descriptor,
+        cloud_artifacts=relevant,
+        verified_sources=sources,
+        transport=transport,
+    )
+
+
 def refresh_artifact_index(
     *,
     workspace_root: str | Path,
@@ -3088,6 +3378,7 @@ def refresh_artifact_index(
         cloud_artifacts = _fetch_all_artifacts(transport, descriptor["project_id"])
         timestamp = _utc_text(now or datetime.now(timezone.utc))
         entries: list[dict[str, Any]] = []
+        verified_sources: dict[str, Path] = {}
         for artifact in cloud_artifacts:
             if artifact.get("state") != "LOCAL_AVAILABLE":
                 continue
@@ -3138,6 +3429,7 @@ def refresh_artifact_index(
                 "last_verified_at": timestamp,
                 "local_relative_path": local_relative_path,
             })
+            verified_sources[artifact["artifact_id"]] = source
         entries.sort(key=lambda item: item["artifact_id"])
         payload = {
             "schema_version": ARTIFACT_INDEX_SCHEMA,
@@ -3149,11 +3441,19 @@ def refresh_artifact_index(
         document = {**payload, "index_checksum": canonical_hash(payload)}
         _atomic_write_json(index_path, document)
         _read_artifact_index(index_path, descriptor)
+        reported, warnings = _report_upstream_presentations(
+            descriptor=descriptor,
+            cloud_artifacts=cloud_artifacts,
+            verified_sources=verified_sources,
+            transport=transport,
+        )
         return ArtifactOperationResult(
             status="INDEX_REFRESHED",
             project_id=descriptor["project_id"],
             workspace_id=descriptor["workspace_id"],
             artifact_count=len(entries),
+            presentation_count=reported,
+            warnings=warnings,
         )
 
 
@@ -3396,7 +3696,9 @@ def _validate_cloud_artifact(artifact: Any, workspace: dict[str, Any]) -> None:
         "content_checksum", "size_bytes", "cloud_metadata_available",
         "produced_at", "retired_at", "created_at", "updated_at",
     }
-    _exact_fields(value, required, "Cloud Artifact Reference")
+    fields = frozenset(value)
+    if fields not in {frozenset(required), frozenset(required | {"presentation"})}:
+        raise _identity("ARTIFACT_INDEX_INVALID", "Cloud Artifact Reference fields are invalid")
     if value["schema_version"] != "reagent.artifact-reference/v0.1":
         raise _identity("ARTIFACT_INDEX_INVALID", "Cloud Artifact schema is unsupported")
     if value["project_id"] != workspace["project_id"]:
@@ -4769,12 +5071,31 @@ def run_workflow(
                         transport=transport,
                     )
                 if local_reports[-1]["status"] == "COMPLETED":
+                    presentation_count = 0
+                    presentation_warnings: tuple[str, ...] = ()
+                    if is_idea:
+                        try:
+                            presentation_count, presentation_warnings = (
+                                _report_completed_upstream_workflow_preview(
+                                    workspace=workspace,
+                                    descriptor=descriptor,
+                                    installed=installed,
+                                    transport=transport,
+                                )
+                            )
+                        except (WorkspaceCLIError, AttributeError):
+                            presentation_warnings = (
+                                "Local result preview was not reported; retry "
+                                "`python reagent_local.py artifact refresh .`.",
+                            )
                     return WorkflowRunResult(
                         status="PROGRESS_SYNCHRONIZED",
                         project_id=descriptor["project_id"],
                         workspace_id=descriptor["workspace_id"],
                         workflow_instance_id=workflow_instance_id,
                         capsule_relative_path=installed["relative_path"],
+                        presentation_count=presentation_count,
+                        warnings=presentation_warnings,
                     )
         if is_idea:
             plan = validate_materialization_plan(
@@ -5136,12 +5457,31 @@ def run_workflow(
                 reports=list(recovered.reports),
                 transport=transport,
             )
+        presentation_count = 0
+        presentation_warnings: tuple[str, ...] = ()
+        if not preflight_only and (is_literature or is_idea):
+            try:
+                presentation_count, presentation_warnings = (
+                    _report_completed_upstream_workflow_preview(
+                        workspace=workspace,
+                        descriptor=descriptor,
+                        installed=installed,
+                        transport=transport,
+                    )
+                )
+            except (WorkspaceCLIError, AttributeError):
+                presentation_warnings = (
+                    "Local result preview was not reported; retry "
+                    "`python reagent_local.py artifact refresh .`.",
+                )
         return WorkflowRunResult(
             status="PREFLIGHT_READY" if preflight_only else "RUN_COMPLETED",
             project_id=descriptor["project_id"],
             workspace_id=descriptor["workspace_id"],
             workflow_instance_id=workflow_instance_id,
             capsule_relative_path=installed["relative_path"],
+            presentation_count=presentation_count,
+            warnings=presentation_warnings,
         )
 
 

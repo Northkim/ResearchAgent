@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid5
 from backend.artifact_references.contracts import ArtifactReference, ArtifactState
+from backend.artifact_references.service import ArtifactReferenceService
+from backend.artifact_references.upstream_presentations import (
+    PAPER_LIBRARY_PRESENTATION_SCHEMA, RESEARCH_IDEA_PRESENTATION_SCHEMA,
+)
 from backend.database import SQLAlchemyUnitOfWork, create_postgres_engine, create_session_factory
 from backend.progress_reports.contracts import (
     ACCEPTED_REPORT_MEDIA_TYPE, EXPERIMENTAL_DECLARATION, OutputArtifactReference,
@@ -123,12 +127,12 @@ def seed(
             artifact_type="selected-paper-library/v1", artifact_schema_version="selected-paper-library/v1",
             media_type="application/json",
             state=(ArtifactState.LOCAL_AVAILABLE
-                   if scenario == "fe-m-desktop" else ArtifactState.METADATA_ONLY),
+                   if scenario in {"fe-m-desktop", "ep-d2-u1"} else ArtifactState.METADATA_ONLY),
             relative_path=output.relative_path, content_checksum=artifact_checksum, size_bytes=0,
             cloud_metadata_available=True, produced_at=now, retired_at=None, created_at=now,
             updated_at=now))
         uow.commit()
-        if scenario == "fe-m-desktop":
+        if scenario in {"fe-m-desktop", "ep-d2-u1"}:
             _request(base_url,
                 f"/projects/{project_id}/workflow-instances/"
                 f"{instances[WORKFLOWS[1]]['workflow_instance_id']}/artifact-dependencies", {
@@ -167,6 +171,106 @@ def seed(
                 size_bytes=0, cloud_metadata_available=True, produced_at=idea_time,
                 retired_at=None, created_at=idea_time, updated_at=idea_time))
             uow.commit()
+            if scenario == "ep-d2-u1":
+                second_artifact_id = "artifact-" + uuid5(
+                    UUID(run_id), "ep-d2-u1-second-library"
+                ).hex
+                absent_artifact_id = "artifact-" + uuid5(
+                    UUID(run_id), "ep-d2-u1-absent-library-preview"
+                ).hex
+                second_checksum = canonical_hash({
+                    "schema_version": "reagent.ep-d2-u1-second-library/v0.1",
+                    "run_id": run_id, "scientific_content": False,
+                })
+                uow.artifact_references.add_artifact(ArtifactReference(
+                    artifact_id=second_artifact_id, project_id=project_id,
+                    producer_workflow_instance_id=instances[WORKFLOWS[0]]["workflow_instance_id"],
+                    producer_progress_receipt_id=receipt.receipt_id,
+                    producer_progress_report_id=completed_report.report_id,
+                    producer_execution_round=1,
+                    producer_capsule_id=instances[WORKFLOWS[0]]["capsule_id"],
+                    producer_capsule_version=instances[WORKFLOWS[0]]["capsule_version"],
+                    artifact_type="selected-paper-library/v1",
+                    artifact_schema_version="selected-paper-library/v1",
+                    media_type="application/json", state=ArtifactState.LOCAL_AVAILABLE,
+                    relative_path=("outputs/artifacts/selected-paper-library/sha256-"
+                                   f"{second_checksum[7:]}.json"),
+                    content_checksum=second_checksum, size_bytes=0,
+                    cloud_metadata_available=True, produced_at=idea_time,
+                    retired_at=None, created_at=idea_time, updated_at=idea_time))
+                absent_checksum = canonical_hash({
+                    "schema_version": "reagent.ep-d2-u1-absent-library/v0.1",
+                    "run_id": run_id, "scientific_content": False,
+                })
+                uow.artifact_references.add_artifact(ArtifactReference(
+                    artifact_id=absent_artifact_id, project_id=project_id,
+                    producer_workflow_instance_id=instances[WORKFLOWS[0]]["workflow_instance_id"],
+                    producer_progress_receipt_id=receipt.receipt_id,
+                    producer_progress_report_id=completed_report.report_id,
+                    producer_execution_round=1,
+                    producer_capsule_id=instances[WORKFLOWS[0]]["capsule_id"],
+                    producer_capsule_version=instances[WORKFLOWS[0]]["capsule_version"],
+                    artifact_type="selected-paper-library/v1",
+                    artifact_schema_version="selected-paper-library/v1",
+                    media_type="application/json", state=ArtifactState.LOCAL_AVAILABLE,
+                    relative_path=("outputs/artifacts/selected-paper-library/sha256-"
+                                   f"{absent_checksum[7:]}.json"),
+                    content_checksum=absent_checksum, size_bytes=0,
+                    cloud_metadata_available=True, produced_at=idea_time,
+                    retired_at=None, created_at=idea_time, updated_at=idea_time))
+                uow.commit()
+                presentation_service = ArtifactReferenceService(
+                    unit_of_work=uow, clock=lambda: now
+                )
+                def report_papers(artifact_id: str, checksum: str, *, doi: bool) -> None:
+                    payload = {
+                        "schema": PAPER_LIBRARY_PRESENTATION_SCHEMA,
+                        "artifact_id": artifact_id, "artifact_checksum": checksum,
+                        "selected_count": 1, "selection_status": "SELECTED",
+                        "evidence_basis": ["METADATA_AND_ABSTRACT" if doi else "METADATA_ONLY"],
+                        "limitations": ["Full text is not represented in this controlled preview."],
+                        "papers": [{
+                            "title": ("Bounded archival classification study" if doi
+                                      else "Contrasting categorical field record"),
+                            "authors": ["Fictional Qualification Author"],
+                            "year": 2026 if doi else None,
+                            "identifier_kind": "DOI" if doi else "PROVIDER_ID",
+                            "identifier": "10.1000/controlled.1" if doi else "controlled-record-2",
+                            "why_selected": "Directly informs the controlled research direction.",
+                            "evidence_availability": "METADATA_AND_ABSTRACT" if doi else "METADATA_ONLY",
+                            "limitation": ("Abstract only; full text is not represented." if doi
+                                           else "Metadata only; no abstract or full text is represented."),
+                        }],
+                        "papers_truncated": False,
+                    }
+                    presentation_service.report_presentation(
+                        project_id=project_id, artifact_id=artifact_id,
+                        payload={**payload, "presentation_checksum": canonical_hash(payload)},
+                    )
+                report_papers("artifact-" + run_id, artifact_checksum, doi=True)
+                report_papers(second_artifact_id, second_checksum, doi=False)
+                idea_payload = {
+                    "schema": RESEARCH_IDEA_PRESENTATION_SCHEMA,
+                    "artifact_id": idea_artifact_id, "artifact_checksum": idea_checksum,
+                    "title": "Compare archival classification practices",
+                    "summary": "Investigate how two bounded practices shape categorical outcomes.",
+                    "research_question": "Where do the reported categories diverge?",
+                    "observed_gap": "The selected abstracts do not compare the practices directly.",
+                    "proposed_direction": "Apply a bounded comparative observation protocol.",
+                    "assumptions": ["Reported metadata is internally consistent."],
+                    "risks": ["The evidence is limited to metadata and abstracts."],
+                    "validation_needed": ["Confirm access to the underlying archival records."],
+                    "literature_basis_count": 1,
+                    "source_literature_artifact": {
+                        "artifact_id": "artifact-" + run_id,
+                        "artifact_type": "selected-paper-library/v1",
+                        "artifact_checksum": artifact_checksum,
+                    },
+                }
+                presentation_service.report_presentation(
+                    project_id=project_id, artifact_id=idea_artifact_id,
+                    payload={**idea_payload, "presentation_checksum": canonical_hash(idea_payload)},
+                )
             writing_id = instances[WORKFLOWS[2]]["workflow_instance_id"]
             for key, artifact_id, idempotency_name in (
                 ("research_idea", idea_artifact_id, "fe-m-writing-research-idea"),
@@ -185,7 +289,7 @@ def seed(
         _upload(service, run_id, project_id, instances[WORKFLOWS[2]], checksums[WORKFLOWS[2]],
                 ProgressStatus.BLOCKED,
                 ("The evidence map and six-section outline are ready for owner review."
-                 if scenario == "fe-m-desktop"
+                 if scenario in {"fe-m-desktop", "ep-d2-u1"}
                  else "Awaiting owner action before any scaffold Writing activity."),
                 "2026-08-14T01:03:00Z")
     finally:
@@ -211,16 +315,22 @@ def seed(
     progress = _request(base_url, f"/projects/{project_id}/progress")
     by_workflow = {item["workflow_definition_id"]: item for item in progress["instances"]}
     expected = dict(zip(WORKFLOWS, (
-        "COMPLETED", "COMPLETED" if scenario == "fe-m-desktop" else "BLOCKED",
+        "COMPLETED", "COMPLETED" if scenario in {"fe-m-desktop", "ep-d2-u1"} else "BLOCKED",
         "BLOCKED", "NOT_STARTED",
     )))
     if len(progress["instances"]) != 4 or any(
             by_workflow[key]["research_status"] != value for key, value in expected.items()):
         raise RuntimeError("B0 fixture states do not match the approved mapping")
     completed, mismatch = by_workflow[WORKFLOWS[0]], by_workflow[WORKFLOWS[3]]
-    if len(completed["artifact_metadata"]) != 1 or completed["result_count"] != 1:
-        raise RuntimeError("B0 completion lacks its single metadata-only Artifact reference")
-    if scenario == "fe-m-desktop":
+    expected_literature_results = 3 if scenario == "ep-d2-u1" else 1
+    declared_outputs = completed["artifact_metadata"]
+    if (len(declared_outputs) != 1
+            or declared_outputs[0]["artifact_kind"] != "selected-paper-library/v1"
+            or declared_outputs[0]["checksum"] != artifact_checksum):
+        raise RuntimeError("B0 completion lacks its exact latest Progress output")
+    if completed["result_count"] != expected_literature_results:
+        raise RuntimeError("B0 completion lacks its expected total Artifact results")
+    if scenario in {"fe-m-desktop", "ep-d2-u1"}:
         if len(progress["dependency_edges"]) != 3:
             raise RuntimeError("FE-M fixture lacks its three exact Artifact bindings")
     elif progress["dependency_edges"]:
@@ -228,7 +338,8 @@ def seed(
     if mismatch["installation_state"] != "ACKNOWLEDGED_STALE":
         raise RuntimeError("B0 fixture lacks a proven stale local/Cloud installation")
     expected_writing_summary = (
-        "six-section outline" if scenario == "fe-m-desktop" else "Awaiting owner action"
+        "six-section outline" if scenario in {"fe-m-desktop", "ep-d2-u1"}
+        else "Awaiting owner action"
     )
     if expected_writing_summary not in by_workflow[WORKFLOWS[2]]["latest_summary"]:
         raise RuntimeError("B0 owner-action state is not observable")
@@ -245,7 +356,7 @@ def main() -> None:
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--project-name")
     parser.add_argument("--research-topic")
-    parser.add_argument("--scenario", choices=("b0", "fe-m-desktop"), default="b0")
+    parser.add_argument("--scenario", choices=("b0", "fe-m-desktop", "ep-d2-u1"), default="b0")
     arguments = parser.parse_args()
     seed(
         arguments.api_url.rstrip("/"), arguments.run_id, arguments.manifest,

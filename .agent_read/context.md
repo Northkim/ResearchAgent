@@ -3704,3 +3704,24 @@ Migration `20260818_0032` is additive and schema-free. Controlled full-chain,
 recovery, public Workspace, marked PostgreSQL, wrong-version, historical, and real
 Codex checkpoint evidence passed. No Owner decision was fabricated. D1 remains
 PAUSED. Safe next action is Owner review of EP-D1; EP-D2 is not started.
+# EP-D2-U1 upstream bounded presentation (2026-08-18)
+
+EP-D2-U1 is qualified and accepted for commit. It adds fixed, optional,
+Artifact-bound presentation contracts for `selected-paper-library/v1` and
+`selected-research-idea/v1`, deterministic Local projection/reporting, idempotent
+backfill through `python reagent_local.py artifact refresh .`, and bounded Outputs,
+input-selection, and completed-Workflow previews. It does not change scientific
+Artifact bytes, Capsule bytes, binding/materialization authority, Full Research,
+migrations, or D1. E1-E5 scoped evidence passed, including 159 backend tests, 62
+frontend tests, production build, and disposable PostgreSQL carrier/readback.
+
+The independent foundation correction is commit
+`0e97bf039a68c589247fa543de7493cde9e60309`. F2 aligned only the controlled fixture
+with production Progress semantics: the latest report declares one output while
+the Workflow owns three valid Artifacts. Focused backend tests passed 17/17,
+frontend tests 23/23, the historical Experiment presentation validator 7/7, and
+repository-native system-Chrome E6 passed 2/2 against real FastAPI, Next.js, and a
+marked disposable PostgreSQL database. Four bounded U1 screenshots were captured.
+The runner stopped application processes, dropped its database, and zero disposable
+database/runtime leftovers were verified. Full Research and D1 remain unchanged;
+safe next action is to retry EP-D2 from the clean U1 baseline.

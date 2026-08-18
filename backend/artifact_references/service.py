@@ -38,6 +38,13 @@ from .contracts import (
     MaterializationMode,
 )
 from .errors import ArtifactReferenceConflictError
+from .upstream_presentations import (
+    PAPER_LIBRARY_PRESENTATION_SCHEMA,
+    RESEARCH_IDEA_PRESENTATION_SCHEMA,
+    UpstreamPresentationError,
+    validate_paper_library_presentation,
+    validate_research_idea_presentation,
+)
 
 _NAMESPACE = UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -352,15 +359,7 @@ class ArtifactReferenceService:
             raise ApplicationCodedNotFoundError(
                 "Artifact not found", code="ARTIFACT_NOT_FOUND"
             )
-        if (
-            artifact.artifact_type != "experiment-record/v4"
-            or artifact.artifact_schema_version != "experiment-record/v4"
-        ):
-            raise ApplicationCodedValidationError(
-                "Only generic Experiment v4 supports this presentation contract",
-                code="ARTIFACT_PRESENTATION_INVALID",
-            )
-        normalized = _validate_generic_experiment_presentation(payload)
+        normalized = _validate_registered_presentation(artifact=artifact, value=payload)
         if (
             normalized["artifact_id"] != artifact.artifact_id
             or normalized["artifact_checksum"] != artifact.content_checksum
@@ -848,6 +847,46 @@ def _validate_generic_experiment_presentation(value: Any) -> dict[str, Any]:
             code="ARTIFACT_PRESENTATION_INVALID",
         )
     return normalized
+
+
+_PRESENTATION_VALIDATORS = {
+    (
+        "experiment-record/v4",
+        "reagent.artifact-presentation.experiment-record/v0.2",
+    ): _validate_generic_experiment_presentation,
+    (
+        "selected-paper-library/v1",
+        PAPER_LIBRARY_PRESENTATION_SCHEMA,
+    ): validate_paper_library_presentation,
+    (
+        "selected-research-idea/v1",
+        RESEARCH_IDEA_PRESENTATION_SCHEMA,
+    ): validate_research_idea_presentation,
+}
+
+
+def _validate_registered_presentation(*, artifact, value: Any) -> dict[str, Any]:
+    """Fail closed unless an exact Artifact/schema pair has a fixed validator."""
+
+    if artifact.artifact_schema_version != artifact.artifact_type:
+        raise ApplicationCodedValidationError(
+            "Artifact type and schema do not support a presentation companion",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    schema = value.get("schema") if isinstance(value, dict) else None
+    validator = _PRESENTATION_VALIDATORS.get((artifact.artifact_type, schema))
+    if validator is None:
+        raise ApplicationCodedValidationError(
+            "Artifact type and presentation schema are not an accepted pair",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        )
+    try:
+        return validator(value)
+    except UpstreamPresentationError as error:
+        raise ApplicationCodedValidationError(
+            "Artifact presentation content is invalid",
+            code="ARTIFACT_PRESENTATION_INVALID",
+        ) from error
 
 
 def binding_document(binding: ArtifactDependencyBinding) -> dict[str, Any]:

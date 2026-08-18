@@ -11,11 +11,20 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from backend.workflow_packages.security import require_relative_path, require_sha256
+from .upstream_presentations import (
+    PAPER_LIBRARY_PRESENTATION_SCHEMA,
+    RESEARCH_IDEA_PRESENTATION_SCHEMA,
+)
 
 ARTIFACT_REFERENCE_SCHEMA = "reagent.artifact-reference/v0.1"
 ARTIFACT_PAGE_SCHEMA = "reagent.artifact-reference-page/v0.1"
 MATERIALIZATION_PLAN_SCHEMA = "reagent.artifact-materialization-plan/v0.1"
 EXPERIMENT_PRESENTATION_SCHEMA = "reagent.artifact-presentation.experiment-record/v0.2"
+ARTIFACT_PRESENTATION_SCHEMAS = frozenset({
+    EXPERIMENT_PRESENTATION_SCHEMA,
+    PAPER_LIBRARY_PRESENTATION_SCHEMA,
+    RESEARCH_IDEA_PRESENTATION_SCHEMA,
+})
 
 _ARTIFACT_ID = re.compile(r"^artifact-[0-9a-f]{32}$")
 _PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
@@ -189,7 +198,7 @@ class ArtifactPresentation:
     def __post_init__(self) -> None:
         _match(self.artifact_id, _ARTIFACT_ID, "artifact_id")
         require_sha256(self.artifact_checksum, "artifact_checksum")
-        if self.schema_identity != EXPERIMENT_PRESENTATION_SCHEMA:
+        if self.schema_identity not in ARTIFACT_PRESENTATION_SCHEMAS:
             raise ValueError("presentation schema identity is unsupported")
         require_sha256(self.presentation_checksum, "presentation_checksum")
         object.__setattr__(self, "payload", _freeze_presentation_json(self.payload))

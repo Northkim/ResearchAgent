@@ -258,3 +258,86 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
     rmSync(temporary, { recursive: true, force: true });
   }
 });
+
+test("EP-D2-U1 qualifies bounded upstream Outputs and exact-selection previews", async ({ page, request }) => {
+  const backend = process.env.REAGENT_E2E_BACKEND_URL!;
+  const identity = process.env.REAGENT_E2E_QUALIFICATION_IDENTITY!;
+  const runtime = process.env.REAGENT_LOCAL_RUNTIME_DIR!;
+  const repository = resolve(process.cwd(), "..");
+  const manifestPath = join(runtime, "ep-d2-u1-fixtures.json");
+  execFileSync("conda", [
+    "run", "--no-capture-output", "-n", "reagent-dev", "python", "-m",
+    "scripts.b0_controlled_fixtures", "--api-url", backend, "--run-id", identity,
+    "--manifest", manifestPath, "--scenario", "ep-d2-u1",
+    "--project-name", "EP-D2-U1 controlled upstream presentation",
+  ], { cwd: repository, env: process.env, stdio: "inherit" });
+  const fixture = JSON.parse(readFileSync(manifestPath, "utf8")) as FixtureManifest;
+  const screenshotRoot = resolve(process.cwd(), "test-results", "ep-d2-u1-e6", "screenshots");
+  mkdirSync(screenshotRoot, { recursive: true, mode: 0o700 });
+  const shot = (name: string) => page.screenshot({ path: join(screenshotRoot, `${name}.png`), fullPage: true });
+
+  await page.goto(`/projects/${fixture.project_id}/outputs`);
+  await expect(page.getByRole("heading", { name: "Selected paper library" }).first()).toBeVisible();
+  await expect(page.getByText("Bounded archival classification study")).toBeVisible();
+  await expect(page.getByText("10.1000/controlled.1")).toBeVisible();
+  await expect(page.getByText("Contrasting categorical field record")).toBeVisible();
+  await expect(page.getByText("controlled-record-2")).toBeVisible();
+  await expect(page.getByText("Abstract only; full text is not represented.")).toBeVisible();
+  await expect(page.getByText("Metadata only; no abstract or full text is represented.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Compare archival classification practices" })).toBeVisible();
+  await expect(page.getByText("Where do the reported categories diverge?")).toBeVisible();
+  await expect(page.getByText("Apply a bounded comparative observation protocol.")).toBeVisible();
+  await expect(page.getByText("The evidence is limited to metadata and abstracts.")).toBeVisible();
+  await expect(page.getByText("Local result preview has not yet been reported.")).toBeVisible();
+  await expect(page.getByText("python reagent_local.py artifact refresh .")).toBeVisible();
+  await expect(page.locator("details").filter({ hasText: "Technical Details" }).first()).not.toHaveAttribute("open");
+  expect(await page.locator("body").innerText()).not.toMatch(/Artifact checksum|Capsule checksum|requirement key/i);
+  await shot("01-upstream-outputs-typed-previews");
+
+  const ideaDetail = `/projects/${fixture.project_id}/workflows/${fixture.instances["idea-discovery-local-experimental"]}`;
+  await page.goto(ideaDetail);
+  const ideaBindings = page.getByText("Manage input bindings").locator("..");
+  await ideaBindings.locator("summary").click();
+  await expect(ideaBindings.getByText("Bounded archival classification study")).toBeVisible();
+  await expect(ideaBindings.getByText("Contrasting categorical field record")).toBeVisible();
+  await expect(ideaBindings.getByText("Preview not yet reported from Local Workspace.")).toBeVisible();
+  const candidateRadios = ideaBindings.getByRole("radio");
+  await expect(candidateRadios).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) await expect(candidateRadios.nth(index)).not.toBeChecked();
+  await shot("02-literature-exact-selection-multiple-candidates");
+
+  const writingDetail = `/projects/${fixture.project_id}/workflows/${fixture.instances["writing-local-experimental"]}`;
+  await page.goto(writingDetail);
+  const writingBindings = page.getByText("Manage input bindings").locator("..");
+  await writingBindings.locator("summary").click();
+  await expect(writingBindings.getByText("Bounded archival classification study")).toBeVisible();
+  await expect(writingBindings.getByRole("heading", { name: "Compare archival classification practices" })).toBeVisible();
+  await shot("03-writing-literature-idea-selection-previews");
+
+  const catalogResponse = await request.get(`${backend}/workflow-definitions/reproduction-experiment-local-experimental`);
+  expect(catalogResponse.ok()).toBe(true);
+  const catalog = await catalogResponse.json();
+  const capsule = catalog.capsules.find((item: { capsule_version: string }) => item.capsule_version === "0.10.0");
+  const manifestResponse = await request.get(`${backend}/projects/${fixture.project_id}/manifest`);
+  const manifest = await manifestResponse.json();
+  const created = await request.post(`${backend}/projects/${fixture.project_id}/workflow-instances`, { data: {
+    workflow_definition_id: "reproduction-experiment-local-experimental",
+    workflow_version: "0.7.0", capsule_id: capsule.capsule_id,
+    capsule_version: "0.10.0", base_revision: manifest.manifest_revision,
+  } });
+  expect(created.ok()).toBe(true);
+  const experiment = await created.json();
+  const artifactsResponse = await request.get(`${backend}/projects/${fixture.project_id}/artifacts?artifact_type=selected-research-idea%2Fv1`);
+  const ideaArtifact = (await artifactsResponse.json()).artifacts[0];
+  const binding = await request.post(`${backend}/projects/${fixture.project_id}/workflow-instances/${experiment.workflow_instance_id}/artifact-dependencies`, { data: {
+    requirement_key: "research_idea", artifact_id: ideaArtifact.artifact_id,
+    idempotency_key: "00000000-0000-4000-8000-0000000000a1",
+  } });
+  expect(binding.ok()).toBe(true);
+  await page.goto(`/projects/${fixture.project_id}/workflows/${experiment.workflow_instance_id}`);
+  const experimentBindings = page.getByText("Manage input bindings").locator("..");
+  await experimentBindings.locator("summary").click();
+  await expect(experimentBindings.getByRole("heading", { name: "Compare archival classification practices" })).toBeVisible();
+  await expect(experimentBindings.getByText("The evidence is limited to metadata and abstracts.")).toBeVisible();
+  await shot("04-idea-exact-selection-for-experiment");
+});

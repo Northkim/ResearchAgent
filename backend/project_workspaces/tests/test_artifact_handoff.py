@@ -98,6 +98,7 @@ class _Transport:
         self.client = client
         self.artifact = artifact
         self.materialization = materialization
+        self.reported_presentations = []
 
     def create_plan(self, project_id, payload):
         response = self.client.post(f"/projects/{project_id}/workspace/sync-plan", json=payload)
@@ -138,6 +139,14 @@ class _Transport:
             == consumer_workflow_instance_id
         )
         return self.materialization
+
+    def report_artifact_presentation(self, project_id, artifact_id, payload):
+        assert self.artifact is not None
+        assert self.artifact["project_id"] == project_id
+        assert self.artifact["artifact_id"] == artifact_id
+        self.reported_presentations.append(payload)
+        self.artifact["presentation"] = {"payload": payload}
+        return {"payload": payload}
 
 
 def _artifact_document(*, project_id, producer, checksum, size):
@@ -576,3 +585,97 @@ def test_artifact_cli_status_has_stable_json_and_exit_code(
     )
     assert copied_cli.returncode == 0
     assert "materialize" in copied_cli.stdout
+
+
+def test_public_artifact_refresh_backfills_upstream_preview_without_research_rerun(
+    artifact_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    source = artifact_workspace["source"]
+    value = {
+        "schema": "selected-paper-library/v1",
+        "source_schemas": {
+            "candidate_papers": "candidate-papers/v0.2",
+            "selected_papers": "selected-papers/v0.2",
+        },
+        "source_checksums": {
+            "candidate_papers_sha256": "sha256:" + "1" * 64,
+            "selected_papers_sha256": "sha256:" + "2" * 64,
+        },
+        "papers": [{
+            "candidate_id": "candidate-0000000000000001",
+            "paper": {
+                "title": "Public refresh fixture",
+                "authors": ["Fictional Author"],
+                "publication_year": 2026,
+                "doi": None,
+                "provider_id": "stable-public-record",
+            },
+            "selection": {
+                "inclusion_reason": "Exercises the supported public refresh command.",
+                "evidence_availability": "METADATA_ONLY",
+            },
+        }],
+    }
+    source.write_text(workspace_cli.canonical_json(value), encoding="utf-8")
+    transport = artifact_workspace["transport"]
+    transport.artifact.update({
+        "artifact_type": "selected-paper-library/v1",
+        "artifact_schema_version": "selected-paper-library/v1",
+        "content_checksum": workspace_cli._hash_file(source),
+        "size_bytes": source.stat().st_size,
+        "presentation": None,
+    })
+    monkeypatch.setattr(workspace_cli, "HTTPWorkspaceSyncTransport", lambda _url: transport)
+
+    first = workspace_cli.main([
+        "artifact", "refresh", str(workspace), "--api-url", "http://127.0.0.1:8000", "--json",
+    ])
+    first_output = json.loads(capsys.readouterr().out)
+    second = workspace_cli.main([
+        "artifact", "refresh", str(workspace), "--api-url", "http://127.0.0.1:8000", "--json",
+    ])
+    second_output = json.loads(capsys.readouterr().out)
+
+    assert first == second == workspace_cli.EXIT_SUCCESS
+    assert first_output["presentation_count"] == 1
+    assert "presentation_count" not in second_output
+    assert len(transport.reported_presentations) == 1
+
+
+def test_selected_idea_preview_projection_is_deterministic_and_artifact_derived() -> None:
+    value = {
+        "schema": "selected-research-idea/v1",
+        "core_capability_maturity": "REVIEWED_CORE",
+        "source_candidate_ideas": {
+            "schema": "candidate-ideas/v0.1", "relative_path": "outputs/candidate_ideas.json",
+            "sha256": "sha256:" + "3" * 64,
+        },
+        "source_literature_artifact": {
+            "artifact_id": "artifact-" + "4" * 32,
+            "artifact_type": "selected-paper-library/v1", "sha256": "sha256:" + "5" * 64,
+        },
+        "selected_idea": {
+            "idea_id": "idea-001", "title": "Compare archival practices",
+            "research_question": "Where do the categories diverge?",
+            "motivation": "The selected literature reports inconsistent categories.",
+            "literature_basis": ["candidate-0000000000000001"],
+            "observed_gap": "No direct comparison is reported.",
+            "proposed_direction": "Apply a bounded comparison protocol.",
+            "assumptions": ["Metadata is consistent."], "risks": ["Full text is unavailable."],
+            "validation_needed": ["Confirm archival access."], "status": "selected",
+        },
+    }
+    content = workspace_cli.canonical_json(value).encode()
+    artifact = {
+        "artifact_id": "artifact-" + "6" * 32,
+        "artifact_type": "selected-research-idea/v1",
+        "content_checksum": workspace_cli.sha256_bytes(content),
+    }
+    first = workspace_cli._project_upstream_presentation(artifact=artifact, content=content)
+    second = workspace_cli._project_upstream_presentation(artifact=artifact, content=content)
+    assert first == second
+    assert first["title"] == "Compare archival practices"
+    assert first["literature_basis_count"] == 1

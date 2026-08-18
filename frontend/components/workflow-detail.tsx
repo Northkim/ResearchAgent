@@ -25,6 +25,7 @@ import {
 import { formatDateTime } from "@/lib/format";
 
 import { CopyCommand } from "./copy-command";
+import { ArtifactPresentationPreview } from "./artifact-presentation";
 import { ErrorState, LoadingState } from "./query-state";
 import { ProjectNavigation } from "./project-navigation";
 import { WorkflowInputSetup } from "./workflow-input-setup";
@@ -689,6 +690,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
   const project = useProject(projectId);
   const instances = useProjectWorkflowInstances(projectId);
   const progress = useProjectProgress(projectId, { workflowInstanceId });
+  const artifacts = useProjectArtifactReferences(projectId, "all");
   const instance = instances.data?.items.find((item) => item.workflow_instance_id === workflowInstanceId);
   const definition = useWorkflowDefinition(instance?.workflow_definition_id ?? "");
 
@@ -725,6 +727,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
     || dependencies.some((edge) => edge.requirement_key === requirement.requirement_key && edge.state === "ACTIVE")
   ));
   const activity = progress.data.history.filter((report) => report.workflow_instance_id === workflowInstanceId).slice(0, 5);
+  const latestArtifact = artifacts.data?.artifacts.find((artifact) => artifact.artifact_id === state.action.latest_output?.artifact_id);
   const command = localCommand(state.action.next_action.code, workflowInstanceId);
   const actionHref = state.action.next_action.code === "SETUP"
     ? `/projects/${projectId}/help`
@@ -786,6 +789,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
           <section className="workflow-output-section plain-section" aria-labelledby="workflow-output-title">
             <div className="section-heading"><h2 id="workflow-output-title">{state.action.latest_output ? "Latest output" : "Expected output"}</h2></div>
             <div className="output-highlight"><strong>{state.action.latest_output?.label ?? state.action.expected_output?.label ?? "No output declared"}</strong><p>{state.action.latest_output ? `Produced in round ${state.action.latest_output.progress_round}.` : "Produced after this workflow task is completed."}</p></div>
+            {latestArtifact && (latestArtifact.artifact_type === "selected-paper-library/v1" || latestArtifact.artifact_type === "selected-research-idea/v1") ? <ArtifactPresentationPreview artifact={latestArtifact} compact /> : null}
             <Link href={`/projects/${projectId}/outputs`} className="text-link">All outputs →</Link>
           </section>
 

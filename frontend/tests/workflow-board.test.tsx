@@ -28,6 +28,11 @@ function arrange() {
   });
   vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue(workflowInstancesFixture);
   vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
+  vi.spyOn(apiClient, "listProjectArtifactReferences").mockResolvedValue({
+    schema_version: "reagent.artifact-reference-page/v0.1",
+    project_id: localProjectFixture.project_id,
+    artifacts: [], offset: 0, limit: 100, total: 0, has_more: false,
+  });
 }
 
 const genericExperimentId = `wfi-${"6".repeat(32)}`;

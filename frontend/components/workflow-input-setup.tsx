@@ -7,6 +7,7 @@ import { formatDateTime } from "@/lib/format";
 import type { ArtifactDependencyEdge, ProjectWorkflowInstance, WorkflowArtifactRequirement, WorkflowInstanceProgress } from "@/types/api";
 
 import { CopyCommand } from "./copy-command";
+import { ArtifactPresentationPreview } from "./artifact-presentation";
 
 function key(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -44,6 +45,7 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
               {projection?.friendly_instance_label ?? producer?.display_name ?? "Upstream workflow"} · {formatDateTime(artifact.produced_at)}
               <small>{projection?.core_capability_maturity === "SCAFFOLD_CORE" ? "Scaffold Core" : "Reviewed Core"} · result …{artifact.artifact_id.slice(-8)}</small>
             </span>
+            {artifact.artifact_type === "selected-paper-library/v1" || artifact.artifact_type === "selected-research-idea/v1" ? <ArtifactPresentationPreview artifact={artifact} compact selection /> : null}
           </label>
         );
       })}
