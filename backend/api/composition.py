@@ -71,6 +71,11 @@ from backend.research.grounded_skills import register_grounded_research_skills
 from backend.research.synthetic_grounded_fixtures import provider_responses
 from backend.workflow_engine.services import WorkflowExecutionCoordinator
 from backend.api.readiness import ReadinessResult, check_postgres_readiness
+from backend.user_skills import (
+    UserSkillService,
+    VerifiedSkillSource,
+    resolve_github_skill_source,
+)
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
 DispatcherFactory = Callable[[AgentRuntime], ExecutionDispatcher]
@@ -118,6 +123,7 @@ class LocalProductApplicationServices:
     project_progress: ProjectProgressAggregationService
     artifact_references: ArtifactReferenceService
     resource_references: ResourceReferenceService
+    user_skills: UserSkillService
 
 
 class ApplicationContainer:
@@ -140,6 +146,9 @@ class ApplicationContainer:
         local_package_root: str = "runtime_data/local_packages",
         project_id_factory: Callable[[], str] | None = None,
         readiness_probe: Callable[[], ReadinessResult] | None = None,
+        user_skill_source_resolver: Callable[
+            [str, str | None], VerifiedSkillSource
+        ] = resolve_github_skill_source,
     ) -> None:
         self.unit_of_work_factory = unit_of_work_factory
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
@@ -183,6 +192,7 @@ class ApplicationContainer:
         self._readiness_probe = readiness_probe or (
             lambda: ReadinessResult(True, {"persistence": "injected"})
         )
+        self.user_skill_source_resolver = user_skill_source_resolver
 
     def build_services(self, unit_of_work: UnitOfWork) -> ApplicationServices:
         domain = ExecutionCoordinator(clock=self.clock)
@@ -339,6 +349,15 @@ class ApplicationContainer:
             ),
             artifact_references=artifact_references,
             resource_references=resource_references,
+            user_skills=UserSkillService(
+                repository=unit_of_work.user_skills,
+                project_exists=lambda project_id: (
+                    unit_of_work.project_manifests.get_project(project_id) is not None
+                ),
+                commit=unit_of_work.commit,
+                clock=self.clock,
+                source_resolver=self.user_skill_source_resolver,
+            ),
         )
 
     def _progress_report_service(

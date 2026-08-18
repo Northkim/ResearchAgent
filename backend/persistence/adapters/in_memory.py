@@ -73,6 +73,11 @@ from backend.project_workspaces.ports import (
     WorkflowFoundationRepository,
     WorkspaceSyncRepository,
 )
+from backend.user_skills import (
+    InMemoryUserSkillRepository,
+    ProjectUserSkill,
+    UserSkill,
+)
 
 
 @dataclass(slots=True)
@@ -109,6 +114,10 @@ class InMemoryDatabase:
     workflow_skill_pins: dict[
         tuple[str, str, int], WorkflowDefinitionVersionSkillPin
     ] = field(default_factory=dict)
+    user_skills: dict[str, UserSkill] = field(default_factory=dict)
+    project_user_skills: dict[tuple[str, str], ProjectUserSkill] = field(
+        default_factory=dict
+    )
     project_workflow_instances: dict[str, ProjectWorkflowInstance] = field(
         default_factory=dict
     )
@@ -1645,6 +1654,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._workspace_sync_repository = InMemoryWorkspaceSyncRepository(self)
         self._artifact_reference_repository = InMemoryArtifactReferenceRepository(self)
         self._resource_reference_repository = InMemoryResourceReferenceRepository(self)
+        self.user_skills = InMemoryUserSkillRepository(self)
         self.controlled_local_run_approvals = (
             InMemoryControlledLocalRunApprovalRepository(self)
         )
@@ -1744,6 +1754,8 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.project_workflow_instances = dict(
                 self._project_workflow_instances
             )
+        self.database.user_skills = dict(self._user_skills)
+        self.database.project_user_skills = dict(self._project_user_skills)
         for project_id in self._dirty_projects:
             self.database.projects[project_id] = self._projects[project_id]
         for key in self._dirty_manifests:
@@ -1944,6 +1956,8 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._skill_definitions = dict(self.database.skill_definitions)
         self._skill_versions = dict(self.database.skill_versions)
         self._workflow_skill_pins = dict(self.database.workflow_skill_pins)
+        self._user_skills = dict(self.database.user_skills)
+        self._project_user_skills = dict(self.database.project_user_skills)
         self._project_workflow_instances = dict(
             self.database.project_workflow_instances
         )

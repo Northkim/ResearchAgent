@@ -572,10 +572,11 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
                                 "'F1F browser product width') GROUP BY name ORDER BY name"
                             )
                         ).all()
-                    expected = {
-                        "F1F browser product width": 1,
-                        "H1 controlled product journey": 1,
-                    }
+                    expected = {}
+                    if any(Path(spec).name == "f1f-product-width.spec.ts" for spec in specs):
+                        expected["F1F browser product width"] = 1
+                    if any(Path(spec).name == "h1-product-journey.spec.ts" for spec in specs):
+                        expected["H1 controlled product journey"] = 1
                     if dict(markers) != expected:
                         raise RuntimeError(
                             "controlled E2E Projects were not isolated in the qualification database"

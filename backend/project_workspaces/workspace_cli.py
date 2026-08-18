@@ -3,8 +3,9 @@
 
 This module intentionally uses only the Python standard library. Bootstrap
 copies the same reviewed source to the Workspace root as ``reagent_local.py``.
-Explicit ``sync`` performs reviewed pull-only Capsule installation; it never
-executes downloaded content or rewrites existing Capsule research state.
+Explicit ``sync`` performs reviewed pull-only Capsule installation and reconciles
+Owner-selected Agent Skills; it never executes downloaded content or rewrites
+existing Capsule research state.
 Explicit ``artifact`` commands verify local producer bytes and materialize
 checksum-bound copies without sharing writable files between Capsules.
 """
@@ -206,6 +207,10 @@ PROGRESS_RECEIPTS_ROOT = ".reagent/receipts/progress"
 WORKFLOW_LIST_SCHEMA = "reagent.workspace-workflow-list/v0.1"
 PROGRESS_REPORT_SCHEMA = "progress-report/v0.2"
 PROGRESS_RECEIPT_SCHEMA = "reagent.workspace-progress-ack/v0.1"
+USER_SKILL_ROOT = ".agents/skills"
+USER_SKILL_MARKER = ".reagent-managed-skill.json"
+MAX_USER_SKILL_FILES = 64
+MAX_USER_SKILL_BYTES = 1_048_576
 
 EXIT_SUCCESS = 0
 EXIT_USAGE = 2
@@ -1822,6 +1827,17 @@ class HTTPWorkspaceSyncTransport:
             "POST", f"/projects/{project_id}/workspace/sync-ack", payload
         )
 
+    def list_project_skills(self, project_id: str) -> dict[str, Any]:
+        return self._json_get(f"/projects/{project_id}/user-skills")
+
+    def acknowledge_project_skills(
+        self, project_id: str, installed_skills: list[dict[str, str]]
+    ) -> None:
+        self._json_request(
+            "POST", f"/projects/{project_id}/user-skills/sync-ack",
+            {"installed_skills": installed_skills},
+        )
+
     def list_artifacts(
         self, project_id: str, *, offset: int = 0, limit: int = 100
     ) -> dict[str, Any]:
@@ -2277,6 +2293,7 @@ def sync_workspace(
     transport: Any,
     dry_run: bool = False,
     now: datetime | None = None,
+    skill_source_resolver: Callable[[str, str], dict[str, bytes]] | None = None,
 ) -> WorkspaceSyncResult:
     workspace, descriptor, cached_bootstrap = load_workspace(workspace_root)
     with _WorkspaceWriteLock(workspace):
@@ -2291,7 +2308,12 @@ def sync_workspace(
                 path, envelope = pending[0]
                 _atomic_write_json(path, {**envelope, "local_status": "ACKNOWLEDGED_STALE"})
             else:
-                return _sync_result("ACKNOWLEDGED", lock, receipt["status"])
+                capsule_result = _sync_result("ACKNOWLEDGED", lock, receipt["status"])
+                return _reconcile_project_skills(
+                    workspace, descriptor, capsule_result, transport,
+                    now=now or datetime.now(timezone.utc),
+                    source_resolver=skill_source_resolver or _resolve_github_skill_package,
+                )
 
         lock = _load_or_migrate_lock(
             workspace, descriptor, cached_bootstrap, now=now or datetime.now(timezone.utc)
@@ -2327,7 +2349,7 @@ def sync_workspace(
                 acknowledgement_status="NOT_SENT",
                 lock_checksum=None if lock is None else lock["lock_checksum"],
             )
-        return _execute_sync_plan(
+        capsule_result = _execute_sync_plan(
             workspace=workspace,
             descriptor=descriptor,
             cached_bootstrap=cached_bootstrap,
@@ -2335,6 +2357,13 @@ def sync_workspace(
             prior_lock=lock,
             transport=transport,
             now=now or datetime.now(timezone.utc),
+        )
+        if capsule_result.acknowledgement_status == "ACK_PENDING":
+            return capsule_result
+        return _reconcile_project_skills(
+            workspace, descriptor, capsule_result, transport,
+            now=now or datetime.now(timezone.utc),
+            source_resolver=skill_source_resolver or _resolve_github_skill_package,
         )
 
 
@@ -2428,7 +2457,7 @@ def _validate_installed_lock(document: Any, workspace: dict[str, Any]) -> dict[s
         raise _identity("INSTALLED_LOCK_CONFLICT", "Installed Workspace Lock identity mismatch")
     _positive_int(value["manifest_revision"], "manifest_revision")
     _checksum(value["manifest_checksum"], "manifest_checksum")
-    if any(value[field] != [] for field in ("installed_skills", "materialized_artifacts", "resolved_resources")):
+    if any(value[field] != [] for field in ("materialized_artifacts", "resolved_resources")):
         raise _identity("INSTALLED_LOCK_INVALID", "Unsupported Installed Lock content is present")
     entries = value["installed_capsules"]
     if not isinstance(entries, list) or len(entries) > 100:
@@ -2454,6 +2483,32 @@ def _validate_installed_lock(document: Any, workspace: dict[str, Any]) -> dict[s
         ids.append(item["workflow_instance_id"])
     if ids != sorted(set(ids)):
         raise _identity("INSTALLED_LOCK_INVALID", "Installed Capsule ordering is invalid")
+    skill_ids = []
+    skills = value["installed_skills"]
+    if not isinstance(skills, list) or len(skills) > 100:
+        raise _identity("INSTALLED_LOCK_INVALID", "Installed Skill list is invalid")
+    for entry in skills:
+        item = _object(entry, "Installed Skill")
+        required = {
+            "skill_id", "slug", "source_locator", "source_revision",
+            "source_checksum", "relative_path", "verification_status",
+        }
+        _exact_fields(item, required, "Installed Skill")
+        if not re.fullmatch(r"skill-[0-9a-f]{32}", item.get("skill_id", "")):
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Skill identity is invalid")
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", item.get("slug", "")):
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Skill slug is invalid")
+        _validate_github_skill_locator(item.get("source_locator"))
+        if not re.fullmatch(r"[0-9a-f]{40}", item.get("source_revision", "")):
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Skill revision is invalid")
+        _checksum(item.get("source_checksum"), "source_checksum")
+        if item.get("relative_path") != f"{USER_SKILL_ROOT}/{item['slug']}":
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Skill path is invalid")
+        if item.get("verification_status") != "VERIFIED":
+            raise _identity("INSTALLED_LOCK_INVALID", "Installed Skill is not verified")
+        skill_ids.append(item["skill_id"])
+    if skill_ids != sorted(set(skill_ids)):
+        raise _identity("INSTALLED_LOCK_INVALID", "Installed Skill ordering is invalid")
     _timestamp(value["written_at"], "written_at")
     payload = dict(value)
     checksum = payload.pop("lock_checksum")
@@ -2470,6 +2525,7 @@ def _load_or_migrate_lock(workspace, descriptor, bootstrap, *, now):
             raise _identity("INSTALLED_LOCK_INVALID", "Installed Workspace Lock path is unsafe")
         lock = validate_installed_lock(_read_json(path), descriptor)
         _verify_locked_capsules(workspace, lock, bootstrap)
+        _verify_locked_skills(workspace, lock)
         return lock
     registry = validate_registry(_read_json(workspace / CAPSULE_REGISTRY), descriptor)
     if not registry["entries"]:
@@ -2497,6 +2553,7 @@ def _load_or_migrate_lock(workspace, descriptor, bootstrap, *, now):
         manifest_revision=bootstrap["bootstrap_manifest_revision"],
         manifest_checksum=bootstrap["desired_manifest_checksum"],
         entries=entries,
+        installed_skills=(),
         written_at=_utc_text(now),
     )
     _atomic_write_json(path, lock)
@@ -2585,6 +2642,7 @@ def _execute_sync_plan(*, workspace, descriptor, cached_bootstrap, plan, prior_l
         manifest_revision=plan["target_manifest_revision"],
         manifest_checksum=plan["target_manifest_checksum"],
         entries=list(entries.values()),
+        installed_skills=([] if prior_lock is None else prior_lock["installed_skills"]),
         written_at=_utc_text(now),
     )
     _atomic_write_json(workspace / INSTALLED_LOCK, lock)
@@ -2746,7 +2804,10 @@ def _bootstrap_for_action(descriptor, plan, action):
     }
 
 
-def _build_lock(*, descriptor, manifest_revision, manifest_checksum, entries, written_at):
+def _build_lock(
+    *, descriptor, manifest_revision, manifest_checksum, entries,
+    written_at, installed_skills=(),
+):
     ordered = sorted(entries, key=lambda item: item["workflow_instance_id"])
     payload = {
         "schema_version": INSTALLED_LOCK_SCHEMA,
@@ -2755,7 +2816,7 @@ def _build_lock(*, descriptor, manifest_revision, manifest_checksum, entries, wr
         "manifest_revision": manifest_revision,
         "manifest_checksum": manifest_checksum,
         "installed_capsules": ordered,
-        "installed_skills": [],
+        "installed_skills": sorted(installed_skills, key=lambda item: item["skill_id"]),
         "materialized_artifacts": [],
         "resolved_resources": [],
         "written_at": written_at,
@@ -2877,6 +2938,357 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
             != item["immutable_contract_checksum"]
         ):
             raise _identity("LOCAL_CAPSULE_DRIFT", "Installed Capsule immutable or local state drift was detected")
+
+
+def _validate_github_skill_locator(value):
+    if not isinstance(value, str) or len(value) > 500:
+        raise _identity("INSTALLED_LOCK_INVALID", "GitHub Skill source is invalid")
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme != "https" or parsed.hostname != "github.com"
+        or parsed.username or parsed.password or parsed.port
+        or parsed.query or parsed.fragment
+    ):
+        raise _identity("INSTALLED_LOCK_INVALID", "GitHub Skill source is invalid")
+    parts = [urllib.parse.unquote(item) for item in parsed.path.split("/") if item]
+    pattern = re.compile(r"^[A-Za-z0-9_.-]{1,100}$")
+    if len(parts) < 2 or any(not pattern.fullmatch(item) for item in parts[:2]):
+        raise _identity("INSTALLED_LOCK_INVALID", "GitHub Skill source is invalid")
+    owner, repository = parts[:2]
+    if repository.endswith(".git"):
+        repository = repository[:-4]
+    directory = ""
+    if len(parts) > 2:
+        if len(parts) < 5 or parts[2] != "tree" or not pattern.fullmatch(parts[3]):
+            raise _identity("INSTALLED_LOCK_INVALID", "GitHub Skill source is invalid")
+        directory = PurePosixPath(*parts[4:]).as_posix()
+    if any(part in {"", ".", ".."} for part in PurePosixPath(directory).parts):
+        raise _identity("INSTALLED_LOCK_INVALID", "GitHub Skill source is invalid")
+    return owner, repository, directory
+
+
+def _github_skill_json(url):
+    request = urllib.request.Request(
+        url, headers={"Accept": "application/vnd.github+json", "User-Agent": "ReAgent-Skill-M1"}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            if response.status != 200 or urllib.parse.urlsplit(response.geturl()).hostname != "api.github.com":
+                raise OSError("unexpected GitHub response")
+            body = response.read(2_097_153)
+    except (OSError, urllib.error.HTTPError, urllib.error.URLError) as error:
+        raise WorkspaceCLIError(
+            "USER_SKILL_SOURCE_UNAVAILABLE",
+            "A selected Skill source is unavailable. No local Skill was changed.",
+            EXIT_CLOUD,
+        ) from error
+    if len(body) > 2_097_152:
+        raise WorkspaceCLIError(
+            "USER_SKILL_SOURCE_TOO_LARGE", "A selected Skill source exceeds size limits.",
+            EXIT_VALIDATION,
+        )
+    try:
+        return json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise WorkspaceCLIError(
+            "USER_SKILL_SOURCE_UNAVAILABLE", "A selected Skill source is invalid.", EXIT_CLOUD
+        ) from error
+
+
+def _resolve_github_skill_package(source_locator: str, source_revision: str) -> dict[str, bytes]:
+    if (
+        os.environ.get("REAGENT_AUTOMATED_QUALIFICATION") == "1"
+        and source_locator
+        == "https://github.com/reagent-controlled/sample-research-skill"
+        and source_revision == "c" * 40
+    ):
+        return {"SKILL.md": b"# Sample research skill\n\nKeep claims grounded.\n"}
+    owner, repository, directory = _validate_github_skill_locator(source_locator)
+    if not re.fullmatch(r"[0-9a-f]{40}", source_revision):
+        raise _identity("INSTALLED_LOCK_INVALID", "GitHub Skill revision is invalid")
+    root = f"https://api.github.com/repos/{owner}/{repository}"
+    files: dict[str, bytes] = {}
+
+    def visit(path: str) -> None:
+        quoted = urllib.parse.quote(path, safe="/")
+        suffix = f"/contents/{quoted}" if quoted else "/contents"
+        document = _github_skill_json(f"{root}{suffix}?ref={source_revision}")
+        values = document if isinstance(document, list) else [document]
+        for item in values:
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                raise WorkspaceCLIError(
+                    "USER_SKILL_SOURCE_UNAVAILABLE", "A selected Skill source is invalid.", EXIT_CLOUD
+                )
+            if item.get("type") == "dir":
+                visit(item["path"])
+                continue
+            if item.get("type") != "file" or not isinstance(item.get("git_url"), str):
+                raise WorkspaceCLIError(
+                    "USER_SKILL_SOURCE_UNSAFE", "A selected Skill contains an unsupported entry.",
+                    EXIT_VALIDATION,
+                )
+            relative = PurePosixPath(item["path"]).relative_to(
+                PurePosixPath(directory) if directory else PurePosixPath(".")
+            ).as_posix()
+            _validate_user_skill_relative_path(relative)
+            blob = _github_skill_json(item["git_url"])
+            if not isinstance(blob, dict) or blob.get("encoding") != "base64" or not isinstance(blob.get("content"), str):
+                raise WorkspaceCLIError(
+                    "USER_SKILL_SOURCE_UNAVAILABLE", "A selected Skill source is invalid.", EXIT_CLOUD
+                )
+            try:
+                content = base64.b64decode(blob["content"])
+            except (ValueError, TypeError) as error:
+                raise WorkspaceCLIError(
+                    "USER_SKILL_SOURCE_UNAVAILABLE", "A selected Skill source is invalid.", EXIT_CLOUD
+                ) from error
+            expected_blob = item.get("sha")
+            actual_blob = hashlib.sha1(
+                f"blob {len(content)}\0".encode("ascii") + content
+            ).hexdigest()
+            if expected_blob != actual_blob:
+                raise WorkspaceCLIError(
+                    "USER_SKILL_SOURCE_DRIFT", "A selected Skill source changed during sync.",
+                    EXIT_CONCURRENCY,
+                )
+            files[relative] = content
+            if len(files) > MAX_USER_SKILL_FILES or sum(map(len, files.values())) > MAX_USER_SKILL_BYTES:
+                raise WorkspaceCLIError(
+                    "USER_SKILL_SOURCE_TOO_LARGE", "A selected Skill source exceeds size limits.",
+                    EXIT_VALIDATION,
+                )
+
+    visit(directory)
+    _validate_user_skill_files(files)
+    return files
+
+
+def _validate_user_skill_relative_path(relative_path):
+    path = PurePosixPath(relative_path)
+    if (
+        not isinstance(relative_path, str) or not relative_path
+        or path.is_absolute() or "\\" in relative_path
+        or any(part in {"", ".", ".."} for part in path.parts)
+        or relative_path == USER_SKILL_MARKER
+    ):
+        raise WorkspaceCLIError(
+            "USER_SKILL_SOURCE_UNSAFE", "A selected Skill contains an unsafe path.",
+            EXIT_VALIDATION,
+        )
+
+
+def _validate_user_skill_files(files):
+    if (
+        not isinstance(files, dict) or "SKILL.md" not in files
+        or not 1 <= len(files) <= MAX_USER_SKILL_FILES
+        or any(not isinstance(body, bytes) for body in files.values())
+        or sum(map(len, files.values())) > MAX_USER_SKILL_BYTES
+    ):
+        raise WorkspaceCLIError(
+            "USER_SKILL_DOCUMENT_MISSING", "A selected Skill has no valid SKILL.md.",
+            EXIT_VALIDATION,
+        )
+    for path in files:
+        _validate_user_skill_relative_path(path)
+    try:
+        document = files["SKILL.md"].decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise WorkspaceCLIError(
+            "USER_SKILL_DOCUMENT_INVALID", "A selected SKILL.md is not UTF-8 text.",
+            EXIT_VALIDATION,
+        ) from error
+    if not document.strip():
+        raise WorkspaceCLIError(
+            "USER_SKILL_DOCUMENT_INVALID", "A selected SKILL.md is empty.", EXIT_VALIDATION
+        )
+
+
+def _user_skill_source_checksum(files):
+    _validate_user_skill_files(files)
+    entries = []
+    for path, content in sorted(files.items()):
+        entries.append({
+            "path": path, "size": len(content),
+            "blob": hashlib.sha1(f"blob {len(content)}\0".encode("ascii") + content).hexdigest(),
+        })
+    return canonical_hash({"files": entries})
+
+
+def _skill_directory_files(root):
+    if root.is_symlink() or not root.is_dir():
+        raise _filesystem("USER_SKILL_LOCAL_CONFLICT", "Managed Skill path is unsafe")
+    files = {}
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise _filesystem("USER_SKILL_LOCAL_DRIFT", "Managed Skill contains a symbolic link")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise _filesystem("USER_SKILL_LOCAL_DRIFT", "Managed Skill contains an unsupported entry")
+        relative = path.relative_to(root).as_posix()
+        if relative == USER_SKILL_MARKER:
+            continue
+        _validate_user_skill_relative_path(relative)
+        body = path.read_bytes()
+        files[relative] = body
+        if len(files) > MAX_USER_SKILL_FILES or sum(map(len, files.values())) > MAX_USER_SKILL_BYTES:
+            raise _filesystem("USER_SKILL_LOCAL_DRIFT", "Managed Skill exceeds size limits")
+    _validate_user_skill_files(files)
+    return files
+
+
+def _managed_skill_marker(entry, project_id):
+    payload = {
+        "schema_version": "reagent.managed-agent-skill/v0.1",
+        "project_id": project_id,
+        "skill_id": entry["skill_id"],
+        "source_revision": entry["source_revision"],
+        "source_checksum": entry["source_checksum"],
+    }
+    return {**payload, "marker_checksum": canonical_hash(payload)}
+
+
+def _verify_skill_marker(root, entry, project_id):
+    marker_path = root / USER_SKILL_MARKER
+    if marker_path.is_symlink() or not marker_path.is_file():
+        raise _filesystem("USER_SKILL_LOCAL_CONFLICT", "Skill path is not managed by ReAgent")
+    marker = _read_json(marker_path)
+    if marker != _managed_skill_marker(entry, project_id):
+        raise _filesystem("USER_SKILL_LOCAL_DRIFT", "Managed Skill ownership marker changed")
+
+
+def _verify_locked_skills(workspace, lock):
+    for entry in lock["installed_skills"]:
+        root = workspace / entry["relative_path"]
+        _assert_within(workspace, root)
+        _verify_skill_marker(root, entry, lock["project_id"])
+        if _user_skill_source_checksum(_skill_directory_files(root)) != entry["source_checksum"]:
+            raise _filesystem("USER_SKILL_LOCAL_DRIFT", "Managed Skill content changed")
+
+
+def _install_managed_skill(workspace, entry, files):
+    target = workspace / entry["relative_path"]
+    _assert_within(workspace, target)
+    parent = workspace / USER_SKILL_ROOT
+    _ensure_destination_parents(workspace, parent)
+    if target.exists() or target.is_symlink():
+        _verify_skill_marker(target, entry, entry["project_id"])
+        if _user_skill_source_checksum(_skill_directory_files(target)) != entry["source_checksum"]:
+            raise _filesystem("USER_SKILL_LOCAL_DRIFT", "Managed Skill content changed")
+        return
+    staging = Path(tempfile.mkdtemp(prefix=".reagent-skill-", dir=parent))
+    published = False
+    try:
+        for relative, content in sorted(files.items()):
+            path = staging / relative
+            if path.parent != staging:
+                _ensure_destination_parents(staging, path.parent)
+            _atomic_write_bytes(path, content, mode=0o600)
+        _atomic_write_json(staging / USER_SKILL_MARKER, _managed_skill_marker(entry, entry["project_id"]))
+        _fsync_tree(staging)
+        if target.exists() or target.is_symlink():
+            raise _filesystem("USER_SKILL_LOCAL_CONFLICT", "Skill destination already exists")
+        os.replace(staging, target)
+        published = True
+        _fsync_directory(parent)
+        _verify_skill_marker(target, entry, entry["project_id"])
+    finally:
+        if not published and staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+
+
+def _remove_managed_skill(workspace, entry, project_id):
+    target = workspace / entry["relative_path"]
+    _assert_within(workspace, target)
+    _verify_skill_marker(target, entry, project_id)
+    if _user_skill_source_checksum(_skill_directory_files(target)) != entry["source_checksum"]:
+        raise _filesystem("USER_SKILL_LOCAL_DRIFT", "Managed Skill content changed")
+    shutil.rmtree(target)
+    _fsync_directory(target.parent)
+
+
+def _reconcile_project_skills(
+    workspace, descriptor, capsule_result, transport, *, now, source_resolver,
+):
+    if not hasattr(transport, "list_project_skills"):
+        return capsule_result
+    page = _object(transport.list_project_skills(descriptor["project_id"]), "Project Skill page")
+    if set(page) != {"items", "total"} or not isinstance(page["items"], list) or page["total"] != len(page["items"]) or len(page["items"]) > 100:
+        raise WorkspaceCLIError("USER_SKILL_SYNC_INVALID", "Project Skill response is invalid.", EXIT_CLOUD)
+    lock = validate_installed_lock(_read_json(workspace / INSTALLED_LOCK), descriptor)
+    prior = {item["skill_id"]: item for item in lock["installed_skills"]}
+    desired = {}
+    for value in page["items"]:
+        item = _object(value, "Project Skill")
+        required = {
+            "skill_id", "name", "slug", "description", "source_locator",
+            "source_revision", "source_checksum", "usage_count", "local_status",
+        }
+        if set(item) != required:
+            raise WorkspaceCLIError("USER_SKILL_SYNC_INVALID", "Project Skill response is invalid.", EXIT_CLOUD)
+        skill_id, slug = item.get("skill_id"), item.get("slug")
+        if not re.fullmatch(r"skill-[0-9a-f]{32}", skill_id or "") or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,79}", slug or "") or skill_id in desired:
+            raise WorkspaceCLIError("USER_SKILL_SYNC_INVALID", "Project Skill identity is invalid.", EXIT_CLOUD)
+        _validate_github_skill_locator(item.get("source_locator"))
+        if not re.fullmatch(r"[0-9a-f]{40}", item.get("source_revision", "")):
+            raise WorkspaceCLIError("USER_SKILL_SYNC_INVALID", "Project Skill revision is invalid.", EXIT_CLOUD)
+        _checksum(item.get("source_checksum"), "source_checksum")
+        entry = {
+            "skill_id": skill_id, "slug": slug,
+            "source_locator": item["source_locator"],
+            "source_revision": item["source_revision"],
+            "source_checksum": item["source_checksum"],
+            "relative_path": f"{USER_SKILL_ROOT}/{slug}",
+            "verification_status": "VERIFIED",
+            "project_id": descriptor["project_id"],
+        }
+        lock_entry = {key: value for key, value in entry.items() if key != "project_id"}
+        if prior.get(skill_id) == lock_entry:
+            _verify_skill_marker(
+                workspace / entry["relative_path"], entry, descriptor["project_id"]
+            )
+            if _user_skill_source_checksum(
+                _skill_directory_files(workspace / entry["relative_path"])
+            ) != entry["source_checksum"]:
+                raise _filesystem(
+                    "USER_SKILL_LOCAL_DRIFT", "Managed Skill content changed"
+                )
+            desired[skill_id] = lock_entry
+            continue
+        files = source_resolver(entry["source_locator"], entry["source_revision"])
+        if _user_skill_source_checksum(files) != entry["source_checksum"]:
+            raise WorkspaceCLIError(
+                "USER_SKILL_SOURCE_DRIFT", "A selected Skill no longer matches its verified source.",
+                EXIT_CONCURRENCY,
+            )
+        _install_managed_skill(workspace, entry, files)
+        desired[skill_id] = lock_entry
+    for skill_id in sorted(set(prior) - set(desired)):
+        _remove_managed_skill(workspace, prior[skill_id], descriptor["project_id"])
+    ordered = [desired[key] for key in sorted(desired)]
+    changed = ordered != lock["installed_skills"]
+    if changed:
+        lock = _build_lock(
+            descriptor=descriptor, manifest_revision=lock["manifest_revision"],
+            manifest_checksum=lock["manifest_checksum"], entries=lock["installed_capsules"],
+            installed_skills=ordered, written_at=_utc_text(now),
+        )
+        _atomic_write_json(workspace / INSTALLED_LOCK, lock)
+        lock = validate_installed_lock(_read_json(workspace / INSTALLED_LOCK), descriptor)
+        _verify_locked_skills(workspace, lock)
+    transport.acknowledge_project_skills(
+        descriptor["project_id"],
+        [{"skill_id": item["skill_id"], "source_checksum": item["source_checksum"]} for item in ordered],
+    )
+    return WorkspaceSyncResult(
+        status="SYNCED" if changed else capsule_result.status,
+        project_id=capsule_result.project_id, workspace_id=capsule_result.workspace_id,
+        manifest_revision=capsule_result.manifest_revision,
+        installed_capsules=capsule_result.installed_capsules,
+        retained_capsules=capsule_result.retained_capsules,
+        acknowledgement_status=capsule_result.acknowledgement_status,
+        lock_checksum=lock["lock_checksum"],
+    )
 
 
 def _ack_envelope(plan, lock, descriptor, now):

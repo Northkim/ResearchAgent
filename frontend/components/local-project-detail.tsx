@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/api/client";
 import { useProject, useProjectProgress } from "@/api/hooks";
@@ -22,6 +23,10 @@ const WORKFLOW_PRESENTATION_ORDER: Record<string, number> = {
 export function LocalProjectDetail({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
   const progress = useProjectProgress(projectId);
+  const skills = useQuery({
+    queryKey: ["projects", projectId, "user-skills"],
+    queryFn: () => apiClient.listProjectUserSkills(projectId),
+  });
 
   if (project.isLoading || progress.isLoading) return <LoadingState label="Loading Project Overview" />;
   if (project.isError || !project.data || progress.isError || !progress.data) {
@@ -85,6 +90,15 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
         </section>
 
         <div className="overview-side-column">
+          <section className="plain-section" aria-labelledby="overview-skills-title">
+            <div className="section-heading"><h2 id="overview-skills-title">Skills</h2><Link href={`/skills?project=${projectId}`} className="text-link">Manage skills →</Link></div>
+            {skills.data?.items.length ? (
+              <div className="overview-workflow-list">
+                {skills.data.items.map((skill) => <div key={skill.skill_id}><strong>{skill.name}</strong><span>{skill.local_status}</span></div>)}
+              </div>
+            ) : <p className="muted-copy">No skills added yet.</p>}
+          </section>
+
           <section id="outputs" className="plain-section" aria-labelledby="overview-output-title">
             <div className="section-heading"><h2 id="overview-output-title">Latest output</h2><Link href={`/projects/${projectId}/outputs`} className="text-link">All outputs →</Link></div>
             {output ? <div className="output-summary-row"><div><strong>{output.label}</strong><p>{currentPresentation.stage} · {output.produced_at ? formatDateTime(output.produced_at) : "Available now"}</p></div></div> : <p className="muted-copy">Expected next: {attention.action.expected_output?.label ?? "No output is expected yet."}</p>}

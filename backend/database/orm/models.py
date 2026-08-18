@@ -449,6 +449,67 @@ class ProjectORM(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class UserManagedSkillORM(Base):
+    """Mutable Owner-managed Agent Skill provenance, never reviewed publication."""
+
+    __tablename__ = "user_managed_skills"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uq_user_managed_skills_slug"),
+        CheckConstraint(
+            "source_locator ~ '^https://github\\.com/'",
+            name="user_managed_skill_github_source",
+        ),
+        CheckConstraint(
+            "source_revision ~ '^[0-9a-f]{40}$'",
+            name="user_managed_skill_exact_revision",
+        ),
+        CheckConstraint(
+            "source_checksum ~ '^sha256:[0-9a-f]{64}$'",
+            name="user_managed_skill_source_checksum",
+        ),
+        Index("ix_user_managed_skills_name", "name", "skill_id"),
+    )
+
+    skill_id: Mapped[str] = mapped_column(String(38), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_locator: Mapped[str] = mapped_column(String(500), nullable=False)
+    source_revision: Mapped[str] = mapped_column(String(40), nullable=False)
+    source_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProjectUserSkillORM(Base):
+    """Explicit Project association and last exact Local sync observation."""
+
+    __tablename__ = "project_user_skills"
+    __table_args__ = (
+        CheckConstraint(
+            "reported_source_checksum IS NULL OR "
+            "reported_source_checksum ~ '^sha256:[0-9a-f]{64}$'",
+            name="project_user_skill_reported_checksum",
+        ),
+        CheckConstraint(
+            "(reported_source_checksum IS NULL AND reported_at IS NULL) OR "
+            "(reported_source_checksum IS NOT NULL AND reported_at IS NOT NULL)",
+            name="project_user_skill_report_all_or_none",
+        ),
+        Index("ix_project_user_skills_skill", "skill_id", "project_id"),
+    )
+
+    project_id: Mapped[str] = mapped_column(
+        String(255), ForeignKey("projects.project_id", ondelete="CASCADE"), primary_key=True
+    )
+    skill_id: Mapped[str] = mapped_column(
+        String(38), ForeignKey("user_managed_skills.skill_id", ondelete="RESTRICT"), primary_key=True
+    )
+    reported_source_checksum: Mapped[str | None] = mapped_column(String(71))
+    attached_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ProjectDesiredManifestORM(Base):
     __tablename__ = "project_desired_manifests"
     __table_args__ = (

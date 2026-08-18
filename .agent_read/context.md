@@ -3795,3 +3795,19 @@ services, removed its runtime root, and dropped its verified disposable database
 No migration, scientific contract, Experiment, or D1 state changed. Alembic remains
 `20260818_0032`; D1 remains PAUSED. Safe next action is the Owner-controlled D1
 journey; do not start it automatically.
+
+## SKILL-M1 lightweight Owner-managed Skills (2026-08-18)
+
+Owner-managed GitHub Agent Skills are now a separate mutable catalog, never reviewed
+Skill publication or ExperimentCapability authority. Owners can add a bounded source,
+attach it to multiple Projects, and manage it from a compact Skills surface. Normal
+Workspace sync installs exact resolved packages under `.agents/skills/<slug>/`, uses
+the existing Installed Lock for ownership, is idempotent, and removes only unchanged
+ReAgent-managed installations after detach.
+
+Migration `20260818_0033` adds only user Skill and Project association tables; existing
+Projects receive no associations. Controlled E1-E6, fresh/downgrade/re-upgrade
+PostgreSQL, public disposable Project/Workspace, system-Chrome browser, frontend
+build, and historical reviewed-Skill/Experiment checks passed. D1 stayed PAUSED with
+five Workflows and no Progress, Artifact, binding, Workspace, or research changes.
+Safe next action is Owner visual review of SKILL-M1; do not start D1 automatically.

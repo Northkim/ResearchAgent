@@ -34,6 +34,20 @@ import type {
 
 const API_BASE = "/backend";
 
+export interface UserSkill {
+  skill_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  source_locator: string;
+  source_revision: string;
+  source_checksum: string;
+  usage_count: number;
+  local_status: "Ready" | "Needs sync" | null;
+}
+
+export interface UserSkillPage { items: UserSkill[]; total: number }
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -105,6 +119,35 @@ export const apiClient = {
 
   getProject(projectId: string): Promise<LocalProject> {
     return request(`/projects/${encodeURIComponent(projectId)}`);
+  },
+
+  listUserSkills(): Promise<UserSkillPage> {
+    return request("/user-skills");
+  },
+
+  createUserSkill(payload: {
+    name: string;
+    description: string;
+    source_locator: string;
+    source_revision?: string;
+  }): Promise<UserSkill> {
+    return request("/user-skills", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  listProjectUserSkills(projectId: string): Promise<UserSkillPage> {
+    return request(`/projects/${encodeURIComponent(projectId)}/user-skills`);
+  },
+
+  attachProjectUserSkill(projectId: string, skillId: string): Promise<UserSkill> {
+    return request(`/projects/${encodeURIComponent(projectId)}/user-skills`, {
+      method: "POST", body: JSON.stringify({ skill_id: skillId }),
+    });
+  },
+
+  detachProjectUserSkill(projectId: string, skillId: string): Promise<void> {
+    return request(`/projects/${encodeURIComponent(projectId)}/user-skills/${encodeURIComponent(skillId)}`, {
+      method: "DELETE",
+    });
   },
 
   createProject(payload: CreateLocalProjectRequest): Promise<LocalProject> {

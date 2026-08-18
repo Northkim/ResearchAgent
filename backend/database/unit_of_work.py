@@ -43,7 +43,11 @@ from backend.database.orm import (
     WorkflowResourceRequirementORM,
     WorkflowRunORM,
 )
-from backend.database.orm.models import ControlledLocalRunApprovalORM
+from backend.database.orm.models import (
+    ControlledLocalRunApprovalORM,
+    ProjectUserSkillORM,
+    UserManagedSkillORM,
+)
 from backend.controlled_local_run_approvals import (
     ControlledLocalApprovalStatus,
     ControlledLocalRunApproval,
@@ -68,6 +72,7 @@ from backend.project_workspaces.ports import (
     WorkflowFoundationRepository,
     WorkspaceSyncRepository,
 )
+from backend.user_skills import SQLAlchemyUserSkillRepository
 
 from .repositories import (
     SQLAlchemyApprovalRepository,
@@ -227,6 +232,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._workspace_sync = SQLAlchemyWorkspaceSyncRepository(self.session)
         self._artifact_references = SQLAlchemyArtifactReferenceRepository(self.session)
         self._resource_references = SQLAlchemyResourceReferenceRepository(self.session)
+        self.user_skills = SQLAlchemyUserSkillRepository(self.session)
         self.controlled_local_run_approvals = (
             SQLAlchemyControlledLocalRunApprovalRepository(self.session)
         )
@@ -332,6 +338,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(WorkflowDefinitionORM)
         self._flush_type(LocalProjectORM)
         self._flush_type(ProjectORM)
+        self._flush_type(UserManagedSkillORM)
         self._flush_type(LocalWorkflowDefinitionORM)
         self._flush_type(LocalWorkflowDefinitionVersionORM)
         self._flush_type(LocalBuiltInSkillDefinitionORM)
@@ -339,6 +346,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(WorkflowDefinitionVersionSkillPinORM)
         self._flush_type(LocalWorkflowCapsuleVersionORM)
         self._flush_type(ProjectWorkflowInstanceORM)
+        self._flush_type(ProjectUserSkillORM)
         self._flush_type(ControlledLocalRunApprovalORM)
         self._flush_type(ProjectResourceReferenceORM)
         self._flush_type(ProjectDesiredManifestORM)

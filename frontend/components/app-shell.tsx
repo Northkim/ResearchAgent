@@ -3,7 +3,8 @@ import Link from "next/link";
 const navigation = [
   { href: "/projects", label: "Projects", eyebrow: "01" },
   { href: "/projects/new", label: "New project", eyebrow: "02" },
-  { href: "/local-guide", label: "Local guide", eyebrow: "03" },
+  { href: "/skills", label: "Skills", eyebrow: "03" },
+  { href: "/local-guide", label: "Local guide", eyebrow: "04" },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {

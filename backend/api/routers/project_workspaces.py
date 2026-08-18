@@ -61,6 +61,38 @@ class StartWritingRevisionRequest(StrictDTO):
     base_revision: int = Field(ge=1)
 
 
+class CreateUserSkillRequest(StrictDTO):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=500)
+    source_locator: str = Field(min_length=20, max_length=500)
+    source_revision: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class AttachUserSkillRequest(StrictDTO):
+    skill_id: str = Field(pattern=r"^skill-[0-9a-f]{32}$")
+
+
+class UserSkillSyncAckRequest(StrictDTO):
+    installed_skills: list[dict[str, str]] = Field(max_length=100)
+
+
+class UserSkillResponse(StrictDTO):
+    skill_id: str
+    name: str
+    slug: str
+    description: str
+    source_locator: str
+    source_revision: str
+    source_checksum: str
+    usage_count: int
+    local_status: str | None = None
+
+
+class UserSkillPageResponse(StrictDTO):
+    items: list[UserSkillResponse]
+    total: int
+
+
 def _controlled_approval_service(services, unit_of_work):
     return ControlledLocalRunApprovalService(
         repository=unit_of_work.controlled_local_run_approvals,
@@ -204,6 +236,125 @@ async def get_skill(
             "purpose": pin.purpose,
         } for workflow_id, workflow_version, pin, _, _ in usages],
     )
+
+
+def _user_skill_response(value, service, *, association=None) -> UserSkillResponse:
+    ready = (
+        association is not None
+        and association.reported_source_checksum == value.source_checksum
+    )
+    return UserSkillResponse(
+        skill_id=value.skill_id,
+        name=value.name,
+        slug=value.slug,
+        description=value.description,
+        source_locator=value.source_locator,
+        source_revision=value.source_revision,
+        source_checksum=value.source_checksum,
+        usage_count=service.usage_count(value.skill_id),
+        local_status=("Ready" if ready else "Needs sync") if association else None,
+    )
+
+
+@router.get("/user-skills", response_model=UserSkillPageResponse)
+async def list_user_skills(
+    services: LocalProductServicesDependency,
+) -> UserSkillPageResponse:
+    values = services.user_skills.list()
+    return UserSkillPageResponse(
+        items=[_user_skill_response(value, services.user_skills) for value in values],
+        total=len(values),
+    )
+
+
+@router.post(
+    "/user-skills", response_model=UserSkillResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_user_skill(
+    request: CreateUserSkillRequest,
+    services: LocalProductServicesDependency,
+) -> UserSkillResponse:
+    value = services.user_skills.create(**request.model_dump())
+    return _user_skill_response(value, services.user_skills)
+
+
+@router.get("/user-skills/{skill_id}", response_model=UserSkillResponse)
+async def get_user_skill(
+    skill_id: str,
+    services: LocalProductServicesDependency,
+) -> UserSkillResponse:
+    return _user_skill_response(
+        services.user_skills.get(skill_id), services.user_skills
+    )
+
+
+@router.delete("/user-skills/{skill_id}")
+async def delete_user_skill(
+    skill_id: str,
+    services: LocalProductServicesDependency,
+) -> dict[str, str]:
+    services.user_skills.delete(skill_id)
+    return {"status": "Deleted"}
+
+
+@router.get(
+    "/projects/{project_id}/user-skills", response_model=UserSkillPageResponse
+)
+async def list_project_user_skills(
+    project_id: str,
+    services: LocalProductServicesDependency,
+) -> UserSkillPageResponse:
+    values = services.user_skills.list_project(project_id)
+    return UserSkillPageResponse(
+        items=[
+            _user_skill_response(skill, services.user_skills, association=association)
+            for skill, association in values
+        ],
+        total=len(values),
+    )
+
+
+@router.post(
+    "/projects/{project_id}/user-skills", response_model=UserSkillResponse
+)
+async def attach_project_user_skill(
+    project_id: str,
+    request: AttachUserSkillRequest,
+    services: LocalProductServicesDependency,
+) -> UserSkillResponse:
+    association = services.user_skills.attach(project_id, request.skill_id)
+    return _user_skill_response(
+        services.user_skills.get(request.skill_id),
+        services.user_skills,
+        association=association,
+    )
+
+
+@router.delete(
+    "/projects/{project_id}/user-skills/{skill_id}",
+)
+async def detach_project_user_skill(
+    project_id: str,
+    skill_id: str,
+    services: LocalProductServicesDependency,
+) -> dict[str, str]:
+    services.user_skills.detach(project_id, skill_id)
+    return {"status": "Detached"}
+
+
+@router.post(
+    "/projects/{project_id}/user-skills/sync-ack",
+)
+async def acknowledge_project_user_skills(
+    project_id: str,
+    request: UserSkillSyncAckRequest,
+    services: LocalProductServicesDependency,
+) -> dict[str, str]:
+    services.user_skills.acknowledge(
+        project_id, tuple(request.installed_skills)
+    )
+    return {"status": "Ready"}
 
 
 @router.get(
