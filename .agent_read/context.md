@@ -3895,3 +3895,22 @@ Literature, and Research Idea; Experiment remains absent. The active Revision is
 locally materialized and Ready to run, with zero Revision Progress/output. No Harness
 or scientific Workflow ran, and all protected upstream Artifact checksums remain
 unchanged.
+
+## D1 Revision lifecycle recovery repair (2026-08-20)
+
+The public Workspace runner now recognizes an exact runner-owned Revision Plan
+approval as a completed lifecycle checkpoint. If phase-two files are absent it may
+launch only the approved drafting phase; if the complete revised draft/claims/
+citations/accounting already validate, it skips the Harness and proceeds directly to
+exact Owner review, Artifact publication, Progress finalization, and normal backlog
+upload. Partial or unsafe draft state fails closed. Published Revision 0.7 / Capsule
+0.9 bytes, Artifact contracts, inputs, and issue dispositions remain unchanged.
+Focused controlled recovery and historical regressions passed; real D1 long-lived
+recovery also passed. The normal root runner skipped the Harness, preserved the
+approved plan and complete revised draft byte-for-byte, recorded exactly one final
+Owner review, published Cloud Artifact
+`artifact-b3d844ba10575ee18e55f445b9dc333e` with checksum
+`sha256:0f9d00878424940c34c53cef1e6981d11c7f36bea347eb58d37c8fb8faf53e5f`,
+and synchronized exactly one COMPLETED Progress report and receipt. Idempotent replay
+created no duplicates. Writing Revision now reports Completed; RR-001 remains
+ADDRESSED and RR-002/RR-003 remain NOT_ADDRESSED.

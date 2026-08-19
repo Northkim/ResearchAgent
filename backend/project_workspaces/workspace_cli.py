@@ -5734,6 +5734,168 @@ def _recover_approved_forward_review(
     return True
 
 
+def _recover_approved_writing_revision(
+    capsule: Path,
+    workflow_instance_id: str,
+    *,
+    codex_executable: str | None,
+    review_input: Callable[[str], str],
+) -> bool:
+    """Resume one exact approved Revision without repeating its plan phase."""
+
+    approval_path = capsule / "memory/revision-plan-approval.json"
+    if not approval_path.exists() and not approval_path.is_symlink():
+        return False
+    if list((capsule / "memory/progress/reports").glob("*.json")):
+        return False
+    required = (
+        "memory/input-provenance.json",
+        "memory/revision-plan.json",
+        "memory/revision-plan-approval.json",
+    )
+    if any(
+        not (capsule / relative).is_file()
+        or (capsule / relative).is_symlink()
+        or (capsule / relative).stat().st_nlink != 1
+        for relative in required
+    ):
+        raise _identity(
+            "LOCAL_PROGRESS_INVALID",
+            "Approved Writing Revision recovery state is incomplete or unsafe",
+        )
+    phase_two = (
+        "outputs/revised-draft.md",
+        "memory/claims.json",
+        "memory/citations.json",
+        "memory/issue-accounting.json",
+    )
+    phase_two_present: list[bool] = []
+    for relative in phase_two:
+        path = capsule / relative
+        if not path.exists() and not path.is_symlink():
+            phase_two_present.append(False)
+            continue
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise _identity(
+                "LOCAL_PROGRESS_INVALID",
+                "Approved Writing Revision draft state is unsafe",
+            )
+        phase_two_present.append(True)
+    if any(phase_two_present) and not all(phase_two_present):
+        raise _identity(
+            "LOCAL_PROGRESS_INVALID",
+            "Approved Writing Revision has partial draft state",
+        )
+    runtime = runpy.run_path(str(capsule / "reagent_local.py"))
+    try:
+        inputs, prior, review, library, experiment = runtime["_load_inputs"](capsule)
+        sources = {
+            key: inputs[key]
+            for key in ("research_idea", "literature_library", "experiment_record")
+            if key in inputs
+        }
+        plan, _plan_sha = runtime["_load_plan"](capsule, review, sources)
+        approval = runtime["_object"](
+            approval_path, "Revision Plan approval"
+        )
+        runtime["_verify_plan_approval"](
+            capsule, inputs, review, sources, plan, approval
+        )
+        if not all(phase_two_present):
+            executable = runtime["_codex_executable"](codex_executable)
+            runtime["_run_harness"](
+                capsule, executable, runtime["_phase_two_instruction"]()
+            )
+        current_inputs, current_prior, current_review, current_library, current_experiment = (
+            runtime["_load_inputs"](capsule)
+        )
+        current_sources = {
+            key: current_inputs[key]
+            for key in ("research_idea", "literature_library", "experiment_record")
+            if key in current_inputs
+        }
+        current_plan, _current_plan_sha = runtime["_load_plan"](
+            capsule, current_review, current_sources
+        )
+        runtime["_verify_plan_approval"](
+            capsule,
+            current_inputs,
+            current_review,
+            current_sources,
+            current_plan,
+            approval,
+        )
+        if (
+            current_inputs,
+            current_prior,
+            current_review,
+            current_library,
+            current_experiment,
+        ) != (inputs, prior, review, library, experiment):
+            raise ValueError("exact revision inputs drifted after plan approval")
+        content, claims, citations, accounting, draft_sha = runtime["_load_revision"](
+            capsule, review, sources, library, experiment
+        )
+        owner_path = capsule / "memory/owner-review.json"
+        if owner_path.exists() or owner_path.is_symlink():
+            owner = runtime["_object"](owner_path, "Owner revision review")
+            payload = dict(owner)
+            checksum = payload.pop("sha256", None)
+            if (
+                set(payload)
+                != {
+                    "revised_draft_sha256",
+                    "issue_accounting_sha256",
+                    "reviewed_at",
+                    "decision",
+                }
+                or checksum != runtime["canonical_hash"](payload)
+                or payload["revised_draft_sha256"] != draft_sha
+                or payload["issue_accounting_sha256"]
+                != runtime["canonical_hash"](accounting)
+                or payload["decision"] != "APPROVED"
+            ):
+                raise ValueError("Owner revision review or revised draft drifted")
+        else:
+            owner = runtime["_owner_review"](
+                capsule, content, accounting, draft_sha, review_input
+            )
+        current = runtime["_publish"](
+            capsule,
+            workflow_instance_id,
+            inputs,
+            prior,
+            review,
+            sources,
+            plan,
+            approval,
+            content,
+            claims,
+            citations,
+            accounting,
+            owner,
+        )
+        disposition = {
+            item["issue_id"]: item["disposition"] for item in accounting
+        }
+        remaining_count = sum(
+            1
+            for issue in review["issues"]
+            if issue["blocking"]
+            and disposition[issue["issue_id"]] != "ADDRESSED"
+        )
+        runtime["_finalize_progress"](capsule, current, remaining_count)
+        runtime["_validate_package"](capsule)
+    except WorkspaceCLIError:
+        raise
+    except Exception as error:
+        raise _identity(
+            "LOCAL_PROGRESS_INVALID",
+            f"Approved Writing Revision could not be resumed exactly: {error}",
+        ) from error
+    return True
+
+
 def run_workflow(
     *,
     workspace_root: str | Path,
@@ -6021,6 +6183,41 @@ def run_workflow(
                 transport=transport,
                 writing_revision=True,
             )
+            if _recover_approved_writing_revision(
+                capsule,
+                workflow_instance_id,
+                codex_executable=codex_executable,
+                review_input=consent_input,
+            ):
+                recovered = _evaluate_local_progress_readiness(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    installed=installed,
+                    capsule=capsule,
+                    manifest=manifest,
+                )
+                if recovered.state == "INVALID" or len(recovered.reports) != 1:
+                    raise _identity(
+                        "LOCAL_PROGRESS_INVALID",
+                        recovered.reason
+                        or "Writing Revision recovery did not produce exact Progress",
+                    )
+                _recover_progress_backlog(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    installed=installed,
+                    capsule=capsule,
+                    manifest=manifest,
+                    reports=list(recovered.reports),
+                    transport=transport,
+                )
+                return WorkflowRunResult(
+                    status="PROGRESS_SYNCHRONIZED",
+                    project_id=descriptor["project_id"],
+                    workspace_id=descriptor["workspace_id"],
+                    workflow_instance_id=workflow_instance_id,
+                    capsule_relative_path=installed["relative_path"],
+                )
             command.extend([
                 "run", ".", "--workflow-instance", workflow_instance_id,
                 "--api-url", api_url,
