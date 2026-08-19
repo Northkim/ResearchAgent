@@ -3960,3 +3960,21 @@ Owner review, published Cloud Artifact
 and synchronized exactly one COMPLETED Progress report and receipt. Idempotent replay
 created no duplicates. Writing Revision now reports Completed; RR-001 remains
 ADDRESSED and RR-002/RR-003 remain NOT_ADDRESSED.
+
+## Post-D1 R1A exact input/materialization repair (2026-08-20)
+
+ADR 0049 makes the last network-observed exact Cloud materialization plan the
+Local readiness authority. A Workflow is locally materialized only when every
+current plan entry, exact receipt, and target checksum/size agree. Normal
+materialization now reconciles the Artifact Index, safely carries unchanged
+siblings to a new whole-plan identity, atomically replaces only a uniquely proven
+prior ReAgent-managed input, and preserves superseded receipts. A durable local
+intent makes target-publication/receipt-publication interruption recoverable;
+unowned or ambiguous exact files remain unclaimed.
+
+R1A focused evidence passed: 21 Artifact handoff/public-command tests, 113 Local
+and four-lock regressions, 130 combined Local/service/API tests, one real loopback
+copied-CLI test, and three targeted marked PostgreSQL cases. No frontend, API,
+database schema, migration, Workflow/Capsule, Artifact schema, scientific output,
+or protected Owner D1 row changed. Alembic remains `20260819_0034`. R1B and R1C
+remain separate pending subphases.

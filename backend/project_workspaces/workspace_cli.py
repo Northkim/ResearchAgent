@@ -207,6 +207,9 @@ REVIEW_PRESENTATION_SCHEMA = (
 RESOURCE_INDEX = ".reagent/resource-index.json"
 RESOURCE_ROOT = "resources"
 MATERIALIZATION_RECEIPTS_ROOT = ".reagent/receipts/materializations"
+MATERIALIZATION_RECEIPT_HISTORY_ROOT = ".reagent/receipts/materialization-history"
+MATERIALIZATION_INTENTS_ROOT = ".reagent/materialization-intents"
+MATERIALIZATION_PLANS_ROOT = ".reagent/materialization-plans"
 PROGRESS_RECEIPTS_ROOT = ".reagent/receipts/progress"
 WORKFLOW_LIST_SCHEMA = "reagent.workspace-workflow-list/v0.1"
 PROGRESS_REPORT_SCHEMA = "progress-report/v0.2"
@@ -1510,10 +1513,11 @@ configuration only; they do not prove local installation or execution state.
 - Do not write into another Capsule or outside this Workspace.
 - Run `python reagent_local.py sync .` explicitly to pull reviewed, exact-pinned
   Capsules. Sync never executes downloaded code or deletes retired Capsules.
-- Run `python reagent_local.py artifact refresh .` to verify producer bytes into
-  `.reagent/artifact-index.json`, then use the explicit `artifact materialize`
-  command for one checksum-bound consumer. Materialization copies bytes; it
-  never creates shared writable links or silently selects the latest Artifact.
+- Run the explicit `artifact materialize` command for one checksum-bound
+  consumer. It reconciles current Cloud Artifact References into the verified
+  Local Index before copying bytes; it never creates shared writable links or
+  silently selects the latest Artifact. The lower-level `artifact refresh`
+  command remains available for diagnostics and presentation backfill.
 - `.reagent/installed-lock.json` is local installed-state metadata; cloud
   acknowledgement is not a backup of this Workspace.
 - Cloud Artifact References are metadata, not stored Artifact bytes or a backup.
@@ -4175,6 +4179,13 @@ def materialize_artifacts(
             consumer_workflow_instance_id=consumer_workflow_instance_id,
         )
     with _WorkspaceWriteLock(workspace):
+        _persist_materialization_plan(workspace, descriptor, plan)
+    refreshed = refresh_artifact_index(
+        workspace_root=workspace,
+        transport=transport,
+        now=now,
+    )
+    with _WorkspaceWriteLock(workspace):
         lock = _require_installed_lock(workspace, descriptor)
         installed = {
             item["workflow_instance_id"]: item
@@ -4215,17 +4226,34 @@ def materialize_artifacts(
                 plan=plan,
                 item=item,
                 index_entry=entry,
+                artifact_index=indexed,
                 timestamp=_utc_text(now or datetime.now(timezone.utc)),
             )
             completed += 1
-        return ArtifactOperationResult(
-            status="MATERIALIZED" if completed else "NO_DEPENDENCIES",
-            project_id=descriptor["project_id"],
-            workspace_id=descriptor["workspace_id"],
-            artifact_count=len(index["artifacts"]),
-            materialized_count=completed,
-            consumer_workflow_instance_id=consumer_workflow_instance_id,
+    latest_plan = validate_materialization_plan(
+        transport.materialization_plan(
+            descriptor["project_id"], consumer_workflow_instance_id
+        ),
+        descriptor,
+    )
+    if latest_plan["plan_checksum"] != plan["plan_checksum"]:
+        with _WorkspaceWriteLock(workspace):
+            _persist_materialization_plan(workspace, descriptor, latest_plan)
+        raise WorkspaceCLIError(
+            "MATERIALIZATION_PLAN_CHANGED",
+            "Cloud input bindings changed during materialization; reconcile the current plan before running",
+            EXIT_CONCURRENCY,
         )
+    return ArtifactOperationResult(
+        status="MATERIALIZED" if completed else "NO_DEPENDENCIES",
+        project_id=descriptor["project_id"],
+        workspace_id=descriptor["workspace_id"],
+        artifact_count=len(index["artifacts"]),
+        materialized_count=completed,
+        consumer_workflow_instance_id=consumer_workflow_instance_id,
+        presentation_count=refreshed.presentation_count,
+        warnings=refreshed.warnings,
+    )
 
 
 def validate_materialization_plan(
@@ -4254,6 +4282,7 @@ def validate_materialization_plan(
     if not isinstance(artifacts, list) or len(artifacts) > 100:
         raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization plan entries are invalid")
     order: list[tuple[str, str]] = []
+    requirement_keys: set[str] = set()
     targets: dict[str, str] = {}
     for raw in artifacts:
         item = _object(raw, "Artifact materialization entry")
@@ -4286,6 +4315,12 @@ def validate_materialization_plan(
         _record_case_path(targets, f"{item['target_capsule_relative_path']}/{target}")
         if item["materialization_mode"] != "VERIFIED_COPY":
             raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization mode is not supported")
+        if item["requirement_key"] in requirement_keys:
+            raise _identity(
+                "MATERIALIZATION_PLAN_INVALID",
+                "Materialization plan contains duplicate requirement keys",
+            )
+        requirement_keys.add(item["requirement_key"])
         order.append((item["requirement_key"], item["artifact_id"]))
     if order != sorted(set(order)):
         raise _identity("MATERIALIZATION_PLAN_INVALID", "Materialization plan ordering is invalid")
@@ -4545,7 +4580,348 @@ def _require_plan_index_match(item, entry, producer, consumer) -> None:
         )
 
 
-def _materialize_one(*, workspace, descriptor, plan, item, index_entry, timestamp):
+def _materialization_plan_path(workspace: Path, workflow_instance_id: str) -> Path:
+    _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "consumer_workflow_instance_id")
+    return workspace / MATERIALIZATION_PLANS_ROOT / f"{workflow_instance_id}.json"
+
+
+def _persist_materialization_plan(
+    workspace: Path,
+    descriptor: dict[str, Any],
+    plan: dict[str, Any],
+) -> None:
+    validated = validate_materialization_plan(plan, descriptor)
+    path = _materialization_plan_path(
+        workspace, validated["consumer_workflow_instance_id"]
+    )
+    _assert_within(workspace, path)
+    _reject_symlink_chain(path.parent)
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise _identity(
+            "MATERIALIZATION_PLAN_INVALID",
+            "Materialization plan snapshot path is unsafe",
+        )
+    _atomic_write_json(path, validated)
+
+
+def _current_materialization_plan(
+    workspace: Path,
+    descriptor: dict[str, Any],
+    workflow_instance_id: str,
+) -> dict[str, Any] | None:
+    path = _materialization_plan_path(workspace, workflow_instance_id)
+    if not path.exists() and not path.is_symlink():
+        return None
+    _reject_symlink_chain(path.parent)
+    if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+        raise _identity(
+            "MATERIALIZATION_PLAN_INVALID",
+            "Materialization plan snapshot path is unsafe",
+        )
+    return validate_materialization_plan(_read_json(path), descriptor)
+
+
+def _receipt_stable_identity(receipt: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in receipt.items()
+        if key not in {"plan_checksum", "receipt_checksum"}
+    }
+
+
+def _materialization_intent(
+    descriptor: dict[str, Any],
+    plan: dict[str, Any],
+    item: dict[str, Any],
+    prior_receipt: dict[str, Any] | None,
+) -> dict[str, Any]:
+    payload = {
+        "schema_version": "reagent.local-materialization-intent/v0.1",
+        "project_id": descriptor["project_id"],
+        "workspace_id": descriptor["workspace_id"],
+        "consumer_workflow_instance_id": item[
+            "consumer_workflow_instance_id"
+        ],
+        "requirement_key": item["requirement_key"],
+        "binding_id": item["binding_id"],
+        "artifact_id": item["artifact_id"],
+        "source_checksum": item["expected_checksum"],
+        "target_relative_path": (
+            f"{item['target_capsule_relative_path']}/{item['target_relative_path']}"
+        ),
+        "plan_checksum": plan["plan_checksum"],
+        "prior_receipt_checksum": (
+            None if prior_receipt is None else prior_receipt["receipt_checksum"]
+        ),
+    }
+    return {**payload, "intent_checksum": canonical_hash(payload)}
+
+
+def _materialization_intent_path(workspace: Path, binding_id: str) -> Path:
+    _match(binding_id, BINDING_ID, "binding_id")
+    return workspace / MATERIALIZATION_INTENTS_ROOT / f"{binding_id}.json"
+
+
+def _intent_stable_identity(intent: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in intent.items()
+        if key
+        not in {
+            "plan_checksum",
+            "prior_receipt_checksum",
+            "intent_checksum",
+        }
+    }
+
+
+def _validate_materialization_intent(
+    document: Any, descriptor: dict[str, Any]
+) -> dict[str, Any]:
+    value = _object(document, "Local materialization intent")
+    fields = {
+        "schema_version",
+        "project_id",
+        "workspace_id",
+        "consumer_workflow_instance_id",
+        "requirement_key",
+        "binding_id",
+        "artifact_id",
+        "source_checksum",
+        "target_relative_path",
+        "plan_checksum",
+        "prior_receipt_checksum",
+        "intent_checksum",
+    }
+    _exact_fields(value, fields, "Local materialization intent")
+    if value["schema_version"] != "reagent.local-materialization-intent/v0.1":
+        raise _identity(
+            "MATERIALIZED_ARTIFACT_DRIFT",
+            "Local materialization intent schema is unsupported",
+        )
+    if (
+        value["project_id"] != descriptor["project_id"]
+        or value["workspace_id"] != descriptor["workspace_id"]
+    ):
+        raise _identity(
+            "MATERIALIZED_ARTIFACT_DRIFT",
+            "Local materialization intent identity is invalid",
+        )
+    _match(
+        value["consumer_workflow_instance_id"],
+        WORKFLOW_INSTANCE_ID,
+        "consumer_workflow_instance_id",
+    )
+    _match(value["binding_id"], BINDING_ID, "binding_id")
+    _match(value["artifact_id"], ARTIFACT_ID, "artifact_id")
+    _checksum(value["source_checksum"], "source_checksum")
+    _safe_artifact_path(value["target_relative_path"], root="capsules")
+    _checksum(value["plan_checksum"], "plan_checksum")
+    if value["prior_receipt_checksum"] is not None:
+        _checksum(value["prior_receipt_checksum"], "prior_receipt_checksum")
+    unsigned = dict(value)
+    checksum = unsigned.pop("intent_checksum")
+    _checksum(checksum, "intent_checksum")
+    if canonical_hash(unsigned) != checksum:
+        raise _identity(
+            "MATERIALIZED_ARTIFACT_DRIFT",
+            "Local materialization intent checksum is invalid",
+        )
+    return value
+
+
+def _write_materialization_intent(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    plan: dict[str, Any],
+    item: dict[str, Any],
+    prior_receipt: dict[str, Any] | None,
+) -> None:
+    path = _materialization_intent_path(workspace, item["binding_id"])
+    candidate = _materialization_intent(descriptor, plan, item, prior_receipt)
+    _assert_within(workspace, path)
+    _reject_symlink_chain(path.parent)
+    _ensure_destination_parents(workspace, path.parent)
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise _identity(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                "Local materialization intent path is unsafe",
+            )
+        existing = _validate_materialization_intent(_read_json(path), descriptor)
+        if _intent_stable_identity(existing) != _intent_stable_identity(candidate):
+            raise _identity(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                "Local materialization intent conflicts with current binding",
+            )
+        if existing != candidate:
+            _atomic_write_json(path, candidate)
+        return
+    _atomic_write_json(path, candidate)
+
+
+def _require_materialization_intent(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    plan: dict[str, Any],
+    item: dict[str, Any],
+) -> None:
+    path = _materialization_intent_path(workspace, item["binding_id"])
+    _assert_within(workspace, path)
+    _reject_symlink_chain(path.parent)
+    if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+        raise WorkspaceCLIError(
+            "MATERIALIZATION_CONFLICT",
+            "Consumer target exists without exact managed ownership proof",
+            EXIT_VALIDATION,
+        )
+    existing = _validate_materialization_intent(_read_json(path), descriptor)
+    expected = _materialization_intent(descriptor, plan, item, None)
+    if _intent_stable_identity(existing) != _intent_stable_identity(expected):
+        raise _identity(
+            "MATERIALIZED_ARTIFACT_DRIFT",
+            "Local materialization intent differs from current binding",
+        )
+
+
+def _remove_materialization_intent(workspace: Path, binding_id: str) -> None:
+    path = _materialization_intent_path(workspace, binding_id)
+    _assert_within(workspace, path)
+    _reject_symlink_chain(path.parent)
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+        raise _identity(
+            "MATERIALIZED_ARTIFACT_DRIFT",
+            "Local materialization intent path is unsafe",
+        )
+    path.unlink()
+    _fsync_directory(path.parent)
+
+
+def _prior_managed_receipt(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    item: dict[str, Any],
+    target_checksum: str | None,
+    artifact_index: dict[str, dict[str, Any]],
+) -> tuple[Path, dict[str, Any]] | None:
+    root = workspace / MATERIALIZATION_RECEIPTS_ROOT
+    if root.is_symlink() or not root.is_dir():
+        return None
+    expected_target = (
+        f"{item['target_capsule_relative_path']}/{item['target_relative_path']}"
+    )
+    matches: list[tuple[Path, dict[str, Any]]] = []
+    for path in sorted(root.glob("artifact-binding-*.json")):
+        if path.name == f"{item['binding_id']}.json":
+            continue
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise _identity(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                "Materialization receipt history is unsafe",
+            )
+        receipt = _validate_materialization_receipt(_read_json(path), descriptor)
+        expected_receipt = {
+            "consumer_workflow_instance_id": item[
+                "consumer_workflow_instance_id"
+            ],
+            "requirement_key": item["requirement_key"],
+            "target_relative_path": expected_target,
+        }
+        if target_checksum is not None:
+            expected_receipt["target_checksum"] = target_checksum
+        if any(
+            receipt[field] != value for field, value in expected_receipt.items()
+        ):
+            continue
+        indexed = artifact_index.get(receipt["artifact_id"])
+        if indexed is None or any(
+            indexed.get(field) != value
+            for field, value in {
+                "producer_workflow_instance_id": receipt[
+                    "producer_workflow_instance_id"
+                ],
+                "artifact_type": receipt["artifact_type"],
+                "artifact_schema_version": receipt["artifact_schema_version"],
+                "content_checksum": receipt["source_checksum"],
+            }.items()
+        ):
+            continue
+        matches.append((path, receipt))
+    if len(matches) > 1:
+        raise WorkspaceCLIError(
+            "MATERIALIZATION_CONFLICT",
+            "Existing input ownership is ambiguous across managed receipts",
+            EXIT_VALIDATION,
+        )
+    return None if not matches else matches[0]
+
+
+def _archive_superseded_receipts(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    item: dict[str, Any],
+) -> None:
+    root = workspace / MATERIALIZATION_RECEIPTS_ROOT
+    if root.is_symlink() or not root.is_dir():
+        return
+    expected_target = (
+        f"{item['target_capsule_relative_path']}/{item['target_relative_path']}"
+    )
+    history = workspace / MATERIALIZATION_RECEIPT_HISTORY_ROOT
+    for path in sorted(root.glob("artifact-binding-*.json")):
+        if path.name == f"{item['binding_id']}.json":
+            continue
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise _identity(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                "Materialization receipt is unsafe",
+            )
+        receipt = _validate_materialization_receipt(_read_json(path), descriptor)
+        if (
+            receipt["consumer_workflow_instance_id"]
+            != item["consumer_workflow_instance_id"]
+            or receipt["requirement_key"] != item["requirement_key"]
+            or receipt["target_relative_path"] != expected_target
+        ):
+            continue
+        destination = history / path.name
+        _assert_within(workspace, destination)
+        _reject_symlink_chain(destination.parent)
+        if destination.is_symlink() or (
+            destination.exists()
+            and (
+                not destination.is_file()
+                or destination.stat().st_nlink != 1
+            )
+        ):
+            raise _identity(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                "Materialization receipt history path is unsafe",
+            )
+        if destination.exists() and destination.read_bytes() != path.read_bytes():
+            raise _identity(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                "Materialization receipt history conflicts with active receipt",
+            )
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if destination.exists():
+            path.unlink()
+            _fsync_directory(path.parent)
+        else:
+            os.replace(path, destination)
+            _fsync_directory(path.parent)
+            _fsync_directory(destination.parent)
+
+
+def _materialize_one(
+    *, workspace, descriptor, plan, item, index_entry, artifact_index, timestamp
+):
     source = workspace / index_entry["local_relative_path"]
     source_checksum, source_size = _verified_regular_file(
         source,
@@ -4570,6 +4946,8 @@ def _materialize_one(*, workspace, descriptor, plan, item, index_entry, timestam
     receipt_path = workspace / MATERIALIZATION_RECEIPTS_ROOT / f"{item['binding_id']}.json"
     if receipt_path.is_symlink():
         raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt path is unsafe")
+    replace_managed = False
+    prior_receipt: tuple[Path, dict[str, Any]] | None = None
     if target.exists() or target.is_symlink():
         if target.is_symlink():
             raise WorkspaceCLIError("MATERIALIZATION_CONFLICT", "Consumer target is a symlink", EXIT_VALIDATION)
@@ -4577,25 +4955,89 @@ def _materialize_one(*, workspace, descriptor, plan, item, index_entry, timestam
             target, allowed_root=target_capsule, missing_code="MATERIALIZATION_CONFLICT"
         )
         if checksum != item["expected_checksum"] or size != item["expected_size_bytes"]:
-            code = "MATERIALIZED_ARTIFACT_DRIFT" if receipt_path.exists() else "MATERIALIZATION_CONFLICT"
-            raise WorkspaceCLIError(code, "Consumer target contains different bytes", EXIT_VALIDATION)
-        if receipt_path.exists():
-            existing = _validate_materialization_receipt(
-                _read_json(receipt_path), descriptor
-            )
-            candidate = _materialization_receipt(
-                descriptor, plan, item, existing["materialized_at"]
-            )
-            if existing != candidate:
+            if receipt_path.exists():
                 raise WorkspaceCLIError(
-                    "MATERIALIZATION_CONFLICT",
-                    "Materialization receipt differs from the requested binding",
+                    "MATERIALIZED_ARTIFACT_DRIFT",
+                    "Consumer target differs from its current binding receipt",
                     EXIT_VALIDATION,
                 )
+            prior_receipt = _prior_managed_receipt(
+                workspace=workspace,
+                descriptor=descriptor,
+                item=item,
+                target_checksum=checksum,
+                artifact_index=artifact_index,
+            )
+            if prior_receipt is None:
+                raise WorkspaceCLIError(
+                    "MATERIALIZATION_CONFLICT",
+                    "Consumer target contains different bytes without exact managed ownership proof",
+                    EXIT_VALIDATION,
+                )
+            replace_managed = True
+        else:
+            if receipt_path.exists():
+                existing = _validate_materialization_receipt(
+                    _read_json(receipt_path), descriptor
+                )
+                candidate = _materialization_receipt(
+                    descriptor, plan, item, existing["materialized_at"]
+                )
+                if _receipt_stable_identity(existing) != _receipt_stable_identity(
+                    candidate
+                ):
+                    raise WorkspaceCLIError(
+                        "MATERIALIZATION_CONFLICT",
+                        "Materialization receipt differs from the requested binding",
+                        EXIT_VALIDATION,
+                    )
+                if existing != candidate:
+                    _atomic_write_json(receipt_path, candidate)
+                _archive_superseded_receipts(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    item=item,
+                )
+                _remove_materialization_intent(workspace, item["binding_id"])
+                return
+            prior_receipt = _prior_managed_receipt(
+                workspace=workspace,
+                descriptor=descriptor,
+                item=item,
+                target_checksum=checksum,
+                artifact_index=artifact_index,
+            )
+            if prior_receipt is not None:
+                _write_materialization_intent(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    plan=plan,
+                    item=item,
+                    prior_receipt=prior_receipt[1],
+                )
+            else:
+                _require_materialization_intent(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    plan=plan,
+                    item=item,
+                )
+            candidate = _materialization_receipt(descriptor, plan, item, timestamp)
+            _atomic_write_json(receipt_path, candidate)
+            _archive_superseded_receipts(
+                workspace=workspace,
+                descriptor=descriptor,
+                item=item,
+            )
+            _remove_materialization_intent(workspace, item["binding_id"])
             return
-        candidate = _materialization_receipt(descriptor, plan, item, timestamp)
-        _atomic_write_json(receipt_path, candidate)
-        return
+    _write_materialization_intent(
+        workspace=workspace,
+        descriptor=descriptor,
+        plan=plan,
+        item=item,
+        prior_receipt=None if prior_receipt is None else prior_receipt[1],
+    )
     descriptor_fd, temporary_name = tempfile.mkstemp(
         prefix=f".{item['artifact_id']}.", dir=target.parent
     )
@@ -4627,15 +5069,34 @@ def _materialize_one(*, workspace, descriptor, plan, item, index_entry, timestam
                 "Consumer target parent changed during materialization",
                 EXIT_VALIDATION,
             )
-        try:
-            os.link(temporary, target, follow_symlinks=False)
-        except FileExistsError as error:
-            raise WorkspaceCLIError(
-                "MATERIALIZATION_CONFLICT",
-                "Consumer target appeared during materialization",
-                EXIT_VALIDATION,
-            ) from error
-        temporary.unlink()
+        if replace_managed:
+            current_checksum, current_size = _verified_regular_file(
+                target,
+                allowed_root=target_capsule,
+                missing_code="MATERIALIZATION_CONFLICT",
+            )
+            assert prior_receipt is not None
+            if (
+                current_checksum != prior_receipt[1]["target_checksum"]
+                or current_size
+                != artifact_index[prior_receipt[1]["artifact_id"]]["size_bytes"]
+            ):
+                raise WorkspaceCLIError(
+                    "MATERIALIZATION_CONFLICT",
+                    "Managed consumer target changed during replacement",
+                    EXIT_CONCURRENCY,
+                )
+            os.replace(temporary, target)
+        else:
+            try:
+                os.link(temporary, target, follow_symlinks=False)
+            except FileExistsError as error:
+                raise WorkspaceCLIError(
+                    "MATERIALIZATION_CONFLICT",
+                    "Consumer target appeared during materialization",
+                    EXIT_VALIDATION,
+                ) from error
+        temporary.unlink(missing_ok=True)
         _fsync_directory(target.parent)
         final_checksum, final_size = _verified_regular_file(
             target, allowed_root=target_capsule, missing_code="MATERIALIZATION_CONFLICT"
@@ -4651,6 +5112,12 @@ def _materialize_one(*, workspace, descriptor, plan, item, index_entry, timestam
             _materialization_receipt(descriptor, plan, item, timestamp),
         )
         _validate_materialization_receipt(_read_json(receipt_path), descriptor)
+        _archive_superseded_receipts(
+            workspace=workspace,
+            descriptor=descriptor,
+            item=item,
+        )
+        _remove_materialization_intent(workspace, item["binding_id"])
     finally:
         temporary.unlink(missing_ok=True)
 
@@ -7477,34 +7944,48 @@ def _local_input_state(
     workflow_instance_id: str,
     required_keys: set[str],
 ) -> str:
-    receipts_root = workspace / MATERIALIZATION_RECEIPTS_ROOT
-    if not receipts_root.exists():
+    plan = _current_materialization_plan(
+        workspace, descriptor, workflow_instance_id
+    )
+    if plan is None:
         return "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
-    if receipts_root.is_symlink() or not receipts_root.is_dir():
-        raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt directory is unsafe")
-    matched: set[str] = set()
-    for path in sorted(receipts_root.glob("artifact-binding-*.json")):
-        if path.is_symlink() or not path.is_file():
-            raise _identity("MATERIALIZED_ARTIFACT_DRIFT", "Materialization receipt is unsafe")
+    entries = {item["requirement_key"]: item for item in plan["artifacts"]}
+    if not required_keys.issubset(entries):
+        return "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
+    for item in entries.values():
+        path = (
+            workspace
+            / MATERIALIZATION_RECEIPTS_ROOT
+            / f"{item['binding_id']}.json"
+        )
+        if not path.exists() and not path.is_symlink():
+            return "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise _identity(
+                "MATERIALIZED_ARTIFACT_DRIFT",
+                "Materialization receipt is unsafe",
+            )
         receipt = _validate_materialization_receipt(_read_json(path), descriptor)
-        if receipt["consumer_workflow_instance_id"] != workflow_instance_id:
-            continue
-        requirement_key = receipt.get("requirement_key")
-        if requirement_key not in required_keys:
-            continue
-        matched.add(requirement_key)
+        candidate = _materialization_receipt(
+            descriptor, plan, item, receipt["materialized_at"]
+        )
+        if receipt != candidate:
+            return "INPUT_DRIFT"
         target = workspace / receipt["target_relative_path"]
         try:
-            checksum, _ = _verified_regular_file(
+            checksum, size = _verified_regular_file(
                 target,
                 allowed_root=capsule,
                 missing_code="ARTIFACT_BYTES_NOT_AVAILABLE",
             )
         except WorkspaceCLIError:
             return "INPUT_DRIFT"
-        if checksum != receipt["target_checksum"]:
+        if (
+            checksum != item["expected_checksum"]
+            or size != item["expected_size_bytes"]
+        ):
             return "INPUT_DRIFT"
-    return "LOCALLY_MATERIALIZED" if matched == required_keys else "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
+    return "LOCALLY_MATERIALIZED"
 
 
 def _resource_manifest(root: Path) -> tuple[str, list[dict[str, Any]]]:

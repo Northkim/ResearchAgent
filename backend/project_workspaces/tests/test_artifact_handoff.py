@@ -97,7 +97,9 @@ class _Transport:
     def __init__(self, client, *, artifact=None, materialization=None):
         self.client = client
         self.artifact = artifact
+        self.artifacts = [] if artifact is None else [artifact]
         self.materialization = materialization
+        self.materialization_sequence = []
         self.reported_presentations = []
 
     def create_plan(self, project_id, payload):
@@ -120,7 +122,7 @@ class _Transport:
         return response.json()
 
     def list_artifacts(self, project_id, *, offset=0, limit=100):
-        artifacts = [] if self.artifact is None else [self.artifact]
+        artifacts = self.artifacts
         return {
             "schema_version": workspace_cli.ARTIFACT_PAGE_SCHEMA,
             "project_id": project_id,
@@ -132,13 +134,18 @@ class _Transport:
         }
 
     def materialization_plan(self, project_id, consumer_workflow_instance_id):
-        assert self.materialization is not None
-        assert self.materialization["project_id"] == project_id
+        document = (
+            self.materialization_sequence.pop(0)
+            if self.materialization_sequence
+            else self.materialization
+        )
+        assert document is not None
+        assert document["project_id"] == project_id
         assert (
-            self.materialization["consumer_workflow_instance_id"]
+            document["consumer_workflow_instance_id"]
             == consumer_workflow_instance_id
         )
-        return self.materialization
+        return document
 
     def report_artifact_presentation(self, project_id, artifact_id, payload):
         assert self.artifact is not None
@@ -203,6 +210,52 @@ def _plan(*, project_id, workspace_id, producer, consumer, checksum, size):
     return {**payload, "plan_checksum": workspace_cli.canonical_hash(payload)}
 
 
+def _replace_plan_entries(plan, entries, *, created_at="2026-08-07T12:04:00Z"):
+    payload = {
+        **plan,
+        "artifacts": sorted(entries, key=lambda item: (item["requirement_key"], item["artifact_id"])),
+        "created_at": created_at,
+    }
+    payload.pop("plan_checksum", None)
+    return {**payload, "plan_checksum": workspace_cli.canonical_hash(payload)}
+
+
+def _second_artifact(artifact_workspace, *, suffix="e", body=b'{"fictional":["paper-2"]}\n'):
+    relative_path = f"outputs/fictional-paper-library-{suffix}.json"
+    source = (
+        artifact_workspace["workspace"]
+        / artifact_workspace["producer"]["relative_path"]
+        / relative_path
+    )
+    source.write_bytes(body)
+    artifact_id = "artifact-" + suffix * 32
+    artifact = {
+        **artifact_workspace["transport"].artifact,
+        "artifact_id": artifact_id,
+        "relative_path": relative_path,
+        "content_checksum": workspace_cli._hash_file(source),
+        "size_bytes": source.stat().st_size,
+        "updated_at": "2026-08-07T12:04:00Z",
+        "presentation": None,
+    }
+    artifact_workspace["transport"].artifacts.append(artifact)
+    return artifact, source
+
+
+def _entry_for_artifact(artifact_workspace, artifact, *, binding_suffix="f", requirement_key="paper-library", target=None):
+    original = artifact_workspace["transport"].materialization["artifacts"][0]
+    return {
+        **original,
+        "binding_id": "artifact-binding-" + binding_suffix * 32,
+        "requirement_key": requirement_key,
+        "artifact_id": artifact["artifact_id"],
+        "expected_checksum": artifact["content_checksum"],
+        "expected_size_bytes": artifact["size_bytes"],
+        "source_relative_path": artifact["relative_path"],
+        "target_relative_path": target or original["target_relative_path"],
+    }
+
+
 def test_artifact_index_refresh_and_materialization_are_verified_and_idempotent(
     artifact_workspace,
 ) -> None:
@@ -249,6 +302,353 @@ def test_artifact_index_refresh_and_materialization_are_verified_and_idempotent(
     )
     lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
     assert lock["materialized_artifacts"] == []
+
+
+def test_materialization_reconciles_artifact_index_without_manual_refresh(
+    artifact_workspace,
+) -> None:
+    result = workspace_cli.materialize_artifacts(
+        workspace_root=artifact_workspace["workspace"],
+        consumer_workflow_instance_id=artifact_workspace["consumer"]["workflow_instance_id"],
+        transport=artifact_workspace["transport"],
+    )
+
+    assert result.status == "MATERIALIZED"
+    assert workspace_cli.artifact_status(artifact_workspace["workspace"])["status"] == "VERIFIED"
+    assert (
+        artifact_workspace["workspace"]
+        / workspace_cli.MATERIALIZATION_PLANS_ROOT
+        / f"{artifact_workspace['consumer']['workflow_instance_id']}.json"
+    ).is_file()
+    assert workspace_cli._local_input_state(
+        artifact_workspace["workspace"],
+        artifact_workspace["descriptor"],
+        artifact_workspace["workspace"]
+        / artifact_workspace["consumer"]["relative_path"],
+        artifact_workspace["consumer"]["workflow_instance_id"],
+        {"paper-library"},
+    ) == "LOCALLY_MATERIALIZED"
+
+
+def test_public_materialize_command_reconciles_without_manual_refresh(
+    artifact_workspace,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    transport = artifact_workspace["transport"]
+    monkeypatch.setattr(
+        workspace_cli,
+        "HTTPWorkspaceSyncTransport",
+        lambda _url: transport,
+    )
+
+    exit_code = workspace_cli.main([
+        "artifact",
+        "materialize",
+        str(workspace),
+        "--workflow-instance",
+        artifact_workspace["consumer"]["workflow_instance_id"],
+        "--api-url",
+        "http://127.0.0.1:8000",
+        "--json",
+    ])
+    output = json.loads(capsys.readouterr().out)
+
+    assert exit_code == workspace_cli.EXIT_SUCCESS
+    assert output["status"] == "MATERIALIZED"
+    assert output["materialized_count"] == 1
+    assert workspace_cli.artifact_status(workspace)["status"] == "VERIFIED"
+
+
+def test_exact_rebind_atomically_replaces_only_proven_managed_input(
+    artifact_workspace,
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    consumer_id = artifact_workspace["consumer"]["workflow_instance_id"]
+    workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    old_receipt = workspace / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT / f"{BINDING_ID}.json"
+    old_receipt_bytes = old_receipt.read_bytes()
+    artifact_b, source_b = _second_artifact(artifact_workspace)
+    entry_b = _entry_for_artifact(artifact_workspace, artifact_b)
+    plan_b = _replace_plan_entries(
+        artifact_workspace["transport"].materialization,
+        [entry_b],
+    )
+    artifact_workspace["transport"].materialization = plan_b
+
+    result = workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    target = workspace / entry_b["target_capsule_relative_path"] / entry_b["target_relative_path"]
+    receipt_b = (
+        workspace
+        / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT
+        / f"{entry_b['binding_id']}.json"
+    )
+    archived_a = (
+        workspace
+        / workspace_cli.MATERIALIZATION_RECEIPT_HISTORY_ROOT
+        / f"{BINDING_ID}.json"
+    )
+
+    assert result.status == "MATERIALIZED"
+    assert target.read_bytes() == source_b.read_bytes()
+    assert json.loads(receipt_b.read_text())["plan_checksum"] == plan_b["plan_checksum"]
+    assert not old_receipt.exists()
+    assert archived_a.read_bytes() == old_receipt_bytes
+
+
+def test_exact_rebind_reissues_identity_when_managed_bytes_are_unchanged(
+    artifact_workspace,
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    consumer_id = artifact_workspace["consumer"]["workflow_instance_id"]
+    workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    artifact_b, _ = _second_artifact(
+        artifact_workspace,
+        body=artifact_workspace["source"].read_bytes(),
+    )
+    entry_b = _entry_for_artifact(artifact_workspace, artifact_b)
+    plan_b = _replace_plan_entries(
+        artifact_workspace["transport"].materialization,
+        [entry_b],
+    )
+    artifact_workspace["transport"].materialization = plan_b
+
+    result = workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    receipt_b = json.loads((
+        workspace
+        / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT
+        / f"{entry_b['binding_id']}.json"
+    ).read_text())
+
+    assert result.status == "MATERIALIZED"
+    assert receipt_b["artifact_id"] == artifact_b["artifact_id"]
+    assert receipt_b["source_checksum"] == artifact_workspace["checksum"]
+
+
+def test_binding_replacement_fails_closed_without_exact_managed_ownership(
+    artifact_workspace,
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    consumer_id = artifact_workspace["consumer"]["workflow_instance_id"]
+    workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    old_receipt = workspace / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT / f"{BINDING_ID}.json"
+    old_receipt.unlink()
+    target = (
+        workspace
+        / artifact_workspace["consumer"]["relative_path"]
+        / "inputs/paper-library/fictional-paper-library.json"
+    )
+    before = target.read_bytes()
+    artifact_b, _source_b = _second_artifact(artifact_workspace)
+    entry_b = _entry_for_artifact(artifact_workspace, artifact_b)
+    artifact_workspace["transport"].materialization = _replace_plan_entries(
+        artifact_workspace["transport"].materialization,
+        [entry_b],
+    )
+
+    with pytest.raises(WorkspaceCLIError) as error:
+        workspace_cli.materialize_artifacts(
+            workspace_root=workspace,
+            consumer_workflow_instance_id=consumer_id,
+            transport=artifact_workspace["transport"],
+        )
+
+    assert error.value.code == "MATERIALIZATION_CONFLICT"
+    assert target.read_bytes() == before
+    assert workspace_cli._local_input_state(
+        workspace,
+        artifact_workspace["descriptor"],
+        workspace / artifact_workspace["consumer"]["relative_path"],
+        consumer_id,
+        {"paper-library"},
+    ) == "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
+
+
+def test_existing_exact_unmanaged_target_is_not_claimed(
+    artifact_workspace,
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    target = (
+        workspace
+        / artifact_workspace["consumer"]["relative_path"]
+        / "inputs/paper-library/fictional-paper-library.json"
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(artifact_workspace["source"].read_bytes())
+
+    with pytest.raises(WorkspaceCLIError) as error:
+        workspace_cli.materialize_artifacts(
+            workspace_root=workspace,
+            consumer_workflow_instance_id=artifact_workspace["consumer"][
+                "workflow_instance_id"
+            ],
+            transport=artifact_workspace["transport"],
+        )
+
+    assert error.value.code == "MATERIALIZATION_CONFLICT"
+    assert not list(
+        (workspace / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT).glob("*.json")
+    )
+
+
+def test_replacement_recovers_after_target_publish_before_current_receipt(
+    artifact_workspace,
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    consumer_id = artifact_workspace["consumer"]["workflow_instance_id"]
+    workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    artifact_b, source_b = _second_artifact(artifact_workspace)
+    entry_b = _entry_for_artifact(artifact_workspace, artifact_b)
+    plan_b = _replace_plan_entries(
+        artifact_workspace["transport"].materialization,
+        [entry_b],
+    )
+    artifact_workspace["transport"].materialization = plan_b
+    old_receipt = json.loads((
+        workspace
+        / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT
+        / f"{BINDING_ID}.json"
+    ).read_text())
+    workspace_cli._write_materialization_intent(
+        workspace=workspace,
+        descriptor=artifact_workspace["descriptor"],
+        plan=plan_b,
+        item=entry_b,
+        prior_receipt=old_receipt,
+    )
+    target = (
+        workspace
+        / entry_b["target_capsule_relative_path"]
+        / entry_b["target_relative_path"]
+    )
+    target.write_bytes(source_b.read_bytes())
+
+    result = workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    receipt_b = json.loads((
+        workspace
+        / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT
+        / f"{entry_b['binding_id']}.json"
+    ).read_text())
+
+    assert result.status == "MATERIALIZED"
+    assert receipt_b["artifact_id"] == artifact_b["artifact_id"]
+    assert receipt_b["plan_checksum"] == plan_b["plan_checksum"]
+
+
+def test_unchanged_sibling_receipt_is_reissued_for_current_complete_plan(
+    artifact_workspace,
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    consumer_id = artifact_workspace["consumer"]["workflow_instance_id"]
+    idea, idea_source = _second_artifact(
+        artifact_workspace, suffix="7", body=b'{"fictional":"idea"}\n'
+    )
+    idea_entry = _entry_for_artifact(
+        artifact_workspace,
+        idea,
+        binding_suffix="8",
+        requirement_key="research-idea",
+        target="inputs/research-idea/selected-idea.json",
+    )
+    plan_a = _replace_plan_entries(
+        artifact_workspace["transport"].materialization,
+        [artifact_workspace["transport"].materialization["artifacts"][0], idea_entry],
+    )
+    artifact_workspace["transport"].materialization = plan_a
+    workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    idea_target = workspace / idea_entry["target_capsule_relative_path"] / idea_entry["target_relative_path"]
+    idea_receipt_path = workspace / workspace_cli.MATERIALIZATION_RECEIPTS_ROOT / f"{idea_entry['binding_id']}.json"
+    idea_receipt_a = json.loads(idea_receipt_path.read_text())
+
+    library_b, _ = _second_artifact(
+        artifact_workspace, suffix="9", body=b'{"fictional":["paper-3"]}\n'
+    )
+    library_b_entry = _entry_for_artifact(
+        artifact_workspace, library_b, binding_suffix="a"
+    )
+    plan_b = _replace_plan_entries(plan_a, [library_b_entry, idea_entry])
+    artifact_workspace["transport"].materialization = plan_b
+    workspace_cli.materialize_artifacts(
+        workspace_root=workspace,
+        consumer_workflow_instance_id=consumer_id,
+        transport=artifact_workspace["transport"],
+    )
+    idea_receipt_b = json.loads(idea_receipt_path.read_text())
+
+    assert idea_target.read_bytes() == idea_source.read_bytes()
+    assert idea_receipt_b["artifact_id"] == idea_receipt_a["artifact_id"]
+    assert idea_receipt_b["target_checksum"] == idea_receipt_a["target_checksum"]
+    assert idea_receipt_b["materialized_at"] == idea_receipt_a["materialized_at"]
+    assert idea_receipt_b["plan_checksum"] == plan_b["plan_checksum"]
+    assert idea_receipt_b["receipt_checksum"] != idea_receipt_a["receipt_checksum"]
+
+
+def test_concurrent_cloud_plan_change_leaves_latest_plan_not_stale_runnable(
+    artifact_workspace,
+) -> None:
+    workspace = artifact_workspace["workspace"]
+    consumer_id = artifact_workspace["consumer"]["workflow_instance_id"]
+    plan_a = artifact_workspace["transport"].materialization
+    artifact_b, _ = _second_artifact(artifact_workspace)
+    entry_b = _entry_for_artifact(artifact_workspace, artifact_b)
+    plan_b = _replace_plan_entries(plan_a, [entry_b])
+    artifact_workspace["transport"].materialization_sequence = [plan_a, plan_b]
+    artifact_workspace["transport"].materialization = plan_b
+
+    with pytest.raises(WorkspaceCLIError) as error:
+        workspace_cli.materialize_artifacts(
+            workspace_root=workspace,
+            consumer_workflow_instance_id=consumer_id,
+            transport=artifact_workspace["transport"],
+        )
+
+    assert error.value.code == "MATERIALIZATION_PLAN_CHANGED"
+    snapshot = json.loads((
+        workspace
+        / workspace_cli.MATERIALIZATION_PLANS_ROOT
+        / f"{consumer_id}.json"
+    ).read_text())
+    assert snapshot["plan_checksum"] == plan_b["plan_checksum"]
+    assert workspace_cli._local_input_state(
+        workspace,
+        artifact_workspace["descriptor"],
+        workspace / artifact_workspace["consumer"]["relative_path"],
+        consumer_id,
+        {"paper-library"},
+    ) == "INPUT_SELECTION_OR_MATERIALIZATION_REQUIRED"
 
 
 def test_publish_before_receipt_recovers_without_overwrite(
@@ -554,6 +954,22 @@ def test_materialization_plan_rejects_absolute_traversal_and_case_collision(
     payload["plan_checksum"] = workspace_cli.canonical_hash(unsigned)
     with pytest.raises(WorkspaceCLIError):
         workspace_cli.validate_materialization_plan(payload, descriptor)
+
+    payload = dict(base)
+    first = dict(base["artifacts"][0])
+    second = {
+        **first,
+        "binding_id": "artifact-binding-" + "c" * 32,
+        "artifact_id": "artifact-" + "d" * 32,
+        "target_relative_path": "inputs/paper-library/second-paper-library.json",
+    }
+    payload["artifacts"] = [first, second]
+    unsigned = dict(payload)
+    unsigned.pop("plan_checksum")
+    payload["plan_checksum"] = workspace_cli.canonical_hash(unsigned)
+    with pytest.raises(WorkspaceCLIError) as error:
+        workspace_cli.validate_materialization_plan(payload, descriptor)
+    assert error.value.code == "MATERIALIZATION_PLAN_INVALID"
 
 
 def test_artifact_cli_status_has_stable_json_and_exit_code(
