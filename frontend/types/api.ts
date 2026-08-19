@@ -413,6 +413,7 @@ export interface WorkflowArtifactRequirement {
   schema_constraint: string;
   required: boolean;
   target_relative_path: string;
+  content_precondition?: Record<string, unknown> | null;
 }
 
 export interface CapsuleVersionCatalog {
@@ -678,6 +679,14 @@ export interface CanonicalArtifactReference {
     artifact_id: string;
     artifact_checksum: string;
     presentation_checksum: string;
+    payload: Record<string, unknown>;
+    reported_at: string;
+  } | null;
+  content_qualification?: {
+    schema_identity: string;
+    artifact_id: string;
+    artifact_checksum: string;
+    qualification_checksum: string;
     payload: Record<string, unknown>;
     reported_at: string;
   } | null;

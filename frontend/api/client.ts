@@ -251,6 +251,18 @@ export const apiClient = {
     })}`);
   },
 
+  listCompatibleArtifactReferences(
+    projectId: string,
+    workflowInstanceId: string,
+    requirementKey: string,
+  ): Promise<CanonicalArtifactPage> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/artifact-requirements/` +
+      `${encodeURIComponent(requirementKey)}/candidates?limit=100`,
+    );
+  },
+
   listArtifactDependencies(
     projectId: string,
     workflowInstanceId: string,

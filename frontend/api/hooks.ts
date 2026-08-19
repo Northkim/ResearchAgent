@@ -138,6 +138,22 @@ export function useProjectArtifactReferences(projectId: string, artifactType: st
   });
 }
 
+export function useCompatibleArtifactReferences(
+  projectId: string,
+  workflowInstanceId: string,
+  requirementKey: string,
+) {
+  return useQuery({
+    queryKey: queryKeys.compatibleArtifactReferences(
+      projectId, workflowInstanceId, requirementKey,
+    ),
+    queryFn: () => apiClient.listCompatibleArtifactReferences(
+      projectId, workflowInstanceId, requirementKey,
+    ),
+    retry: false,
+  });
+}
+
 export function useArtifactDependencies(projectId: string, workflowInstanceId: string) {
   return useQuery({
     queryKey: queryKeys.artifactDependencies(projectId, workflowInstanceId),

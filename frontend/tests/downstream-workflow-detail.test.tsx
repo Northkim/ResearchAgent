@@ -7,7 +7,8 @@ import { localProjectFixture, projectProgressFixture, workflowInstancesFixture }
 
 const hooks = vi.hoisted(() => ({
   useProject: vi.fn(), useProjectWorkflowInstances: vi.fn(), useProjectProgress: vi.fn(),
-  useProjectArtifactReferences: vi.fn(), useWorkflowDefinition: vi.fn(),
+  useProjectArtifactReferences: vi.fn(), useCompatibleArtifactReferences: vi.fn(),
+  useWorkflowDefinition: vi.fn(),
   useControlledLocalRunApproval: vi.fn(), useControlledLocalRunApprovalDecision: vi.fn(),
   useWorkflowInputSetup: vi.fn(), useConfirmWorkflowInputSetup: vi.fn(),
   useBindArtifactDependency: vi.fn(),
@@ -87,6 +88,9 @@ function setup(role: "INITIAL" | "REVIEW" | "REVISION") {
 beforeEach(() => vi.clearAllMocks());
 
 beforeEach(() => {
+  hooks.useCompatibleArtifactReferences.mockReturnValue({
+    data: { artifacts: [] }, isLoading: false, isError: false,
+  });
   hooks.useWorkflowInputSetup.mockReturnValue({
     data: null, isLoading: false, isError: false,
   });

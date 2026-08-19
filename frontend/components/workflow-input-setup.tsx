@@ -5,7 +5,7 @@ import { useState } from "react";
 import {
   useBindArtifactDependency,
   useConfirmWorkflowInputSetup,
-  useProjectArtifactReferences,
+  useCompatibleArtifactReferences,
   useWorkflowInputSetup,
 } from "@/api/hooks";
 import { formatDateTime } from "@/lib/format";
@@ -28,7 +28,11 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
   requirement: WorkflowArtifactRequirement;
   dependencies: ArtifactDependencyEdge[];
 }) {
-  const artifacts = useProjectArtifactReferences(projectId, requirement.artifact_type);
+  const artifacts = useCompatibleArtifactReferences(
+    projectId,
+    instance.workflow_instance_id,
+    requirement.requirement_key,
+  );
   const bind = useBindArtifactDependency(projectId, instance.workflow_instance_id);
   const [selected, setSelected] = useState("");
   const active = dependencies.find((edge) => edge.state === "ACTIVE" && edge.requirement_key === requirement.requirement_key);

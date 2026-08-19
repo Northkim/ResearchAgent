@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import {
   useBindArtifactDependency,
-  useProjectArtifactReferences,
+  useCompatibleArtifactReferences,
 } from "@/api/hooks";
 import { formatDateTime } from "@/lib/format";
 import type { ArtifactDependencyEdge, ProjectWorkflowInstance } from "@/types/api";
@@ -40,7 +40,11 @@ export function IdeaDiscoverySetup({
   installationState: string;
   dependencies: ArtifactDependencyEdge[];
 }) {
-  const artifacts = useProjectArtifactReferences(projectId, ARTIFACT_TYPE);
+  const artifacts = useCompatibleArtifactReferences(
+    projectId,
+    instance.workflow_instance_id,
+    "paper_library",
+  );
   const bind = useBindArtifactDependency(projectId, instance.workflow_instance_id);
   const [selection, setSelection] = useState<string>("");
   const [notice, setNotice] = useState<string | null>(null);
@@ -142,7 +146,7 @@ export function IdeaDiscoverySetup({
         </fieldset>
       ) : (
         <div>
-          <p>Idea Discovery needs a completed paper library from Literature Search 0.4.0.</p>
+          <p>Idea Discovery needs a completed paper library containing at least one selected paper.</p>
           <p>If this Project only has legacy Literature Search 0.3.0, keep its history, add a new Literature Search Workflow, finish it, then return here.</p>
         </div>
       )}

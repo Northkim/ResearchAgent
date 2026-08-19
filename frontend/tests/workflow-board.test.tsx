@@ -33,6 +33,11 @@ function arrange() {
     project_id: localProjectFixture.project_id,
     artifacts: [], offset: 0, limit: 100, total: 0, has_more: false,
   });
+  vi.spyOn(apiClient, "listCompatibleArtifactReferences").mockResolvedValue({
+    schema_version: "reagent.artifact-reference-page/v0.1",
+    project_id: localProjectFixture.project_id,
+    artifacts: [], offset: 0, limit: 100, total: 0, has_more: false,
+  });
 }
 
 const genericExperimentId = `wfi-${"6".repeat(32)}`;

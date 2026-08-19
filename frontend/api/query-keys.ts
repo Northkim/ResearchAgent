@@ -12,6 +12,12 @@ export const queryKeys = {
     ["projects", projectId, "workflow-instances"] as const,
   projectArtifactReferences: (projectId: string, artifactType: string) =>
     ["projects", projectId, "artifact-references", artifactType] as const,
+  compatibleArtifactReferences: (
+    projectId: string, workflowInstanceId: string, requirementKey: string,
+  ) => [
+    "projects", projectId, "workflow-instances", workflowInstanceId,
+    "artifact-requirements", requirementKey, "candidates",
+  ] as const,
   artifactDependencies: (projectId: string, workflowInstanceId: string) =>
     ["projects", projectId, "workflow-instances", workflowInstanceId, "artifact-dependencies"] as const,
   workflowInputSetup: (projectId: string, workflowInstanceId: string) =>

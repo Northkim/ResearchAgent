@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, test, vi } from "vitest";
 
@@ -48,7 +48,7 @@ function artifact(id: string, producer: string, checksumCharacter: string): Cano
 }
 
 function arrange(artifacts: CanonicalArtifactReference[]) {
-  const artifactRequest = vi.spyOn(apiClient, "listProjectArtifactReferences").mockResolvedValue({
+  const artifactRequest = vi.spyOn(apiClient, "listCompatibleArtifactReferences").mockResolvedValue({
     schema_version: "reagent.artifact-reference-page/v0.1",
     project_id: localProjectFixture.project_id,
     artifacts,
@@ -85,7 +85,7 @@ test("explains the production prerequisite when no compatible Artifact exists", 
       />
     </Providers>,
   );
-  expect(await screen.findByText(/needs a completed paper library from Literature Search 0.4.0/)).toBeVisible();
+  expect(await screen.findByText(/needs a completed paper library containing at least one selected paper/)).toBeVisible();
   expect(screen.getByText(/legacy Literature Search 0.3.0/)).toBeVisible();
   expect(screen.queryByRole("button", { name: /Confirm selected/ })).not.toBeInTheDocument();
 });
@@ -223,7 +223,7 @@ test("shows stable-key local commands for the normal single-instance path", asyn
   )).not.toBeVisible();
 });
 
-test("shares one bounded Artifact query across multiple Idea cards", async () => {
+test("requests server-qualified candidates for each exact Idea instance", async () => {
   const producers = Array.from({ length: 10 }, (_, index) => ({
     ...workflowInstancesFixture.items[0],
     workflow_instance_id: `wfi-${(index + 1).toString(16).padStart(32, "0")}`,
@@ -255,7 +255,12 @@ test("shares one bounded Artifact query across multiple Idea cards", async () =>
       ))}
     </Providers>,
   );
-  expect(await screen.findAllByRole("radio")).toHaveLength(100);
-  expect(requests.artifactRequest).toHaveBeenCalledTimes(1);
+  await waitFor(() => expect(screen.getAllByRole("radio")).toHaveLength(100));
+  expect(requests.artifactRequest).toHaveBeenCalledTimes(10);
+  expect(requests.artifactRequest).toHaveBeenCalledWith(
+    localProjectFixture.project_id,
+    ideas[0].workflow_instance_id,
+    "paper_library",
+  );
   expect(requests.dependencyRequest).not.toHaveBeenCalled();
 });

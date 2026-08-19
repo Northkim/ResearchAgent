@@ -108,7 +108,7 @@ test("presentation absence is truthful and does not block exact multi-candidate 
     artifact("selected-paper-library/v1", "a", paperPayload),
     artifact("selected-paper-library/v1", "b"),
   ];
-  vi.spyOn(apiClient, "listProjectArtifactReferences").mockResolvedValue({
+  vi.spyOn(apiClient, "listCompatibleArtifactReferences").mockResolvedValue({
     schema_version: "reagent.artifact-reference-page/v0.1",
     project_id: projectId,
     artifacts: choices,
