@@ -19,7 +19,10 @@ from backend.project_workspaces.tests.test_generic_experiment_v5_workspace impor
 from backend.project_workspaces.tests.test_owner_real_research_gate import _loopback_server
 from backend.project_workspaces.tests.test_real_experiment_workspace import _Transport
 from backend.workflow_packages.forward_downstream_publication import (
-    INITIAL_WRITING_CAPSULE_ID, REVIEW_CAPSULE_ID, WRITING_REVISION_CAPSULE_ID,
+    INITIAL_WRITING_CAPSULE_ID, REVIEW_CAPSULE_ID,
+)
+from backend.workflow_packages.revision_optional_support_publication import (
+    WRITING_REVISION_CAPSULE_ID,
 )
 
 
@@ -39,7 +42,7 @@ def test_public_workspace_sync_bind_materialize_preflight_and_role_selection(tmp
         ("writing_fixture", "writing-local-experimental", "0.5.0", INITIAL_WRITING_CAPSULE_ID, "0.7.0"),
         ("review", "review-local-experimental", "0.4.0", REVIEW_CAPSULE_ID, "0.6.0"),
         ("review_fixture", "review-local-experimental", "0.4.0", REVIEW_CAPSULE_ID, "0.6.0"),
-        ("revision", "writing-local-experimental", "0.6.0", WRITING_REVISION_CAPSULE_ID, "0.8.0"),
+        ("revision", "writing-local-experimental", "0.7.0", WRITING_REVISION_CAPSULE_ID, "0.9.0"),
     ):
         response = client.post(f"/projects/{project_id}/workflow-instances", json={"workflow_definition_id":workflow_id,"workflow_version":version,"capsule_id":capsule_id,"capsule_version":capsule_version,"base_revision":revision})
         assert response.status_code == 201, response.text
@@ -50,7 +53,7 @@ def test_public_workspace_sync_bind_materialize_preflight_and_role_selection(tmp
     transport = _Transport(client)
     assert workspace_cli.sync_workspace(workspace_root=workspace, transport=transport).status == "SYNCED"
     lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text()); installed = {item["workflow_instance_id"]:item for item in lock["installed_capsules"]}
-    assert [(installed[created[role]["workflow_instance_id"]]["workflow_definition_version"], installed[created[role]["workflow_instance_id"]]["capsule_version"]) for role in ("writing","review","revision")] == [("0.5.0","0.7.0"),("0.4.0","0.6.0"),("0.6.0","0.8.0")]
+    assert [(installed[created[role]["workflow_instance_id"]]["workflow_definition_version"], installed[created[role]["workflow_instance_id"]]["capsule_version"]) for role in ("writing","review","revision")] == [("0.5.0","0.7.0"),("0.4.0","0.6.0"),("0.7.0","0.9.0")]
     producer = next(item for item in lock["installed_capsules"] if item["workflow_definition_id"] == "literature-search-local-experimental")
     idea, _ = _selected(); library = _library(); v5, block = _v5()
     idea_art = _seed_upstream(uow_factory=factory, project_id=project_id, instance=producer, root=workspace/producer["relative_path"], artifact_type="selected-research-idea/v1", content=idea, character="a")

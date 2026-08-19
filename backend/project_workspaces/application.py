@@ -27,6 +27,8 @@ from backend.workflow_packages.forward_downstream_publication import (
     REVIEW_CAPSULE_ID as FORWARD_REVIEW_CAPSULE_ID,
     REVIEW_CAPSULE_VERSION as FORWARD_REVIEW_CAPSULE_VERSION,
     REVIEW_VERSION as FORWARD_REVIEW_VERSION,
+)
+from backend.workflow_packages.revision_optional_support_publication import (
     WRITING_REVISION_CAPSULE_ID,
     WRITING_REVISION_CAPSULE_VERSION,
     WRITING_REVISION_VERSION,
@@ -630,7 +632,8 @@ class ProjectWorkspaceApplicationService:
         revision = base_revision + 1
         instance_id = "wfi-" + uuid.uuid5(
             _REVISION_NAMESPACE,
-            f"revision|project={project_id}|parent={parent.artifact_id}|review={review.artifact_id}",
+            f"revision|version={WRITING_REVISION_VERSION}|project={project_id}|"
+            f"parent={parent.artifact_id}|review={review.artifact_id}",
         ).hex
         instance = ProjectWorkflowInstance(
             workflow_instance_id=instance_id,
@@ -680,7 +683,10 @@ class ProjectWorkspaceApplicationService:
                 instances=instances,
                 revision=revision,
                 base_revision=base_revision,
-                operation_key=f"start-revision:{parent.artifact_id}:{review.artifact_id}",
+                operation_key=(
+                    f"start-revision:{WRITING_REVISION_VERSION}:"
+                    f"{parent.artifact_id}:{review.artifact_id}"
+                ),
                 now=now,
             )
             self._uow.project_manifests.add_manifest(manifest)

@@ -3874,3 +3874,24 @@ PostgreSQL, public disposable Project/Workspace, system-Chrome browser, frontend
 build, and historical reviewed-Skill/Experiment checks passed. D1 stayed PAUSED with
 five Workflows and no Progress, Artifact, binding, Workspace, or research changes.
 Safe next action is Owner visual review of SKILL-M1; do not start D1 automatically.
+
+## D1 Revision optional Review support repair (2026-08-19)
+
+D1 confirmed that immutable Writing Revision 0.6 / Capsule 0.8 incorrectly required
+causal Review support to equal the complete inherited manuscript support context.
+ADR 0048 establishes the corrected relationship: actual Review support must be an
+exact role/Artifact/checksum subset of Revision context, while extra exact parent
+sources remain provenance/context and are not Review-verified evidence.
+
+The correction is additive: Writing Revision 0.7 / Capsule 0.9, migration
+`20260819_0034`, and unchanged output `manuscript-draft/v5`. Historical 0.6/0.8 and
+migration 0032 remain immutable. Current Review-to-Revision creation targets 0.7/0.9;
+historical sync remains supported. Contract, package-startup, application,
+Foundation, PostgreSQL upgrade/downgrade, Review optional-evidence, and historical
+Capsule regressions passed. The real D1 blocked 0.6/0.8 Revision was retired and one
+0.7/0.9 Revision was recreated through the existing exact Review action. Normal sync,
+Artifact refresh, and exact materialization prepared manuscript, causal Review,
+Literature, and Research Idea; Experiment remains absent. The active Revision is
+locally materialized and Ready to run, with zero Revision Progress/output. No Harness
+or scientific Workflow ran, and all protected upstream Artifact checksums remain
+unchanged.

@@ -89,11 +89,16 @@ from backend.workflow_packages.forward_downstream_publication import (
     INITIAL_WRITING_VERSION as FORWARD_WRITING_VERSION,
     REVIEW_CAPSULE_VERSION as FORWARD_REVIEW_CAPSULE_VERSION,
     REVIEW_VERSION as FORWARD_REVIEW_VERSION,
-    WRITING_REVISION_CAPSULE_VERSION as FORWARD_REVISION_CAPSULE_VERSION,
-    WRITING_REVISION_VERSION as FORWARD_REVISION_VERSION,
+    WRITING_REVISION_CAPSULE_VERSION as FORWARD_REVISION_V0_8_CAPSULE_VERSION,
+    WRITING_REVISION_VERSION as FORWARD_REVISION_V0_8_VERSION,
     build_initial_writing_v0_7_package,
     build_review_v0_6_package,
     build_writing_revision_v0_8_package,
+)
+from backend.workflow_packages.revision_optional_support_publication import (
+    WRITING_REVISION_CAPSULE_VERSION as FORWARD_REVISION_CAPSULE_VERSION,
+    WRITING_REVISION_VERSION as FORWARD_REVISION_VERSION,
+    build_writing_revision_v0_9_package,
 )
 
 from .contracts import (
@@ -675,11 +680,18 @@ class WorkspaceSyncApplicationService:
             )
         elif (
             instance.workflow_definition_id == WRITING_WORKFLOW_ID
-            and instance.workflow_version == FORWARD_REVISION_VERSION
-            and instance.capsule_version == FORWARD_REVISION_CAPSULE_VERSION
+            and instance.workflow_version == FORWARD_REVISION_V0_8_VERSION
+            and instance.capsule_version == FORWARD_REVISION_V0_8_CAPSULE_VERSION
         ):
             builder = build_writing_revision_v0_8_package
             package_id = f"forward-writing-revision-{project.project_id}-{instance.workflow_instance_id}-v0.8"
+        elif (
+            instance.workflow_definition_id == WRITING_WORKFLOW_ID
+            and instance.workflow_version == FORWARD_REVISION_VERSION
+            and instance.capsule_version == FORWARD_REVISION_CAPSULE_VERSION
+        ):
+            builder = build_writing_revision_v0_9_package
+            package_id = f"forward-writing-revision-{project.project_id}-{instance.workflow_instance_id}-v0.9"
         elif (
             instance.workflow_definition_id == WRITING_WORKFLOW_ID
             and instance.workflow_version == REAL_WRITING_WORKFLOW_VERSION

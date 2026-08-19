@@ -496,7 +496,10 @@ def test_review_action_is_exact_idempotent_and_public_sync_adds_only_revision(tm
     uow.commit()
     for key in ("research_idea", "literature_library", "experiment_record"):
         _ep_d2_bind(client, project_id, writing["workflow_instance_id"], key, artifacts[key])
-        _ep_d2_bind(client, project_id, review["workflow_instance_id"], key, artifacts[key])
+    _ep_d2_bind(
+        client, project_id, review["workflow_instance_id"],
+        "literature_library", artifacts["literature_library"],
+    )
     _ep_d2_bind(client, project_id, review["workflow_instance_id"], "manuscript", artifacts["manuscript"])
 
     payload = {
@@ -508,10 +511,10 @@ def test_review_action_is_exact_idempotent_and_public_sync_adds_only_revision(tm
     replay = client.post(f"/projects/{project_id}/writing-revisions", json=payload)
     assert first.status_code == replay.status_code == 200
     assert first.json()["workflow_instance_id"] == replay.json()["workflow_instance_id"]
-    assert (first.json()["workflow_version"], first.json()["capsule_version"]) == ("0.6.0", "0.8.0")
+    assert (first.json()["workflow_version"], first.json()["capsule_version"]) == ("0.7.0", "0.9.0")
 
     updated = client.get(f"/projects/{project_id}/workflow-instances").json()["items"]
-    revisions = [item for item in updated if item["workflow_definition_id"] == "writing-local-experimental" and item["workflow_version"] == "0.6.0"]
+    revisions = [item for item in updated if item["workflow_definition_id"] == "writing-local-experimental" and item["workflow_version"] == "0.7.0"]
     assert len(revisions) == 1 and revisions[0]["display_name"] == "Writing Revision"
     progress = client.get(f"/projects/{project_id}/progress").json()
     writing_labels = sorted(

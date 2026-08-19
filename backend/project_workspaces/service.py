@@ -552,6 +552,8 @@ def ensure_production_workflow_foundation(
     )
     from backend.workflow_packages.forward_downstream_publication import (
         INITIAL_WRITING_VERSION, REVIEW_VERSION as FORWARD_REVIEW_VERSION,
+    )
+    from backend.workflow_packages.revision_optional_support_publication import (
         WRITING_REVISION_VERSION as FORWARD_REVISION_VERSION,
     )
     for role, workflow_id, workflow_version in (

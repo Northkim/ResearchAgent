@@ -14,9 +14,12 @@ from backend.workflow_packages.forward_downstream_publication import (
     INITIAL_WRITING_VERSION, MANUSCRIPT_V4, MANUSCRIPT_V5,
     REVIEW_CAPSULE_CHECKSUM, REVIEW_CAPSULE_ID, REVIEW_CAPSULE_VERSION,
     REVIEW_REQUIREMENTS, REVIEW_V3, REVIEW_VERSION,
-    REVISION_REQUIREMENTS, WRITING_REVISION_CAPSULE_CHECKSUM,
-    WRITING_REVISION_CAPSULE_ID, WRITING_REVISION_CAPSULE_VERSION,
-    WRITING_REVISION_VERSION, workflow_checksum,
+    workflow_checksum,
+)
+from backend.workflow_packages.revision_optional_support_publication import (
+    WRITING_REVISION_CAPSULE_CHECKSUM, WRITING_REVISION_CAPSULE_ID,
+    WRITING_REVISION_CAPSULE_VERSION, WRITING_REVISION_REQUIREMENTS,
+    WRITING_REVISION_VERSION, workflow_checksum as revision_workflow_checksum,
 )
 from backend.workflow_packages.production_workflows import (
     REVIEW_TEMPLATE_ID, REVIEW_WORKFLOW_ID, WRITING_TEMPLATE_ID, WRITING_WORKFLOW_ID,
@@ -34,7 +37,7 @@ def _identity(role: str):
     return {
         "initial-writing": (WRITING_WORKFLOW_ID, INITIAL_WRITING_VERSION, INITIAL_WRITING_CAPSULE_ID, INITIAL_WRITING_CAPSULE_VERSION, INITIAL_WRITING_CAPSULE_CHECKSUM, INITIAL_WRITING_REQUIREMENTS, MANUSCRIPT_V4, WRITING_TEMPLATE_ID, True),
         "review": (REVIEW_WORKFLOW_ID, REVIEW_VERSION, REVIEW_CAPSULE_ID, REVIEW_CAPSULE_VERSION, REVIEW_CAPSULE_CHECKSUM, REVIEW_REQUIREMENTS, REVIEW_V3, REVIEW_TEMPLATE_ID, True),
-        "revision": (WRITING_WORKFLOW_ID, WRITING_REVISION_VERSION, WRITING_REVISION_CAPSULE_ID, WRITING_REVISION_CAPSULE_VERSION, WRITING_REVISION_CAPSULE_CHECKSUM, REVISION_REQUIREMENTS, MANUSCRIPT_V5, WRITING_TEMPLATE_ID, False),
+        "revision": (WRITING_WORKFLOW_ID, WRITING_REVISION_VERSION, WRITING_REVISION_CAPSULE_ID, WRITING_REVISION_CAPSULE_VERSION, WRITING_REVISION_CAPSULE_CHECKSUM, WRITING_REVISION_REQUIREMENTS, MANUSCRIPT_V5, WRITING_TEMPLATE_ID, False),
     }[role]
 
 
@@ -42,7 +45,9 @@ def definition_version(role: str, now: datetime) -> WorkflowDefinitionVersion:
     workflow_id, version, _capsule_id, _capsule_version, _capsule_checksum, requirements, output, _template, recommended = _identity(role)
     return WorkflowDefinitionVersion(
         workflow_definition_id=workflow_id, version=version,
-        contract_checksum=workflow_checksum(role), input_schema_id="artifact-bindings/v0.1",
+        contract_checksum=(
+            revision_workflow_checksum() if role == "revision" else workflow_checksum(role)
+        ), input_schema_id="artifact-bindings/v0.1",
         output_schema_id=output,
         compatibility={
             "package_schema_version": PACKAGE_SCHEMA_VERSION,
@@ -51,7 +56,7 @@ def definition_version(role: str, now: datetime) -> WorkflowDefinitionVersion:
             "supported_mode": {
                 "initial-writing": "EVIDENCE_BOUND_INITIAL_DRAFT_V5",
                 "review": "BOUNDED_EVIDENCE_AUDIT_V5",
-                "revision": "REVIEW_TO_WRITING_REVISION_V5_ROUND_ONE",
+                "revision": "REVIEW_TO_WRITING_REVISION_V5_OPTIONAL_REVIEW_SUPPORT",
             }[role],
             "experiment_evidence_authority": "experiment-record/v5",
             "presentation_companion_authoritative": False,

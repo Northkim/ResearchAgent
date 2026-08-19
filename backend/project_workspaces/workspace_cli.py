@@ -111,6 +111,10 @@ SUPPORTED_CAPSULE_PINS = {
         "writing-scaffold-package-experimental",
         False,
     ),
+    ("writing-local-experimental", "0.7.0", "0.9.0"): (
+        "writing-scaffold-package-experimental",
+        False,
+    ),
     ("review-local-experimental", "0.1.0", "0.1.0"): (
         "review-scaffold-package-experimental",
         False,
@@ -5815,6 +5819,7 @@ def run_workflow(
         is_writing_revision = pin in {
             ("writing-local-experimental", "0.4.0", "0.6.0"),
             ("writing-local-experimental", "0.6.0", "0.8.0"),
+            ("writing-local-experimental", "0.7.0", "0.9.0"),
         }
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
@@ -7220,6 +7225,7 @@ def _evaluate_local_progress_readiness(
         ("writing-local-experimental", "0.3.0", "0.5.0"),
         ("writing-local-experimental", "0.5.0", "0.7.0"),
         ("writing-local-experimental", "0.4.0", "0.6.0"),
+        ("writing-local-experimental", "0.7.0", "0.9.0"),
         ("review-local-experimental", "0.3.0", "0.5.0"),
         ("review-local-experimental", "0.4.0", "0.6.0"),
     }:
@@ -7948,7 +7954,7 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
         if definition_id == "writing-local-experimental":
             if item["workflow_definition_version"] == "0.5.0":
                 role_name = "Initial Writing"
-            elif item["workflow_definition_version"] == "0.6.0":
+            elif item["workflow_definition_version"] in {"0.6.0", "0.7.0"}:
                 role_name = "Writing Revision"
         seen_counts[definition_id] = seen_counts.get(definition_id, 0) + 1
         friendly_label = (

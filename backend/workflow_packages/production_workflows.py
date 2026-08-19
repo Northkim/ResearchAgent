@@ -3286,7 +3286,9 @@ def _make_manifest(
         proxy = "NO PROVIDER CAPABILITY; LOCAL INTERACTIVE HARNESS ONLY"
     elif (
         workflow_id == WRITING_WORKFLOW_ID
-        and workflow_version in {WRITING_REVISION_WORKFLOW_VERSION, "0.6.0"}
+        and workflow_version in {
+            WRITING_REVISION_WORKFLOW_VERSION, "0.6.0", "0.7.0",
+        }
     ):
         from backend.project_workspaces.skills import RESEARCH_ARTIFACT_PROVENANCE_SKILL
 
