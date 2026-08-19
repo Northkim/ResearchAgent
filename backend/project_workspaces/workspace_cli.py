@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -6271,6 +6273,549 @@ def _recover_progress_backlog(
     return uploaded_count
 
 
+class OwnerCheckpointStopped(RuntimeError):
+    """The Owner deliberately declined to advance the current checkpoint."""
+
+
+class OwnerCheckpointInvalid(RuntimeError):
+    """The exact local checkpoint cannot be resumed safely."""
+
+
+DecisionInput = Callable[[str], str]
+
+
+def _present(title: str, lines: list[str], *, explanation: str) -> None:
+    print(f"\n{title}", flush=True)
+    for line in lines:
+        if line:
+            print(f"- {line}", flush=True)
+    print(f"What happens next: {explanation}", flush=True)
+
+
+def _natural_approval(
+    title: str,
+    lines: list[str],
+    *,
+    explanation: str,
+    decision_input: DecisionInput,
+) -> None:
+    _present(title, lines, explanation=explanation)
+    while True:
+        decision = decision_input("Approve / Revise / Explain / Abort: ").strip().casefold()
+        if decision in {"approve", "approved"}:
+            return
+        if decision == "explain":
+            print(
+                "Approval records this exact checkpoint and current exact inputs; "
+                "it does not approve later scientific results.",
+                flush=True,
+            )
+            continue
+        if decision in {"revise", "abort"}:
+            raise OwnerCheckpointStopped(
+                f"Owner selected {decision.upper()}; no approval was recorded"
+            )
+        print("Choose Approve, Revise, Explain, or Abort.", flush=True)
+
+
+def _exact_writer(call: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """Hide legacy checksum prompts while retaining their exact writer."""
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        return call()
+
+
+def _managed_harness(
+    root: Path,
+    executable: str,
+    instruction: str,
+    *,
+    environment: dict[str, str],
+) -> None:
+    """Run one bounded noninteractive Codex phase and regain control on exit."""
+
+    command = [
+        executable,
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "workspace-write",
+        "--config",
+        'approval_policy="never"',
+        "-C",
+        str(root),
+        instruction,
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=root,
+            env=environment,
+            stdin=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError as error:
+        raise OwnerCheckpointInvalid("Managed Harness could not be started") from error
+    if completed.returncode != 0:
+        raise OwnerCheckpointInvalid(
+            "Managed Harness exited before completing the current phase"
+        )
+
+
+def _phase_files(root: Path, relatives: tuple[str, ...], label: str) -> bool:
+    states: list[bool] = []
+    for relative in relatives:
+        path = root / relative
+        if not path.exists() and not path.is_symlink():
+            states.append(False)
+            continue
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            raise OwnerCheckpointInvalid(f"{label} contains an unsafe file")
+        states.append(True)
+    if any(states) and not all(states):
+        raise OwnerCheckpointInvalid(f"{label} is only partially durable")
+    return all(states)
+
+
+def _existing(runtime: dict[str, Any], path: Path, label: str) -> dict[str, Any] | None:
+    if not path.exists() and not path.is_symlink():
+        return None
+    if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+        raise OwnerCheckpointInvalid(f"{label} is unsafe")
+    return runtime["_object"](path, label)
+
+
+def _status_count(items: list[dict[str, Any]], key: str) -> str:
+    counts: dict[str, int] = {}
+    for item in items:
+        value = str(item.get(key, "UNSPECIFIED"))
+        counts[value] = counts.get(value, 0) + 1
+    return ", ".join(f"{name}: {count}" for name, count in sorted(counts.items()))
+
+
+def _writing(
+    runtime: dict[str, Any],
+    root: Path,
+    workflow_instance_id: str,
+    *,
+    codex_executable: str | None,
+    decision_input: DecisionInput,
+) -> dict[str, Any]:
+    runtime["_validate_package"](root)
+    if list((root / "memory/progress/reports").glob("*.json")):
+        raise OwnerCheckpointInvalid("Initial Writing already has terminal Progress")
+    sources, library, experiment = runtime["_load_inputs"](root)
+    executable = runtime["_codex_executable"](codex_executable)
+    environment = runtime["_codex_environment"]()
+
+    phase_one = _phase_files(
+        root,
+        ("memory/writing-brief.json", "memory/evidence-map.json", "memory/outline.json"),
+        "Writing plan",
+    )
+    if not phase_one:
+        _managed_harness(
+            root,
+            executable,
+            runtime["_phase_one_instruction"](),
+            environment=environment,
+        )
+    brief, evidence_map, outline, outline_sha = runtime["_load_outline"](root, sources)
+    approval = _existing(runtime, root / "memory/outline-approval.json", "Outline approval")
+    if approval is None:
+        _natural_approval(
+            "Writing plan is ready",
+            [
+                f"Purpose: {brief.get('purpose') or brief.get('objective') or 'Evidence-bound initial manuscript'}",
+                f"Planned sections: {', '.join(str(item.get('heading')) for item in outline)}",
+                f"Evidence coverage: {_status_count(evidence_map, 'support_status')}",
+                "Experiment evidence: available" if experiment is not None else "Experiment evidence: unavailable",
+            ],
+            explanation="Codex will draft only within this approved evidence plan.",
+            decision_input=decision_input,
+        )
+        approval = _exact_writer(
+            lambda: runtime["_approve_outline"](
+                root,
+                sources,
+                brief,
+                evidence_map,
+                outline,
+                outline_sha,
+                lambda _prompt: f"approve {outline_sha}",
+            )
+        )
+    runtime["_verify_outline_approval"](
+        root, sources, brief, evidence_map, outline, approval
+    )
+
+    phase_two = _phase_files(
+        root,
+        ("outputs/draft.md", "memory/claims.json", "memory/citations.json"),
+        "Initial manuscript draft",
+    )
+    if not phase_two:
+        _managed_harness(
+            root,
+            executable,
+            runtime["_phase_two_instruction"](),
+            environment=environment,
+        )
+    current_sources, current_library, current_experiment = runtime["_load_inputs"](root)
+    current_brief, current_map, current_outline, _ = runtime["_load_outline"](
+        root, current_sources
+    )
+    runtime["_verify_outline_approval"](
+        root,
+        current_sources,
+        current_brief,
+        current_map,
+        current_outline,
+        approval,
+    )
+    if (current_sources, current_library, current_experiment) != (
+        sources,
+        library,
+        experiment,
+    ):
+        raise OwnerCheckpointInvalid("Exact Writing inputs drifted after approval")
+    content, claims, citations, draft_sha = runtime["_load_draft"](
+        root, sources, library, experiment
+    )
+    owner = _existing(runtime, root / "memory/owner-review.json", "Owner draft review")
+    if owner is None:
+        _natural_approval(
+            "Initial manuscript is ready for review",
+            [
+                f"Title: {runtime['_title'](content)}",
+                f"Claims: {len(claims)}",
+                f"Evidence status: {_status_count(claims, 'support_status')}",
+                "Complete manuscript: remains in the Local Workspace",
+            ],
+            explanation="Approval publishes this exact reviewed draft as the Initial manuscript.",
+            decision_input=decision_input,
+        )
+        owner = _exact_writer(
+            lambda: runtime["_owner_review"](
+                root, content, draft_sha, lambda _prompt: f"finalize {draft_sha}"
+            )
+        )
+    current = runtime["_publish"](
+        root,
+        workflow_instance_id,
+        sources,
+        brief,
+        evidence_map,
+        outline,
+        approval,
+        content,
+        claims,
+        citations,
+        owner,
+    )
+    report = runtime["_finalize_progress"](root, current)
+    runtime["_validate_package"](root)
+    return {"status": "COMPLETED", "artifact": current, "progress_report": report}
+
+
+def _review(
+    runtime: dict[str, Any],
+    root: Path,
+    workflow_instance_id: str,
+    *,
+    codex_executable: str | None,
+    decision_input: DecisionInput,
+) -> dict[str, Any]:
+    runtime["_validate_package"](root)
+    if list((root / "memory/progress/reports").glob("*.json")):
+        raise OwnerCheckpointInvalid("Review already has terminal Progress")
+    sources, manuscript, values = runtime["_load_inputs"](root)
+    availability_path = root / "memory/evidence-availability.json"
+    if availability_path.exists() or availability_path.is_symlink():
+        availability = runtime["_array"](availability_path, "evidence availability")
+        expected = runtime["_validator"](root)["derive_evidence_availability"](
+            manuscript, sources
+        )
+        if availability != expected:
+            raise OwnerCheckpointInvalid("Review evidence availability drifted")
+    else:
+        availability = runtime["_prepare_availability"](root, manuscript, sources)
+    executable = runtime["_codex_executable"](codex_executable)
+    environment = runtime["_codex_environment"]()
+
+    if not _phase_files(root, ("memory/review-scope.json",), "Review scope"):
+        _managed_harness(
+            root,
+            executable,
+            runtime["_scope_instruction"](),
+            environment=environment,
+        )
+    scope, scope_sha = runtime["_load_scope"](root, sources)
+    approval = _existing(runtime, root / "memory/scope-approval.json", "Review Scope approval")
+    if approval is None:
+        unavailable = [
+            str(item.get("role") or item.get("artifact_type") or "evidence")
+            for item in availability
+            if isinstance(item, dict)
+            and item.get("availability") not in {"AVAILABLE", "LIMITED"}
+        ]
+        _natural_approval(
+            "Review scope is ready",
+            [
+                f"Manuscript: {sources['manuscript'].get('artifact_id')}",
+                f"Scope: {scope.get('summary') or scope.get('scope') or 'Claim support, evidence, methods, and reproducibility'}",
+                "Unavailable evidence: " + (", ".join(unavailable) if unavailable else "none declared"),
+                "No acceptance prediction or scientific score will be produced.",
+            ],
+            explanation="Codex will audit the manuscript using only this exact evidence scope.",
+            decision_input=decision_input,
+        )
+        approval = _exact_writer(
+            lambda: runtime["_approve_scope"](
+                root,
+                scope,
+                scope_sha,
+                sources,
+                lambda _prompt: f"approve {scope_sha}",
+            )
+        )
+    runtime["_verify_scope"](root, sources, scope, approval)
+
+    if not _phase_files(
+        root, ("memory/review-result.json", "outputs/review.md"), "Review result"
+    ):
+        _managed_harness(
+            root,
+            executable,
+            runtime["_audit_instruction"](),
+            environment=environment,
+        )
+    current_sources, current_manuscript, current_values = runtime["_load_inputs"](root)
+    runtime["_verify_scope"](root, current_sources, scope, approval)
+    if (current_sources, current_values, current_manuscript) != (sources, values, manuscript):
+        raise OwnerCheckpointInvalid("Exact Review inputs drifted after approval")
+    result, _ = runtime["_load_result"](root, sources, manuscript)
+    audit = runtime["_validator"](root)["experiment_evidence_audit"](
+        manuscript, values.get("experiment_record")
+    )
+    result_payload = {
+        "source_manuscript": sources["manuscript"],
+        "supporting_artifacts": runtime["_validator"](root)["supporting_refs"](sources),
+        "review_scope": {"sha256": runtime["canonical_hash"](scope), "value": scope},
+        "scope_approval": approval,
+        "evidence_availability": availability,
+        "experiment_evidence_audit": audit,
+        **result,
+    }
+    result_sha = runtime["canonical_hash"](result_payload)
+    owner = _existing(runtime, root / "memory/owner-review.json", "Owner Review approval")
+    if owner is None:
+        issues = result.get("issues", [])
+        _natural_approval(
+            "Review result is ready",
+            [
+                f"Assessment: {result.get('assessment')}",
+                f"Summary: {result.get('summary')}",
+                f"Issues: {len(issues)} ({_status_count(issues, 'severity')})",
+                f"Limitations: {len(result.get('limitations', []))}",
+            ],
+            explanation="Approval publishes this exact bounded Review report; it does not start Revision.",
+            decision_input=decision_input,
+        )
+        owner = _exact_writer(
+            lambda: runtime["_owner_review"](
+                root, result, result_sha, lambda _prompt: f"finalize {result_sha}"
+            )
+        )
+    current = runtime["_publish"](
+        root,
+        workflow_instance_id,
+        sources,
+        scope,
+        approval,
+        availability,
+        result,
+        owner,
+    )
+    report = runtime["_finalize_progress"](root, current)
+    runtime["_validate_package"](root)
+    return {"status": "COMPLETED", "artifact": current, "progress_report": report}
+
+
+def _revision(
+    runtime: dict[str, Any],
+    root: Path,
+    workflow_instance_id: str,
+    *,
+    codex_executable: str | None,
+    decision_input: DecisionInput,
+) -> dict[str, Any]:
+    runtime["_validate_package"](root)
+    if list((root / "memory/progress/reports").glob("*.json")):
+        raise OwnerCheckpointInvalid("Writing Revision already has terminal Progress")
+    inputs, prior, review, library, experiment = runtime["_load_inputs"](root)
+    sources = {
+        key: inputs[key]
+        for key in ("research_idea", "literature_library", "experiment_record")
+        if key in inputs
+    }
+    executable = runtime["_codex_executable"](codex_executable)
+    environment = runtime["_codex_environment"]()
+
+    if not _phase_files(root, ("memory/revision-plan.json",), "Revision Plan"):
+        _managed_harness(
+            root,
+            executable,
+            runtime["_phase_one_instruction"](),
+            environment=environment,
+        )
+    plan, plan_sha = runtime["_load_plan"](root, review, sources)
+    approval = _existing(
+        runtime, root / "memory/revision-plan-approval.json", "Revision Plan approval"
+    )
+    if approval is None:
+        _natural_approval(
+            "Revision Plan is ready",
+            [
+                f"Review issues: {len(review.get('issues', []))}",
+                f"Planned dispositions: {_status_count(plan, 'intended_disposition')}",
+                "No issue is implied to be accepted or resolved automatically.",
+            ],
+            explanation="Codex will revise only within this exact approved plan.",
+            decision_input=decision_input,
+        )
+        approval = _exact_writer(
+            lambda: runtime["_approve_plan"](
+                root,
+                inputs,
+                review,
+                sources,
+                plan,
+                plan_sha,
+                lambda _prompt: f"approve {plan_sha}",
+            )
+        )
+    runtime["_verify_plan_approval"](root, inputs, review, sources, plan, approval)
+
+    if not _phase_files(
+        root,
+        (
+            "outputs/revised-draft.md",
+            "memory/claims.json",
+            "memory/citations.json",
+            "memory/issue-accounting.json",
+        ),
+        "Revised manuscript",
+    ):
+        _managed_harness(
+            root,
+            executable,
+            runtime["_phase_two_instruction"](),
+            environment=environment,
+        )
+    current = runtime["_load_inputs"](root)
+    if current != (inputs, prior, review, library, experiment):
+        raise OwnerCheckpointInvalid("Exact Revision inputs drifted after approval")
+    current_plan, _ = runtime["_load_plan"](root, review, sources)
+    runtime["_verify_plan_approval"](
+        root, inputs, review, sources, current_plan, approval
+    )
+    content, claims, citations, accounting, draft_sha = runtime["_load_revision"](
+        root, review, sources, library, experiment
+    )
+    owner = _existing(runtime, root / "memory/owner-review.json", "Owner revision review")
+    if owner is None:
+        _natural_approval(
+            "Revised manuscript is ready for review",
+            [
+                f"Title: {runtime['_title'](content)}",
+                f"Issue disposition: {_status_count(accounting, 'disposition')}",
+                f"Claims: {len(claims)}",
+                "Complete revised manuscript: remains in the Local Workspace",
+            ],
+            explanation="Approval publishes this exact revised manuscript and retained limitations.",
+            decision_input=decision_input,
+        )
+        owner = _exact_writer(
+            lambda: runtime["_owner_review"](
+                root,
+                content,
+                accounting,
+                draft_sha,
+                lambda _prompt: f"finalize {draft_sha}",
+            )
+        )
+    current_artifact = runtime["_publish"](
+        root,
+        workflow_instance_id,
+        inputs,
+        prior,
+        review,
+        sources,
+        plan,
+        approval,
+        content,
+        claims,
+        citations,
+        accounting,
+        owner,
+    )
+    disposition = {item["issue_id"]: item["disposition"] for item in accounting}
+    remaining_count = sum(
+        1
+        for issue in review["issues"]
+        if issue["blocking"] and disposition[issue["issue_id"]] != "ADDRESSED"
+    )
+    report = runtime["_finalize_progress"](root, current_artifact, remaining_count)
+    runtime["_validate_package"](root)
+    return {
+        "status": "COMPLETED",
+        "artifact": current_artifact,
+        "progress_report": report,
+    }
+
+
+def run_forward_owner_workflow(
+    *,
+    runtime: dict[str, Any],
+    workflow_kind: str,
+    capsule: Path,
+    workflow_instance_id: str,
+    codex_executable: str | None,
+    decision_input: DecisionInput,
+) -> dict[str, Any]:
+    """Run or resume one published downstream Workflow through natural decisions."""
+
+    root = capsule.resolve()
+    if workflow_kind == "INITIAL_WRITING":
+        return _writing(
+            runtime,
+            root,
+            workflow_instance_id,
+            codex_executable=codex_executable,
+            decision_input=decision_input,
+        )
+    if workflow_kind == "REVIEW":
+        return _review(
+            runtime,
+            root,
+            workflow_instance_id,
+            codex_executable=codex_executable,
+            decision_input=decision_input,
+        )
+    if workflow_kind == "WRITING_REVISION":
+        return _revision(
+            runtime,
+            root,
+            workflow_instance_id,
+            codex_executable=codex_executable,
+            decision_input=decision_input,
+        )
+    raise OwnerCheckpointInvalid(f"Unsupported Owner checkpoint Workflow: {workflow_kind}")
+
+
+
 def _forward_review_validator(capsule: Path) -> dict[str, Any]:
     """Load Review 0.4 validation with its optional-support correction.
 
@@ -6344,6 +6889,54 @@ def _forward_review_validator(capsule: Path) -> dict[str, Any]:
     )
     namespace.update(validator_globals)
     return namespace
+
+
+def _run_forward_owner_checkpoint(
+    *,
+    capsule: Path,
+    workflow_instance_id: str,
+    workflow_kind: str,
+    codex_executable: str | None,
+    decision_input: Callable[[str], str],
+) -> dict[str, Any]:
+    """Coordinate one forward downstream runtime without rewriting its bytes."""
+
+    runtime = runpy.run_path(str(capsule / "reagent_local.py"))
+    if workflow_kind == "REVIEW":
+        validator = _forward_review_validator(capsule)
+        for name in (
+            "_load_inputs",
+            "_prepare_availability",
+            "_load_scope",
+            "_approve_scope",
+            "_verify_scope",
+            "_load_result",
+            "_publish",
+            "_validate_package",
+        ):
+            function = runtime.get(name)
+            if callable(function):
+                function.__globals__["_validator"] = lambda _root, value=validator: value
+    try:
+        return run_forward_owner_workflow(
+            runtime=runtime,
+            workflow_kind=workflow_kind,
+            capsule=capsule,
+            workflow_instance_id=workflow_instance_id,
+            codex_executable=codex_executable,
+            decision_input=decision_input,
+        )
+    except OwnerCheckpointStopped as error:
+        raise WorkspaceCLIError(
+            "OWNER_DECISION_REQUIRED", str(error), EXIT_VALIDATION
+        ) from error
+    except WorkspaceCLIError:
+        raise
+    except Exception as error:
+        raise _identity(
+            "LOCAL_PROGRESS_INVALID",
+            f"Owner checkpoint could not advance exactly: {error}",
+        ) from error
 
 
 def _recover_approved_forward_review(
@@ -6656,8 +7249,20 @@ def run_workflow(
         }
         is_literature = pin[0] == WORKFLOW_ID
         manifest = _read_package_json(capsule / "package-manifest.json")
+        coordinated_result: dict[str, Any] | None = None
+        supports_progress_recovery = any((
+            is_literature,
+            is_idea,
+            is_scaffold,
+            is_real_experiment,
+            is_prepared_experiment,
+            is_real_writing,
+            is_real_review,
+            is_writing_revision,
+        ))
+        requires_root_post_run_progress = supports_progress_recovery and not is_literature
         local_reports: list[dict[str, Any]] = []
-        if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_prepared_experiment or is_real_writing or is_real_review or is_writing_revision):
+        if not preflight_only and supports_progress_recovery:
             readiness = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -6837,14 +7442,25 @@ def run_workflow(
                 transport=transport,
                 real_writing=True,
             )
-            command.extend([
-                "run", ".", "--workflow-instance", workflow_instance_id,
-                "--api-url", api_url,
-            ])
-            if preflight_only:
-                command.append("--preflight-only")
-            if codex_executable is not None:
-                command.extend(["--codex-executable", codex_executable])
+            if not preflight_only and pin == (
+                "writing-local-experimental", "0.5.0", "0.7.0"
+            ):
+                coordinated_result = _run_forward_owner_checkpoint(
+                    capsule=capsule,
+                    workflow_instance_id=workflow_instance_id,
+                    workflow_kind="INITIAL_WRITING",
+                    codex_executable=codex_executable,
+                    decision_input=consent_input,
+                )
+            else:
+                command.extend([
+                    "run", ".", "--workflow-instance", workflow_instance_id,
+                    "--api-url", api_url,
+                ])
+                if preflight_only:
+                    command.append("--preflight-only")
+                if codex_executable is not None:
+                    command.extend(["--codex-executable", codex_executable])
         elif is_writing_revision:
             _prepare_scaffold_input_provenance(
                 workspace=workspace,
@@ -6854,7 +7470,9 @@ def run_workflow(
                 transport=transport,
                 writing_revision=True,
             )
-            if _recover_approved_writing_revision(
+            if pin != (
+                "writing-local-experimental", "0.7.0", "0.9.0"
+            ) and _recover_approved_writing_revision(
                 capsule,
                 workflow_instance_id,
                 codex_executable=codex_executable,
@@ -6889,14 +7507,25 @@ def run_workflow(
                     workflow_instance_id=workflow_instance_id,
                     capsule_relative_path=installed["relative_path"],
                 )
-            command.extend([
-                "run", ".", "--workflow-instance", workflow_instance_id,
-                "--api-url", api_url,
-            ])
-            if preflight_only:
-                command.append("--preflight-only")
-            if codex_executable is not None:
-                command.extend(["--codex-executable", codex_executable])
+            if not preflight_only and pin == (
+                "writing-local-experimental", "0.7.0", "0.9.0"
+            ):
+                coordinated_result = _run_forward_owner_checkpoint(
+                    capsule=capsule,
+                    workflow_instance_id=workflow_instance_id,
+                    workflow_kind="WRITING_REVISION",
+                    codex_executable=codex_executable,
+                    decision_input=consent_input,
+                )
+            else:
+                command.extend([
+                    "run", ".", "--workflow-instance", workflow_instance_id,
+                    "--api-url", api_url,
+                ])
+                if preflight_only:
+                    command.append("--preflight-only")
+                if codex_executable is not None:
+                    command.extend(["--codex-executable", codex_executable])
         elif is_real_review:
             _prepare_scaffold_input_provenance(
                 workspace=workspace,
@@ -6906,14 +7535,25 @@ def run_workflow(
                 transport=transport,
                 real_review=True,
             )
-            command.extend([
-                "run", ".", "--workflow-instance", workflow_instance_id,
-                "--api-url", api_url,
-            ])
-            if preflight_only:
-                command.append("--preflight-only")
-            if codex_executable is not None:
-                command.extend(["--codex-executable", codex_executable])
+            if not preflight_only and pin == (
+                "review-local-experimental", "0.4.0", "0.6.0"
+            ):
+                coordinated_result = _run_forward_owner_checkpoint(
+                    capsule=capsule,
+                    workflow_instance_id=workflow_instance_id,
+                    workflow_kind="REVIEW",
+                    codex_executable=codex_executable,
+                    decision_input=consent_input,
+                )
+            else:
+                command.extend([
+                    "run", ".", "--workflow-instance", workflow_instance_id,
+                    "--api-url", api_url,
+                ])
+                if preflight_only:
+                    command.append("--preflight-only")
+                if codex_executable is not None:
+                    command.extend(["--codex-executable", codex_executable])
         elif is_real_experiment:
             _prepare_scaffold_input_provenance(
                 workspace=workspace,
@@ -7054,15 +7694,17 @@ def run_workflow(
                     )
                 if _literature_resume_required(capsule):
                     command.append("--resume")
-        environment = _capsule_child_environment()
-        completed = subprocess.run(
-            command,
-            cwd=capsule,
-            env=environment,
-            check=False,
-        )
-        if completed.returncode != 0:
-            if not preflight_only and (is_idea or is_scaffold or is_real_experiment or is_prepared_experiment or is_real_writing or is_real_review or is_writing_revision):
+        completed: subprocess.CompletedProcess[Any] | None = None
+        if coordinated_result is None:
+            environment = _capsule_child_environment()
+            completed = subprocess.run(
+                command,
+                cwd=capsule,
+                env=environment,
+                check=False,
+            )
+        if completed is not None and completed.returncode != 0:
+            if not preflight_only and supports_progress_recovery:
                 recovered = _evaluate_local_progress_readiness(
                     workspace=workspace,
                     descriptor=descriptor,
@@ -7122,7 +7764,7 @@ def run_workflow(
                 workflow_instance_id=workflow_instance_id,
                 capsule_relative_path=installed["relative_path"],
             )
-        if not preflight_only and (is_real_experiment or is_prepared_experiment or is_real_writing or is_real_review or is_writing_revision):
+        if not preflight_only and requires_root_post_run_progress:
             recovered = _evaluate_local_progress_readiness(
                 workspace=workspace,
                 descriptor=descriptor,
@@ -7164,7 +7806,13 @@ def run_workflow(
                     "`python reagent_local.py artifact refresh .`.",
                 )
         return WorkflowRunResult(
-            status="PREFLIGHT_READY" if preflight_only else "RUN_COMPLETED",
+            status=(
+                "PREFLIGHT_READY"
+                if preflight_only
+                else "PROGRESS_SYNCHRONIZED"
+                if coordinated_result is not None
+                else "RUN_COMPLETED"
+            ),
             project_id=descriptor["project_id"],
             workspace_id=descriptor["workspace_id"],
             workflow_instance_id=workflow_instance_id,
@@ -7172,6 +7820,50 @@ def run_workflow(
             presentation_count=presentation_count,
             warnings=presentation_warnings,
         )
+
+
+def continue_workflow(
+    *,
+    workspace_root: str | Path,
+    workflow_instance_id: str | None,
+    workflow_definition_id: str | None,
+    transport: Any,
+    api_url: str,
+    preflight_only: bool = False,
+    codex_executable: str | None = None,
+    consent_input: Callable[[str], str] = input,
+) -> WorkflowRunResult:
+    """Compose the safe normal Local path; low-level operations remain available."""
+
+    synchronized = sync_workspace(
+        workspace_root=workspace_root,
+        transport=transport,
+    )
+    if synchronized.acknowledgement_status == "ACK_PENDING":
+        raise WorkspaceCLIError(
+            "WORKSPACE_ACK_PENDING",
+            "Project synchronization is awaiting exact Cloud acknowledgement",
+            EXIT_ACK_PENDING,
+        )
+    selected = workflow_instance_id
+    if selected is None:
+        assert workflow_definition_id is not None
+        selected = resolve_workflow_selector(workspace_root, workflow_definition_id)
+    if not preflight_only:
+        materialize_artifacts(
+            workspace_root=workspace_root,
+            consumer_workflow_instance_id=selected,
+            transport=transport,
+        )
+    return run_workflow(
+        workspace_root=workspace_root,
+        workflow_instance_id=selected,
+        transport=transport,
+        api_url=api_url,
+        preflight_only=preflight_only,
+        codex_executable=codex_executable,
+        consent_input=consent_input,
+    )
 
 
 def _capsule_runner_command(capsule: Path) -> list[str]:
@@ -7839,13 +8531,12 @@ def main(argv: list[str] | None = None) -> int:
                     )
             json_output = args.json
         elif args.command == "run":
-            workflow_instance_id = args.workflow_instance_id or resolve_workflow_selector(
-                args.workspace, args.workflow_definition_id
-            )
-            result = run_workflow(
+            transport = HTTPWorkspaceSyncTransport(args.api_url)
+            result = continue_workflow(
                 workspace_root=args.workspace,
-                workflow_instance_id=workflow_instance_id,
-                transport=HTTPWorkspaceSyncTransport(args.api_url),
+                workflow_instance_id=args.workflow_instance_id,
+                workflow_definition_id=args.workflow_definition_id,
+                transport=transport,
                 api_url=args.api_url,
                 preflight_only=args.preflight_only,
                 codex_executable=args.codex_executable,
@@ -7864,6 +8555,16 @@ def main(argv: list[str] | None = None) -> int:
     except WorkspaceCLIError as error:
         _print_human_error(args.command, error)
         return error.exit_code
+    except KeyboardInterrupt:
+        _print_human_error(
+            args.command,
+            WorkspaceCLIError(
+                "OWNER_CANCELLED",
+                "The current Local operation was cancelled; durable files were preserved",
+                EXIT_VALIDATION,
+            ),
+        )
+        return EXIT_VALIDATION
     except Exception:
         _print_human_error(
             args.command,

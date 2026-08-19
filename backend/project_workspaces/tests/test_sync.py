@@ -93,6 +93,34 @@ class _ClientTransport:
             raise WorkspaceCLIError(error["code"], error["message"], workspace_cli.EXIT_CLOUD)
         return response.json()
 
+    def list_project_skills(self, project_id):
+        response = self.client.get(f"/projects/{project_id}/user-skills")
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def acknowledge_project_skills(self, project_id, installed_skills):
+        response = self.client.post(
+            f"/projects/{project_id}/user-skills/sync-ack",
+            json={"installed_skills": installed_skills},
+        )
+        assert response.status_code in {200, 201}, response.text
+
+    def list_artifacts(self, project_id, *, offset=0, limit=100):
+        response = self.client.get(
+            f"/projects/{project_id}/artifacts",
+            params={"offset": offset, "limit": limit},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def materialization_plan(self, project_id, consumer_workflow_instance_id):
+        response = self.client.get(
+            f"/projects/{project_id}/workflow-instances/"
+            f"{consumer_workflow_instance_id}/artifact-materialization-plan"
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
     def literature_execution_mode(self, project_id, package_identity):
         del project_id
         return {**package_identity, "mode": "NORMAL"}
@@ -184,6 +212,10 @@ def _reach_search_completed(capsule: Path) -> tuple[dict, int]:
 
 def _synced_full_research_workspace(tmp_path: Path):
     database = InMemoryDatabase()
+    from backend.project_workspaces.tests.test_generic_experiment_v5_workspace import (
+        _seed_forward,
+    )
+    _seed_forward(database)
     package_root = tmp_path / "cloud-packages"
     client = TestClient(create_app(ApplicationContainer(
         unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
@@ -858,7 +890,7 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
         return subprocess.CompletedProcess(command, 0)
 
     monkeypatch.setattr(subprocess, "run", launch)
-    namespace["run_workflow"].__kwdefaults__["consent_input"] = (
+    namespace["continue_workflow"].__kwdefaults__["consent_input"] = (
         lambda _: workspace_cli.REAL_PROVIDER_CONFIRMATION
     )
     monkeypatch.chdir(workspace)
@@ -884,6 +916,10 @@ def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
     monkeypatch,
 ):
     database = InMemoryDatabase()
+    from backend.project_workspaces.tests.test_generic_experiment_v5_workspace import (
+        _seed_forward,
+    )
+    _seed_forward(database)
     container = ApplicationContainer(
         unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
         local_package_root=str(tmp_path / "cloud-packages"),

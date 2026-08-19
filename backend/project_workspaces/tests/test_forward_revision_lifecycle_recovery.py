@@ -158,7 +158,7 @@ def test_exact_plan_approval_resumes_at_owner_review_without_harness_relaunch(
         workflow_instance_id=INSTANCE_ID,
         transport=transport,
         api_url="http://127.0.0.1:8000",
-        consent_input=_answer,
+        consent_input=lambda _prompt: "Approve",
     )
     owner_bytes = (root / "memory/owner-review.json").read_bytes()
     artifacts = list((root / "outputs/artifacts/manuscript-draft").glob("*.json"))
