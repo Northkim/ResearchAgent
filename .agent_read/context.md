@@ -4084,3 +4084,18 @@ R3A changes no publication, preset, migration, API, frontend, Artifact schema, o
 Owner D1 state. Focused tests passed 8/8 and historical Generic Experiment/v5 tests
 passed 52 with one opt-in real-Codex skip. Safe next subphase is R3B forward
 publication and lifecycle integration.
+
+## Post-D1 R3B1 Generic Harness lifecycle adapter (2026-08-20)
+
+R3B1 adds a forward-only adapter that truthfully uses the existing v4/v5
+structural lifecycle carrier without classifying the Generic Agent Harness as a
+reviewed Capability or granting authority to a User Skill. A hybrid resolver
+prefers exact reviewed support and selects the system-owned Generic Harness only
+when no reviewed Capability supports the frozen methodology. The adapter validates
+exact implementation/package/evaluation lineage and continues to use the existing
+coordinator and bounded runner.
+
+R3B1 does not yet publish or pin Experiment 0.8/0.11. Ten focused tests and 28
+historical coordinator/publication/v5 tests passed (one opt-in real-Codex test
+skipped). No migration, API, frontend, schema, preset, historical publication, or
+Owner D1 state changed. Safe next subphase is R3B2 public runtime/publication.
