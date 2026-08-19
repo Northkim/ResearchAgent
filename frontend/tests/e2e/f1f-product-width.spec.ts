@@ -225,8 +225,8 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
       await expect(page.getByRole("link", { name: "Continue locally" })).toBeVisible();
       const inputs = page.locator("#inputs");
       const inputRows = inputs.locator(".input-readiness-list > div");
-      await expect(inputRows.filter({ hasText: "Selected literature" }).getByText("Ready", { exact: true })).toBeVisible();
-      await expect(inputRows.filter({ hasText: "Selected research idea" }).getByText("Ready", { exact: true })).toBeVisible();
+      await expect(inputRows.filter({ hasText: "Selected literature" }).getByText("Selected", { exact: true })).toBeVisible();
+      await expect(inputRows.filter({ hasText: "Selected research idea" }).getByText("Selected", { exact: true })).toBeVisible();
       await expect(inputs.getByText("Missing", { exact: true })).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "Continue in the Local Workspace" })).toBeVisible();
       await expect(page.locator("details.technical-details")).not.toHaveAttribute("open");
@@ -313,7 +313,10 @@ test("EP-D2-U1 qualifies bounded upstream Outputs and exact-selection previews",
   await expect(ideaBindings.getByText("Preview not yet reported from Local Workspace.")).toBeVisible();
   const candidateRadios = ideaBindings.getByRole("radio");
   await expect(candidateRadios).toHaveCount(3);
-  for (let index = 0; index < 3; index += 1) await expect(candidateRadios.nth(index)).not.toBeChecked();
+  await expect(ideaBindings.locator('input[type="radio"]:checked')).toHaveCount(1);
+  await expect(
+    ideaBindings.locator("label").filter({ hasText: "Bounded archival classification study" }).getByRole("radio"),
+  ).toBeChecked();
   await shot("02-literature-exact-selection-multiple-candidates");
 
   const writingDetail = `/projects/${fixture.project_id}/workflows/${fixture.instances["writing-local-experimental"]}`;

@@ -7,7 +7,11 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid5
-from backend.artifact_references.contracts import ArtifactReference, ArtifactState
+from backend.artifact_references.contracts import (
+    PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+    ArtifactReference,
+    ArtifactState,
+)
 from backend.artifact_references.service import ArtifactReferenceService
 from backend.artifact_references.upstream_presentations import (
     MANUSCRIPT_PRESENTATION_SCHEMA, PAPER_LIBRARY_PRESENTATION_SCHEMA,
@@ -24,6 +28,29 @@ from backend.workflow_packages.serialization import canonical_hash, canonical_js
 HASH_A, HASH_B = "sha256:" + "a" * 64, "sha256:" + "b" * 64
 WORKFLOWS = ("literature-search-local-experimental", "idea-discovery-local-experimental",
              "writing-local-experimental", "review-local-experimental")
+
+
+def _report_selected_paper_count(
+    service: ArtifactReferenceService,
+    *,
+    project_id: str,
+    artifact_id: str,
+    artifact_checksum: str,
+    selected_count: int,
+) -> None:
+    payload = {
+        "schema": PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+        "artifact_id": artifact_id,
+        "artifact_checksum": artifact_checksum,
+        "selected_count": selected_count,
+    }
+    service.report_content_qualification(
+        project_id=project_id,
+        artifact_id=artifact_id,
+        payload={**payload, "qualification_checksum": canonical_hash(payload)},
+    )
+
+
 def _request(base_url: str, path: str, payload: dict | None = None) -> dict:
     data = None if payload is None else canonical_json(payload).encode("utf-8")
     request = urllib.request.Request(base_url + path, data=data,
@@ -134,6 +161,16 @@ def seed(
             updated_at=now))
         uow.commit()
         if scenario in {"fe-m-desktop", "ep-d2-u1"}:
+            artifact_service = ArtifactReferenceService(
+                unit_of_work=uow, clock=lambda: now
+            )
+            _report_selected_paper_count(
+                artifact_service,
+                project_id=project_id,
+                artifact_id="artifact-" + run_id,
+                artifact_checksum=artifact_checksum,
+                selected_count=1,
+            )
             _request(base_url,
                 f"/projects/{project_id}/workflow-instances/"
                 f"{instances[WORKFLOWS[1]]['workflow_instance_id']}/artifact-dependencies", {
@@ -220,6 +257,20 @@ def seed(
                     cloud_metadata_available=True, produced_at=idea_time,
                     retired_at=None, created_at=idea_time, updated_at=idea_time))
                 uow.commit()
+                _report_selected_paper_count(
+                    artifact_service,
+                    project_id=project_id,
+                    artifact_id=second_artifact_id,
+                    artifact_checksum=second_checksum,
+                    selected_count=1,
+                )
+                _report_selected_paper_count(
+                    artifact_service,
+                    project_id=project_id,
+                    artifact_id=absent_artifact_id,
+                    artifact_checksum=absent_checksum,
+                    selected_count=1,
+                )
                 presentation_service = ArtifactReferenceService(
                     unit_of_work=uow, clock=lambda: now
                 )
@@ -405,7 +456,7 @@ def _seed_ep_d2_project(
         "review": next(item for item in items if item["workflow_definition_id"] == WORKFLOWS[3]),
     }
     expected = {
-        "literature": ("0.4.0", "0.6.0"), "idea": ("0.2.0", "0.3.0"),
+        "literature": ("0.4.0", "0.6.0"), "idea": ("0.3.0", "0.4.0"),
         "experiment": ("0.7.0", "0.10.0"), "writing": ("0.5.0", "0.7.0"),
         "review": ("0.4.0", "0.6.0"),
     }
@@ -510,6 +561,14 @@ def _seed_ep_d2_project(
 
     try:
         literature = complete("literature", "selected-paper-library/v1", 1)
+        artifact_service = ArtifactReferenceService(unit_of_work=uow, clock=lambda: now)
+        _report_selected_paper_count(
+            artifact_service,
+            project_id=project_id,
+            artifact_id=literature["artifact_id"],
+            artifact_checksum=literature["artifact_checksum"],
+            selected_count=1,
+        )
         bind(roles["idea"], "paper_library", literature)
         idea = complete("idea", "selected-research-idea/v1", 2)
         bind(roles["experiment"], "research_idea", idea)
@@ -527,7 +586,7 @@ def _seed_ep_d2_project(
             bind(roles["review"], key, artifact)
         review = complete("review", "review-report/v3", 5)
 
-        presentation_service = ArtifactReferenceService(unit_of_work=uow, clock=lambda: now)
+        presentation_service = artifact_service
         initial_payload = {
             "schema": MANUSCRIPT_PRESENTATION_SCHEMA,
             "artifact_id": manuscript["artifact_id"],
