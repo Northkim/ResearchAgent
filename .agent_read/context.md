@@ -4160,3 +4160,29 @@ Twenty-three focused Workflow-detail tests, TypeScript, source-scoped ESLint, an
 the production Next.js build pass. No backend, migration, publication, scientific
 contract, historical Project, or protected D1 row changed in R3C. R3 still needs
 R3D controlled real-application/browser qualification before closure.
+
+## Post-D1 R3 complete (2026-08-20)
+
+R3 is closed by product/qualification commit `b3ca13d`. The real controlled
+FastAPI/Next.js/system-Chrome journey proves the full Generic Harness path from an
+exact Research Idea through natural methodology approval, system-owned package
+implementation/validation, one-use browser run approval, bounded execution-unit
+interruption/resume, evaluation, natural result review, exactly one authoritative
+`experiment-record/v5`, bounded presentation, terminal Progress replay, and exact
+Initial Writing consumption.
+
+Forward Experiment 0.8 / Capsule 0.11 remains the only new publication and
+Alembic remains `20260820_0038`; R3D changed no migration or immutable publication
+bytes. Mutable implementation/execution/evidence stays under
+`.reagent/experiments/<workflow-instance-id>/`, not inside Capsule comparison.
+Reviewed Capabilities remain qualified accelerators rather than a whitelist, and
+the system Generic Harness does not claim reviewed or User-Skill authority.
+
+R3D also fixed public-path integration gaps found by qualification: relative
+Workspace roots are canonicalized, Experiment 0.8 uses the existing run-approval
+service, terminal Progress includes its exact dynamic Artifact declaration, the
+only runtime Progress draft path is narrowly admitted, and completed evidence
+supersedes stale run-approval UI. All four repaired-D1 locks, controlled browser,
+PostgreSQL publication/approval/preset gates, build/static checks, and disposable
+cleanup passed. The protected Owner D1 database and Project were not accessed.
+Safe next phase is R4 scientific-semantics recovery only.
