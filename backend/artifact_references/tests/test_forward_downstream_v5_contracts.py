@@ -9,6 +9,9 @@ from backend.artifact_references.forward_downstream_contracts import (
     validate_claims, validate_manuscript_draft_v4, validate_manuscript_draft_v5,
     validate_review_report_v3,
 )
+from backend.artifact_references.review_contract_compatibility import (
+    validate_review_report_v3 as validate_scoped_review_report_v3,
+)
 from backend.artifact_references.generic_experiment_v5_contracts import (
     EvidenceKind, ScientificEvidenceBlock, finalize_experiment_record_v5,
 )
@@ -138,6 +141,118 @@ def _review(manuscript, inputs, v5, *, manuscript_ref=None):
     value["owner_review"] = {"sha256": canonical_hash(owner_payload), **owner_payload}
     validate_review_report_v3(value, manuscript=manuscript, bound_inputs=bound, experiment=v5)
     return value, bound
+
+
+def _without_experiment(review, bound):
+    scoped_bound = {
+        key: value for key, value in bound.items() if key != "experiment_record"
+    }
+    support = [scoped_bound[key] for key in ("research_idea", "literature_library")]
+    experiment_ref = bound["experiment_record"]
+    availability = [{
+        **experiment_ref,
+        "evidence_item": "evidence-finding",
+        "location": "bounded_scientific_evidence.blocks/evidence-finding",
+        "availability": "UNAVAILABLE",
+        "limitation": "Referenced Artifact is not explicitly bound to Review",
+    }]
+    approval_payload = {
+        "scope_sha256": review["review_scope"]["sha256"],
+        "manuscript_sha256": review["source_manuscript"]["sha256"],
+        "bound_artifacts_sha256": canonical_hash(support),
+        "approved_at": "2026-08-18T00:02:00Z",
+        "decision": "APPROVED",
+    }
+    scoped = {
+        **review,
+        "supporting_artifacts": support,
+        "scope_approval": {"sha256": canonical_hash(approval_payload), **approval_payload},
+        "evidence_availability": availability,
+        "experiment_evidence_audit": None,
+    }
+    result_payload = {
+        "source_manuscript": scoped["source_manuscript"],
+        "supporting_artifacts": support,
+        "review_scope": scoped["review_scope"],
+        "scope_approval": scoped["scope_approval"],
+        "evidence_availability": availability,
+        "experiment_evidence_audit": None,
+        **{key: scoped[key] for key in ("assessment", "summary", "issues", "limitations")},
+    }
+    owner_payload = {
+        "review_result_sha256": canonical_hash(result_payload),
+        "reviewed_at": "2026-08-18T00:03:00Z",
+        "decision": "APPROVED",
+    }
+    scoped["owner_review"] = {"sha256": canonical_hash(owner_payload), **owner_payload}
+    return scoped, scoped_bound
+
+
+def _rehash_review_owner(review):
+    result_payload = {
+        "source_manuscript": review["source_manuscript"],
+        "supporting_artifacts": review["supporting_artifacts"],
+        "review_scope": review["review_scope"],
+        "scope_approval": review["scope_approval"],
+        "evidence_availability": review["evidence_availability"],
+        "experiment_evidence_audit": review["experiment_evidence_audit"],
+        **{key: review[key] for key in ("assessment", "summary", "issues", "limitations")},
+    }
+    owner_payload = {
+        "review_result_sha256": canonical_hash(result_payload),
+        "reviewed_at": "2026-08-18T00:03:00Z",
+        "decision": "APPROVED",
+    }
+    review["owner_review"] = {"sha256": canonical_hash(owner_payload), **owner_payload}
+
+
+def test_review_may_omit_optional_manuscript_source_when_explicitly_unverified() -> None:
+    v5, block = _v5()
+    manuscript, sources = _manuscript(v5, block)
+    review, bound = _review(manuscript, sources, v5)
+    scoped, scoped_bound = _without_experiment(review, bound)
+
+    assert validate_scoped_review_report_v3(
+        scoped, manuscript=manuscript, bound_inputs=scoped_bound,
+    )["evidence_availability"][0]["availability"] == "UNAVAILABLE"
+
+
+def test_review_cannot_use_an_omitted_source_as_evidence() -> None:
+    v5, block = _v5()
+    manuscript, sources = _manuscript(v5, block)
+    review, bound = _review(manuscript, sources, v5)
+    scoped, scoped_bound = _without_experiment(review, bound)
+    scoped["issues"] = [{
+        **scoped["issues"][0],
+        "evidence_refs": [_evidence_ref(sources, block, limitation="Unavailable")],
+    }]
+    _rehash_review_owner(scoped)
+    with pytest.raises(ForwardDownstreamContractError, match="not explicitly bound"):
+        validate_scoped_review_report_v3(
+            scoped, manuscript=manuscript, bound_inputs=scoped_bound,
+        )
+
+
+def test_review_rejects_bound_source_identity_mismatch() -> None:
+    v5, block = _v5()
+    manuscript, sources = _manuscript(v5, block)
+    review, bound = _review(manuscript, sources, v5)
+    bound["research_idea"] = _ref("selected-research-idea/v1", "f")
+    with pytest.raises(ForwardDownstreamContractError, match="differs from manuscript lineage"):
+        validate_scoped_review_report_v3(
+            review, manuscript=manuscript, bound_inputs=bound, experiment=v5,
+        )
+
+
+def test_review_rejects_missing_required_manuscript_binding() -> None:
+    v5, block = _v5()
+    manuscript, sources = _manuscript(v5, block)
+    review, bound = _review(manuscript, sources, v5)
+    bound.pop("manuscript")
+    with pytest.raises(ForwardDownstreamContractError, match="requires an exact manuscript"):
+        validate_scoped_review_report_v3(
+            review, manuscript=manuscript, bound_inputs=bound, experiment=v5,
+        )
 
 
 def test_forward_claim_grounding_preserves_v5_status_boundary_and_block_identity() -> None:

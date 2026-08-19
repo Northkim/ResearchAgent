@@ -46,9 +46,9 @@ from .forward_downstream_contracts import (
     REVIEW_REPORT_V3,
     MANUSCRIPT_DRAFT_V5,
     validate_manuscript_draft_v4,
-    validate_review_report_v3,
     validate_manuscript_draft_v5,
 )
+from .review_contract_compatibility import validate_review_report_v3
 from backend.workflow_packages.serialization import to_json_value
 
 

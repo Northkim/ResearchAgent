@@ -5596,6 +5596,140 @@ def _recover_progress_backlog(
     return uploaded_count
 
 
+def _forward_review_validator(capsule: Path) -> dict[str, Any]:
+    """Load Review 0.4 validation with its optional-support correction.
+
+    Capsule 0.6 bytes stay immutable. The root launcher supplies the corrected
+    contextual publisher rule while retaining every package-local structural,
+    approval, input, and evidence validator.
+    """
+
+    namespace = runpy.run_path(str(capsule / "validate_package.py"))
+    published = namespace["_forward_validate_review_v3"]
+    original_audit = namespace["experiment_evidence_audit"]
+
+    def contextual(value, *, manuscript=None, bound_inputs=None, experiment=None):
+        item = published(value)
+        if manuscript is None and bound_inputs is None:
+            return item
+        if manuscript is None or not isinstance(bound_inputs, dict) or "manuscript" not in bound_inputs:
+            raise ValueError("Review requires an exact manuscript binding")
+        roles = ("research_idea", "literature_library", "experiment_record")
+        if set(bound_inputs) - {"manuscript", *roles}:
+            raise ValueError("Review contains an unknown input binding")
+        surface = namespace["_forward_manuscript_surface"](manuscript)
+        manuscript_ref = namespace["artifact_ref"](
+            bound_inputs["manuscript"], "manuscript-draft/v4"
+        )
+        if namespace["artifact_ref"](
+            item["source_manuscript"], "manuscript-draft/v4"
+        ) != manuscript_ref:
+            raise ValueError("Review refers to a different Draft")
+        support = []
+        issue_sources = {"manuscript": manuscript_ref}
+        for role in roles:
+            supplied = bound_inputs.get(role)
+            if supplied is None:
+                continue
+            exact = namespace["artifact_ref"](supplied)
+            if surface["sources"].get(role) != exact:
+                raise ValueError(
+                    f"bound Review source {role} differs from manuscript lineage"
+                )
+            support.append(exact)
+            issue_sources[role] = exact
+        if [namespace["artifact_ref"](raw) for raw in item["supporting_artifacts"]] != support:
+            raise ValueError("Review support differs from exact bindings")
+        expected_availability = namespace["derive_evidence_availability"](
+            manuscript, bound_inputs
+        )
+        if item["evidence_availability"] != expected_availability:
+            raise ValueError("Review evidence availability differs from exact bindings")
+        expected_audit = (
+            None
+            if bound_inputs.get("experiment_record") is None
+            else original_audit(manuscript, experiment)
+        )
+        if item["experiment_evidence_audit"] != expected_audit:
+            raise ValueError("Review v5 evidence audit is inconsistent")
+        for issue in item["issues"]:
+            if not isinstance(issue, dict) or issue.get("severity") not in {"MAJOR", "MINOR"}:
+                raise ValueError("Review issue severity is invalid")
+            namespace["_forward_validate_evidence_refs"](
+                issue.get("evidence_refs"), issue_sources, experiment
+            )
+        return item
+
+    validator_globals = namespace["validate_review_report_v3"].__globals__
+    validator_globals["_forward_validate_review_v3"] = contextual
+    validator_globals["experiment_evidence_audit"] = (
+        lambda manuscript, experiment: (
+            None if experiment is None else original_audit(manuscript, experiment)
+        )
+    )
+    namespace.update(validator_globals)
+    return namespace
+
+
+def _recover_approved_forward_review(
+    capsule: Path, workflow_instance_id: str
+) -> bool:
+    """Finalize one already-approved Review without relaunching its Harness."""
+
+    owner_path = capsule / "memory/owner-review.json"
+    reports_root = capsule / "memory/progress/reports"
+    if not owner_path.exists() and not owner_path.is_symlink():
+        return False
+    if list(reports_root.glob("*.json")):
+        return False
+    required = (
+        "memory/input-provenance.json", "memory/evidence-availability.json",
+        "memory/review-scope.json", "memory/scope-approval.json",
+        "memory/review-result.json", "memory/owner-review.json", "outputs/review.md",
+    )
+    if any(not (capsule / relative).is_file() or (capsule / relative).is_symlink() for relative in required):
+        raise _identity(
+            "LOCAL_PROGRESS_INVALID",
+            "Approved Review recovery state is incomplete or unsafe",
+        )
+    validator = _forward_review_validator(capsule)
+    runtime = runpy.run_path(str(capsule / "reagent_local.py"))
+    runtime["_publish"].__globals__["_validator"] = lambda _root: validator
+    try:
+        sources, manuscript, values = runtime["_load_inputs"](capsule)
+        availability = _read_json(
+            capsule / "memory/evidence-availability.json"
+        )
+        if availability != validator["derive_evidence_availability"](
+            manuscript, sources
+        ):
+            raise ValueError("Review evidence availability drifted")
+        scope, _scope_sha = runtime["_load_scope"](capsule, sources)
+        approval = runtime["_object"](
+            capsule / "memory/scope-approval.json", "Review Scope approval"
+        )
+        runtime["_verify_scope"](capsule, sources, scope, approval)
+        result, _result_sha = runtime["_load_result"](
+            capsule, sources, manuscript
+        )
+        owner_review = runtime["_object"](owner_path, "Owner review")
+        current = runtime["_publish"](
+            capsule, workflow_instance_id, sources, scope, approval,
+            availability, result, owner_review,
+        )
+        runtime["_finalize_progress"](capsule, current)
+        if validator["validate"](capsule, pristine=False).get("valid") is not True:
+            raise ValueError("corrected Review validator rejected final state")
+    except WorkspaceCLIError:
+        raise
+    except Exception as error:
+        raise _identity(
+            "LOCAL_PROGRESS_INVALID",
+            f"Approved Review could not be finalized exactly: {error}",
+        ) from error
+    return True
+
+
 def run_workflow(
     *,
     workspace_root: str | Path,
@@ -5737,6 +5871,46 @@ def run_workflow(
                         presentation_count=presentation_count,
                         warnings=presentation_warnings,
                     )
+        if not preflight_only and pin == (
+            "review-local-experimental", "0.4.0", "0.6.0"
+        ):
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                real_review=True,
+            )
+            if _recover_approved_forward_review(capsule, workflow_instance_id):
+                recovered = _evaluate_local_progress_readiness(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    installed=installed,
+                    capsule=capsule,
+                    manifest=manifest,
+                )
+                if recovered.state == "INVALID" or len(recovered.reports) != 1:
+                    raise _identity(
+                        "LOCAL_PROGRESS_INVALID",
+                        recovered.reason or "Review recovery did not produce exact Progress",
+                    )
+                _recover_progress_backlog(
+                    workspace=workspace,
+                    descriptor=descriptor,
+                    installed=installed,
+                    capsule=capsule,
+                    manifest=manifest,
+                    reports=list(recovered.reports),
+                    transport=transport,
+                )
+                return WorkflowRunResult(
+                    status="PROGRESS_SYNCHRONIZED",
+                    project_id=descriptor["project_id"],
+                    workspace_id=descriptor["workspace_id"],
+                    workflow_instance_id=workflow_instance_id,
+                    capsule_relative_path=installed["relative_path"],
+                )
         if is_idea:
             plan = validate_materialization_plan(
                 transport.materialization_plan(
@@ -7047,6 +7221,7 @@ def _evaluate_local_progress_readiness(
         ("writing-local-experimental", "0.5.0", "0.7.0"),
         ("writing-local-experimental", "0.4.0", "0.6.0"),
         ("review-local-experimental", "0.3.0", "0.5.0"),
+        ("review-local-experimental", "0.4.0", "0.6.0"),
     }:
         try:
             provenance_exact = _scaffold_provenance_is_exact(

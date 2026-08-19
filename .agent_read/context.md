@@ -2,6 +2,41 @@
 
 Last updated: 2026-08-19
 
+## D1-REVIEW-CONTRACT-01 optional-evidence publication recovery (2026-08-19)
+
+Forward `review-report/v3` contextual validation now distinguishes immutable
+manuscript provenance from the exact evidence set supplied to Review. The
+required manuscript remains exact; each actually bound optional source must
+match manuscript lineage; Review support must equal the actual binding set;
+omitted sources are unavailable and cannot be used by Review issues or produce
+an Experiment audit. Migration 0032, Review Definition 0.4, Capsule 0.6, and all
+published bytes/checksums remain unchanged.
+
+The Workspace root client has an exact Review 0.4 recovery seam for the narrow
+state `Owner-approved result + no terminal Artifact/Progress`. It reuses the
+immutable Capsule's structural/input/approval validators with the corrected
+contextual rule, deterministically publishes the existing result, finalizes one
+Progress report, and uses the normal backlog uploader without launching Codex.
+Forward Review is also excluded from the unrelated Scaffold-provenance check.
+
+Contract and no-Harness recovery tests passed 13/13; affected Artifact,
+forward-chain, Progress/readiness, publication, preset, and public Workspace
+tests passed 189/189 in aggregate, with the one loopback test rerun under its
+required network permission. Compileall, diff check, immutable publication
+checks, and Alembic sole head `20260818_0033` passed.
+
+The real D1 Review Workspace recovered through the exact root `run` command.
+The stale prior Review launcher had no Harness child and was gracefully
+interrupted so its managed lock released; no lock file was deleted. Exact
+replay remained idempotent. Cloud now has one accepted COMPLETED report and one
+`review-report/v3` with checksum
+`sha256:3947ffc512983121aeacf1ef7fbd4e42cae2507827d4b5b455a0f25d94e30cc8`.
+Local workflow list reports Review Completed. Manuscript, provenance, scope,
+scope approval, evidence availability, review result, Owner review, and human
+rendering hashes are unchanged. Review bindings remain exactly manuscript plus
+Literature; Research Idea and Experiment remain unbound. No Writing Revision
+was created and no substantive Review ran.
+
 ## D1-WRITING-LIFECYCLE-01 bounded Real Writing recovery (2026-08-19)
 
 Initial Writing 0.5 / Capsule 0.7 completion recovery now follows its exact
