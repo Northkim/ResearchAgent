@@ -26,6 +26,8 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
     IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
+    IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION,
+    IDEA_DISCOVERY_V0_5_CAPSULE_VERSION,
     EXPERIMENT_WORKFLOW_ID,
     EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
     EXPERIMENT_COMPLETION_CAPSULE_VERSION,
@@ -51,11 +53,15 @@ from backend.workflow_packages.production_workflows import (
     SCAFFOLD_SKILL_BACKED_WORKFLOW_VERSION,
     WRITING_WORKFLOW_ID,
     LITERATURE_SEARCH_WORKFLOW_VERSION as PRODUCTION_LITERATURE_SEARCH_VERSION,
+    LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
     build_idea_discovery_package,
     build_idea_discovery_v0_2_package,
     build_idea_discovery_v0_3_package,
     build_idea_discovery_v0_4_package,
+    build_idea_discovery_v0_5_package,
     build_literature_search_v0_6_package,
+    build_literature_search_v0_7_package,
     build_writing_scaffold_package,
     build_review_scaffold_package,
     build_experiment_scaffold_package,
@@ -570,6 +576,16 @@ class WorkspaceSyncApplicationService:
             )
             builder = build_literature_search_v0_6_package
         elif (
+            instance.workflow_definition_id == LITERATURE_SEARCH_DEFINITION_ID
+            and instance.workflow_version == LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION
+            and instance.capsule_version == LITERATURE_SEARCH_V0_7_CAPSULE_VERSION
+        ):
+            package_id = (
+                f"literature-search-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.7"
+            )
+            builder = build_literature_search_v0_7_package
+        elif (
             instance.workflow_definition_id == IDEA_DISCOVERY_WORKFLOW_ID
             and instance.workflow_version == IDEA_DISCOVERY_WORKFLOW_VERSION
             and instance.capsule_version == "0.1.0"
@@ -606,6 +622,16 @@ class WorkspaceSyncApplicationService:
                 f"{instance.workflow_instance_id}-v0.4"
             )
             builder = build_idea_discovery_v0_4_package
+        elif (
+            instance.workflow_definition_id == IDEA_DISCOVERY_WORKFLOW_ID
+            and instance.workflow_version == IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION
+            and instance.capsule_version == IDEA_DISCOVERY_V0_5_CAPSULE_VERSION
+        ):
+            package_id = (
+                f"idea-discovery-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.5"
+            )
+            builder = build_idea_discovery_v0_5_package
         elif (
             instance.workflow_definition_id in {
                 WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID, EXPERIMENT_WORKFLOW_ID,

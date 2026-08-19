@@ -62,9 +62,9 @@ def test_server_resolved_presets_create_one_revision_atomically(tmp_path, setup,
     assert {item["workflow_definition_id"] for item in instances["items"]} == set(expected)
     assert len(manifest["manifest"]["workflow_instances"]) == len(expected)
     versions = {item["workflow_definition_id"]: (item["workflow_version"], item["capsule_version"]) for item in instances["items"]}
-    assert versions["literature-search-local-experimental"] == ("0.4.0", "0.6.0")
+    assert versions["literature-search-local-experimental"] == ("0.5.0", "0.7.0")
     if setup == "full-research":
-        assert versions["idea-discovery-local-experimental"] == ("0.3.0", "0.4.0")
+        assert versions["idea-discovery-local-experimental"] == ("0.4.0", "0.5.0")
         assert versions["reproduction-experiment-local-experimental"] == ("0.7.0", "0.10.0")
         assert versions["writing-local-experimental"] == ("0.5.0", "0.7.0")
         assert versions["review-local-experimental"] == ("0.4.0", "0.6.0")
@@ -145,10 +145,10 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     assert len(descriptor["workflow_capsules"]) == 5
     expected_pins = {
         "literature-search-local-experimental": (
-            "0.4.0", "0.6.0", "capsule-e9e6a2e0aa46146818fb6123e03877f3"
+            "0.5.0", "0.7.0", "capsule-5600c6c42c85d3a2ab8beb8e112216df"
         ),
         "idea-discovery-local-experimental": (
-            "0.3.0", "0.4.0", "capsule-717aa7729919ccef977520a3622fb44f"
+            "0.4.0", "0.5.0", "capsule-db831c40287135691c7c1c41a2a16934"
         ),
         "reproduction-experiment-local-experimental": (
             "0.7.0", "0.10.0", "capsule-cd7ff18e9857b6d20fbe9ba2ccab7ba6"
@@ -243,8 +243,8 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     assert human_list.stdout.count("Core: Reviewed") == 5
     assert "Core: Scaffold" not in human_list.stdout
     for display_name, version in (
-        ("Literature Search", "0.4.0"),
-        ("Idea Discovery", "0.3.0"),
+        ("Literature Search", "0.5.0"),
+        ("Idea Discovery", "0.4.0"),
         ("Reproduction & Experiment", "0.7.0"),
         ("Initial Writing", "0.5.0"),
         ("Review", "0.4.0"),

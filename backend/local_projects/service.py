@@ -16,8 +16,12 @@ from backend.workflow_packages import build_literature_search_package
 from backend.workflow_packages.production_workflows import (
     LITERATURE_SEARCH_CAPSULE_VERSION as PRODUCTION_CAPSULE_VERSION,
     LITERATURE_SEARCH_WORKFLOW_VERSION as PRODUCTION_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
     build_literature_search_v0_6_package,
+    build_literature_search_v0_7_package,
     literature_search_workflow_document as production_workflow_document,
+    literature_search_v0_5_workflow_document,
 )
 from backend.workflow_packages.serialization import canonical_hash
 from backend.workflow_packages.template import WORKFLOW_ID, WORKFLOW_VERSION, workflow_document
@@ -122,21 +126,49 @@ class LocalProjectService:
             if self._package_pin_resolver is not None
             else None
         )
-        production = pin is not None and pin[1:] == (
+        production_v0_6 = pin is not None and pin[1:] == (
             PRODUCTION_WORKFLOW_VERSION,
             PRODUCTION_CAPSULE_VERSION,
         )
-        if pin is not None and not production and pin[1:] != ("0.3.0", "0.5.0"):
+        production_v0_7 = pin is not None and pin[1:] == (
+            LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+            LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
+        )
+        if (
+            pin is not None
+            and not production_v0_6
+            and not production_v0_7
+            and pin[1:] != ("0.3.0", "0.5.0")
+        ):
             raise ApplicationValidationError(
                 "Project Literature Search pin has no reviewed standalone Package compiler"
             )
         # Keep the accepted 0.5.0 Package path and bytes unchanged. New B7
         # Projects receive a separately pinned, instance-bound 0.6.0 Package.
         output = storage_root / project.project_id / (
-            "literature-search-v0.6" if production else "literature-search-v0.5"
+            "literature-search-v0.7"
+            if production_v0_7
+            else "literature-search-v0.6"
+            if production_v0_6
+            else "literature-search-v0.5"
         )
         try:
-            if production:
+            if production_v0_7:
+                assert pin is not None
+                built = build_literature_search_v0_7_package(
+                    project_id=project.project_id,
+                    project_name=project.name,
+                    research_topic=project.research_topic,
+                    output_root=output,
+                    package_id=(
+                        f"literature-search-{project.project_id}-{pin[0]}-v0.7"
+                    ),
+                )
+                workflow_version = LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION
+                workflow_checksum = canonical_hash(
+                    literature_search_v0_5_workflow_document()
+                )
+            elif production_v0_6:
                 assert pin is not None
                 built = build_literature_search_v0_6_package(
                     project_id=project.project_id,

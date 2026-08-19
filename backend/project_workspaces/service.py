@@ -59,8 +59,13 @@ from .production_workflows import (
     idea_discovery_v0_3_definition_version,
     idea_discovery_v0_3_requirement,
     idea_discovery_v0_4_capsule,
+    idea_discovery_v0_4_definition_version,
+    idea_discovery_v0_4_requirement,
+    idea_discovery_v0_5_capsule,
     literature_search_capsule as production_literature_search_capsule,
     literature_search_definition_version as production_literature_search_version,
+    literature_search_v0_5_definition_version,
+    literature_search_v0_7_capsule,
     SCAFFOLD_WORKFLOWS,
     scaffold_capsule,
     scaffold_definition,
@@ -235,6 +240,10 @@ def ensure_production_workflow_foundation(
     current_idea_capsule = idea_discovery_v0_3_capsule(timestamp)
     forward_idea_version = idea_discovery_v0_3_definition_version(timestamp)
     forward_idea_capsule = idea_discovery_v0_4_capsule(timestamp)
+    durable_literature_version = literature_search_v0_5_definition_version(timestamp)
+    durable_literature_capsule = literature_search_v0_7_capsule(timestamp)
+    durable_idea_version = idea_discovery_v0_4_definition_version(timestamp)
+    durable_idea_capsule = idea_discovery_v0_5_capsule(timestamp)
     repository = uow.workflow_foundation
     repository.add_definition_version(literature_version)
     repository.add_capsule_version(literature_capsule)
@@ -246,10 +255,15 @@ def ensure_production_workflow_foundation(
     repository.add_capsule_version(current_idea_capsule)
     repository.add_definition_version(forward_idea_version)
     repository.add_capsule_version(forward_idea_capsule)
+    repository.add_definition_version(durable_literature_version)
+    repository.add_capsule_version(durable_literature_capsule)
+    repository.add_definition_version(durable_idea_version)
+    repository.add_capsule_version(durable_idea_capsule)
     for requirement in (
         idea_discovery_requirement(timestamp),
         idea_discovery_v0_2_requirement(timestamp),
         idea_discovery_v0_3_requirement(timestamp),
+        idea_discovery_v0_4_requirement(timestamp),
     ):
         existing_requirement = uow.artifact_references.get_requirement(
             requirement.workflow_definition_id,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import runpy
 from datetime import UTC, datetime
@@ -14,13 +15,13 @@ from backend.progress_reports.contracts import ProgressReportUploadEnvelope
 from backend.project_workspaces import workspace_cli
 from backend.project_workspaces.production_workflows import (
     IDEA_DISCOVERY_CAPSULE_ID,
-    LITERATURE_SEARCH_V0_6_CAPSULE_ID,
+    LITERATURE_SEARCH_V0_7_CAPSULE_ID,
 )
 from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_WORKFLOW_ID,
     IDEA_DISCOVERY_WORKFLOW_VERSION,
     LITERATURE_SEARCH_WORKFLOW_ID,
-    LITERATURE_SEARCH_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
 )
 from backend.workflow_packages.serialization import canonical_json
 
@@ -134,9 +135,8 @@ Metadata and abstracts only; no full text.
         "exclusions": [],
         "exclusion_summary": "No exclusions.",
     }
-    (root / "outputs/candidate_papers.json").write_text(
-        json.dumps(candidates), encoding="utf-8"
-    )
+    candidate_path = root / "outputs/candidate_papers.json"
+    candidate_path.write_text(json.dumps(candidates), encoding="utf-8")
     (root / "outputs/selected_papers.json").write_text(
         json.dumps(selected), encoding="utf-8"
     )
@@ -166,6 +166,20 @@ Candidates 1-3.
 """,
         encoding="utf-8",
     )
+    owner_decisions = root / "memory/owner-decisions.json"
+    if owner_decisions.exists():
+        owner_decisions.write_text(canonical_json({
+            "schema_version": "reagent.owner-decision-snapshot.literature/v0.1",
+            "candidate_set_checksum": (
+                "sha256:" + hashlib.sha256(candidate_path.read_bytes()).hexdigest()
+            ),
+            "decision_revision": 1,
+            "decisions": [{
+                "candidate_id": item["candidate_id"],
+                "disposition": "SELECTED",
+                "reason": "Direct fictional evidence.",
+            } for item in candidates["candidates"]],
+        }) + "\n", encoding="utf-8")
 
 
 def _finalize_progress(root: Path, *, state: str, status: str = "COMPLETED") -> Path:
@@ -311,8 +325,8 @@ def qualify_real_multi_workflow_artifact_handoff(
     project_id = project.json()["project_id"]
     bootstrap = client.get(f"/projects/{project_id}/workspace-bootstrap").json()
     literature = bootstrap["workflow_capsules"][0]
-    assert literature["workflow_definition_version"] == LITERATURE_SEARCH_WORKFLOW_VERSION
-    assert literature["capsule_id"] == LITERATURE_SEARCH_V0_6_CAPSULE_ID
+    assert literature["workflow_definition_version"] == LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION
+    assert literature["capsule_id"] == LITERATURE_SEARCH_V0_7_CAPSULE_ID
     assert literature["legacy_package_compatible"] is False
     workspace = tmp_path / "workspace"
     workspace_cli.bootstrap_workspace(target=workspace, descriptor=bootstrap)

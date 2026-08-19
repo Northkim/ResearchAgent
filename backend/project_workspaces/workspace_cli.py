@@ -69,6 +69,10 @@ SUPPORTED_CAPSULE_PINS = {
         PACKAGE_TEMPLATE_ID,
         False,
     ),
+    (WORKFLOW_ID, "0.5.0", "0.7.0"): (
+        PACKAGE_TEMPLATE_ID,
+        False,
+    ),
     ("idea-discovery-local-experimental", "0.1.0", "0.1.0"): (
         "idea-discovery-package-experimental",
         False,
@@ -82,6 +86,10 @@ SUPPORTED_CAPSULE_PINS = {
         False,
     ),
     ("idea-discovery-local-experimental", "0.3.0", "0.4.0"): (
+        "idea-discovery-package-experimental",
+        False,
+    ),
+    ("idea-discovery-local-experimental", "0.4.0", "0.5.0"): (
         "idea-discovery-package-experimental",
         False,
     ),
@@ -7204,6 +7212,8 @@ def run_workflow(
             ("idea-discovery-local-experimental", "0.1.0", "0.1.0"),
             ("idea-discovery-local-experimental", "0.2.0", "0.2.0"),
             ("idea-discovery-local-experimental", "0.2.0", "0.3.0"),
+            ("idea-discovery-local-experimental", "0.3.0", "0.4.0"),
+            ("idea-discovery-local-experimental", "0.4.0", "0.5.0"),
         }
         is_scaffold = (
             pin[0] in {

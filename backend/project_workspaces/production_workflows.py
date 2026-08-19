@@ -22,6 +22,8 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
     IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
+    IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION,
+    IDEA_DISCOVERY_V0_5_CAPSULE_VERSION,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_INPUT_TARGET,
     EXPERIMENT_RECORD_TYPE,
@@ -54,6 +56,8 @@ from backend.workflow_packages.production_workflows import (
     LITERATURE_SEARCH_TEMPLATE_ID,
     LITERATURE_SEARCH_WORKFLOW_ID,
     LITERATURE_SEARCH_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
     SELECTED_PAPER_LIBRARY_SCHEMA,
     SELECTED_PAPER_LIBRARY_TYPE,
     MANUSCRIPT_DRAFT_TYPE,
@@ -77,7 +81,9 @@ from backend.workflow_packages.production_workflows import (
     idea_discovery_contract_checksum,
     idea_discovery_v0_2_contract_checksum,
     idea_discovery_v0_3_contract_checksum,
+    idea_discovery_v0_4_contract_checksum,
     literature_search_contract_checksum,
+    literature_search_v0_5_contract_checksum,
     real_experiment_contract_checksum,
     real_writing_contract_checksum,
     real_review_contract_checksum,
@@ -249,6 +255,57 @@ IDEA_DISCOVERY_V0_4_CAPSULE_CHECKSUM = canonical_hash(
 )
 IDEA_DISCOVERY_V0_4_CAPSULE_ID = (
     "capsule-" + IDEA_DISCOVERY_V0_4_CAPSULE_CHECKSUM[7:39]
+)
+
+LITERATURE_SEARCH_V0_7_CAPSULE_CHECKSUM = canonical_hash(
+    {
+        "generator_version": (
+            "reagent-literature-search-local-experimental-compiler/0.7.0"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": LITERATURE_SEARCH_TEMPLATE_ID,
+        "package_template_version": LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
+        "workflow_checksum": literature_search_v0_5_contract_checksum(),
+        "artifact_outputs": [selected_paper_library_output_contract()],
+        "decision_durability": (
+            "CANDIDATE_SET_CHECKSUM_AND_EXACT_OWNER_DISPOSITIONS"
+        ),
+    }
+)
+LITERATURE_SEARCH_V0_7_CAPSULE_ID = (
+    "capsule-" + LITERATURE_SEARCH_V0_7_CAPSULE_CHECKSUM[7:39]
+)
+
+IDEA_DISCOVERY_V0_5_CAPSULE_CHECKSUM = canonical_hash(
+    {
+        "generator_version": (
+            "reagent-idea-discovery-local-experimental-compiler/0.5.0"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": IDEA_DISCOVERY_TEMPLATE_ID,
+        "package_template_version": IDEA_DISCOVERY_V0_5_CAPSULE_VERSION,
+        "workflow_checksum": idea_discovery_v0_4_contract_checksum(),
+        "artifact_input": {
+            "requirement_key": "paper_library",
+            "artifact_type": SELECTED_PAPER_LIBRARY_TYPE,
+            "artifact_schema": SELECTED_PAPER_LIBRARY_SCHEMA,
+            "target_relative_path": IDEA_INPUT_TARGET,
+            "selection_policy": "EXPLICIT_SPECIFIC_ARTIFACT",
+            "materialization_mode": "VERIFIED_COPY",
+            "content_precondition": {
+                "schema": PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA,
+                "qualification_schema": PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+                "minimum_selected_count": 1,
+            },
+        },
+        "artifact_outputs": [selected_research_idea_output_contract()],
+        "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+        "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
+        "decision_durability": "CANDIDATE_SET_CHECKSUM_AND_EXACT_SELECTED_IDEA",
+    }
+)
+IDEA_DISCOVERY_V0_5_CAPSULE_ID = (
+    "capsule-" + IDEA_DISCOVERY_V0_5_CAPSULE_CHECKSUM[7:39]
 )
 
 
@@ -607,6 +664,65 @@ def literature_search_capsule(now: datetime) -> WorkflowCapsuleVersion:
     )
 
 
+def literature_search_v0_5_definition_version(
+    now: datetime,
+) -> WorkflowDefinitionVersion:
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=LITERATURE_SEARCH_WORKFLOW_ID,
+        version=LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+        contract_checksum=literature_search_v0_5_contract_checksum(),
+        input_schema_id="research-request/v0.2",
+        output_schema_id="literature-search-report/v0.2",
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "production_artifact_type": SELECTED_PAPER_LIBRARY_TYPE,
+            "decision_durability": (
+                "CANDIDATE_SET_CHECKSUM_AND_EXACT_OWNER_DISPOSITIONS"
+            ),
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def literature_search_v0_7_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    return WorkflowCapsuleVersion(
+        capsule_id=LITERATURE_SEARCH_V0_7_CAPSULE_ID,
+        capsule_version=LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
+        workflow_definition_id=LITERATURE_SEARCH_WORKFLOW_ID,
+        workflow_version=LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+        definition_checksum=LITERATURE_SEARCH_V0_7_CAPSULE_CHECKSUM,
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=(
+            "memory/context.md", "memory/owner-decisions.json",
+            "memory/progress", "memory/round-control.json", "memory/search",
+            "outputs",
+        ),
+        capability_requirements=(
+            "paper.search/v0.1", "progress.read/v0.1", "progress.upload/v0.2",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": LITERATURE_SEARCH_TEMPLATE_ID,
+            "trust_classification": (
+                CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value
+            ),
+            "artifact_outputs": [selected_paper_library_output_contract()],
+            "decision_durability": (
+                "CANDIDATE_SET_CHECKSUM_AND_EXACT_OWNER_DISPOSITIONS"
+            ),
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
 def idea_discovery_definition(now: datetime) -> WorkflowDefinition:
     return WorkflowDefinition(
         workflow_definition_id=IDEA_DISCOVERY_DEFINITION_ID,
@@ -838,6 +954,44 @@ def idea_discovery_v0_4_capsule(now: datetime) -> WorkflowCapsuleVersion:
     )
 
 
+def idea_discovery_v0_4_definition_version(
+    now: datetime,
+) -> WorkflowDefinitionVersion:
+    previous = idea_discovery_v0_3_definition_version(now)
+    return replace(
+        previous,
+        version=IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION,
+        contract_checksum=idea_discovery_v0_4_contract_checksum(),
+        compatibility={
+            **previous.compatibility,
+            "decision_durability": (
+                "CANDIDATE_SET_CHECKSUM_AND_EXACT_SELECTED_IDEA"
+            ),
+        },
+    )
+
+
+def idea_discovery_v0_5_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    previous = idea_discovery_v0_4_capsule(now)
+    return replace(
+        previous,
+        capsule_id=IDEA_DISCOVERY_V0_5_CAPSULE_ID,
+        capsule_version=IDEA_DISCOVERY_V0_5_CAPSULE_VERSION,
+        workflow_version=IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION,
+        definition_checksum=IDEA_DISCOVERY_V0_5_CAPSULE_CHECKSUM,
+        mutable_roots=(
+            "memory/context.md", "memory/owner-decisions.json",
+            "memory/progress", "outputs", "inputs",
+        ),
+        compatibility={
+            **previous.compatibility,
+            "decision_durability": (
+                "CANDIDATE_SET_CHECKSUM_AND_EXACT_SELECTED_IDEA"
+            ),
+        },
+    )
+
+
 def idea_discovery_v0_2_requirement(now: datetime) -> WorkflowArtifactRequirement:
     return WorkflowArtifactRequirement(
         workflow_definition_id=IDEA_DISCOVERY_DEFINITION_ID,
@@ -876,6 +1030,14 @@ def idea_discovery_v0_3_requirement(now: datetime) -> WorkflowArtifactRequiremen
             "qualification_schema": PAPER_LIBRARY_QUALIFICATION_SCHEMA,
             "minimum_selected_count": 1,
         },
+    )
+
+
+def idea_discovery_v0_4_requirement(now: datetime) -> WorkflowArtifactRequirement:
+    previous = idea_discovery_v0_3_requirement(now)
+    return replace(
+        previous,
+        workflow_version=IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION,
     )
 
 

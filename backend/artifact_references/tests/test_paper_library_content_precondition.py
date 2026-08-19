@@ -67,7 +67,7 @@ def _seed() -> tuple[InMemoryDatabase, str, str]:
         item for item in instances
         if item.workflow_definition_id == "idea-discovery-local-experimental"
     )
-    assert (idea.workflow_version, idea.capsule_version) == ("0.3.0", "0.4.0")
+    assert (idea.workflow_version, idea.capsule_version) == ("0.4.0", "0.5.0")
     for artifact_id, checksum in ((ZERO_ID, ZERO_HASH), (ONE_ID, ONE_HASH)):
         uow.artifact_references.add_artifact(ArtifactReference(
             artifact_id=artifact_id,

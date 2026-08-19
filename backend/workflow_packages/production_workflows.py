@@ -46,6 +46,10 @@ LITERATURE_SEARCH_TEMPLATE_ID = "literature-search-package-experimental"
 LITERATURE_SEARCH_CAPSULE_VERSION = "0.6.0"
 LITERATURE_SEARCH_SKILL_VERSION = "0.4.0"
 LITERATURE_SEARCH_PROMPT_VERSION = "0.4.0"
+# Post-D1 forward publication: Owner screening dispositions become exact,
+# validator-owned durable state. The accepted 0.4/0.6 publication stays frozen.
+LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION = "0.5.0"
+LITERATURE_SEARCH_V0_7_CAPSULE_VERSION = "0.7.0"
 
 IDEA_DISCOVERY_WORKFLOW_ID = "idea-discovery-local-experimental"
 IDEA_DISCOVERY_WORKFLOW_VERSION = "0.1.0"
@@ -69,6 +73,10 @@ IDEA_DISCOVERY_V0_3_CAPSULE_VERSION = "0.3.0"
 # Idea 0.2 / Capsule 0.3 remains immutable.
 IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION = "0.3.0"
 IDEA_DISCOVERY_V0_4_CAPSULE_VERSION = "0.4.0"
+# Post-D1 forward publication: explicit Idea selection becomes durable before
+# finalization. The accepted 0.3/0.4 publication stays frozen.
+IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION = "0.4.0"
+IDEA_DISCOVERY_V0_5_CAPSULE_VERSION = "0.5.0"
 
 WRITING_WORKFLOW_ID = "writing-local-experimental"
 REVIEW_WORKFLOW_ID = "review-local-experimental"
@@ -758,6 +766,40 @@ def idea_discovery_v0_3_workflow_document() -> dict[str, Any]:
     return value
 
 
+def literature_search_v0_5_workflow_document() -> dict[str, Any]:
+    """Forward Literature contract with durable exact screening decisions."""
+
+    value = literature_search_workflow_document()
+    value["workflow_version"] = LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION
+    value["steps"] = [
+        *value["steps"][:4],
+        "persist-exact-owner-screening-dispositions",
+        *value["steps"][4:],
+    ]
+    value["decision_durability"] = (
+        "CANDIDATE_SET_CHECKSUM_AND_EXACT_OWNER_DISPOSITIONS"
+    )
+    value["immutable_versioning"] = "0.4.0 remains independently valid"
+    return value
+
+
+def idea_discovery_v0_4_workflow_document() -> dict[str, Any]:
+    """Forward Idea contract with durable exact Owner selection."""
+
+    value = idea_discovery_v0_3_workflow_document()
+    value["workflow_version"] = IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION
+    value["steps"] = [
+        *value["steps"][:3],
+        "persist-exact-owner-idea-selection",
+        *value["steps"][3:],
+    ]
+    value["decision_durability"] = (
+        "CANDIDATE_SET_CHECKSUM_AND_EXACT_SELECTED_IDEA"
+    )
+    value["immutable_versioning"] = "0.3.0 remains independently valid"
+    return value
+
+
 def literature_search_contract_checksum() -> str:
     return canonical_hash(literature_search_workflow_document())
 
@@ -772,6 +814,14 @@ def idea_discovery_v0_2_contract_checksum() -> str:
 
 def idea_discovery_v0_3_contract_checksum() -> str:
     return canonical_hash(idea_discovery_v0_3_workflow_document())
+
+
+def literature_search_v0_5_contract_checksum() -> str:
+    return canonical_hash(literature_search_v0_5_workflow_document())
+
+
+def idea_discovery_v0_4_contract_checksum() -> str:
+    return canonical_hash(idea_discovery_v0_4_workflow_document())
 
 
 def _json(value: Any) -> bytes:
@@ -1406,6 +1456,284 @@ def _idea_v0_4_files(
         (
             prefix + "```json\n" + canonical_json(context_payload) + "\n```" + suffix
         ).encode("utf-8"),
+    )
+    return files
+
+
+_LITERATURE_OWNER_DECISION_VALIDATOR = r'''
+
+def _validate_owner_decisions(package_root: Path) -> None:
+    path = package_root / "memory/owner-decisions.json"
+    value = _read_json_if_present(path, "Owner screening decisions")
+    if value is None or set(value) != {
+        "schema_version", "candidate_set_checksum", "decision_revision", "decisions"
+    }:
+        raise PackageValidationError("Owner screening decision fields mismatch")
+    if (
+        value["schema_version"]
+        != "reagent.owner-decision-snapshot.literature/v0.1"
+        or not isinstance(value["decision_revision"], int)
+        or value["decision_revision"] < 0
+        or not isinstance(value["decisions"], list)
+        or len(value["decisions"]) > 15
+    ):
+        raise PackageValidationError("Owner screening decision snapshot is invalid")
+    checksum = value["candidate_set_checksum"]
+    if checksum is not None and not SHA256.fullmatch(str(checksum)):
+        raise PackageValidationError("Owner screening candidate checksum is invalid")
+    if checksum is None and (value["decision_revision"] != 0 or value["decisions"]):
+        raise PackageValidationError("Owner screening decisions require exact candidates")
+    seen = set()
+    for item in value["decisions"]:
+        if not isinstance(item, dict) or set(item) != {
+            "candidate_id", "disposition", "reason"
+        }:
+            raise PackageValidationError("Owner screening decision entry is invalid")
+        candidate_id = item["candidate_id"]
+        if (
+            not isinstance(candidate_id, str)
+            or not re.fullmatch(r"candidate-[0-9a-f]{16,64}", candidate_id)
+            or candidate_id in seen
+            or item["disposition"] not in {"SELECTED", "UNCERTAIN", "EXCLUDED"}
+            or not isinstance(item["reason"], str)
+            or not item["reason"].strip()
+        ):
+            raise PackageValidationError("Owner screening decision identity is invalid")
+        seen.add(candidate_id)
+    candidates_path = package_root / "outputs/candidate_papers.json"
+    if not candidates_path.exists():
+        if checksum is not None or seen:
+            raise PackageValidationError("Owner screening decisions have no candidate set")
+        return
+    candidates = _read_json_if_present(candidates_path, "candidate library")
+    candidate_ids = {
+        item["candidate_id"] for item in candidates.get("candidates", [])
+        if isinstance(item, dict) and isinstance(item.get("candidate_id"), str)
+    }
+    if checksum is not None and checksum != sha256_bytes(candidates_path.read_bytes()):
+        raise PackageValidationError("Owner screening candidate set drifted")
+    if not seen.issubset(candidate_ids):
+        raise PackageValidationError("Owner screening decision references another candidate set")
+    selected_path = package_root / "outputs/selected_papers.json"
+    if not selected_path.exists():
+        return
+    selected = _read_json_if_present(selected_path, "selected library")
+    selected_ids = {item["candidate_id"] for item in selected.get("selected", [])}
+    excluded_ids = {item["candidate_id"] for item in selected.get("exclusions", [])}
+    dispositions = {item["candidate_id"]: item["disposition"] for item in value["decisions"]}
+    if (
+        checksum != sha256_bytes(candidates_path.read_bytes())
+        or set(dispositions) != candidate_ids
+        or {key for key, item in dispositions.items() if item == "SELECTED"}
+        != selected_ids
+        or {key for key, item in dispositions.items() if item != "SELECTED"}
+        != excluded_ids
+    ):
+        raise PackageValidationError("Final Literature output differs from Owner decisions")
+'''
+
+
+_IDEA_OWNER_DECISION_VALIDATOR = r'''
+
+def _validate_owner_decisions(package_root: Path) -> None:
+    value = _object(package_root / "memory/owner-decisions.json", "Owner Idea decision")
+    if set(value) != {
+        "schema_version", "candidate_set_checksum", "decision_revision",
+        "selected_idea_id", "decision"
+    }:
+        raise PackageValidationError("Owner Idea decision fields mismatch")
+    if (
+        value["schema_version"] != "reagent.owner-decision-snapshot.idea/v0.1"
+        or not isinstance(value["decision_revision"], int)
+        or value["decision_revision"] < 0
+        or value["decision"] not in {None, "SELECTED"}
+        or (value["selected_idea_id"] is None) != (value["decision"] is None)
+    ):
+        raise PackageValidationError("Owner Idea decision snapshot is invalid")
+    checksum = value["candidate_set_checksum"]
+    if checksum is not None and not SHA256.fullmatch(str(checksum)):
+        raise PackageValidationError("Owner Idea candidate checksum is invalid")
+    if value["decision"] is None and (
+        checksum is not None or value["decision_revision"] != 0
+    ):
+        raise PackageValidationError("Owner Idea decision requires an exact selection")
+    candidates_path = package_root / "outputs/candidate_ideas.json"
+    if not candidates_path.exists():
+        if value["decision"] is not None:
+            raise PackageValidationError("Owner Idea decision has no candidate set")
+        return
+    candidates = _object(candidates_path, "candidate ideas")
+    if value["decision"] is not None:
+        if checksum != sha256_bytes(candidates_path.read_bytes()):
+            raise PackageValidationError("Owner Idea candidate set drifted")
+        ideas = {
+            item.get("idea_id"): item for item in candidates.get("ideas", [])
+            if isinstance(item, dict)
+        }
+        selected = ideas.get(value["selected_idea_id"])
+        if selected is None or selected.get("status") != "selected":
+            raise PackageValidationError("Owner Idea selection differs from candidates")
+'''
+
+
+def _decision_validator_source(
+    source: bytes,
+    *,
+    workflow_pin: tuple[str, str] | None,
+    capsule_pin: tuple[str, str] | None,
+    validator: str,
+) -> bytes:
+    value = source.decode("utf-8")
+    function_marker = "\ndef validate(root: str | Path, *, pristine: bool = False)"
+    return_marker = '    return {\n        "valid": True,\n'
+    if (
+        function_marker not in value
+        or return_marker not in value
+    ):
+        raise RuntimeError("Owner decision publication extension point is unavailable")
+    for pin in (workflow_pin, capsule_pin):
+        if pin is None:
+            continue
+        old, new = pin
+        if old not in value:
+            raise RuntimeError("Owner decision publication pin is unavailable")
+        value = value.replace(old, new, 1)
+    value = value.replace(function_marker, validator + function_marker, 1)
+    value = value.replace(
+        return_marker,
+        "    _validate_owner_decisions(package_root)\n" + return_marker,
+        1,
+    )
+    return value.encode("utf-8")
+
+
+def _literature_v0_7_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    files = dict(_literature_files(
+        project_id=project_id,
+        project_name=project_name,
+        package_id=package_id,
+        package_checksum=package_checksum,
+        research_topic=research_topic,
+    ))
+    _replace_spec(
+        files,
+        "workflow/workflow.json",
+        _json(literature_search_v0_5_workflow_document()),
+    )
+    workflow_checksum = literature_search_v0_5_contract_checksum()
+    control = json.loads(files["memory/round-control.json"].content)
+    control["workflow_version"] = LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION
+    control["workflow_checksum"] = workflow_checksum
+    _replace_spec(files, "memory/round-control.json", _json(control))
+    context_text = files["memory/context.md"].content.decode("utf-8")
+    prefix, remainder = context_text.split("```json\n", 1)
+    encoded, suffix = remainder.split("\n```", 1)
+    context_payload = json.loads(encoded)
+    context_payload["workflow_version"] = LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION
+    context_payload["context_checksum"] = canonical_hash(
+        {**context_payload, "context_checksum": None}
+    )
+    _replace_spec(
+        files,
+        "memory/context.md",
+        (
+            prefix + "```json\n" + canonical_json(context_payload) + "\n```" + suffix
+        ).encode("utf-8"),
+    )
+    _replace_spec(
+        files,
+        "validate_package.py",
+        _decision_validator_source(
+            files["validate_package.py"].content,
+            workflow_pin=None,
+            capsule_pin=None,
+            validator=_LITERATURE_OWNER_DECISION_VALIDATOR,
+        ),
+    )
+    for path in (
+        "AGENT.md",
+        "workflow/prompts/one-round.md",
+        "workflow/skills/literature-search/SKILL.md",
+    ):
+        _replace_spec(
+            files,
+            path,
+            files[path].content
+            + b"\n## Durable Owner decisions\n\nBefore ending any session, read and atomically update `memory/owner-decisions.json`. Bind dispositions to the exact SHA-256 of `outputs/candidate_papers.json`. Preserve SELECTED, UNCERTAIN, and EXCLUDED decisions exactly across resume. Never reconstruct them from chat history or silently change an existing disposition.\n",
+        )
+    files["memory/owner-decisions.json"] = FileSpec(
+        _json({
+            "schema_version": "reagent.owner-decision-snapshot.literature/v0.1",
+            "candidate_set_checksum": None,
+            "decision_revision": 0,
+            "decisions": [],
+        }),
+        "application/json",
+        "exact durable Owner screening decisions",
+        True,
+        "STATE",
+    )
+    return files
+
+
+def _idea_v0_5_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    files = dict(_idea_v0_4_files(
+        project_id=project_id,
+        project_name=project_name,
+        package_id=package_id,
+        package_checksum=package_checksum,
+        research_topic=research_topic,
+    ))
+    _replace_spec(
+        files,
+        "workflow/workflow.json",
+        _json(idea_discovery_v0_4_workflow_document()),
+    )
+    _replace_spec(
+        files,
+        "validate_package.py",
+        _decision_validator_source(
+            files["validate_package.py"].content,
+            workflow_pin=(
+                'manifest.get("workflow_version") != "0.3.0"',
+                'manifest.get("workflow_version") != "0.4.0"',
+            ),
+            capsule_pin=(
+                'manifest.get("package_template_version") != "0.4.0"',
+                'manifest.get("package_template_version") != "0.5.0"',
+            ),
+            validator=_IDEA_OWNER_DECISION_VALIDATOR,
+        ),
+    )
+    for path in (
+        "AGENT.md",
+        "workflow/prompts/idea-discovery.md",
+        "workflow/skills/evidence-grounded-ideation/SKILL.md",
+    ):
+        _replace_spec(
+            files,
+            path,
+            files[path].content
+            + b"\n## Durable Owner decision\n\nBefore ending any session, read and atomically update `memory/owner-decisions.json`. Bind the Owner's exact selected idea ID to the SHA-256 of `outputs/candidate_ideas.json`. Resume from that record; never infer, replace, or reconstruct the selection from chat history.\n",
+        )
+    files["memory/owner-decisions.json"] = FileSpec(
+        _json({
+            "schema_version": "reagent.owner-decision-snapshot.idea/v0.1",
+            "candidate_set_checksum": None,
+            "decision_revision": 0,
+            "selected_idea_id": None,
+            "decision": None,
+        }),
+        "application/json",
+        "exact durable Owner Idea decision",
+        True,
+        "STATE",
     )
     return files
 
@@ -3845,6 +4173,22 @@ def build_literature_search_v0_6_package(
     )
 
 
+def build_literature_search_v0_7_package(
+    *, project_id: str, project_name: str, research_topic: str,
+    output_root: str | Path, package_id: str,
+) -> BuildResult:
+    return _build(
+        renderer=_literature_v0_7_files,
+        project_id=project_id, project_name=project_name,
+        research_topic=research_topic, output_root=output_root,
+        package_id=package_id, workflow_type="Literature Search",
+        workflow_id=LITERATURE_SEARCH_WORKFLOW_ID,
+        workflow_version=LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+        template_id=LITERATURE_SEARCH_TEMPLATE_ID,
+        template_version=LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
+    )
+
+
 def build_idea_discovery_package(
     *, project_id: str, project_name: str, research_topic: str,
     output_root: str | Path, package_id: str,
@@ -3906,6 +4250,22 @@ def build_idea_discovery_v0_4_package(
         workflow_version=IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
         template_id=IDEA_DISCOVERY_TEMPLATE_ID,
         template_version=IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
+    )
+
+
+def build_idea_discovery_v0_5_package(
+    *, project_id: str, project_name: str, research_topic: str,
+    output_root: str | Path, package_id: str,
+) -> BuildResult:
+    return _build(
+        renderer=_idea_v0_5_files,
+        project_id=project_id, project_name=project_name,
+        research_topic=research_topic, output_root=output_root,
+        package_id=package_id, workflow_type="Idea Discovery",
+        workflow_id=IDEA_DISCOVERY_WORKFLOW_ID,
+        workflow_version=IDEA_DISCOVERY_V0_4_WORKFLOW_VERSION,
+        template_id=IDEA_DISCOVERY_TEMPLATE_ID,
+        template_version=IDEA_DISCOVERY_V0_5_CAPSULE_VERSION,
     )
 
 

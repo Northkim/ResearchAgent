@@ -42,7 +42,7 @@ def test_forward_idea_publication_is_exact_and_reversible(postgres_engine) -> No
         database_url=database_url,
         expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
     )
-    _assert_head(postgres_engine, "20260820_0036")
+    _assert_head(postgres_engine, "20260820_0037")
     _assert_publication(postgres_engine)
     uow = SQLAlchemyUnitOfWork(create_session_factory(postgres_engine))
     try:
@@ -89,8 +89,8 @@ def test_forward_idea_publication_is_exact_and_reversible(postgres_engine) -> No
             )
         }
     finally:
-        command.upgrade(configuration, "20260820_0036")
-    _assert_head(postgres_engine, "20260820_0036")
+        command.upgrade(configuration, "20260820_0037")
+    _assert_head(postgres_engine, "20260820_0037")
     _assert_publication(postgres_engine)
 
 

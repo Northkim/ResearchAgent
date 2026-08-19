@@ -79,8 +79,8 @@ def test_catalog_is_repository_backed_ordered_and_planned_is_not_creatable(tmp_p
     assert all(item["creatable"] is True for item in items[2:])
     detail = client.get(f"/workflow-definitions/{LITERATURE_SEARCH_DEFINITION_ID}")
     assert detail.status_code == 200
-    assert detail.json()["recommended_version"]["version"] == "0.4.0"
-    assert detail.json()["recommended_capsule"]["capsule_version"] == "0.6.0"
+    assert detail.json()["recommended_version"]["version"] == "0.5.0"
+    assert detail.json()["recommended_capsule"]["capsule_version"] == "0.7.0"
     unknown = client.get("/workflow-definitions/unknown-workflow")
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "WORKFLOW_DEFINITION_NOT_FOUND"
@@ -206,7 +206,7 @@ def test_workspace_bootstrap_descriptor_is_repository_backed_and_deterministic(t
             "workflow_instance_id"
         ]
     )
-    assert capsule["capsule_version"] == "0.6.0"
+    assert capsule["capsule_version"] == "0.7.0"
     assert capsule["legacy_package"] is None
     checksum_payload = dict(first)
     checksum = checksum_payload.pop("descriptor_checksum")
