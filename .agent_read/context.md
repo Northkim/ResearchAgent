@@ -4046,3 +4046,26 @@ untouched. The full EP-D2 browser run also refined an existing R6 root: frontend
 Detail guesses Revision from version 0.6 and does not route forward 0.7/0.9 through
 the role-aware Revision UI. This is deferred to R6, not repaired in R1. Safe next
 phase is R2 only.
+
+## Post-D1 R2 complete (2026-08-20)
+
+R2 is complete in commits `f8754bb` and `68cc605`, governed by ADR 0053. The
+normal Local `run` path now composes safe sync/materialization, pending terminal
+Progress recovery, managed Codex phase execution, exact natural Owner decisions,
+finalization, and bounded upload. Forward Writing, Review, and Writing Revision
+reuse their installed immutable approval writers; no checksum echo is required in
+the normal interaction, terminal phases return control normally, and cancellation
+is bounded.
+
+Because accepted upstream Capsules could not preserve pre-finalization human
+decisions exactly, R2 publishes Literature 0.5 / Capsule 0.7 and Idea 0.4 /
+Capsule 0.5 under schema-free migration `20260820_0037`. Their mutable decision
+snapshots bind screening dispositions or the selected idea to the exact candidate
+set and reject drift. New Projects use the forward pins; historical Workflow
+Instances and v1 Artifact schemas remain unchanged.
+
+Focused R2 and D1-lock evidence passed, as did isolated marked PostgreSQL
+upgrade/downgrade/re-upgrade, source Foundation idempotency, compileall, and sole
+head 0037. The protected Owner D1 database and Project were not accessed.
+Experiment methodology/run/result checkpoints remain explicitly open for R3;
+safe next phase is the Generic Experiment architecture packet, not R6 UX work.

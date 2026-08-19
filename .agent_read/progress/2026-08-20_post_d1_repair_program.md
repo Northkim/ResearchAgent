@@ -1,6 +1,6 @@
 # Post-D1 consolidated repair program
 
-Status: **R1 COMPLETE — R2 NEXT**
+Status: **R2 COMPLETE — R3 NEXT**
 
 Date: 2026-08-20
 
@@ -29,6 +29,11 @@ Implementation progress through 2026-08-20:
 - R1C bounded platform metadata/private-path classification: `70a97d2`.
 - Current-head migration qualification correction: `6df58be`.
 - R1 controlled-browser fixture alignment: `ffadc38`.
+- R1 governance closure: `5949af7`.
+- R2 architecture/change packet: `bd8eeef`.
+- R2 natural checkpoints, managed Harness, Progress recovery, and continuation:
+  `f8754bb`.
+- R2 forward upstream Owner-decision durability: `68cc605`.
 
 R1B2 publishes forward Idea Definition 0.3 / Capsule 0.4 under migration
 `20260820_0036`. It preserves the valid zero-paper producer Artifact while a
@@ -37,7 +42,8 @@ bounded exact content qualification is derived from Local Artifact bytes and
 does not become presentation or evidence authority. R1C implements ADR 0052's
 bounded managed `.DS_Store` handling and distinct private-path diagnosis without
 weakening unknown-file or real-secret rejection. Consolidated R1 qualification is
-recorded in `2026-08-20_post_d1_r1_complete.md`; R2 is next.
+recorded in `2026-08-20_post_d1_r1_complete.md`. R2 completion is recorded in
+`2026-08-20_post_d1_r2_complete.md`; R3 is next.
 
 ## 1. Recovered baseline
 
@@ -180,7 +186,7 @@ repaired invariant carried through every relevant phase.
 | D1-PROJECT-NAV-01 | R5 | Current-task CTA displaced stable Project entry. | Project list/navigation | component + browser | 0 |
 | D1-LOCAL-GUIDANCE-IA-01 | R5 | Contextual Help and global guide evolved independently. | project Help, global Local guide | IA component + browser | 0 |
 | D1-PROJECT-LIFECYCLE-01 | R5 | Cloud deletion lifecycle absent. | Project service/repository/router/UI; FK ownership | service/API/PostgreSQL/local-orphan E2E/browser | 0 expected; stop if schema ownership is insufficient |
-| D1-LOCAL-ORCHESTRATION-01 | R2 | Operator commands became the Owner protocol. R1 supplies safe primitives first. | `workspace_cli.py`, Local handoff UI | controlled high-level command E5/E6 | 0 expected |
+| D1-LOCAL-ORCHESTRATION-01 | R2 COMPLETE | Public Local `run` composes sync, exact materialization, pending recovery, managed Harness phase, finalization, and bounded upload; low-level commands remain diagnostics. | `workspace_cli.py` | controlled high-level command, cancellation, exact materialization, D1 locks | 0 |
 | D1-INPUT-FRESH-01 | R1 | Positive invariant, not a defect. | binding/materialization services | exact no-auto-latest regression | 0 |
 | D1-INPUT-RECONCILE-01 | R1 | No ownership-proven atomic A→B replacement. | Artifact reference service, `workspace_cli.py` | managed vs ambiguous replacement tests + E5 | 0 |
 | D1-INPUT-RUNNABLE-01 | R1 | Old receipt/local bytes can satisfy readiness under a new binding. | readiness/materialization plan | stale-byte negative tests + CLI E5 | 0 |
@@ -190,11 +196,11 @@ repaired invariant carried through every relevant phase.
 | D1-WRITING-BINDING-01 | R1 | Optimistic UI projection diverged from accepted dependency. | binding API/hooks/input setup | accepted-binding response + browser exact ID | 0 |
 | D1-REVIEW-INPUT-LIFECYCLE-01 | R1 | Required completion locks setup before explicit optional decision. | Workflow Detail/input setup + dependency service | omitted/selected optional cases E3/E6 | 0 |
 | D1-UPSTREAM-ZERO-PAPER-01 | R1B2 COMPLETE | Forward Idea 0.3/0.4 declares an exact one-paper content precondition; one shared evaluator now governs candidates, bind, readiness, and materialization. | Artifact qualification/reporting, Idea requirement/readiness/runtime, input-selection UI | valid zero-paper producer + blocked forward consumer; one-paper candidate/bind/materialize; historical Idea 0.2; PostgreSQL publication cycle | `20260820_0036`; forward-additive only; historical 0.2/0.3 unchanged |
-| D1-CHECKPOINT-PRESENTATION-01 | R2 | Durable file creation is not a human checkpoint renderer. | Workflow runtimes/runner bridge + Workflow Detail | checkpoint contract/component/browser across four roles | 0 expected |
-| D1-APPROVAL-BRIDGE-01 | R2 | Chat decision and exact approval recorder are disconnected. | approval contracts/services/routes/launcher | natural decision → exact durable record; replay | additive persistence only if existing approval stores cannot represent the shared contract |
-| D1-HARNESS-TERMINATION-01 | R2 | Phase completion lacks a terminal launcher/session handshake. | Workflow runtimes and `workspace_cli.py` process management | clean exit/cancel/resume process tests | 0 |
-| D1-PROGRESS-SYNC-01 | R2 | Local completion, report round, session exit, backlog receipt are separate lifecycles. | Progress package/client/service and launcher | pending-sync/network-loss/exactly-once E3/E5 | 0 expected |
-| D1-RESUME-DECISION-01 | R2 | Human decisions are not restored before Agent inference. | Literature/Workflow durable memory and resume | interrupt/restart exact decision fingerprints | additive persistence only if current durable state is insufficient |
+| D1-CHECKPOINT-PRESENTATION-01 | R2 PARTIAL / R3 | Writing, Review, and Revision now render bounded evidence before natural decisions; Generic Experiment checkpoints remain R3 scope. | Workflow runner bridge; R3 Experiment coordinator | exact downstream checkpoint tests; R3 methodology/run/result E2E pending | 0 in R2; R3 packet decides publication |
+| D1-APPROVAL-BRIDGE-01 | R2 PARTIAL / R3 | Writing, Review, and Revision natural decisions call their exact installed runner-owned writers; Experiment methodology/run/result bridge remains R3. | `workspace_cli.py`; R3 Experiment coordinator | natural decision → exact durable record; replay; R3 pending | 0 in R2 |
+| D1-HARNESS-TERMINATION-01 | R2 COMPLETE | Managed Codex phases return to the coordinator normally; bounded cancellation hides raw nested tracebacks. | `workspace_cli.py` | clean exit, cancellation, resume, terminal no-relaunch | 0 |
+| D1-PROGRESS-SYNC-01 | R2 COMPLETE | Normal run centrally recovers pending terminal Progress and replays upload idempotently without rerunning the Harness/science. | `workspace_cli.py`, existing Progress/backlog receipts | pending terminal replay, exactly-once, D1 locks | 0 |
+| D1-RESUME-DECISION-01 | R2 COMPLETE | Forward Literature 0.5/0.7 and Idea 0.4/0.5 persist candidate-checksummed exact Owner decision snapshots and reject drift. | forward immutable packages/Foundation/preset | snapshot resume/drift, package/source equivalence, PostgreSQL publication cycle | `20260820_0037`; forward additive |
 | D1-EXPERIMENT-DURABILITY-01 | R3 | Session/round state lacks execution-unit manifests. | generic Experiment workspace/coordinator | interrupted work-unit reuse and checksums | architecture packet decides; forward additive only |
 | D1-EXPERIMENT-ENTRY-01 | R3 | Objective presentation bypasses exact input binding/readiness. | Experiment Detail + generic input lifecycle | exact selection before run E3/E6 | 0 |
 | D1-EXPERIMENT-CAPABILITY-01 | R3 | Reviewed Capability is acting as a method allow-list. | generic coordinator/capability resolver | no-match Generic Harness path | likely forward-additive publication; never mutate 0.7/0.10 |
