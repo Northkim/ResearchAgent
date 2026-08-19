@@ -7044,6 +7044,7 @@ def _evaluate_local_progress_readiness(
         ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
         ("reproduction-experiment-local-experimental", "0.5.0", "0.8.0"),
         ("writing-local-experimental", "0.3.0", "0.5.0"),
+        ("writing-local-experimental", "0.5.0", "0.7.0"),
         ("writing-local-experimental", "0.4.0", "0.6.0"),
         ("review-local-experimental", "0.3.0", "0.5.0"),
     }:

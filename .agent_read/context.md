@@ -1,6 +1,34 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-18
+Last updated: 2026-08-19
+
+## D1-WRITING-LIFECYCLE-01 bounded Real Writing recovery (2026-08-19)
+
+Initial Writing 0.5 / Capsule 0.7 completion recovery now follows its exact
+published Real Writing provenance semantics. The shared readiness evaluator no
+longer sends that pin through `workflow/scaffold.json` /
+`reagent.scaffold-input-provenance/v0.1`; all generic Progress, output, receipt,
+and fail-closed checks remain unchanged, and no other Workflow pin changed.
+
+Focused regression built and finalized a forward Writing Capsule, then proved
+the public root-run path uploaded the one pending report and manuscript
+declaration without invoking a Harness. Exact replay created no duplicate and
+left the Artifact, Owner review, and COMPLETED report byte-identical. The
+affected suite passed 86 tests (85 in the sandboxed batch plus the one
+loopback-public-path test rerun outside the network sandbox), and compileall,
+diff check, and Alembic sole-head `20260818_0033` passed.
+
+The real D1 Workspace root client was proven byte-identical to the pre-repair
+published client, replaced atomically from the normal checksum-verified client
+download route, and the existing normal Writing `run` command performed
+upload-only backlog recovery. Cloud now has exactly one accepted Progress
+round and one `manuscript-draft/v4`; local workflow list reports Initial
+Writing `Completed`. The manuscript checksum
+`sha256:e88f9de96fccc635a49f92c882c602e3022856eb7aca96303cd83e5ac00d1c80`,
+Owner review, input provenance, and Progress report remain unchanged. Exact
+replay remained one report/one Artifact. Review remains not started. No
+Writing rerun, Harness launch, manuscript regeneration, binding change,
+migration, or other D1 repair occurred.
 
 ## EP-D2 retry qualification stop (2026-08-18)
 

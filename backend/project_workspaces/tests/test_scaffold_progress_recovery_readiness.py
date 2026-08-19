@@ -19,7 +19,23 @@ from backend.workflow_packages.production_workflows import (
     build_experiment_scaffold_v0_4_package,
     build_writing_scaffold_v0_3_package,
 )
+from backend.workflow_packages.forward_downstream_publication import (
+    build_initial_writing_v0_7_package,
+)
 from backend.workflow_packages.serialization import canonical_hash, canonical_json
+from backend.workflow_packages.tests.test_forward_downstream_controlled_chain import (
+    _answer as _forward_answer,
+    _harness as _forward_harness,
+    _ref as _forward_ref,
+    _write as _forward_write,
+)
+from backend.artifact_references.tests.test_forward_downstream_v5_contracts import (
+    _v5,
+)
+from backend.artifact_references.tests.test_research_flow_contracts import (
+    _library,
+    _selected,
+)
 from backend.workflow_packages.tests.test_experiment_interactive_bootstrap import (
     _materialize as _materialize_experiment,
 )
@@ -32,6 +48,139 @@ PROJECT_ID = "project-" + "7" * 32
 WORKSPACE_ID = "workspace-" + "6" * 32
 INSTANCE_ID = "wfi-" + "8" * 32
 OTHER_INSTANCE_ID = "wfi-" + "9" * 32
+
+
+def test_completed_forward_real_writing_recovers_without_harness_relaunch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    root = build_initial_writing_v0_7_package(
+        project_id=PROJECT_ID,
+        project_name="Forward Writing recovery",
+        research_topic="Bounded recovery",
+        output_root=workspace / "capsules" / "writing",
+        package_id="forward-writing-recovery",
+    ).package_root
+    idea, _ = _selected()
+    library = _library()
+    experiment, _ = _v5()
+    idea_bytes = _forward_write(root / "inputs/selected-research-idea.json", idea)
+    library_bytes = _forward_write(root / "inputs/selected-paper-library.json", library)
+    experiment_bytes = _forward_write(root / "inputs/experiment-record.json", experiment)
+    _forward_write(root / "memory/input-provenance.json", {
+        "schema_version": "reagent.real-writing-input-provenance/v0.1",
+        "workflow_instance_id": INSTANCE_ID,
+        "artifacts": {
+            "research_idea": _forward_ref(
+                "a", "selected-research-idea/v1", idea_bytes
+            ),
+            "literature_library": _forward_ref(
+                "b", "selected-paper-library/v1", library_bytes
+            ),
+            "experiment_record": _forward_ref(
+                "e", "experiment-record/v5", experiment_bytes
+            ),
+        },
+    })
+    runtime = runpy.run_path(str(root / "reagent_local.py"))
+    completed = runtime["run"](
+        root,
+        INSTANCE_ID,
+        codex_executable=str(_forward_harness(tmp_path / "forward-writing-codex", "writing")),
+        approval_input=_forward_answer,
+        review_input=_forward_answer,
+    )
+    artifact_path = root / completed["artifact"]["relative_path"]
+    report_paths = list((root / "memory/progress/reports").glob("prv2-*.json"))
+    assert len(report_paths) == 1
+    protected = {
+        artifact_path: artifact_path.read_bytes(),
+        root / "memory/owner-review.json": (root / "memory/owner-review.json").read_bytes(),
+        report_paths[0]: report_paths[0].read_bytes(),
+    }
+    manifest = json.loads((root / "package-manifest.json").read_text())
+    assert runpy.run_path(str(root / "validate_package.py"))["validate"](root)["valid"] is True
+
+    descriptor = {"project_id": PROJECT_ID, "workspace_id": WORKSPACE_ID}
+    installed = {
+        "workflow_instance_id": INSTANCE_ID,
+        "workflow_definition_id": "writing-local-experimental",
+        "workflow_definition_version": "0.5.0",
+        "capsule_version": "0.7.0",
+        "relative_path": root.relative_to(workspace).as_posix(),
+        "lifecycle": "ACTIVE",
+    }
+    lock = {"installed_capsules": [installed]}
+    monkeypatch.setattr(
+        workspace_cli, "load_workspace", lambda _root: (workspace, descriptor, {})
+    )
+    monkeypatch.setattr(
+        workspace_cli, "_require_installed_lock", lambda *_args: lock
+    )
+    monkeypatch.setattr(
+        workspace_cli, "_verify_locked_capsules", lambda *_args: None
+    )
+
+    def scaffold_provenance_must_not_run(*_args, **_kwargs):
+        raise AssertionError("Forward Real Writing is not a Scaffold Workflow")
+
+    monkeypatch.setattr(
+        workspace_cli, "_scaffold_provenance_is_exact", scaffold_provenance_must_not_run
+    )
+
+    def harness_must_not_run(*_args, **_kwargs):
+        raise AssertionError("upload-only recovery must not launch the Harness")
+
+    monkeypatch.setattr(workspace_cli.subprocess, "run", harness_must_not_run)
+    monkeypatch.setattr(backlog, "PROJECT_ID", PROJECT_ID)
+    monkeypatch.setattr(backlog, "INSTANCE_ID", INSTANCE_ID)
+
+    class RecordingTransport(backlog._ProgressTransport):
+        def __init__(self):
+            super().__init__()
+            self.envelopes: list[dict] = []
+
+        def upload_progress_report(
+            self, project_id, workflow_instance_id, package_manifest, report, envelope
+        ):
+            self.envelopes.append(envelope)
+            return super().upload_progress_report(
+                project_id, workflow_instance_id, package_manifest, report, envelope
+            )
+
+    transport = RecordingTransport()
+    first = workspace_cli.run_workflow(
+        workspace_root=workspace,
+        workflow_instance_id=INSTANCE_ID,
+        transport=transport,
+        api_url="http://127.0.0.1:8000",
+    )
+    second = workspace_cli.run_workflow(
+        workspace_root=workspace,
+        workflow_instance_id=INSTANCE_ID,
+        transport=transport,
+        api_url="http://127.0.0.1:8000",
+    )
+
+    assert first.status == second.status == "PROGRESS_SYNCHRONIZED"
+    assert transport.uploaded_rounds == [1]
+    assert len(transport.accepted) == 1
+    assert len(transport.envelopes) == 1
+    assert [item["artifact_type"] for item in transport.envelopes[0]["artifact_declarations"]] == [
+        "manuscript-draft/v4"
+    ]
+    assert len(list((root / "memory/progress/reports").glob("prv2-*.json"))) == 1
+    assert len(list(artifact_path.parent.glob("*.json"))) == 1
+    assert {path: path.read_bytes() for path in protected} == protected
+    readiness = workspace_cli._evaluate_local_progress_readiness(
+        workspace=workspace,
+        descriptor=descriptor,
+        installed=installed,
+        capsule=root,
+        manifest=manifest,
+    )
+    assert readiness.state == "ACKNOWLEDGED"
 
 
 def _legacy_state(
