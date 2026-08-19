@@ -41,8 +41,20 @@ from backend.workflow_packages.generic_harness_contracts import (
     GENERIC_HARNESS_SPEC_SCHEMA,
     GenericHarnessImplementationSpec,
     GenericHarnessPath,
+    GenericHarnessValidationReceipt,
     HarnessExecutionUnit,
     HarnessExpectedOutput,
+)
+from backend.workflow_packages.generic_harness_lifecycle import (
+    design_approval_from_mapping,
+    methodology_from_mapping,
+    prepare_generic_harness_lifecycle,
+    specification_from_mapping,
+    validation_from_mapping,
+)
+from backend.workflow_packages.generic_harness_workspace import (
+    GenericHarnessWorkspace,
+    RuntimeDiscovery,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes
 
@@ -109,8 +121,15 @@ def test_generic_harness_is_truthful_fallback_and_finalizes_v5(tmp_path: Path):
         ContractRef(GENERIC_HARNESS_SPEC_SCHEMA, SHA[2]),
         ContractRef(GENERIC_HARNESS_EVALUATION_SCHEMA, SHA[3]),
     )
+    validation = GenericHarnessValidationReceipt(
+        _spec().specification_checksum, _methodology().methodology_checksum,
+        GenericHarnessExperimentCoordinator._scan_package(implementation_root),
+        sha256_bytes((implementation_root / "run.py").read_bytes()),
+        (SHA[7],), True, True, "2026-08-20T07:59:20Z",
+    )
     implementation = GenericHarnessImplementation(
         implementation_root=implementation_root, workflow=workflow, path=path,
+        validation=validation,
     )
     resolver = HybridExperimentResolver((
         GenericHarnessBinding(implementation.descriptor, implementation),
@@ -217,3 +236,50 @@ def test_generic_harness_rejects_specification_lineage_drift(tmp_path: Path):
         assert "lineage" in str(error)
     else:
         raise AssertionError("specification lineage drift was accepted")
+
+
+def test_pre_execution_lifecycle_rebuild_is_exact_and_idempotent(tmp_path: Path):
+    managed = GenericHarnessWorkspace(
+        tmp_path, "project-" + "1" * 32, "wfi-" + "2" * 32
+    )
+    managed.initialize()
+    implementation_root = managed.root / "implementation"
+    (implementation_root / "run.py").write_text("print('bounded')\n", encoding="utf-8")
+    specification = _spec()
+    validation = GenericHarnessValidationReceipt(
+        specification.specification_checksum, _methodology().methodology_checksum,
+        GenericHarnessExperimentCoordinator._scan_package(implementation_root),
+        sha256_bytes((implementation_root / "run.py").read_bytes()),
+        (SHA[7],), True, True, "2026-08-20T07:59:20Z",
+    )
+    runtime = LocalRuntimeCandidate(
+        "python-controlled", "PYTHON", "3.11.0", "/usr/bin/python3",
+        ("PYTHON_SCRIPT",), SHA[4], (), True,
+    )
+    discovery = RuntimeDiscovery("PYTHON", ">=3.10,<4", (), (runtime,), ())
+    workflow = ExactIdentity(
+        "reproduction-experiment-local-experimental", "0.8.0", SHA[1]
+    )
+    path = GenericHarnessPath(
+        ContractRef(GENERIC_HARNESS_SPEC_SCHEMA, SHA[2]),
+        ContractRef(GENERIC_HARNESS_EVALUATION_SCHEMA, SHA[3]),
+    )
+    approval = DesignApproval.approve(_methodology(), "2026-08-20T07:59:00Z")
+    values = dict(
+        workspace=managed, workflow=workflow, objective=_objective(),
+        methodology=_methodology(), design_approval=approval, path=path,
+        specification=specification, validation=validation, discovery=discovery,
+        prepared_at="2026-08-20T07:59:30Z",
+        validated_at="2026-08-20T07:59:40Z",
+        runtime_verified_at="2026-08-20T07:59:45Z",
+    )
+    first = prepare_generic_harness_lifecycle(**values)
+    second = prepare_generic_harness_lifecycle(**values)
+    assert first.continuation.execution_plan == second.continuation.execution_plan
+    assert first.continuation.validated_package == second.continuation.validated_package
+    assert first.continuation.validated_package_root == managed.root / "validated-package/package"
+    assert tuple((managed.root / "sync/candidates").iterdir()) == ()
+    assert methodology_from_mapping(_methodology().to_dict()) == _methodology()
+    assert design_approval_from_mapping(approval.to_dict()) == approval
+    assert specification_from_mapping(specification.to_dict()) == specification
+    assert validation_from_mapping(validation.to_dict()) == validation

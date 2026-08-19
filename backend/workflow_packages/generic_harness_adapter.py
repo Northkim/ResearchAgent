@@ -57,6 +57,7 @@ from .generic_harness_contracts import (
     GENERIC_HARNESS_CLASSIFICATION,
     GenericHarnessImplementationSpec,
     GenericHarnessPath,
+    GenericHarnessValidationReceipt,
 )
 from .security import require_sha256
 from .serialization import SerializableContract, canonical_hash, canonical_json, sha256_bytes, to_json_value
@@ -299,11 +300,13 @@ class GenericHarnessImplementation:
         implementation_root: Path,
         workflow: ExactIdentity,
         path: GenericHarnessPath,
+        validation: GenericHarnessValidationReceipt | None = None,
         evaluation: GenericHarnessEvaluation | None = None,
     ) -> None:
         self.implementation_root = implementation_root.resolve()
         self.workflow = workflow
         self.path = path
+        self.validation = validation
         self.evaluation = evaluation
         carrier_package = ExactIdentity(
             "generic-agent-harness-managed-execution", "0.1.0",
@@ -410,6 +413,21 @@ class GenericHarnessImplementation:
         if self.implementation_root.is_symlink() or not self.implementation_root.is_dir():
             raise GenericHarnessAdapterError("Generic Harness implementation root is unsafe")
         spec = context.specification.local_data
+        validation = self.validation
+        entrypoint_source = self.implementation_root / spec["entrypoint_relative_path"]
+        if validation is None:
+            raise GenericHarnessAdapterError("Generic Harness validation receipt is unavailable")
+        if (
+            validation.specification_checksum != context.specification.reference.specification_checksum
+            or validation.methodology_checksum != context.methodology.methodology_checksum
+            or validation.package_tree_checksum
+            != GenericExperimentCoordinator._scan_package(self.implementation_root)
+            or entrypoint_source.is_symlink()
+            or not entrypoint_source.is_file()
+            or entrypoint_source.stat().st_nlink != 1
+            or validation.entrypoint_checksum != sha256_bytes(entrypoint_source.read_bytes())
+        ):
+            raise GenericHarnessAdapterError("Generic Harness validation receipt drifted")
         for source in sorted(self.implementation_root.rglob("*")):
             relative = source.relative_to(self.implementation_root)
             target = candidate_root / relative

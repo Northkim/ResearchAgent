@@ -4099,3 +4099,15 @@ R3B1 does not yet publish or pin Experiment 0.8/0.11. Ten focused tests and 28
 historical coordinator/publication/v5 tests passed (one opt-in real-Codex test
 skipped). No migration, API, frontend, schema, preset, historical publication, or
 Owner D1 state changed. Safe next subphase is R3B2 public runtime/publication.
+
+## Post-D1 R3B2 Generic Harness pre-execution lifecycle (2026-08-20)
+
+R3B2 binds package admission to the exact Generic Harness validation receipt and
+adds deterministic pre-execution reconstruction through exact methodology
+approval, implementation validation, package promotion, existing-environment
+compatibility, and execution-plan creation. Replay independently rebuilds and
+compares the package before reuse and never executes scientific work.
+
+Experiment 0.8/0.11 remains unpublished and unpinned. Three focused lifecycle
+tests pass. No migration, API, frontend, Provider, Owner database, or historical
+publication changed. Safe next subphase is R3B3 public runtime and publication.
