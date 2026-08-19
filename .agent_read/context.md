@@ -4125,3 +4125,23 @@ The package and archive validate, six focused tests pass, and frozen 0.7/0.10
 checksums remain exact. No database row or Full Research preset has been changed;
 Alembic remains 0037. Safe next subphase is R3B4 launcher/approval/execution
 integration followed by schema-free publication only after qualification.
+
+## Post-D1 R3B4 Generic Harness public lifecycle (2026-08-20)
+
+R3B4 publishes Experiment 0.8 / Capsule 0.11 under schema-free migration
+`20260820_0038` and advances only newly created Full Research Projects to that
+exact pin. The normal Workspace `run` path requires one exact Research Idea,
+uses natural methodology and result decisions plus the existing one-use Cloud
+run approval, discovers only existing environments, executes through the
+existing no-egress bounded runner, checkpoints stable work units under
+`.reagent/experiments/<workflow-instance-id>/`, and publishes exactly one
+validated `experiment-record/v5` with terminal Progress. A resumable execution
+stop is reported as durable interruption rather than invalid Progress.
+
+The completed v5 Artifact now produces the existing bounded v0.2 Experiment
+presentation deterministically from exact validated bytes; presentation failure
+does not affect scientific finalization. Historical Experiment 0.7 / Capsule
+0.10 remains byte-identical. Focused source, public-Workspace, frontend-build,
+and isolated PostgreSQL upgrade/downgrade/re-upgrade evidence passed. The Owner
+database and protected D1 Project remain untouched. R3 remains open for the
+separate browser-entry commit and controlled full-path R3D qualification.

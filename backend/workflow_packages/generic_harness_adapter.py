@@ -71,6 +71,21 @@ class GenericHarnessAdapterError(ValueError):
     """The Generic Harness adapter or its exact evidence is invalid."""
 
 
+def system_generic_harness_path() -> GenericHarnessPath:
+    """Return the one exact system fallback contract used by publication/runtime."""
+
+    return GenericHarnessPath(
+        ContractRef(
+            "reagent.generic-harness-implementation-spec/v0.1",
+            canonical_hash({"schema": "reagent.generic-harness-implementation-spec/v0.1"}),
+        ),
+        ContractRef(
+            GENERIC_HARNESS_EVALUATION_SCHEMA,
+            canonical_hash({"schema": GENERIC_HARNESS_EVALUATION_SCHEMA}),
+        ),
+    )
+
+
 def _hash_without(value: SerializableContract, name: str) -> str:
     return canonical_hash({
         item.name: to_json_value(getattr(value, item.name))

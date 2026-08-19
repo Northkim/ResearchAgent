@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, text
 
 
-EXPECTED_MIGRATION_HEAD = "20260820_0037"
+EXPECTED_MIGRATION_HEAD = "20260820_0038"
 
 
 @dataclass(frozen=True, slots=True)

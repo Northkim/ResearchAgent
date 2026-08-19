@@ -193,6 +193,10 @@ SUPPORTED_CAPSULE_PINS = {
         "reproduction-experiment-scaffold-package-experimental",
         False,
     ),
+    ("reproduction-experiment-local-experimental", "0.8.0", "0.11.0"): (
+        "reproduction-experiment-scaffold-package-experimental",
+        False,
+    ),
 }
 LEGACY_NAMESPACE = uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966")
 
@@ -217,6 +221,9 @@ MANUSCRIPT_PRESENTATION_SCHEMA = (
 )
 REVIEW_PRESENTATION_SCHEMA = (
     "reagent.artifact-presentation.review-report/v0.1"
+)
+EXPERIMENT_PRESENTATION_SCHEMA = (
+    "reagent.artifact-presentation.experiment-record/v0.2"
 )
 RESOURCE_INDEX = ".reagent/resource-index.json"
 RESOURCE_ROOT = "resources"
@@ -3834,6 +3841,106 @@ def _project_artifact_presentation(
                 "artifact_checksum": source.get("sha256"),
             },
         }
+    elif artifact_type == "experiment-record/v5":
+        value = _artifact_json(content, expected_schema=artifact_type)
+        if set(value) != {
+            "lifecycle_record", "bounded_scientific_evidence", "schema", "record_checksum",
+        }:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Experiment result fields are invalid", EXIT_VALIDATION
+            )
+        checksum = value["record_checksum"]
+        _checksum(checksum, "Experiment result checksum")
+        if canonical_hash({key: value[key] for key in value if key != "record_checksum"}) != checksum:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Experiment result checksum drifted", EXIT_VALIDATION
+            )
+        lifecycle = value["lifecycle_record"]
+        evidence = value["bounded_scientific_evidence"]
+        if not isinstance(lifecycle, dict) or not isinstance(evidence, dict):
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Experiment result content is invalid", EXIT_VALIDATION
+            )
+        objective = lifecycle.get("research_objective")
+        result = lifecycle.get("normalized_result")
+        raw_blocks = evidence.get("blocks")
+        if (
+            not isinstance(objective, dict)
+            or not isinstance(result, dict)
+            or not isinstance(raw_blocks, list)
+            or len(raw_blocks) > 80
+        ):
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Experiment evidence is invalid", EXIT_VALIDATION
+            )
+        blocks: list[dict[str, Any]] = [
+            {
+                "kind": "PROSE",
+                "label": "Research objective",
+                "value": _bounded_projection_text(
+                    objective.get("objective_summary"), "research objective", 2_000
+                ),
+            },
+            {
+                "kind": "SCALAR",
+                "label": "Process outcome",
+                "value": _bounded_projection_text(
+                    result.get("process_outcome"), "process outcome", 500
+                ),
+            },
+            {
+                "kind": "SCALAR",
+                "label": "Evaluation validity",
+                "value": _bounded_projection_text(
+                    result.get("evaluation_validity"), "evaluation validity", 500
+                ),
+            },
+            {
+                "kind": "SCALAR",
+                "label": "Scientific evidence",
+                "value": _bounded_projection_text(
+                    result.get("scientific_evidence_status"), "scientific evidence status", 500
+                ),
+            },
+        ]
+        limitations = result.get("limitations")
+        if not isinstance(limitations, list) or len(limitations) > 40:
+            raise WorkspaceCLIError(
+                "LOCAL_ARTIFACT_DRIFT", "Experiment limitations are invalid", EXIT_VALIDATION
+            )
+        if limitations:
+            blocks.append({
+                "kind": "PROSE",
+                "label": "Important limitation",
+                "value": _bounded_projection_text(
+                    limitations[0], "Experiment limitation", 1_000
+                ),
+            })
+        for raw in raw_blocks[: 80 - len(blocks)]:
+            if not isinstance(raw, dict) or set(raw) != {
+                "block_id", "kind", "label", "value", "source_refs", "block_checksum",
+            }:
+                raise WorkspaceCLIError(
+                    "LOCAL_ARTIFACT_DRIFT", "Experiment evidence block is invalid", EXIT_VALIDATION
+                )
+            kind = raw.get("kind")
+            if kind not in {
+                "PROSE", "SCALAR", "TABLE", "SERIES", "FIGURE_REFERENCE", "OUTPUT_REFERENCE",
+            }:
+                raise WorkspaceCLIError(
+                    "LOCAL_ARTIFACT_DRIFT", "Experiment evidence kind is invalid", EXIT_VALIDATION
+                )
+            blocks.append({
+                "kind": kind,
+                "label": _bounded_projection_text(raw.get("label"), "evidence label", 120),
+                "value": raw.get("value"),
+            })
+        payload = {
+            "schema": EXPERIMENT_PRESENTATION_SCHEMA,
+            "artifact_id": artifact["artifact_id"],
+            "artifact_checksum": artifact["content_checksum"],
+            "blocks": blocks,
+        }
     elif artifact_type in {"manuscript-draft/v4", "manuscript-draft/v5"}:
         value = _artifact_json(content, expected_schema=artifact_type)
         title = _bounded_projection_text(value.get("title"), "manuscript title", 500)
@@ -4045,7 +4152,8 @@ def _report_artifact_presentations(
         source = verified_sources.get(artifact.get("artifact_id"))
         if source is None or artifact.get("artifact_type") not in {
             "selected-paper-library/v1", "selected-research-idea/v1",
-            "manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5",
+            "experiment-record/v5", "manuscript-draft/v4", "review-report/v3",
+            "manuscript-draft/v5",
         }:
             continue
         try:
@@ -4131,7 +4239,8 @@ def _report_completed_workflow_preview(
         and item.get("state") == "LOCAL_AVAILABLE"
         and item.get("artifact_type") in {
             "selected-paper-library/v1", "selected-research-idea/v1",
-            "manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5",
+            "experiment-record/v5", "manuscript-draft/v4", "review-report/v3",
+            "manuscript-draft/v5",
         }
     ]
     sources: dict[str, Path] = {}
@@ -6144,7 +6253,15 @@ def _progress_upload_envelope(
         _exact_fields(current, {
             "relative_path", "artifact_kind", "media_type", "checksum", "size",
         }, "current Artifact")
-        if current not in report.get("output_artifacts", []):
+        dynamic_generic_output = (
+            report.get("workflow_id")
+            == "reproduction-experiment-local-experimental"
+            and report.get("workflow_version") == "0.8.0"
+            and current.get("artifact_kind") == "experiment-record/v5"
+            and report.get("status") == "COMPLETED"
+            and report.get("output_artifacts") == []
+        )
+        if current not in report.get("output_artifacts", []) and not dynamic_generic_output:
             raise _identity("LOCAL_PROGRESS_INVALID", "Current Artifact is absent from Progress")
         artifact_path = capsule / _safe_artifact_path(current["relative_path"], root="outputs")
         checksum, size = _verified_regular_file(
@@ -6152,6 +6269,17 @@ def _progress_upload_envelope(
         )
         if checksum != current["checksum"] or size != current["size"]:
             raise _identity("LOCAL_PROGRESS_INVALID", "Current Artifact bytes drifted")
+        if dynamic_generic_output:
+            try:
+                runtime = runpy.run_path(str(capsule / "validate_package.py"))
+                runtime["validate_experiment_record_v5"](
+                    _read_package_json(artifact_path)
+                )
+            except Exception as error:
+                raise _identity(
+                    "LOCAL_PROGRESS_INVALID",
+                    "Generic Harness Experiment Artifact validation failed",
+                ) from error
         artifact_id = "artifact-" + uuid.uuid5(
             uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966"),
             "production-artifact/v1|package=" + report["package_id"]
@@ -6369,6 +6497,19 @@ def _managed_harness(
         raise OwnerCheckpointInvalid(
             "Managed Harness exited before completing the current phase"
         )
+
+
+def _managed_codex_executable(value: str | None) -> str:
+    selected = value or os.environ.get("REAGENT_CODEX_EXECUTABLE", "codex")
+    if os.path.sep in selected:
+        path = Path(selected)
+        if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
+            raise OwnerCheckpointInvalid("Configured Codex executable is unavailable")
+        return str(path.resolve())
+    resolved = shutil.which(selected)
+    if resolved is None:
+        raise OwnerCheckpointInvalid("Codex CLI is unavailable")
+    return resolved
 
 
 def _phase_files(root: Path, relatives: tuple[str, ...], label: str) -> bool:
@@ -7244,6 +7385,9 @@ def run_workflow(
             ("reproduction-experiment-local-experimental", "0.6.0", "0.9.0"),
             ("reproduction-experiment-local-experimental", "0.7.0", "0.10.0"),
         }
+        is_forward_generic_harness = pin == (
+            "reproduction-experiment-local-experimental", "0.8.0", "0.11.0"
+        )
         is_real_writing = pin in {
             ("writing-local-experimental", "0.3.0", "0.5.0"),
             ("writing-local-experimental", "0.5.0", "0.7.0"),
@@ -7269,6 +7413,7 @@ def run_workflow(
             is_real_writing,
             is_real_review,
             is_writing_revision,
+            is_forward_generic_harness,
         ))
         requires_root_post_run_progress = supports_progress_recovery and not is_literature
         local_reports: list[dict[str, Any]] = []
@@ -7300,7 +7445,10 @@ def run_workflow(
                 if local_reports[-1]["status"] == "COMPLETED":
                     presentation_count = 0
                     presentation_warnings: tuple[str, ...] = ()
-                    if is_idea or is_real_writing or is_real_review or is_writing_revision:
+                    if (
+                        is_idea or is_real_writing or is_real_review
+                        or is_writing_revision or is_forward_generic_harness
+                    ):
                         try:
                             presentation_count, presentation_warnings = (
                                 _report_completed_workflow_preview(
@@ -7622,6 +7770,98 @@ def run_workflow(
                 command.append("--preflight-only")
             if codex_executable is not None:
                 command.extend(["--codex-executable", codex_executable])
+        elif is_forward_generic_harness:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                generic_experiment=True,
+            )
+            if preflight_only:
+                runtime = runpy.run_path(str(capsule / "validate_package.py"))
+                try:
+                    validation = runtime["validate"](capsule, pristine=False)
+                    runtime["load_exact_objective"](capsule)
+                except Exception as error:
+                    raise _identity(
+                        "LOCAL_CAPSULE_DRIFT",
+                        "Generic Harness Experiment preflight failed",
+                    ) from error
+                if validation.get("valid") is not True:
+                    raise _identity(
+                        "LOCAL_CAPSULE_DRIFT",
+                        "Generic Harness Experiment Capsule is invalid",
+                    )
+                return WorkflowRunResult(
+                    status="PREFLIGHT_READY",
+                    project_id=descriptor["project_id"],
+                    workspace_id=descriptor["workspace_id"],
+                    workflow_instance_id=workflow_instance_id,
+                    capsule_relative_path=installed["relative_path"],
+                )
+            from backend.project_workspaces.generic_harness_workflow import (
+                GenericHarnessExecutionInterrupted,
+                advance_generic_harness_workflow,
+            )
+
+            executable = _managed_codex_executable(codex_executable)
+
+            def run_generic_harness(root: Path, instruction: str) -> None:
+                _managed_harness(
+                    root, executable, instruction,
+                    environment=_capsule_child_environment(),
+                )
+
+            def decide_generic_harness(
+                title: str, lines: list[str], explanation: str,
+            ) -> None:
+                _natural_approval(
+                    title, lines, explanation=explanation,
+                    decision_input=consent_input,
+                )
+
+            try:
+                coordinated_result = advance_generic_harness_workflow(
+                    capsule=capsule,
+                    workspace_root=workspace,
+                    project_id=descriptor["project_id"],
+                    workflow_instance_id=workflow_instance_id,
+                    run_harness=run_generic_harness,
+                    owner_decision=decide_generic_harness,
+                    transport=transport,
+                )
+            except OwnerCheckpointStopped as error:
+                raise WorkspaceCLIError(
+                    "OWNER_DECISION_REQUIRED", str(error), EXIT_VALIDATION
+                ) from error
+            except GenericHarnessExecutionInterrupted as error:
+                return WorkflowRunResult(
+                    status="EXECUTION_INTERRUPTED",
+                    project_id=descriptor["project_id"],
+                    workspace_id=descriptor["workspace_id"],
+                    workflow_instance_id=workflow_instance_id,
+                    capsule_relative_path=installed["relative_path"],
+                    warnings=(
+                        f"{error}. Completed execution units remain durable; run the same command to continue.",
+                    ),
+                )
+            except WorkspaceCLIError:
+                raise
+            except Exception as error:
+                raise _identity(
+                    "LOCAL_PROGRESS_INVALID",
+                    f"Generic Harness Experiment could not advance exactly: {error}",
+                ) from error
+            if coordinated_result.status != "COMPLETED":
+                return WorkflowRunResult(
+                    status=coordinated_result.status,
+                    project_id=descriptor["project_id"],
+                    workspace_id=descriptor["workspace_id"],
+                    workflow_instance_id=workflow_instance_id,
+                    capsule_relative_path=installed["relative_path"],
+                )
         elif is_scaffold:
             if pin in {
                 ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"),
@@ -7799,7 +8039,8 @@ def run_workflow(
         presentation_count = 0
         presentation_warnings: tuple[str, ...] = ()
         if not preflight_only and (
-            is_literature or is_idea or is_real_writing or is_real_review or is_writing_revision
+            is_literature or is_idea or is_real_writing or is_real_review
+            or is_writing_revision or is_forward_generic_harness
         ):
             try:
                 presentation_count, presentation_warnings = (
@@ -8803,6 +9044,7 @@ def _evaluate_local_progress_readiness(
         ("reproduction-experiment-local-experimental", "0.4.0", "0.6.0"),
         ("reproduction-experiment-local-experimental", "0.4.0", "0.7.0"),
         ("reproduction-experiment-local-experimental", "0.5.0", "0.8.0"),
+        ("reproduction-experiment-local-experimental", "0.8.0", "0.11.0"),
         ("writing-local-experimental", "0.3.0", "0.5.0"),
         ("writing-local-experimental", "0.5.0", "0.7.0"),
         ("writing-local-experimental", "0.4.0", "0.6.0"),

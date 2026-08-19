@@ -162,6 +162,7 @@ class GenericHarnessWorkspace:
                     item["unit_id"], HarnessUnitStatus(item["status"]),
                     tuple(tuple(value) for value in item.get("output_checksums", [])),
                     item.get("attempt_count", 0),
+                    item.get("started_at"), item.get("completed_at"),
                 ) for item in raw["units"]),
             )
         except (KeyError, TypeError, ValueError, GenericHarnessContractError) as error:
@@ -193,6 +194,9 @@ class GenericHarnessWorkspace:
         spec: GenericHarnessImplementationSpec,
         unit_id: str,
         outputs: dict[str, bytes],
+        *,
+        started_at: str,
+        completed_at: str,
     ) -> GenericHarnessExecutionManifest:
         self.verify_owner()
         if not outputs:
@@ -221,7 +225,7 @@ class GenericHarnessWorkspace:
             checksums.append((name, sha256_bytes(content)))
         states[index] = HarnessUnitState(
             unit_id, HarnessUnitStatus.COMPLETED, tuple(checksums),
-            states[index].attempt_count + 1,
+            states[index].attempt_count + 1, started_at, completed_at,
         )
         updated = replace(manifest, units=tuple(states))
         self.write_execution_manifest(updated)
@@ -278,10 +282,17 @@ def _inspect_python(executable: Path, packages: tuple[str, ...]) -> dict[str, An
 
 def discover_python_runtimes(
     *, version_constraint: str, required_packages: tuple[str, ...],
+    package_constraints: tuple[tuple[str, str], ...] = (),
     candidate_paths: tuple[str, ...] = (),
 ) -> RuntimeDiscovery:
     """Inspect explicit existing candidates; never install, upgrade, or download."""
 
+    constraints = dict(package_constraints)
+    if (
+        len(constraints) != len(package_constraints)
+        or set(constraints) - set(required_packages)
+    ):
+        raise GenericHarnessWorkspaceError("package constraints are invalid")
     candidates = candidate_paths or (sys.executable,)
     compatible: list[LocalRuntimeCandidate] = []
     rejected: list[tuple[str, tuple[str, ...]]] = []
@@ -305,6 +316,16 @@ def discover_python_runtimes(
             missing = tuple(name for name, version in inspected["packages"].items() if version is None)
             if missing:
                 reasons.append("Missing required packages: " + ", ".join(missing) + ".")
+            incompatible = tuple(
+                name for name, constraint in constraints.items()
+                if inspected["packages"].get(name) is not None
+                and not _satisfies(inspected["packages"][name], constraint)
+            )
+            if incompatible:
+                reasons.append(
+                    "Installed package versions do not satisfy the declaration: "
+                    + ", ".join(incompatible) + "."
+                )
             if reasons:
                 rejected.append((key, tuple(reasons)))
                 continue
@@ -315,7 +336,11 @@ def discover_python_runtimes(
                 "platform": platform.system(),
             }
             dependencies = tuple(
-                canonical_hash({"name": name, "version": inspected["packages"][name]})
+                canonical_hash(
+                    {"name": name, "version_constraint": constraints[name]}
+                    if name in constraints
+                    else {"name": name, "version": inspected["packages"][name]}
+                )
                 for name in required_packages
             )
             compatible.append(LocalRuntimeCandidate(

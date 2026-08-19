@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field, fields
+from datetime import datetime
 from enum import Enum
 
 from .generic_experiment_contracts import ContractRef
@@ -156,6 +157,13 @@ class GenericHarnessImplementationSpec(SerializableContract):
             raise GenericHarnessContractError("execution unit identities must be unique")
         if any(not set(item.expected_output_names).issubset(output_names) for item in self.execution_units):
             raise GenericHarnessContractError("execution unit references an undeclared output")
+        declared_unit_outputs = tuple(
+            name for unit in self.execution_units for name in unit.expected_output_names
+        )
+        if len(declared_unit_outputs) != len(set(declared_unit_outputs)) or set(declared_unit_outputs) != output_names:
+            raise GenericHarnessContractError(
+                "every expected output must belong to exactly one execution unit"
+            )
         if not self.validation_commands or len(self.validation_commands) > 20:
             raise GenericHarnessContractError("validation commands are invalid")
         for command in self.validation_commands:
@@ -217,6 +225,8 @@ class HarnessUnitState(SerializableContract):
     status: HarnessUnitStatus
     output_checksums: tuple[tuple[str, str], ...] = ()
     attempt_count: int = 0
+    started_at: str | None = None
+    completed_at: str | None = None
 
     def __post_init__(self) -> None:
         if _UNIT_ID.fullmatch(self.unit_id) is None:
@@ -232,6 +242,19 @@ class HarnessUnitState(SerializableContract):
             raise GenericHarnessContractError("completed execution unit needs exact outputs")
         if self.status is HarnessUnitStatus.PENDING and self.output_checksums:
             raise GenericHarnessContractError("pending execution unit cannot claim outputs")
+        times = (self.started_at, self.completed_at)
+        if self.status is HarnessUnitStatus.COMPLETED:
+            if any(value is None or not value.endswith("Z") for value in times):
+                raise GenericHarnessContractError("completed execution unit needs exact times")
+            try:
+                started = datetime.fromisoformat(self.started_at.replace("Z", "+00:00"))
+                completed = datetime.fromisoformat(self.completed_at.replace("Z", "+00:00"))
+            except ValueError as error:
+                raise GenericHarnessContractError("execution unit times are invalid") from error
+            if completed < started:
+                raise GenericHarnessContractError("execution unit completed before it started")
+        elif any(value is not None for value in times):
+            raise GenericHarnessContractError("pending execution unit cannot claim times")
 
 
 @dataclass(frozen=True, slots=True)

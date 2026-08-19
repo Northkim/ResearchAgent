@@ -65,7 +65,9 @@ def test_server_resolved_presets_create_one_revision_atomically(tmp_path, setup,
     assert versions["literature-search-local-experimental"] == ("0.5.0", "0.7.0")
     if setup == "full-research":
         assert versions["idea-discovery-local-experimental"] == ("0.4.0", "0.5.0")
-        assert versions["reproduction-experiment-local-experimental"] == ("0.7.0", "0.10.0")
+        assert versions["reproduction-experiment-local-experimental"] == (
+            "0.8.0", "0.11.0"
+        )
         assert versions["writing-local-experimental"] == ("0.5.0", "0.7.0")
         assert versions["review-local-experimental"] == ("0.4.0", "0.6.0")
 
@@ -151,7 +153,7 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
             "0.4.0", "0.5.0", "capsule-db831c40287135691c7c1c41a2a16934"
         ),
         "reproduction-experiment-local-experimental": (
-            "0.7.0", "0.10.0", "capsule-cd7ff18e9857b6d20fbe9ba2ccab7ba6"
+            "0.8.0", "0.11.0", "capsule-aaf4d527b1aa60eed6b4bdad47da9826"
         ),
         "writing-local-experimental": (
             "0.5.0", "0.7.0", "capsule-2abb078c2c2112b284f9a7dae8ea2854"
@@ -245,7 +247,7 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     for display_name, version in (
         ("Literature Search", "0.5.0"),
         ("Idea Discovery", "0.4.0"),
-        ("Reproduction & Experiment", "0.7.0"),
+            ("Reproduction & Experiment", "0.8.0"),
         ("Initial Writing", "0.5.0"),
         ("Review", "0.4.0"),
     ):

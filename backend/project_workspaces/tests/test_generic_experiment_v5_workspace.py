@@ -110,7 +110,7 @@ def test_public_workspace_materializes_one_v5_artifact_without_presentation_look
     project_id = project["project_id"]
     _seed_forward(database)
     catalog = client.get(f"/workflow-definitions/{WORKFLOW_ID}").json()
-    assert catalog["recommended_version"]["version"] == "0.6.0"
+    assert catalog["recommended_version"]["version"] == "0.8.0"
 
     created = client.post(f"/projects/{project_id}/workflow-instances", json={
         "workflow_definition_id": WORKFLOW_ID,

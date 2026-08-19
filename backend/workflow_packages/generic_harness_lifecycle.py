@@ -26,6 +26,8 @@ from .generic_experiment_contracts import (
     ScientificEvidenceStatus,
 )
 from .generic_experiment_coordinator import (
+    RunApprovalConsumption,
+    SuppliedExecution,
     GenericExperimentContinuation,
     GenericRunApproval,
     OwnerResultReview,
@@ -205,6 +207,41 @@ def finalize_generic_harness_lifecycle(
         raise GenericHarnessLifecycleError("Generic Harness run approval is invalid")
     state = coordinator.handoff_execution(
         state, runner, attempt_id=attempt_id, consumed_at=consumed_at,
+    ).continuation
+    prepared.implementation.evaluation = evaluation
+    state = coordinator.evaluate(state).continuation
+    state = coordinator.accept_result_review(state, owner_review).continuation
+    if state.owner_result_review is None:
+        raise GenericHarnessLifecycleError("Generic Harness result review is invalid")
+    state = coordinator.finalize(state).continuation
+    if state.finalized_record is None or state.evaluation is None:
+        raise GenericHarnessLifecycleError("Generic Harness lifecycle did not finalize")
+    artifact = finalize_experiment_record_v5(
+        state.finalized_record, state.evaluation, evidence_blocks,
+    )
+    return FinalizedGenericHarnessLifecycle(
+        state.finalized_record, artifact, state.evaluation, state,
+    )
+
+
+def finalize_supplied_generic_harness_lifecycle(
+    prepared: PreparedGenericHarnessLifecycle,
+    *,
+    approval: GenericRunApproval,
+    consumption: RunApprovalConsumption,
+    supplied: SuppliedExecution,
+    evaluation: GenericHarnessEvaluation,
+    owner_review: OwnerResultReview,
+    evidence_blocks: Sequence[ScientificEvidenceBlock],
+) -> FinalizedGenericHarnessLifecycle:
+    """Finalize already durable exact execution without rerunning science."""
+
+    coordinator = prepared.coordinator
+    state = coordinator.authorize_run(prepared.continuation, approval).continuation
+    if state.run_approval is None:
+        raise GenericHarnessLifecycleError("Generic Harness run approval is invalid")
+    state = coordinator.accept_execution_evidence(
+        state, supplied, consumption,
     ).continuation
     prepared.implementation.evaluation = evaluation
     state = coordinator.evaluate(state).continuation

@@ -22,12 +22,11 @@ from .generic_experiment_v5_publication import (
     generic_experiment_v5_workflow_document,
 )
 from .generic_harness_adapter import (
-    GENERIC_HARNESS_EVALUATION_SCHEMA,
     GenericHarnessImplementation,
+    system_generic_harness_path,
 )
 from .generic_harness_contracts import (
     GENERIC_HARNESS_CLASSIFICATION,
-    GENERIC_HARNESS_SPEC_SCHEMA,
     GenericHarnessPath,
 )
 from .production_workflows import (
@@ -81,16 +80,7 @@ GENERIC_HARNESS_CONTRACT_CHECKSUM = generic_harness_contract_checksum()
 
 
 def _path() -> GenericHarnessPath:
-    return GenericHarnessPath(
-        ContractRef(
-            GENERIC_HARNESS_SPEC_SCHEMA,
-            canonical_hash({"schema": GENERIC_HARNESS_SPEC_SCHEMA}),
-        ),
-        ContractRef(
-            GENERIC_HARNESS_EVALUATION_SCHEMA,
-            canonical_hash({"schema": GENERIC_HARNESS_EVALUATION_SCHEMA}),
-        ),
-    )
+    return system_generic_harness_path()
 
 
 def _generic_descriptor() -> Any:

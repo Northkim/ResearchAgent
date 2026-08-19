@@ -73,3 +73,19 @@ def test_execution_units_may_not_reference_undeclared_outputs() -> None:
             spec.validation_commands, spec.compute_limits, spec.network_policy,
             spec.implementation_summary,
         )
+
+
+def test_every_expected_output_belongs_to_exactly_one_execution_unit() -> None:
+    spec = _spec()
+    duplicate = HarnessExecutionUnit(
+        "unit-fold-02", ("--fold", "2"), ("metrics",), "Second fold."
+    )
+    with pytest.raises(GenericHarnessContractError, match="exactly one"):
+        GenericHarnessImplementationSpec(
+            spec.objective_checksum, spec.methodology_checksum,
+            spec.entrypoint_relative_path, spec.runtime_family,
+            spec.runtime_version_constraint, spec.dependencies,
+            spec.required_runtime_capabilities, spec.expected_outputs,
+            (*spec.execution_units, duplicate), spec.validation_commands,
+            spec.compute_limits, spec.network_policy, spec.implementation_summary,
+        )

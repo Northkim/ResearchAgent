@@ -37,7 +37,7 @@ def test_public_workspace_sync_bind_materialize_preflight_and_role_selection(tmp
 
     revision = 1; created = {}
     for role, workflow_id, version, capsule_id, capsule_version in (
-        ("experiment", "reproduction-experiment-local-experimental", "0.7.0", next(key[0] for key in database.workflow_capsule_versions if key[1] == "0.10.0"), "0.10.0"),
+        ("experiment", "reproduction-experiment-local-experimental", "0.8.0", next(key[0] for key in database.workflow_capsule_versions if key[1] == "0.11.0"), "0.11.0"),
         ("writing", "writing-local-experimental", "0.5.0", INITIAL_WRITING_CAPSULE_ID, "0.7.0"),
         ("writing_fixture", "writing-local-experimental", "0.5.0", INITIAL_WRITING_CAPSULE_ID, "0.7.0"),
         ("review", "review-local-experimental", "0.4.0", REVIEW_CAPSULE_ID, "0.6.0"),

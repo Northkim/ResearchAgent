@@ -93,6 +93,11 @@ from backend.workflow_packages.generic_experiment_v5_publication import (
     GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
     build_generic_experiment_v0_10_package,
 )
+from backend.workflow_packages.generic_harness_publication import (
+    GENERIC_HARNESS_CAPSULE_VERSION,
+    GENERIC_HARNESS_WORKFLOW_VERSION,
+    build_generic_harness_v0_11_package,
+)
 from backend.workflow_packages.forward_downstream_publication import (
     INITIAL_WRITING_CAPSULE_VERSION as FORWARD_WRITING_CAPSULE_VERSION,
     INITIAL_WRITING_VERSION as FORWARD_WRITING_VERSION,
@@ -842,6 +847,16 @@ class WorkspaceSyncApplicationService:
                 f"generic-experiment-{project.project_id}-"
                 f"{instance.workflow_instance_id}-v0.10"
             )
+        elif (
+            instance.workflow_definition_id == EXPERIMENT_WORKFLOW_ID
+            and instance.workflow_version == GENERIC_HARNESS_WORKFLOW_VERSION
+            and instance.capsule_version == GENERIC_HARNESS_CAPSULE_VERSION
+        ):
+            builder = build_generic_harness_v0_11_package
+            package_id = (
+                f"generic-harness-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.11"
+            )
         else:
             raise _unavailable("Workflow Capsule artifact pin has no reviewed compiler")
         output = (
@@ -884,6 +899,7 @@ class WorkspaceSyncApplicationService:
                 FORWARD_REVISION_VERSION,
                 GENERIC_EXPERIMENT_WORKFLOW_VERSION,
                 GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
+                GENERIC_HARNESS_WORKFLOW_VERSION,
             }
         ):
             self._verify_compiled_skill_authority(instance, built.package_root)

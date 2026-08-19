@@ -33,10 +33,10 @@ from backend.workflow_packages.revision_optional_support_publication import (
     WRITING_REVISION_CAPSULE_VERSION,
     WRITING_REVISION_VERSION,
 )
-from backend.workflow_packages.generic_experiment_v5_publication import (
-    GENERIC_EXPERIMENT_V5_CAPSULE_ID,
-    GENERIC_EXPERIMENT_V5_CAPSULE_VERSION,
-    GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
+from backend.workflow_packages.generic_harness_publication import (
+    GENERIC_HARNESS_CAPSULE_ID,
+    GENERIC_HARNESS_CAPSULE_VERSION,
+    GENERIC_HARNESS_WORKFLOW_VERSION,
 )
 from backend.workflow_packages.production_workflows import (
     EXPERIMENT_WORKFLOW_ID,
@@ -114,9 +114,9 @@ _FULL_RESEARCH_INITIAL_PINS = (
     ),
     (
         EXPERIMENT_WORKFLOW_ID,
-        GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION,
-        GENERIC_EXPERIMENT_V5_CAPSULE_ID,
-        GENERIC_EXPERIMENT_V5_CAPSULE_VERSION,
+        GENERIC_HARNESS_WORKFLOW_VERSION,
+        GENERIC_HARNESS_CAPSULE_ID,
+        GENERIC_HARNESS_CAPSULE_VERSION,
     ),
     (
         WRITING_WORKFLOW_ID,
@@ -925,6 +925,6 @@ def _product_role_name(workflow_definition_id: str, version: str, fallback: str)
         return "Initial Writing"
     if workflow_definition_id == REVIEW_WORKFLOW_ID and version == FORWARD_REVIEW_VERSION:
         return "Review"
-    if workflow_definition_id == EXPERIMENT_WORKFLOW_ID and version == GENERIC_EXPERIMENT_V5_WORKFLOW_VERSION:
+    if workflow_definition_id == EXPERIMENT_WORKFLOW_ID and version == GENERIC_HARNESS_WORKFLOW_VERSION:
         return "Reproduction & Experiment"
     return fallback

@@ -52,7 +52,7 @@ def test_owner_decision_publication_is_exact_idempotent_and_reversible(
         database_url=database_url,
         expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
     )
-    assert _head(postgres_engine) == "20260820_0037"
+    assert _head(postgres_engine) == "20260820_0038"
     assert _counts(postgres_engine) == (2, 2, 1)
 
     uow = SQLAlchemyUnitOfWork(create_session_factory(postgres_engine))
@@ -72,6 +72,6 @@ def test_owner_decision_publication_is_exact_idempotent_and_reversible(
         assert _head(postgres_engine) == "20260820_0036"
         assert _counts(postgres_engine) == (0, 0, 0)
     finally:
-        command.upgrade(configuration, "20260820_0037")
-    assert _head(postgres_engine) == "20260820_0037"
+        command.upgrade(configuration, "20260820_0038")
+    assert _head(postgres_engine) == "20260820_0038"
     assert _counts(postgres_engine) == (2, 2, 1)

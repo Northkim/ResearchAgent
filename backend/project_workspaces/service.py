@@ -604,6 +604,45 @@ def ensure_production_workflow_foundation(
                 raise WorkflowFoundationConflictError(
                     "Forward downstream Artifact requirement immutable-content conflict"
                 )
+    from .generic_harness_foundation import (
+        artifact_requirement as generic_harness_artifact_requirement,
+        capsule_version as generic_harness_capsule_version,
+        definition_version as generic_harness_definition_version,
+        skill_pin as generic_harness_skill_pin,
+    )
+    from backend.workflow_packages.generic_experiment_publication import (
+        REFERENCE_CAPABILITY_SKILL,
+    )
+
+    reference_asset = REFERENCE_CAPABILITY_SKILL
+    repository.add_skill_definition(reference_asset.definition(timestamp))
+    repository.add_skill_version(reference_asset.skill_version(timestamp))
+    repository.add_definition_version(generic_harness_definition_version(timestamp))
+    repository.add_capsule_version(generic_harness_capsule_version(timestamp))
+    reference_pin = generic_harness_skill_pin(timestamp)
+    reference_version = repository.get_skill_version(
+        reference_pin.skill_id, reference_pin.skill_version
+    )
+    if (
+        reference_version is None
+        or reference_version.content_checksum != reference_pin.skill_checksum
+    ):
+        raise WorkflowFoundationConflictError(
+            "Generic Harness reference Capability Skill checksum conflict"
+        )
+    repository.add_workflow_skill_pin(reference_pin)
+    generic_requirement = generic_harness_artifact_requirement(timestamp)
+    existing = uow.artifact_references.get_requirement(
+        generic_requirement.workflow_definition_id,
+        generic_requirement.workflow_version,
+        generic_requirement.requirement_key,
+    )
+    if existing is None:
+        uow.artifact_references.add_requirement(generic_requirement)
+    elif _requirement_content(existing) != _requirement_content(generic_requirement):
+        raise WorkflowFoundationConflictError(
+            "Generic Harness Artifact requirement immutable-content conflict"
+        )
     return (
         literature_definition,
         literature_version,

@@ -151,15 +151,21 @@ def validate_capsule(root: Path, *, pristine: bool = False) -> dict[str, Any]:
             if path.is_symlink():
                 raise GenericHarnessPublicRuntimeError("Capsule directory link is unsafe")
             continue
+        metadata = path.stat(follow_symlinks=False)
+        if path.is_symlink() or not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+            raise GenericHarnessPublicRuntimeError("Capsule dynamic file is unsafe")
         relative = path.relative_to(package).as_posix()
         if (
             relative != "package-manifest.json"
             and relative not in declared
             and relative not in dynamic
+            and not relative.startswith("memory/progress/")
             and not relative.startswith("outputs/artifacts/")
             and path.name != ".DS_Store"
         ):
             raise GenericHarnessPublicRuntimeError("Undeclared Capsule file rejected")
+        if path.name == ".DS_Store" and metadata.st_size > 1_048_576:
+            raise GenericHarnessPublicRuntimeError("Platform metadata exceeds its bound")
     return {
         "valid": True,
         "package_id": manifest["package_id"],
@@ -196,6 +202,51 @@ def load_exact_objective(root: Path) -> ResearchObjectiveRef:
     return ResearchObjectiveRef(
         record["artifact_type"], record["artifact_id"], record["sha256"], summary,
     )
+
+
+def ensure_progress_draft(root: Path) -> dict[str, Any]:
+    """Create or validate the one durable local-first Generic Experiment round."""
+
+    path = root / "memory/progress/report-draft.json"
+    reports_root = root / "memory/progress/reports"
+    reports_root.mkdir(parents=True, exist_ok=True)
+    if reports_root.is_symlink() or not reports_root.is_dir():
+        raise GenericHarnessPublicRuntimeError("Progress report directory is unsafe")
+    namespace = runpy.run_path(str(root / "progress_report.py"))
+    if path.exists() or path.is_symlink():
+        draft = _object(path, "Progress draft")
+        namespace["_validate_draft"](draft)
+        return draft
+    reports = sorted(reports_root.glob("*.json"))
+    if reports:
+        raise GenericHarnessPublicRuntimeError(
+            "Generic Harness Progress exists without its durable round draft"
+        )
+    now = _timestamp()
+    draft = {
+        "execution_round": 1,
+        "harness_type": "codex",
+        "harness_version": None,
+        "harness_session_id": "generic-harness-round-1",
+        "previous_report_id": None,
+        "previous_report_checksum": None,
+        "started_at": now,
+        "completed_at": now,
+        "status": "IN_PROGRESS",
+        "completed_work": ["Bound one exact selected Research Idea"],
+        "current_state": "METHODOLOGY_DESIGN",
+        "next_recommended_action": "Review the exact scientific contract",
+        "continuation_reason": None,
+        "warnings": [],
+        "errors": [],
+        "unresolved_questions": [],
+        "continuation_instructions": [
+            "Resume from the latest exact durable Generic Harness checkpoint"
+        ],
+    }
+    namespace["_validate_draft"](draft)
+    _atomic_json(path, draft)
+    return draft
 
 
 def methodology_instruction() -> str:
@@ -345,7 +396,6 @@ def publish_final_artifact(
         "media_type": "application/json",
         "checksum": checksum,
         "size": len(content),
-        "workflow_instance_id": workflow_instance_id,
     }
     _atomic_json(root / "memory/current-artifact.json", current)
     return current
