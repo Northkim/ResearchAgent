@@ -189,6 +189,17 @@ def test_bounded_macos_metadata_is_ignored_before_security_and_comparison(
         )
 
 
+def test_generic_harness_runtime_root_allows_only_the_exact_progress_draft() -> None:
+    declared = {"memory/progress"}
+
+    assert workspace_cli._is_declared_runtime_dynamic_path(
+        "memory/progress/report-draft.json", declared,
+    )
+    assert not workspace_cli._is_declared_runtime_dynamic_path(
+        "memory/progress/operator-state.json", declared,
+    )
+
+
 def test_macos_cleanup_is_exact_and_preserves_unknown_files(tmp_path: Path) -> None:
     capsule = tmp_path / "capsule"
     nested = capsule / "memory"

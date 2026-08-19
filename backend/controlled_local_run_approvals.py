@@ -28,6 +28,11 @@ SUMMARY_SCHEMA = "reagent.controlled-local-run-approval-summary/v0.1"
 CONSUMPTION_SCHEMA = "reagent.controlled-local-run-approval-consumption/v0.1"
 GENERIC_EXPERIMENT_ID = "reproduction-experiment-local-experimental"
 GENERIC_EXPERIMENT_VERSION = "0.6.0"
+GENERIC_HARNESS_EXPERIMENT_VERSION = "0.8.0"
+CONTROLLED_LOCAL_EXPERIMENT_VERSIONS = frozenset({
+    GENERIC_EXPERIMENT_VERSION,
+    GENERIC_HARNESS_EXPERIMENT_VERSION,
+})
 
 _PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
 _WORKFLOW_INSTANCE_ID = re.compile(r"^wfi-[0-9a-f]{32}$")
@@ -466,10 +471,10 @@ class ControlledLocalRunApprovalService:
         instance = self.instance_resolver(project_id, workflow_instance_id)
         if (
             instance.workflow_definition_id != GENERIC_EXPERIMENT_ID
-            or instance.workflow_version != GENERIC_EXPERIMENT_VERSION
+            or instance.workflow_version not in CONTROLLED_LOCAL_EXPERIMENT_VERSIONS
         ):
             raise ApplicationCodedValidationError(
-                "Controlled-local Run Approval is available only for exact Experiment 0.6",
+                "Controlled-local Run Approval is unavailable for this Workflow publication",
                 code="RUN_APPROVAL_WORKFLOW_UNSUPPORTED",
             )
         return instance

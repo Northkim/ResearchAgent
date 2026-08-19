@@ -46,7 +46,6 @@ from backend.workflow_packages.generic_harness_lifecycle import (
 from backend.workflow_packages.generic_harness_public_runtime import (
     evaluation_instruction,
     ensure_progress_draft,
-    finalize_progress,
     implementation_instruction,
     load_evaluation,
     load_exact_objective,
@@ -123,6 +122,131 @@ def _write_once(path: Path, value: Any, label: str) -> dict[str, Any]:
     finally:
         temporary.unlink(missing_ok=True)
     return document
+
+
+def _replace_bytes(path: Path, content: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        prefix=f".{path.name}.", dir=path.parent, delete=False,
+    ) as handle:
+        temporary = Path(handle.name)
+        handle.write(content)
+        handle.flush()
+        os.fsync(handle.fileno())
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _finalize_progress_with_exact_artifact(
+    capsule: Path, current: Mapping[str, Any],
+) -> str:
+    """Finalize one Generic Harness report with its exact dynamic Artifact."""
+
+    namespace = runpy.run_path(str(capsule / "progress_report.py"))
+    snapshot = namespace["snapshot"](capsule)
+    now = _timestamp()
+    context = {
+        "schema": "reagent.generic-harness-experiment-context/v0.1",
+        "stage": "COMPLETED",
+        "latest_output": dict(current),
+        "updated_at": now,
+    }
+    _replace_bytes(
+        capsule / "memory/context.md",
+        (
+            "# Generic Experiment Context\n\n```json\n"
+            + canonical_json(context)
+            + "\n```\n"
+        ).encode(),
+    )
+    draft_path = capsule / "memory/progress/report-draft.json"
+    draft = _read(draft_path, "Progress draft")
+    draft.update({
+        "started_at": draft.get("started_at") or now,
+        "completed_at": now,
+        "status": "COMPLETED",
+        "completed_work": [
+            "Approved one exact scientific contract",
+            "Validated and executed one exact Generic Harness package",
+            "Reviewed one bounded scientific result",
+        ],
+        "current_state": "COMPLETED",
+        "next_recommended_action": (
+            "Inspect the exact Experiment evidence and limitations"
+        ),
+        "warnings": [
+            "Process success alone does not establish scientific validity"
+        ],
+        "errors": [],
+        "unresolved_questions": [],
+        "continuation_instructions": [
+            "Use the exact experiment-record/v5 downstream"
+        ],
+    })
+    namespace["_validate_draft"](draft)
+    _replace_bytes(
+        draft_path, (canonical_json(draft) + "\n").encode("utf-8"),
+    )
+    if namespace["_existing_reports"](capsule):
+        raise GenericHarnessWorkflowError(
+            "Generic Harness terminal Progress already exists"
+        )
+    manifest = _read(capsule / "package-manifest.json", "Package manifest")
+    output = {
+        "relative_path": current["relative_path"],
+        "artifact_kind": current["artifact_kind"],
+        "media_type": current["media_type"],
+        "checksum": current["checksum"],
+        "size": current["size"],
+    }
+    skill_pins = [
+        {
+            "pin_type": "SKILL",
+            "identity": pin["name"],
+            "version": pin["semantic_version"],
+            "checksum": pin["checksum"],
+        }
+        for pin in manifest["skill_pins"]
+    ]
+    template_pins = [{
+        "pin_type": "TEMPLATE",
+        "identity": manifest["package_template_id"],
+        "version": manifest["package_template_version"],
+        "checksum": manifest["manifest_checksum"],
+    }]
+    base = {
+        "schema_version": namespace["SCHEMA_VERSION"],
+        "report_id": None,
+        "report_content_checksum": None,
+        "report_checksum": None,
+        "package_id": manifest["package_id"],
+        "package_schema_version": manifest["package_schema_version"],
+        "package_checksum": manifest["package_checksum"],
+        "project_id": manifest["experimental_project_identity"],
+        "workflow_id": manifest["workflow_id"],
+        "workflow_version": manifest["workflow_version"],
+        "workflow_checksum": manifest["workflow_checksum"],
+        **draft,
+        "output_artifacts": [output],
+        "context_before_checksum": snapshot["context_before_checksum"],
+        "context_after_checksum": sha256_bytes(
+            (capsule / "memory/context.md").read_bytes()
+        ),
+        "skill_pins": skill_pins,
+        "template_pins": template_pins,
+        "generated_at": draft["completed_at"],
+        "experimental_declaration": namespace["EXPERIMENTAL_DECLARATION"],
+    }
+    report = namespace["compute_identity"](base)
+    namespace["verify_identity"](report)
+    reports_root = capsule / "memory/progress/reports"
+    target = reports_root / f"{report['report_id']}.json"
+    if target.exists() or target.is_symlink():
+        raise GenericHarnessWorkflowError("Progress Reports are append-only")
+    _replace_bytes(target, (canonical_json(report) + "\n").encode("utf-8"))
+    return target.relative_to(capsule).as_posix()
 
 
 def _lifecycle_times(managed: GenericHarnessWorkspace) -> dict[str, str]:
@@ -447,6 +571,8 @@ def advance_generic_harness_workflow(
 ) -> GenericHarnessWorkflowResult:
     """Advance one exact forward Generic Experiment without hidden orchestration."""
 
+    workspace_root = workspace_root.resolve()
+    capsule = capsule.resolve()
     validate_capsule(capsule, pristine=False)
     completed = _completed_result(capsule, workflow_instance_id)
     if completed is not None:
@@ -652,7 +778,7 @@ def advance_generic_harness_workflow(
         evaluation=evaluation, owner_review=review, evidence_blocks=evidence_blocks,
     )
     current = publish_final_artifact(capsule, workflow_instance_id, finalized)
-    report = finalize_progress(capsule, current)
+    report = _finalize_progress_with_exact_artifact(capsule, current)
     return GenericHarnessWorkflowResult(
         "COMPLETED", workflow_instance_id,
         "The exact Generic Harness Experiment result is completed.",

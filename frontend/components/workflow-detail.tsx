@@ -340,6 +340,7 @@ const CANONICAL_EXPERIMENT_SUMMARY_BLOCKS = new Set([
   "PROSE:research objective",
   "SCALAR:process outcome",
   "SCALAR:evaluation validity",
+  "SCALAR:scientific evidence",
   "SCALAR:scientific evidence status",
 ]);
 
@@ -528,7 +529,9 @@ function GenericExperimentDetail({
       : "Reviewed preparation method selected from the compatible installed set");
   const executionOutcome = blockValue(blocks, "Process outcome") ?? (artifact ? "Completed" : "Not run");
   const evaluationValidity = blockValue(blocks, "Evaluation validity") ?? (artifact ? "Not reported" : "Pending execution");
-  const evidenceStatus = blockValue(blocks, "Scientific evidence status") ?? (artifact ? "Not reported" : "Pending evaluation");
+  const evidenceStatus = blockValue(blocks, "Scientific evidence status")
+    ?? blockValue(blocks, "Scientific evidence")
+    ?? (artifact ? "Not reported" : "Pending evaluation");
   const command = `python reagent_local.py run . --workflow-instance ${instance.workflow_instance_id}`;
   const decisionPending = approvalDecision.isPending;
   const approvalError = approvalDecision.isError ? approvalOwnerError(approvalDecision.error) : null;
@@ -558,7 +561,9 @@ function GenericExperimentDetail({
   const resultReviewRequired = resultReviewCheckpoint;
   const resultIsPrimary = Boolean(artifact) || resultReviewRequired;
   const approvalChanged = approvalPlanChanged || (approvalError?.startsWith("The prepared experiment changed") ?? false);
-  const taskTitle = approvalChanged
+  const taskTitle = finalizedResult
+    ? "Experiment completed"
+    : approvalChanged
     ? "The prepared experiment changed after approval"
     : approvalStatus === "APPROVED"
       ? "Run approved"
@@ -568,14 +573,14 @@ function GenericExperimentDetail({
           ? "The prepared experiment changed after approval"
           : approvalStatus === "CONSUMED"
             ? "Approval used for this execution"
-            : finalizedResult
-              ? "Experiment completed"
-              : resultReviewRequired
+            : resultReviewRequired
               ? EXPERIMENT_CHECKPOINTS.RESULT_REVIEW_REQUIRED.title
               : unsupported
                 ? "ReAgent cannot prepare this experiment automatically yet."
                 : checkpointPresentation?.title ?? "Continue the experiment locally";
-  const taskExplanation = approvalChanged || approvalStatus === "SUPERSEDED"
+  const taskExplanation = finalizedResult
+    ? "The final scientific result and its reported limitations are available below."
+    : approvalChanged || approvalStatus === "SUPERSEDED"
     ? "Review the updated run before continuing."
     : approvalStatus === "APPROVED"
       ? "This exact experiment is approved for one local execution. The Local Workflow will verify that the experiment has not changed, consume this one-use approval, and execute through the controlled local runner."
@@ -585,8 +590,6 @@ function GenericExperimentDetail({
           ? "The one-use authorization was consumed locally. Execution status is reported separately from scientific evidence."
           : approvalStatus === "REQUESTED"
             ? "Review the exact prepared experiment below before authorizing one local execution."
-          : finalizedResult
-            ? "The final scientific result and its reported limitations are available below."
           : resultReviewRequired
             ? "Does this result record accurately represent the experiment and its limitations? Review the findings, evaluation validity, scientific evidence, limitations, output references, and execution warnings before finalizing."
           : unsupported
@@ -636,7 +639,7 @@ function GenericExperimentDetail({
 
   const currentTask = <section className="experiment-current-task" data-attention-state={approvalStatus === "APPROVED" || checkpoint === "PREPARATION_COMPLETE" || finalizedResult ? "NORMAL" : "OWNER_ACTION_REQUIRED"} aria-labelledby="experiment-current-task-title"><p className="eyebrow">Current task</p><h2 id="experiment-current-task-title">{taskTitle}</h2><p>{taskExplanation}</p>{checkpointDetail && checkpointDetail !== taskExplanation && !approvalChanged && !finalizedResult ? <p className="muted-copy">{checkpointDetail}</p> : null}{approvalStatus === "REQUESTED" && !approvalChanged ? <p>This approval applies to one exact prepared experiment and one local execution attempt. The browser records authorization; it does not start the local process.</p> : null}{approvalChanged ? <p role="alert" className="attention-copy">The prepared experiment changed after approval. Review the updated experiment before continuing.</p> : null}<div className="experiment-task-actions">
     {(approvalStatus === "REQUESTED" || approvalStatus === "SUPERSEDED" || (checkpoint === "RUN_APPROVAL_REQUIRED" && !approvalStatus)) ? <a className="button button-primary" href="#exact-run-title" onClick={() => focusReviewTarget("run")}>{approvalChanged || approvalStatus === "SUPERSEDED" ? "Review updated run" : "Review exact run"}</a> : null}
-    {approvalStatus === "APPROVED" ? <a className="button button-primary" href="#local-workflow">Continue in Local Workspace</a> : null}
+    {approvalStatus === "APPROVED" && !finalizedResult ? <a className="button button-primary" href="#local-workflow">Continue in Local Workspace</a> : null}
     {resultReviewRequired && !approvalStatus ? <a className="button button-primary" href="#experiment-results" onClick={() => focusReviewTarget("result")}>Review result below</a> : null}
     {!approvalStatus && !unsupported && !finalizedResult && !resultReviewRequired && !runCheckpoint && taskAction ? <a className="button button-primary" href="#local-workflow">{taskAction}</a> : null}
   </div></section>;
@@ -661,7 +664,7 @@ function GenericExperimentDetail({
       {resultIsPrimary ? resultSection : null}
       {resultIsPrimary ? <details className="experiment-history"><summary>Experiment history</summary><div>{startSummary}{designSection}{preparationSection}</div></details> : <>{startSummary}{designSection}{(methodologyDecision || designCheckpoint) ? <details className="experiment-upcoming"><summary>Preparation · Not yet started</summary><p>Preparation begins after the scientific design and required Owner decisions are resolved.</p></details> : preparationSection}</>}
 
-      {runCheckpoint ? <section className="plain-section" aria-labelledby="exact-run-title"><p className="eyebrow">Ready to run</p><h2 id="exact-run-title" ref={exactRunHeadingRef} tabIndex={-1}>Exact run summary</h2>{runSummary ? <div className="input-readiness-list">
+      {runCheckpoint && !finalizedResult ? <section className="plain-section" aria-labelledby="exact-run-title"><p className="eyebrow">Ready to run</p><h2 id="exact-run-title" ref={exactRunHeadingRef} tabIndex={-1}>Exact run summary</h2>{runSummary ? <div className="input-readiness-list">
         <div><div><strong>What will run</strong><small>{runSummary.what_will_run}</small></div><span>Exact prepared run</span></div>
         <div><div><strong>Research objective</strong><small>{runSummary.research_objective}</small></div><span>Exact input</span></div>
         <div><div><strong>Preparation method</strong><small>{runSummary.preparation_method}</small></div><span>{genericHarness ? "System path" : "Reviewed"}</span></div>

@@ -159,10 +159,13 @@ class _Runner:
 
 
 def test_generic_harness_public_workflow_is_exact_resumable_and_idempotent(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch,
 ) -> None:
     capsule = _capsule(tmp_path)
     workspace = tmp_path / "workspace"
+    monkeypatch.chdir(tmp_path)
+    capsule_argument = capsule.relative_to(tmp_path)
+    workspace_argument = workspace.relative_to(tmp_path)
     managed = workspace / ".reagent/experiments" / WORKFLOW
     transport = _Transport()
     decisions: list[str] = []
@@ -250,7 +253,7 @@ def test_generic_harness_public_workflow_is_exact_resumable_and_idempotent(
     }
     runner = _Runner(managed)
     first = advance_generic_harness_workflow(
-        capsule=capsule, workspace_root=workspace, project_id=PROJECT,
+        capsule=capsule_argument, workspace_root=workspace_argument, project_id=PROJECT,
         workflow_instance_id=WORKFLOW, run_harness=harness,
         owner_decision=decide, transport=transport,
         validation_executor=validation, bounded_runner=runner,
@@ -261,7 +264,7 @@ def test_generic_harness_public_workflow_is_exact_resumable_and_idempotent(
 
     transport.approve()
     completed = advance_generic_harness_workflow(
-        capsule=capsule, workspace_root=workspace, project_id=PROJECT,
+        capsule=capsule_argument, workspace_root=workspace_argument, project_id=PROJECT,
         workflow_instance_id=WORKFLOW, run_harness=harness,
         owner_decision=decide, transport=transport,
         validation_executor=validation, bounded_runner=runner,
@@ -324,7 +327,7 @@ def test_generic_harness_public_workflow_is_exact_resumable_and_idempotent(
     }]
 
     replay = advance_generic_harness_workflow(
-        capsule=capsule, workspace_root=workspace, project_id=PROJECT,
+        capsule=capsule_argument, workspace_root=workspace_argument, project_id=PROJECT,
         workflow_instance_id=WORKFLOW, run_harness=harness,
         owner_decision=decide, transport=transport,
         validation_executor=validation, bounded_runner=runner,

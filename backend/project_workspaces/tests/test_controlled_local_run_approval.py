@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -201,6 +202,22 @@ def test_non_experiment_scope_and_unsafe_api_summary_fail_closed(tmp_path) -> No
     denied = client.post(_path(project_id, instance_id), json=unsafe)
     assert denied.status_code == 422
     assert denied.json()["error"]["code"] == "RUN_APPROVAL_REQUEST_INVALID"
+
+
+def test_forward_generic_harness_experiment_uses_existing_exact_approval_contract(
+    tmp_path,
+) -> None:
+    database, client, project_id, instance_id = _setup(tmp_path)
+    current = database.project_workflow_instances[instance_id]
+    database.project_workflow_instances[instance_id] = replace(
+        current, workflow_version="0.8.0",
+    )
+    request = _request(project_id, instance_id)
+
+    created = client.post(_path(project_id, instance_id), json=request.request_dict())
+
+    assert created.status_code == 201, created.text
+    assert created.json()["request_checksum"] == request.request_checksum
 
 
 def test_workspace_http_transport_uses_only_scoped_approval_routes(monkeypatch) -> None:

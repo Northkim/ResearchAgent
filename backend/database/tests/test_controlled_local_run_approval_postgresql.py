@@ -90,11 +90,14 @@ def test_controlled_local_approval_migration_downgrade_and_reupgrade(
     config.set_main_option("sqlalchemy.url", database_url)
     assert "controlled_local_run_approvals" in inspect(postgres_engine).get_table_names()
     command.downgrade(config, "20260817_0029")
-    assert "controlled_local_run_approvals" not in inspect(postgres_engine).get_table_names()
-    command.upgrade(config, "20260817_0030")
-    assert "controlled_local_run_approvals" in inspect(postgres_engine).get_table_names()
-    with postgres_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260817_0030"
+    try:
+        assert "controlled_local_run_approvals" not in inspect(postgres_engine).get_table_names()
+        command.upgrade(config, "20260817_0030")
+        assert "controlled_local_run_approvals" in inspect(postgres_engine).get_table_names()
+        with postgres_engine.connect() as connection:
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260817_0030"
+    finally:
+        command.upgrade(config, "head")
 
 
 def test_exactly_one_attempt_consumes_and_state_survives_restart(

@@ -1097,7 +1097,7 @@ def _validate_legacy_package(
             entry is None
             and relative not in output_paths
             and relative not in dynamic_input_paths
-            and relative not in dynamic_runtime_paths
+            and not _is_declared_runtime_dynamic_path(relative, dynamic_runtime_paths)
             and relative != "memory/current-artifact.json"
             and not relative.startswith(allowed_dynamic)
         ):
@@ -1226,6 +1226,17 @@ def _declared_runtime_dynamic_paths(
                 )
             paths.add(path)
     return paths
+
+
+def _is_declared_runtime_dynamic_path(
+    relative: str, declared_paths: set[str],
+) -> bool:
+    """Recognize only the published Generic Harness Progress draft subtree."""
+
+    return relative in declared_paths or (
+        "memory/progress" in declared_paths
+        and relative == "memory/progress/report-draft.json"
+    )
 
 
 def _select_capsule(
@@ -6253,15 +6264,7 @@ def _progress_upload_envelope(
         _exact_fields(current, {
             "relative_path", "artifact_kind", "media_type", "checksum", "size",
         }, "current Artifact")
-        dynamic_generic_output = (
-            report.get("workflow_id")
-            == "reproduction-experiment-local-experimental"
-            and report.get("workflow_version") == "0.8.0"
-            and current.get("artifact_kind") == "experiment-record/v5"
-            and report.get("status") == "COMPLETED"
-            and report.get("output_artifacts") == []
-        )
-        if current not in report.get("output_artifacts", []) and not dynamic_generic_output:
+        if current not in report.get("output_artifacts", []):
             raise _identity("LOCAL_PROGRESS_INVALID", "Current Artifact is absent from Progress")
         artifact_path = capsule / _safe_artifact_path(current["relative_path"], root="outputs")
         checksum, size = _verified_regular_file(
@@ -6269,17 +6272,6 @@ def _progress_upload_envelope(
         )
         if checksum != current["checksum"] or size != current["size"]:
             raise _identity("LOCAL_PROGRESS_INVALID", "Current Artifact bytes drifted")
-        if dynamic_generic_output:
-            try:
-                runtime = runpy.run_path(str(capsule / "validate_package.py"))
-                runtime["validate_experiment_record_v5"](
-                    _read_package_json(artifact_path)
-                )
-            except Exception as error:
-                raise _identity(
-                    "LOCAL_PROGRESS_INVALID",
-                    "Generic Harness Experiment Artifact validation failed",
-                ) from error
         artifact_id = "artifact-" + uuid.uuid5(
             uuid.UUID("85a011a0-88cd-54b9-a649-7ccc9ed2d966"),
             "production-artifact/v1|package=" + report["package_id"]

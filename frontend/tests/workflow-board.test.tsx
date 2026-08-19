@@ -753,6 +753,29 @@ test("generic Experiment renders only reported methodology fields inside complet
   expect(screen.queryByText("Pending")).not.toBeInTheDocument();
 });
 
+test("completed Generic Harness result supersedes a stale approved-run projection", async () => {
+  const artifact = experimentArtifact([
+    { kind: "PROSE", label: "Research objective", value: "Observe one bounded result." },
+    { kind: "SCALAR", label: "Process outcome", value: "COMPLETED" },
+    { kind: "SCALAR", label: "Scientific evidence", value: "SUPPORTS_BOUNDED_FINDINGS" },
+  ]);
+  arrangeGenericExperiment({
+    workflowVersion: "0.8.0",
+    artifact,
+    completed: true,
+    summary: "Finalized controlled result.",
+    approval: controlledLocalApproval("APPROVED"),
+  });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Experiment completed" })).toBeVisible();
+  expect(screen.getByText("SUPPORTS BOUNDED FINDINGS")).toBeVisible();
+  expect(screen.queryByText("SUPPORTS_BOUNDED_FINDINGS")).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Run approved" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "Exact run summary" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Continue in Local Workspace" })).not.toBeInTheDocument();
+});
+
 test("generic Experiment translates unsupported automatic preparation without plumbing", async () => {
   arrangeGenericExperiment({
     summary: "AUTOMATIC_PREPARATION_UNSUPPORTED: no reviewed preparation method supports the exact methodology.",
