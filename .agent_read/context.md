@@ -2,6 +2,33 @@
 
 Last updated: 2026-08-20
 
+## Post-D1 consolidated repair R0 (2026-08-20)
+
+The Owner-authorized consolidated repair program is frozen in
+`.agent_read/progress/2026-08-20_post_d1_repair_program.md`. R0 changed no
+production behavior, tests, migration, publication, or Owner data. It maps all
+52 authoritative D1 ledger IDs exactly once across R1–R6 (plus four immutable
+regression locks), identifies current component owners and migration
+expectations, and defines 18 reusable controlled fixtures and the R7 evidence
+matrix.
+
+R0 recovered baseline `e665d2dc6c283874f4a9dbe2c1b00597b36b3db5` on
+`main`, one worktree, clean state, and linear Alembic sole head
+`20260819_0034`. The default frontend baseline is 70/70 passed. The unqualified
+default backend aggregate is 1023 passed, 72 skipped, 26 failed, and 18 setup
+errors: the errors require an explicit disposable PostgreSQL URL, several
+failures need loopback/no-egress privileges, and remaining failures include
+stale publication/fixture assumptions. R0 records rather than edits this red
+baseline; each behavioral phase must run its correctly provisioned evidence.
+
+The protected D1 Project was fingerprinted through read-only Owner API calls:
+8 Workflows (7 active/1 retired), 6 Artifact references, 8 accepted Progress
+reports, 1 Project-Skill association, and Desired Manifest revision 5. The
+snapshots are operator-temporary evidence outside the repository. No Owner row
+was changed. Safe next work is R1 pre-write contract recovery and failing
+reproduction tests for exact input/materialization/readiness; do not begin R2 or
+broaden R1 silently.
+
 ## Final D1 defect-ledger reconciliation (2026-08-20)
 
 The completed real Owner D1 record is reconciled in the authoritative,
