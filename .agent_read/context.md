@@ -1,6 +1,25 @@
 # ReAgent Compressed Project Context
 
-Last updated: 2026-08-19
+Last updated: 2026-08-20
+
+## Final D1 defect-ledger reconciliation (2026-08-20)
+
+The completed real Owner D1 record is reconciled in the authoritative,
+deduplicated ledger
+`.agent_read/progress/2026-08-20_final_d1_defect_ledger.md`. It records 52 unique
+root findings/records: 3 OPEN, 28 CONFIRMED, 9 CONFIRMED_CROSS_WORKFLOW, 4
+FOUND_AND_REPAIRED_DURING_D1, 3 OBSERVATION_NEEDS_CONFIRMATION, 1
+EXPECTED_BEHAVIOR, and 4 DEFERRED_PRODUCT_DESIGN. This was a record-only pass;
+no repair phase is authorized.
+
+Read-only final-state verification found eight D1 Workflow records: seven active
+and one retired. Both Literature rounds, Idea, Initial Writing, Review, and active
+Writing Revision 0.7 are Completed; Revision 0.6 is Retired; Experiment 0.7 has no
+terminal Progress or authoritative `experiment-record/v5`. Cloud has six exact
+Artifacts including the final `manuscript-draft/v5`. The Generic Harness operator
+experiment remains genuine validated operator evidence but outside the
+authoritative Artifact chain. Owner runtime and repository sole migration head are
+`20260819_0034`.
 
 ## D1-REVIEW-CONTRACT-01 optional-evidence publication recovery (2026-08-19)
 
