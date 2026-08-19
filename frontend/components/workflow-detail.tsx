@@ -472,6 +472,7 @@ function GenericExperimentDetail({
   instance,
   state,
   progress,
+  instances,
   requirements,
   resourceRequirements,
 }: {
@@ -479,6 +480,7 @@ function GenericExperimentDetail({
   instance: ProjectWorkflowInstance;
   state: WorkflowInstanceProgress;
   progress: ProjectProgress;
+  instances: ProjectWorkflowInstance[];
   requirements: WorkflowArtifactRequirement[];
   resourceRequirements: WorkflowResourceRequirement[];
 }) {
@@ -488,7 +490,11 @@ function GenericExperimentDetail({
   const resultHeadingRef = useRef<HTMLHeadingElement>(null);
   const approvalProjection = useControlledLocalRunApproval(project.project_id, instance.workflow_instance_id);
   const approvalDecision = useControlledLocalRunApprovalDecision(project.project_id, instance.workflow_instance_id);
-  const artifacts = useProjectArtifactReferences(project.project_id, "experiment-record/v4");
+  const outputType = ["0.7.0", "0.8.0"].includes(instance.workflow_version)
+    ? "experiment-record/v5"
+    : "experiment-record/v4";
+  const genericHarness = instance.workflow_version === "0.8.0";
+  const artifacts = useProjectArtifactReferences(project.project_id, outputType);
   const artifact = artifacts.data?.artifacts.find((item) => item.producer_workflow_instance_id === instance.workflow_instance_id);
   const presentation = experimentPresentation(artifact);
   const blocks = presentation?.payload.blocks ?? [];
@@ -498,7 +504,8 @@ function GenericExperimentDetail({
   const approvalRequest = approvalProjection.data?.request ?? null;
   const approvalStatus = approvalRequest?.status ?? null;
   const runSummary = approvalRequest?.summary;
-  const ideaBinding = progress.dependency_edges.find((edge) => edge.consumer_workflow_instance_id === instance.workflow_instance_id && edge.artifact_type === "selected-research-idea/v1");
+  const dependencies = progress.dependency_edges.filter((edge) => edge.consumer_workflow_instance_id === instance.workflow_instance_id && edge.state === "ACTIVE");
+  const ideaBinding = dependencies.find((edge) => edge.artifact_type === "selected-research-idea/v1");
   const ideaProducer = progress.instances.find((item) => item.workflow_instance_id === ideaBinding?.producer_workflow_instance_id);
   const objective = blockValue(blocks, "Research objective") ?? ideaProducer?.latest_summary ?? project.research_topic;
   const unsupported = /AUTOMATIC_PREPARATION_UNSUPPORTED|cannot prepare this experiment automatically/i.test(state.latest_summary ?? "");
@@ -515,7 +522,9 @@ function GenericExperimentDetail({
   const lifecyclePastResources = preparationRequirementCheckpoint || lifecyclePastPreparation;
   const capability = runSummary?.preparation_method
     ?? blockValue(blocks, "Preparation method")
-    ?? "Reviewed preparation method selected from the compatible installed set";
+    ?? (genericHarness
+      ? "System Generic Agent Harness"
+      : "Reviewed preparation method selected from the compatible installed set");
   const executionOutcome = blockValue(blocks, "Process outcome") ?? (artifact ? "Completed" : "Not run");
   const evaluationValidity = blockValue(blocks, "Evaluation validity") ?? (artifact ? "Not reported" : "Pending execution");
   const evidenceStatus = blockValue(blocks, "Scientific evidence status") ?? (artifact ? "Not reported" : "Pending evaluation");
@@ -609,14 +618,14 @@ function GenericExperimentDetail({
     );
   };
 
-  const resultSection = <section id="experiment-results" className="plain-section experiment-result-section" aria-labelledby="experiment-results-title"><p className="eyebrow">Results</p><h2 id="experiment-results-title" ref={resultHeadingRef} tabIndex={-1}>Experiment result</h2><div className="input-readiness-list"><div><div><strong>Process outcome</strong><small>Whether the bounded process completed.</small></div><span>{statusText(executionOutcome, "Not run")}</span></div><div><div><strong>Evaluation validity</strong><small>Whether the Capability accepted the result evidence.</small></div><span>{statusText(evaluationValidity, "Pending")}</span></div><div><div><strong>Scientific evidence</strong><small>Evidence sufficiency remains separate from process completion.</small></div><span>{statusText(evidenceStatus, "Pending")}</span></div></div>{artifact ? <ExperimentPresentationView artifact={artifact} omitCanonicalSummary /> : <p>Local result presentation has not yet been reported.</p>}{resultReviewRequired ? <section className="experiment-review-decision" aria-labelledby="result-review-decision-title"><p className="eyebrow">Owner review</p><h3 id="result-review-decision-title">Does this record accurately represent the experiment, findings, evidence status, and limitations?</h3><p>The exact Owner review and finalization remain in the Local Workspace.</p><a className="button button-primary" href="#local-workflow">Continue result review locally</a></section> : null}</section>;
+  const resultSection = <section id="experiment-results" className="plain-section experiment-result-section" aria-labelledby="experiment-results-title"><p className="eyebrow">Results</p><h2 id="experiment-results-title" ref={resultHeadingRef} tabIndex={-1}>Experiment result</h2><div className="input-readiness-list"><div><div><strong>Process outcome</strong><small>Whether the bounded process completed.</small></div><span>{statusText(executionOutcome, "Not run")}</span></div><div><div><strong>Evaluation validity</strong><small>Whether the exact scientific contract accepted the result evidence.</small></div><span>{statusText(evaluationValidity, "Pending")}</span></div><div><div><strong>Scientific evidence</strong><small>Evidence sufficiency remains separate from process completion.</small></div><span>{statusText(evidenceStatus, "Pending")}</span></div></div>{artifact ? <ExperimentPresentationView artifact={artifact} omitCanonicalSummary /> : <p>Local result presentation has not yet been reported.</p>}{resultReviewRequired ? <section className="experiment-review-decision" aria-labelledby="result-review-decision-title"><p className="eyebrow">Owner review</p><h3 id="result-review-decision-title">Does this record accurately represent the experiment, findings, evidence status, and limitations?</h3><p>The exact Owner review and finalization remain in the Local Workspace.</p><a className="button button-primary" href="#local-workflow">Continue result review locally</a></section> : null}</section>;
 
   const startSummary = <section className="experiment-compact-summary" aria-labelledby="start-mode-title"><p className="eyebrow">Start mode</p><h2 id="start-mode-title">Prepared with ReAgent</h2><p>ReAgent prepares the experiment in its managed Workflow-local area. No existing code or Git repository is required.</p></section>;
 
   const designSection = <section className="plain-section" aria-labelledby="experiment-design-title"><p className="eyebrow">Experiment design</p><h2 id="experiment-design-title">What ReAgent understands</h2>{reportedMethodology.length ? <div className="input-readiness-list">{reportedMethodology.map(({ label, value }) => <div key={label}><div><strong>{label}</strong><small>{value}</small></div><span>Reported</span></div>)}</div> : <p>Experiment design details have not yet been reported from the Local Workspace.</p>}{designCheckpoint ? <p>This scientific design is ready for approval. Approving it allows ReAgent to prepare the implementation; it does not run the experiment.</p> : null}</section>;
 
   const preparationSection = <section className="plain-section" aria-labelledby="preparation-title"><p className="eyebrow">Preparation</p><h2 id="preparation-title">How ReAgent will prepare this experiment</h2><div className="input-readiness-list">
-    <div><div><strong>Preparation method</strong><small>{capability}</small></div><span>{unsupported ? "Unsupported" : capabilityCheckpoint ? "Needs your decision" : "Reviewed"}</span></div>
+    <div><div><strong>Preparation method</strong><small>{capability}</small></div><span>{unsupported ? "Unsupported" : capabilityCheckpoint ? "Needs your decision" : genericHarness ? "System path" : "Reviewed"}</span></div>
     {resourceCheckpoint ? <div><div><strong>Research resources</strong><small>{checkpointDetail ?? EXPERIMENT_CHECKPOINTS.RESOURCE_READINESS_REQUIRED.explanation}</small></div><span>Needs attention</span></div> : resourceRequirements.length ? resourceRequirements.map((requirement) => <div key={requirement.requirement_key}><div><strong>Research resources</strong><small>{requirement.usage_description}</small></div><span>{lifecyclePastResources ? "Ready" : requirement.required ? "Needs a source" : "Optional"}</span></div>) : null}
     {preparationRequirementCheckpoint ? <div><div><strong>What ReAgent needs to prepare</strong><small>{checkpointDetail ?? EXPERIMENT_CHECKPOINTS.PREPARATION_REQUIREMENT_UNMET.explanation}</small></div><span>Needs attention</span></div> : null}
     {(checkpoint === "PREPARATION_COMPLETE" || lifecyclePastPreparation) ? <div><div><strong>Implementation preparation</strong><small>{checkpoint === "PREPARATION_COMPLETE" ? checkpointDetail ?? "The experiment implementation is prepared." : "The implementation was prepared in the managed Workflow-local area."}</small></div><span>Implementation prepared</span></div> : null}
@@ -636,14 +645,17 @@ function GenericExperimentDetail({
     <header className="workflow-detail-header"><div><p className="eyebrow">Reproduction &amp; Experiment</p><h1>Prepare and run an experiment</h1><p>Turn an exact research objective into a reproducible local computational experiment.</p></div><Link href={`/projects/${project.project_id}/workflows`} className="button button-ghost">All Workflows</Link></header>
     <ProjectNavigation projectId={project.project_id} active="Workflows" />
 
-    <section className="plain-section" aria-labelledby="research-objective-title"><p className="eyebrow">Research objective</p><h2 id="research-objective-title">{objective}</h2><p>{objective}</p><p className="muted-copy">Source · Selected research idea · exact version recorded</p>{ideaProducer ? <Link className="text-link" href={`/projects/${project.project_id}/workflows/${ideaProducer.workflow_instance_id}`}>View research idea →</Link> : null}</section>
+    <section className="plain-section" aria-labelledby="research-objective-title"><p className="eyebrow">Research objective</p><h2 id="research-objective-title">{objective}</h2><p>{objective}</p><p className="muted-copy">{ideaBinding ? "Source · Selected research idea · exact version recorded" : "Select the exact Research Idea before experiment preparation."}</p>{ideaProducer ? <Link className="text-link" href={`/projects/${project.project_id}/workflows/${ideaProducer.workflow_instance_id}`}>View research idea →</Link> : null}
+      <div className="input-readiness-list"><div><div><strong>Research Idea</strong><small>{ideaBinding ? "Exact input selected" : "Required before experiment preparation can begin"}</small></div><span>{ideaBinding ? "Selected" : "Missing"}</span></div></div>
+      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /> : ideaBinding ? <details className="secondary-control"><summary>Change research idea</summary><WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /></details> : null}
+    </section>
 
-    {!pathASelected ? <section className="plain-section experiment-current-task" aria-labelledby="experiment-start-title"><p className="eyebrow">Current task</p><h2 id="experiment-start-title">How would you like to start?</h2><p>Choose how ReAgent should begin preparing this experiment.</p><div className="workflow-support-grid">
+    {ideaBinding && !pathASelected ? <section className="plain-section experiment-current-task" aria-labelledby="experiment-start-title"><p className="eyebrow">Current task</p><h2 id="experiment-start-title">How would you like to start?</h2><p>Choose how ReAgent should begin preparing this experiment.</p><div className="workflow-support-grid">
       <article className="output-highlight"><p className="attention-copy">Recommended</p><h3>Prepare a new experiment with ReAgent</h3><p>ReAgent will help turn the research objective into a reproducible local experiment. No existing code or Git repository is required.</p><button type="button" className="button button-primary" aria-pressed={pathASelected} onClick={() => setPathASelected(true)}>{pathASelected ? "Selected" : "Choose this path"}</button></article>
       <article className="output-highlight"><p className="attention-copy">Coming next</p><h3>Use an existing local project</h3><p>Start from research code or files already on this computer. Git is optional.</p><button type="button" className="button button-ghost" disabled>Not available in this build</button></article>
     </div></section> : null}
 
-    {pathASelected ? <>
+    {ideaBinding && pathASelected ? <>
       {currentTask}
       {resultIsPrimary ? resultSection : null}
       {resultIsPrimary ? <details className="experiment-history"><summary>Experiment history</summary><div>{startSummary}{designSection}{preparationSection}</div></details> : <>{startSummary}{designSection}{(methodologyDecision || designCheckpoint) ? <details className="experiment-upcoming"><summary>Preparation · Not yet started</summary><p>Preparation begins after the scientific design and required Owner decisions are resolved.</p></details> : preparationSection}</>}
@@ -651,7 +663,7 @@ function GenericExperimentDetail({
       {runCheckpoint ? <section className="plain-section" aria-labelledby="exact-run-title"><p className="eyebrow">Ready to run</p><h2 id="exact-run-title" ref={exactRunHeadingRef} tabIndex={-1}>Exact run summary</h2>{runSummary ? <div className="input-readiness-list">
         <div><div><strong>What will run</strong><small>{runSummary.what_will_run}</small></div><span>Exact prepared run</span></div>
         <div><div><strong>Research objective</strong><small>{runSummary.research_objective}</small></div><span>Exact input</span></div>
-        <div><div><strong>Preparation method</strong><small>{runSummary.preparation_method}</small></div><span>Reviewed</span></div>
+        <div><div><strong>Preparation method</strong><small>{runSummary.preparation_method}</small></div><span>{genericHarness ? "System path" : "Reviewed"}</span></div>
         <SummaryList label="Research resources" values={runSummary.research_resources} />
         <div><div><strong>Execution environment</strong><small>{runSummary.execution_environment}</small></div><span>Reported locally</span></div>
         <div><div><strong>Network policy</strong><small>{runSummary.network_policy === "DISABLED" ? "Network disabled" : "Bounded declared network access"}</small></div><span>Bounded</span></div>
@@ -672,7 +684,7 @@ function GenericExperimentDetail({
       <div><dt>Current checkpoint</dt><dd><code>{checkpoint ?? "Not currently reported"}</code></dd></div>
       <div><dt>Research Objective</dt><dd><code>{ideaBinding?.artifact_id ?? "Not yet reported from Local Workspace"}</code></dd></div>
       {requirements.map((requirement) => <div key={requirement.requirement_key}><dt>Input requirement</dt><dd><code>{requirement.requirement_key}</code></dd></div>)}
-      <div><dt>Capability</dt><dd><code>{approvalRequest?.capability_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
+      <div><dt>{genericHarness ? "Implementation path identity" : "Capability"}</dt><dd><code>{approvalRequest?.capability_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
       <div><dt>Validated package</dt><dd><code>{approvalRequest?.validated_package_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
       <div><dt>Runtime compatibility</dt><dd><code>{approvalRequest?.runtime_compatibility_checksum ?? "Not yet reported from Local Workspace"}</code></dd></div>
       <div><dt>Design Approval</dt><dd><code>Not yet reported from Local Workspace</code></dd></div>
@@ -817,13 +829,14 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
   const resourceRequirements = pinnedVersion.resource_requirements ?? instance.resource_requirements ?? [];
   if (
     instance.workflow_definition_id === "reproduction-experiment-local-experimental"
-    && (instance.workflow_version === "0.6.0" || instance.workflow_version === "0.7.0")
+    && ["0.6.0", "0.7.0", "0.8.0"].includes(instance.workflow_version)
   ) {
     return <GenericExperimentDetail
       project={project.data}
       instance={instance}
       state={state}
       progress={progress.data}
+      instances={instances.data.items}
       requirements={requirements}
       resourceRequirements={resourceRequirements}
     />;

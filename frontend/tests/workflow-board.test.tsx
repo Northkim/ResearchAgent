@@ -48,15 +48,20 @@ function arrangeGenericExperiment(options: {
   completed?: boolean;
   reportCount?: number;
   approval?: Record<string, unknown> | null;
+  workflowVersion?: "0.6.0" | "0.8.0";
+  ideaBound?: boolean;
+  nextActionCode?: string;
 } = {}) {
   arrange();
+  const workflowVersion = options.workflowVersion ?? "0.6.0";
+  const ideaBound = options.ideaBound ?? true;
   const instance = {
     ...workflowInstancesFixture.items[0],
     workflow_instance_id: genericExperimentId,
     workflow_definition_id: "reproduction-experiment-local-experimental",
-    workflow_version: "0.6.0",
+    workflow_version: workflowVersion,
     capsule_id: `capsule-${"9".repeat(32)}`,
-    capsule_version: "0.9.0",
+    capsule_version: workflowVersion === "0.8.0" ? "0.11.0" : "0.9.0",
     display_name: "Reproduction & Experiment",
   };
   vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue({
@@ -66,13 +71,13 @@ function arrangeGenericExperiment(options: {
   });
   const genericVersion = {
     ...workflowCatalogFixture.items[0].recommended_version!,
-    version: "0.6.0",
+    version: workflowVersion,
     input_schema_id: "selected-research-idea/v1",
-    output_schema_id: "experiment-record/v4",
+    output_schema_id: workflowVersion === "0.8.0" ? "experiment-record/v5" : "experiment-record/v4",
     artifact_requirements: [{
       workflow_definition_id: "reproduction-experiment-local-experimental",
-      workflow_version: "0.6.0",
-      requirement_key: "selected-research-idea",
+      workflow_version: workflowVersion,
+      requirement_key: "research_idea",
       artifact_type: "selected-research-idea/v1",
       compatibility_mode: "EXACT",
       schema_constraint: "selected-research-idea/v1",
@@ -98,7 +103,7 @@ function arrangeGenericExperiment(options: {
     stage: { code: options.completed ? "COMPLETED" : "OWNER_APPROVAL", label: options.completed ? "Evaluation complete" : "Methodology review" },
     next_action: {
       surface: options.completed ? "BROWSER" : "LOCAL",
-      code: options.completed ? "REVIEW_RESULT" : "CONTINUE",
+      code: options.nextActionCode ?? (options.completed ? "REVIEW_RESULT" : "CONTINUE"),
       label: options.completed ? "Review result" : "Review methodology",
       description: options.completed ? "Review the scientific result." : "Resolve the scientific design choice.",
     },
@@ -110,19 +115,19 @@ function arrangeGenericExperiment(options: {
       ...projectProgressFixture.instances[0],
       workflow_instance_id: genericExperimentId,
       workflow_definition_id: "reproduction-experiment-local-experimental",
-      workflow_definition_version: "0.6.0",
+      workflow_definition_version: workflowVersion,
       workflow_display_name: "Reproduction & Experiment",
       instance_display_name: "Reproduction & Experiment",
       capsule_id: `capsule-${"9".repeat(32)}`,
-      capsule_version: "0.9.0",
+      capsule_version: workflowVersion === "0.8.0" ? "0.11.0" : "0.9.0",
       latest_summary: options.summary ?? "METHODOLOGY_DECISION_REQUIRED: choose whether the comparison uses matched or independent observations.",
       report_count: options.reportCount ?? (options.completed ? 1 : 0),
       action,
     }, projectProgressFixture.instances[0]],
-    dependency_edges: [{
+    dependency_edges: ideaBound ? [{
       binding_id: "binding-selected-idea",
       consumer_workflow_instance_id: genericExperimentId,
-      requirement_key: "selected-research-idea",
+      requirement_key: "research_idea",
       artifact_id: `artifact-${"b".repeat(32)}`,
       expected_checksum: `sha256:${"b".repeat(64)}`,
       state: "ACTIVE",
@@ -130,7 +135,7 @@ function arrangeGenericExperiment(options: {
       artifact_type: "selected-research-idea/v1",
       artifact_schema_version: "selected-research-idea/v1",
       produced_at: "2026-08-17T01:00:00Z",
-    }],
+    }] : [],
   } as never);
   vi.spyOn(apiClient, "listProjectArtifactReferences").mockResolvedValue({
     schema_version: "reagent.artifact-reference-page/v0.1",
@@ -146,6 +151,35 @@ function arrangeGenericExperiment(options: {
     next_action: options.approval ? "OWNER_APPROVAL_REQUIRED" : "REPORT_EXACT_RUN_APPROVAL_REQUEST",
   } as never);
 }
+
+test("forward Generic Experiment requires one exact Research Idea before preparation", async () => {
+  arrangeGenericExperiment({
+    workflowVersion: "0.8.0",
+    ideaBound: false,
+    nextActionCode: "SELECT_INPUT",
+  });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  expect(await screen.findByText("Required before experiment preparation can begin")).toBeVisible();
+  expect(screen.getByText("Exact Artifact inputs")).toBeVisible();
+  expect(screen.getByText(/never binds “latest” automatically/i)).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "How would you like to start?" })).not.toBeInTheDocument();
+  expect(screen.queryByText("One recommended command")).not.toBeInTheDocument();
+});
+
+test("forward Generic Experiment names the system Harness without reviewed Capability authority", async () => {
+  arrangeGenericExperiment({
+    workflowVersion: "0.8.0",
+    summary: "PREPARATION_COMPLETE: the exact implementation is prepared.",
+  });
+  const user = userEvent.setup();
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  await user.click(await screen.findByRole("button", { name: "Choose this path" }));
+  expect(screen.getByText("System Generic Agent Harness")).toBeVisible();
+  expect(screen.getByText("System path")).toBeVisible();
+  expect(screen.queryByText("Reviewed preparation method selected from the compatible installed set")).not.toBeInTheDocument();
+});
 
 function controlledLocalApproval(status = "REQUESTED") {
   return {

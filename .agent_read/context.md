@@ -4145,3 +4145,18 @@ does not affect scientific finalization. Historical Experiment 0.7 / Capsule
 and isolated PostgreSQL upgrade/downgrade/re-upgrade evidence passed. The Owner
 database and protected D1 Project remain untouched. R3 remains open for the
 separate browser-entry commit and controlled full-path R3D qualification.
+
+## Post-D1 R3C Generic Experiment browser entry (2026-08-20)
+
+The custom Experiment detail now defers to the shared exact Artifact-input setup
+before exposing preparation or a Local run command. Forward Experiment 0.8 reads
+`experiment-record/v5`, requires an accepted active Research Idea binding, and
+shows the accepted exact input rather than inferring readiness from displayed
+objective text. The system Generic Agent Harness is named as a system path, not
+a reviewed Capability, while the existing exact browser run-approval surface and
+bounded result renderer are reused.
+
+Twenty-three focused Workflow-detail tests, TypeScript, source-scoped ESLint, and
+the production Next.js build pass. No backend, migration, publication, scientific
+contract, historical Project, or protected D1 row changed in R3C. R3 still needs
+R3D controlled real-application/browser qualification before closure.
