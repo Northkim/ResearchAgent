@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from html import escape
 
 from backend.application.errors import ApplicationCodedNotFoundError
+from backend.artifact_references.service import evaluate_input_setup
 from backend.persistence.ports import UnitOfWork
 from backend.project_workspaces.contracts import WorkflowInstanceDesiredState
 
@@ -73,6 +74,9 @@ class ProjectProgressAggregationService:
         dependency_bindings = (
             self._uow.artifact_references.list_project_bindings(project_id)
         )
+        input_setup_decisions = (
+            self._uow.artifact_references.list_project_input_setup_decisions(project_id)
+        )
         artifact_total = self._uow.artifact_references.count_artifacts(
             project_id=project_id
         )
@@ -120,6 +124,7 @@ class ProjectProgressAggregationService:
                     and item.workflow_version == instance.workflow_version
                 ),
                 dependency_bindings=dependency_bindings,
+                input_setup_decisions=input_setup_decisions,
                 resource_bindings=resource_bindings,
                 artifacts=tuple(artifacts.values()),
                 friendly_label=friendly_labels[instance.workflow_instance_id],
@@ -219,6 +224,7 @@ class ProjectProgressAggregationService:
         requirements,
         resource_requirements,
         dependency_bindings,
+        input_setup_decisions,
         resource_bindings,
         artifacts,
         friendly_label: str,
@@ -284,6 +290,15 @@ class ProjectProgressAggregationService:
             for item in required
             if item.requirement_key in active_bindings
         )
+        input_setup = evaluate_input_setup(
+            requirements=requirements,
+            bindings=tuple(active_bindings.values()),
+            decisions=tuple(
+                item for item in input_setup_decisions
+                if item.consumer_workflow_instance_id
+                == instance.workflow_instance_id
+            ),
+        )
         active_resource_bindings = {
             item.requirement_key: item
             for item in resource_bindings
@@ -314,6 +329,10 @@ class ProjectProgressAggregationService:
             research_status=(record.status.value if record is not None else "NOT_STARTED"),
             result_count=result_count,
             stable_key=(definition.workflow_definition_id if definition is not None else ""),
+            optional_decision_required=(
+                input_setup["decision_required"]
+                and input_setup["current_decision"] is None
+            ),
         )
         latest_artifact = max(
             (
@@ -395,7 +414,7 @@ class ProjectProgressAggregationService:
 def _readiness(
     *, lifecycle, installation_state, missing, compatible_counts,
     missing_resources=(), required_resource_count=0, report_count,
-    research_status, result_count, stable_key,
+    research_status, result_count, stable_key, optional_decision_required=False,
 ):
     if lifecycle == "RETIRED":
         return "RETIRED", "REVIEW_RESULT"
@@ -415,6 +434,8 @@ def _readiness(
         )
     if report_count:
         return "IN_PROGRESS", "CONTINUE"
+    if optional_decision_required:
+        return "WAITING_FOR_INPUT", "SELECT_INPUT"
     if missing_resources:
         return "WAITING_FOR_RESOURCE", "SELECT_RESOURCE"
     if required_resource_count:

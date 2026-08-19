@@ -123,6 +123,15 @@ def test_workspace_root_experiment_run_auto_starts_input_review_and_uploads_prog
             },
         )
         assert binding.status_code == 201, binding.text
+        input_setup = client.post(
+            f"/projects/{project_id}/workflow-instances/"
+            f"{experiment['workflow_instance_id']}/input-setup-decisions",
+            json={
+                "omitted_optional_requirement_keys": ["literature_library"],
+                "idempotency_key": "00000000-0000-4000-8000-000000000120",
+            },
+        )
+        assert input_setup.status_code == 201, input_setup.text
         workspace_cli.refresh_artifact_index(
             workspace_root=workspace, transport=transport
         )

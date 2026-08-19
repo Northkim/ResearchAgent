@@ -115,8 +115,18 @@ test("presentation absence is truthful and does not block exact multi-candidate 
     offset: 0, limit: 100, total: 2, has_more: false,
   });
   vi.spyOn(apiClient, "bindArtifactDependency").mockResolvedValue({} as never);
+  vi.spyOn(apiClient, "getWorkflowInputSetup").mockResolvedValue({
+    schema_version: "reagent.workflow-input-setup-state/v0.1",
+    project_id: projectId,
+    consumer_workflow_instance_id: workflowInstancesFixture.items[0].workflow_instance_id,
+    binding_set_checksum: `sha256:${"0".repeat(64)}`,
+    missing_required_requirement_keys: ["literature_library"],
+    omitted_optional_requirement_keys: [],
+    decision_required: false,
+    current_decision: null,
+  });
   const instance = workflowInstancesFixture.items[0];
-  render(<Providers><WorkflowInputSetup
+  const view = render(<Providers><WorkflowInputSetup
     projectId={projectId}
     instance={instance}
     instances={workflowInstancesFixture.items}
@@ -133,11 +143,42 @@ test("presentation absence is truthful and does not block exact multi-candidate 
 
   const radios = await screen.findAllByRole("radio");
   expect(radios).toHaveLength(2);
+  expect(new Set(radios.map((radio) => radio.closest("label")?.getAttribute("data-artifact-id"))).size).toBe(2);
   radios.forEach((radio) => expect(radio).not.toBeChecked());
   expect(screen.getByText("Bounded archival study")).toBeVisible();
   expect(screen.getByText("Preview not yet reported from Local Workspace.")).toBeVisible();
   expect(screen.getByRole("button", { name: "Confirm exact input" })).toBeDisabled();
   expect(screen.queryByText(/sha256:/)).not.toBeInTheDocument();
+
+  view.rerender(<Providers><WorkflowInputSetup
+    projectId={projectId}
+    instance={instance}
+    instances={workflowInstancesFixture.items}
+    projections={projectProgressFixture.instances}
+    requirements={[{
+      requirement_key: "literature_library",
+      artifact_type: "selected-paper-library/v1",
+      schema_constraint: "selected-paper-library/v1",
+      required: true,
+      target_relative_path: "inputs/selected-paper-library.json",
+    }]}
+    dependencies={[{
+      binding_id: `artifact-binding-${"7".repeat(32)}`,
+      consumer_workflow_instance_id: instance.workflow_instance_id,
+      requirement_key: "literature_library",
+      artifact_id: choices[1].artifact_id,
+      expected_checksum: choices[1].content_checksum,
+      state: "ACTIVE",
+      producer_workflow_instance_id: choices[1].producer_workflow_instance_id,
+      artifact_type: choices[1].artifact_type,
+      artifact_schema_version: choices[1].artifact_schema_version,
+      produced_at: choices[1].produced_at,
+    }]}
+  /></Providers>);
+  const accepted = await screen.findAllByRole("radio");
+  expect(accepted[0]).not.toBeChecked();
+  expect(accepted[1]).toBeChecked();
+  expect(screen.getByRole("button", { name: "Confirm changed input" })).toBeDisabled();
 });
 
 test("manuscript and Review previews prioritize bounded content over identities", () => {

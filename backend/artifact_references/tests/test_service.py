@@ -512,6 +512,130 @@ def test_exact_dependency_binding_plan_and_explicit_rebind(tmp_path) -> None:
     assert len(dependency_page["dependencies"]) == 1
 
 
+def test_optional_evidence_requires_exact_durable_omission_decision(tmp_path) -> None:
+    database = InMemoryDatabase()
+    uow = _seed(database)
+    uow.artifact_references.add_requirement(WorkflowArtifactRequirement(
+        workflow_definition_id=CONSUMER_DEFINITION,
+        workflow_version="1.0.0",
+        requirement_key="optional-context",
+        artifact_type=ARTIFACT_TYPE,
+        compatibility_mode=CompatibilityMode.EXACT,
+        schema_constraint=ARTIFACT_SCHEMA,
+        cardinality_min=0,
+        cardinality_max=1,
+        required=False,
+        materialization_mode=MaterializationMode.VERIFIED_COPY,
+        target_relative_path="inputs/optional-context.md",
+        created_at=NOW,
+        updated_at=NOW,
+    ))
+    uow.commit()
+    progress, service = _progress_service(uow, tmp_path)
+    progress.upload(
+        upload_envelope(native_report(
+            workflow_id=PRODUCER_DEFINITION,
+            workflow_version="1.0.0",
+            project_id=PROJECT_ID,
+        )),
+        workflow_instance_id=PRODUCER_ID,
+        artifact_declarations=(_declaration(),),
+    )
+    binding = service.bind_dependency(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+        requirement_key="paper-library",
+        artifact_id=ARTIFACT_ID,
+        idempotency_key="00000000-0000-4000-8000-000000000011",
+    )
+
+    setup = service.input_setup_state(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+    )
+    assert setup["decision_required"] is True
+    assert setup["omitted_optional_requirement_keys"] == ["optional-context"]
+    assert setup["current_decision"] is None
+    with pytest.raises(ApplicationValidationError) as error:
+        service.materialization_plan(
+            project_id=PROJECT_ID,
+            consumer_workflow_instance_id=CONSUMER_ID,
+        )
+    assert getattr(error.value, "code", None) == "INPUT_SETUP_DECISION_REQUIRED"
+
+    decision = service.confirm_input_setup(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+        omitted_optional_requirement_keys=("optional-context",),
+        idempotency_key="00000000-0000-4000-8000-000000000012",
+    )
+    replay = service.confirm_input_setup(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+        omitted_optional_requirement_keys=("optional-context",),
+        idempotency_key="00000000-0000-4000-8000-000000000012",
+    )
+    assert replay == decision
+    client = TestClient(create_app(ApplicationContainer(
+        unit_of_work_factory=lambda: InMemoryUnitOfWork(database)
+    )))
+    observed = client.get(
+        f"/projects/{PROJECT_ID}/workflow-instances/{CONSUMER_ID}/input-setup"
+    )
+    replay_response = client.post(
+        f"/projects/{PROJECT_ID}/workflow-instances/{CONSUMER_ID}/input-setup-decisions",
+        json={
+            "omitted_optional_requirement_keys": ["optional-context"],
+            "idempotency_key": "00000000-0000-4000-8000-000000000012",
+        },
+    )
+    assert observed.status_code == 200
+    assert replay_response.status_code == 201
+    assert observed.json()["current_decision"]["decision_id"] == decision.decision_id
+    assert replay_response.json()["decision_id"] == decision.decision_id
+    assert service.materialization_plan(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+    )["artifacts"][0]["artifact_id"] == ARTIFACT_ID
+    assert service.list_dependencies(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+    )["total"] == 1
+
+    first = uow.artifact_references.get_artifact(ARTIFACT_ID)
+    assert first is not None
+    replacement = replace(
+        first,
+        artifact_id="artifact-" + "6" * 32,
+        producer_progress_receipt_id="replacement-receipt",
+        producer_progress_report_id="replacement-report",
+        relative_path="outputs/replacement.md",
+        content_checksum=HASH_A,
+    )
+    uow.artifact_references.add_artifact(replacement)
+    uow.commit()
+    service.bind_dependency(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+        requirement_key="paper-library",
+        artifact_id=replacement.artifact_id,
+        replace_binding_id=binding.binding_id,
+        idempotency_key="00000000-0000-4000-8000-000000000013",
+    )
+    changed = service.input_setup_state(
+        project_id=PROJECT_ID,
+        consumer_workflow_instance_id=CONSUMER_ID,
+    )
+    assert changed["binding_set_checksum"] != decision.binding_set_checksum
+    assert changed["current_decision"] is None
+    with pytest.raises(ApplicationValidationError) as changed_error:
+        service.materialization_plan(
+            project_id=PROJECT_ID,
+            consumer_workflow_instance_id=CONSUMER_ID,
+        )
+    assert getattr(changed_error.value, "code", None) == "INPUT_SETUP_DECISION_REQUIRED"
+
+
 def test_no_production_artifact_type_is_inferred_from_literature_metadata(tmp_path) -> None:
     database = InMemoryDatabase()
     uow = _seed(database)

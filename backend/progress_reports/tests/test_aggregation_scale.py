@@ -5,7 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 from backend.local_projects.contracts import LocalPackageMetadata, LocalProject
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
-from backend.progress_reports.aggregation import ProjectProgressAggregationService
+from backend.progress_reports.aggregation import (
+    ProjectProgressAggregationService,
+    _readiness,
+)
 from backend.progress_reports.contracts import (
     ChainState,
     UploadedProgressReport,
@@ -140,3 +143,25 @@ def test_fixed_query_aggregation_handles_twenty_instances_and_one_thousand_repor
     assert projection.latest_project_activity_at == (
         start + timedelta(minutes=999)
     ).isoformat().replace("+00:00", "Z")
+
+
+def test_optional_evidence_decision_precedes_materialization_projection() -> None:
+    common = {
+        "lifecycle": "ACTIVE",
+        "installation_state": "ACKNOWLEDGED_CURRENT",
+        "missing": (),
+        "compatible_counts": {"manuscript": 1},
+        "report_count": 0,
+        "research_status": "NOT_STARTED",
+        "result_count": 0,
+        "stable_key": "review-local-experimental",
+    }
+
+    assert _readiness(**common, optional_decision_required=True) == (
+        "WAITING_FOR_INPUT",
+        "SELECT_INPUT",
+    )
+    assert _readiness(**common, optional_decision_required=False) == (
+        "NEEDS_MATERIALIZATION",
+        "MATERIALIZE",
+    )

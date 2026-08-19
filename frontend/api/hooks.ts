@@ -146,6 +146,14 @@ export function useArtifactDependencies(projectId: string, workflowInstanceId: s
   });
 }
 
+export function useWorkflowInputSetup(projectId: string, workflowInstanceId: string) {
+  return useQuery({
+    queryKey: queryKeys.workflowInputSetup(projectId, workflowInstanceId),
+    queryFn: () => apiClient.getWorkflowInputSetup(projectId, workflowInstanceId),
+    retry: false,
+  });
+}
+
 export function useBindArtifactDependency(projectId: string, workflowInstanceId: string) {
   const queryClient = useQueryClient();
   return useMutation({
@@ -164,6 +172,35 @@ export function useBindArtifactDependency(projectId: string, workflowInstanceId:
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: queryKeys.artifactDependencies(projectId, workflowInstanceId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["projects", projectId, "progress"],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.workflowInputSetup(projectId, workflowInstanceId),
+        }),
+      ]);
+    },
+  });
+}
+
+export function useConfirmWorkflowInputSetup(
+  projectId: string,
+  workflowInstanceId: string,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      omittedOptionalRequirementKeys: string[];
+      idempotencyKey: string;
+    }) => apiClient.confirmWorkflowInputSetup(projectId, workflowInstanceId, {
+      omitted_optional_requirement_keys: payload.omittedOptionalRequirementKeys,
+      idempotency_key: payload.idempotencyKey,
+    }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.workflowInputSetup(projectId, workflowInstanceId),
         }),
         queryClient.invalidateQueries({
           queryKey: ["projects", projectId, "progress"],

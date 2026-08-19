@@ -2,7 +2,12 @@
 
 import { useState } from "react";
 
-import { useBindArtifactDependency, useProjectArtifactReferences } from "@/api/hooks";
+import {
+  useBindArtifactDependency,
+  useConfirmWorkflowInputSetup,
+  useProjectArtifactReferences,
+  useWorkflowInputSetup,
+} from "@/api/hooks";
 import { formatDateTime } from "@/lib/format";
 import type { ArtifactDependencyEdge, ProjectWorkflowInstance, WorkflowArtifactRequirement, WorkflowInstanceProgress } from "@/types/api";
 
@@ -28,7 +33,7 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
   const [selected, setSelected] = useState("");
   const active = dependencies.find((edge) => edge.state === "ACTIVE" && edge.requirement_key === requirement.requirement_key);
   const choices = artifacts.data?.artifacts ?? [];
-  const effective = selected || (choices.length === 1 ? choices[0].artifact_id : "");
+  const effective = selected || active?.artifact_id || (choices.length === 1 ? choices[0].artifact_id : "");
 
   return (
     <fieldset>
@@ -39,7 +44,7 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
         const producer = instances.find((item) => item.workflow_instance_id === artifact.producer_workflow_instance_id);
         const projection = projections.find((item) => item.workflow_instance_id === artifact.producer_workflow_instance_id);
         return (
-          <label className="artifact-choice" key={artifact.artifact_id}>
+          <label className="artifact-choice" key={artifact.artifact_id} data-artifact-id={artifact.artifact_id}>
             <input type="radio" name={`${instance.workflow_instance_id}-${requirement.requirement_key}`} checked={effective === artifact.artifact_id} onChange={() => setSelected(artifact.artifact_id)} />
             <span>
               {projection?.friendly_instance_label ?? producer?.display_name ?? "Upstream workflow"} · {formatDateTime(artifact.produced_at)}
@@ -50,7 +55,10 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
         );
       })}
       {choices.length ? (
-        <button className="button button-secondary" disabled={!effective || bind.isPending || effective === active?.artifact_id} onClick={() => bind.mutate({ artifactId: effective, requirementKey: requirement.requirement_key, replaceBindingId: active?.binding_id, idempotencyKey: key() })}>
+        <button className="button button-secondary" disabled={!effective || bind.isPending || effective === active?.artifact_id} onClick={async () => {
+          await bind.mutateAsync({ artifactId: effective, requirementKey: requirement.requirement_key, replaceBindingId: active?.binding_id, idempotencyKey: key() });
+          setSelected("");
+        }}>
           {active ? "Confirm changed input" : "Confirm exact input"}
         </button>
       ) : null}
@@ -66,20 +74,45 @@ export function WorkflowInputSetup({ projectId, instance, instances, projections
   requirements: WorkflowArtifactRequirement[];
   dependencies: ArtifactDependencyEdge[];
 }) {
+  const setup = useWorkflowInputSetup(projectId, instance.workflow_instance_id);
+  const confirmSetup = useConfirmWorkflowInputSetup(
+    projectId,
+    instance.workflow_instance_id,
+  );
   if (!requirements.length) return null;
   const sameType = instances.filter((item) => item.workflow_definition_id === instance.workflow_definition_id && item.desired_state === "ACTIVE");
   const selector = sameType.length === 1 ? `--workflow ${instance.workflow_definition_id}` : `--workflow-instance ${instance.workflow_instance_id}`;
+  const omitted = setup.data?.omitted_optional_requirement_keys ?? [];
+  const setupReady = setup.data
+    ? !setup.data.decision_required || Boolean(setup.data.current_decision)
+    : false;
   return (
     <div className="boundary-callout" aria-label="Exact workflow input setup">
       <strong>Exact Artifact inputs</strong>
       <p>Select each result explicitly. ReAgent never binds “latest” automatically.</p>
       {requirements.map((requirement) => <RequirementChoice key={requirement.requirement_key} {...{ projectId, instance, instances, projections, requirement, dependencies }} />)}
-      {dependencies.some((edge) => edge.state === "ACTIVE") ? (
+      {setup.data?.decision_required && !setup.data.current_decision ? (
+        <div className="input-setup-decision">
+          <p>{omitted.length === 1 ? "One optional evidence source is not selected." : `${omitted.length} optional evidence sources are not selected.`}</p>
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={confirmSetup.isPending}
+            onClick={() => confirmSetup.mutate({
+              omittedOptionalRequirementKeys: omitted,
+              idempotencyKey: key(),
+            })}
+          >
+            {confirmSetup.isPending ? "Saving decision…" : "Continue without optional evidence"}
+          </button>
+        </div>
+      ) : setup.data?.current_decision ? (
+        <p>Optional evidence was intentionally left unselected for this pass.</p>
+      ) : null}
+      {dependencies.some((edge) => edge.state === "ACTIVE") && setupReady ? (
         <div>
-          <p>The browser saved metadata only. Prepare verified local copies before running:</p>
-          <CopyCommand command="python reagent_local.py artifact refresh ." label="Artifact refresh command" />
+          <p>Prepare verified local copies of the selected research inputs:</p>
           <CopyCommand command={`python reagent_local.py artifact materialize . ${selector}`} label="input materialization command" />
-          <CopyCommand command={`python reagent_local.py run . ${selector}`} label="Workflow run command" />
         </div>
       ) : null}
     </div>

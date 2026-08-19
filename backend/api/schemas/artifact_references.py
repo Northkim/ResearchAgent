@@ -92,6 +92,36 @@ class ArtifactDependencyPageResponse(StrictDTO):
     has_more: bool
 
 
+class WorkflowInputSetupDecisionRequest(StrictDTO):
+    omitted_optional_requirement_keys: list[str]
+    idempotency_key: str
+
+
+class WorkflowInputSetupDecisionResponse(StrictDTO):
+    decision_id: str
+    project_id: str
+    consumer_workflow_instance_id: str
+    consumer_workflow_definition_id: str
+    consumer_workflow_version: str
+    binding_set_checksum: str
+    omitted_optional_requirement_keys: list[str]
+    decision: str
+    idempotency_key: str
+    decision_checksum: str
+    decided_at: datetime
+
+
+class WorkflowInputSetupStateResponse(StrictDTO):
+    schema_version: str = "reagent.workflow-input-setup-state/v0.1"
+    project_id: str
+    consumer_workflow_instance_id: str
+    binding_set_checksum: str
+    missing_required_requirement_keys: list[str]
+    omitted_optional_requirement_keys: list[str]
+    decision_required: bool
+    current_decision: WorkflowInputSetupDecisionResponse | None
+
+
 class ArtifactMaterializationItemResponse(StrictDTO):
     binding_id: str
     requirement_key: str

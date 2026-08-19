@@ -9,6 +9,8 @@ const hooks = vi.hoisted(() => ({
   useProject: vi.fn(), useProjectWorkflowInstances: vi.fn(), useProjectProgress: vi.fn(),
   useProjectArtifactReferences: vi.fn(), useWorkflowDefinition: vi.fn(),
   useControlledLocalRunApproval: vi.fn(), useControlledLocalRunApprovalDecision: vi.fn(),
+  useWorkflowInputSetup: vi.fn(), useConfirmWorkflowInputSetup: vi.fn(),
+  useBindArtifactDependency: vi.fn(),
 }));
 
 vi.mock("@/api/hooks", () => hooks);
@@ -84,6 +86,18 @@ function setup(role: "INITIAL" | "REVIEW" | "REVISION") {
 
 beforeEach(() => vi.clearAllMocks());
 
+beforeEach(() => {
+  hooks.useWorkflowInputSetup.mockReturnValue({
+    data: null, isLoading: false, isError: false,
+  });
+  hooks.useConfirmWorkflowInputSetup.mockReturnValue({
+    mutate: vi.fn(), isPending: false,
+  });
+  hooks.useBindArtifactDependency.mockReturnValue({
+    mutate: vi.fn(), isPending: false,
+  });
+});
+
 test("completed manuscript is primary and has no misleading Local command", () => {
   const instance = setup("INITIAL");
   render(<WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={instance.workflow_instance_id} />);
@@ -108,4 +122,68 @@ test("completed Revision preserves issue disposition without a Local command", (
   expect(screen.getByRole("heading", { name: "Revision completed" })).toBeVisible();
   expect(screen.getByText(/issue-1: addressed/)).toBeVisible();
   expect(screen.queryByText("One recommended command")).not.toBeInTheDocument();
+});
+
+test("Review keeps unresolved optional evidence visible until explicit continuation", () => {
+  const instance = setup("REVIEW");
+  const requiredBinding = {
+    binding_id: `artifact-binding-${"1".repeat(32)}`,
+    consumer_workflow_instance_id: instance.workflow_instance_id,
+    requirement_key: "manuscript",
+    artifact_id: manuscriptId,
+    expected_checksum: `sha256:${"c".repeat(64)}`,
+    state: "ACTIVE",
+    producer_workflow_instance_id: `wfi-${"8".repeat(32)}`,
+    artifact_type: "manuscript-draft/v4",
+    artifact_schema_version: "manuscript-draft/v4",
+    produced_at: "2026-08-18T08:00:00Z",
+  };
+  const completedState = state(instance, "REVIEW");
+  const selecting = {
+    ...completedState,
+    action: {
+    ...completedState.action,
+    stage: { code: "INPUT_REVIEW", label: "Inputs need attention" },
+    attention_state: "OWNER_ACTION_REQUIRED",
+    next_action: { surface: "BROWSER", code: "SELECT_INPUT", label: "Choose input", description: "Resolve optional evidence." },
+    latest_output: null,
+    },
+  };
+  hooks.useProjectProgress.mockReturnValue({
+    data: { ...projectProgressFixture, instances: [selecting], dependency_edges: [requiredBinding] },
+    isLoading: false, isError: false,
+  });
+  hooks.useProjectArtifactReferences.mockReturnValue({
+    data: { artifacts: [] }, isLoading: false, isError: false,
+  });
+  hooks.useWorkflowDefinition.mockReturnValue({
+    data: { description: "", versions: [{
+      version: instance.workflow_version,
+      artifact_requirements: [
+        { requirement_key: "manuscript", artifact_type: "manuscript-draft/v4", schema_constraint: "manuscript-draft/v4", required: true, target_relative_path: "inputs/manuscript.json" },
+        { requirement_key: "research_idea", artifact_type: "selected-research-idea/v1", schema_constraint: "selected-research-idea/v1", required: false, target_relative_path: "inputs/idea.json" },
+      ],
+      resource_requirements: [],
+    }] },
+    isLoading: false, isError: false,
+  });
+  hooks.useWorkflowInputSetup.mockReturnValue({
+    data: {
+      schema_version: "reagent.workflow-input-setup-state/v0.1",
+      project_id: localProjectFixture.project_id,
+      consumer_workflow_instance_id: instance.workflow_instance_id,
+      binding_set_checksum: `sha256:${"9".repeat(64)}`,
+      missing_required_requirement_keys: [],
+      omitted_optional_requirement_keys: ["research_idea"],
+      decision_required: true,
+      current_decision: null,
+    },
+    isLoading: false, isError: false,
+  });
+
+  render(<WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={instance.workflow_instance_id} />);
+
+  expect(screen.getByText("Optional · Not selected")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Continue without optional evidence" })).toBeVisible();
+  expect(screen.queryByText("Prepare verified local copies of the selected research inputs:")).not.toBeInTheDocument();
 });

@@ -38,6 +38,7 @@ from backend.database.orm import (
     StepRunORM,
     UploadedProgressReportORM,
     WorkflowDefinitionORM,
+    WorkflowInputSetupDecisionORM,
     WorkflowDefinitionVersionSkillPinORM,
     WorkflowResourceBindingORM,
     WorkflowResourceRequirementORM,
@@ -361,6 +362,7 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
         self._flush_type(LocalArtifactReferenceORM)
         self._flush_type(WorkflowArtifactRequirementORM)
         self._flush_type(ArtifactDependencyBindingORM)
+        self._flush_type(WorkflowInputSetupDecisionORM)
         self._flush_type(WorkflowResourceRequirementORM)
         self._flush_type(WorkflowResourceBindingORM)
         self._flush_type(ProjectProgressProjectionORM)

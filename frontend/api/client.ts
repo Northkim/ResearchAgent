@@ -23,6 +23,8 @@ import type {
   CanonicalArtifactPage,
   ArtifactDependencyBinding,
   ArtifactDependencyPage,
+  WorkflowInputSetupDecision,
+  WorkflowInputSetupState,
   ProjectResourcePage,
   ProjectResourceReference,
   WorkflowResourceBinding,
@@ -272,6 +274,31 @@ export const apiClient = {
     return request(
       `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
       `${encodeURIComponent(workflowInstanceId)}/artifact-dependencies`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+  },
+
+  getWorkflowInputSetup(
+    projectId: string,
+    workflowInstanceId: string,
+  ): Promise<WorkflowInputSetupState> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/input-setup`,
+    );
+  },
+
+  confirmWorkflowInputSetup(
+    projectId: string,
+    workflowInstanceId: string,
+    payload: {
+      omitted_optional_requirement_keys: string[];
+      idempotency_key: string;
+    },
+  ): Promise<WorkflowInputSetupDecision> {
+    return request(
+      `/projects/${encodeURIComponent(projectId)}/workflow-instances/` +
+      `${encodeURIComponent(workflowInstanceId)}/input-setup-decisions`,
       { method: "POST", body: JSON.stringify(payload) },
     );
   },

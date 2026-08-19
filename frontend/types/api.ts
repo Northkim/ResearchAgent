@@ -719,3 +719,28 @@ export interface ArtifactDependencyPage {
   total: number;
   has_more: boolean;
 }
+
+export interface WorkflowInputSetupDecision {
+  decision_id: string;
+  project_id: string;
+  consumer_workflow_instance_id: string;
+  consumer_workflow_definition_id: string;
+  consumer_workflow_version: string;
+  binding_set_checksum: string;
+  omitted_optional_requirement_keys: string[];
+  decision: "CONTINUE_WITHOUT_OPTIONAL_EVIDENCE";
+  idempotency_key: string;
+  decision_checksum: string;
+  decided_at: string;
+}
+
+export interface WorkflowInputSetupState {
+  schema_version: "reagent.workflow-input-setup-state/v0.1";
+  project_id: string;
+  consumer_workflow_instance_id: string;
+  binding_set_checksum: string;
+  missing_required_requirement_keys: string[];
+  omitted_optional_requirement_keys: string[];
+  decision_required: boolean;
+  current_decision: WorkflowInputSetupDecision | null;
+}

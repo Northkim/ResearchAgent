@@ -15,6 +15,9 @@ from ..schemas import (
     ArtifactDependencyBindRequest,
     ArtifactDependencyPageResponse,
     ArtifactDependencyResponse,
+    WorkflowInputSetupDecisionRequest,
+    WorkflowInputSetupDecisionResponse,
+    WorkflowInputSetupStateResponse,
     ArtifactMaterializationPlanResponse,
     ArtifactReferencePageResponse,
 )
@@ -133,6 +136,49 @@ async def list_artifact_dependencies(
             offset=offset,
             limit=limit,
         )
+    )
+
+
+@router.get(
+    "/workflow-instances/{instance_id}/input-setup",
+    response_model=WorkflowInputSetupStateResponse,
+)
+async def get_workflow_input_setup(
+    project_id: str,
+    instance_id: str,
+    services: ProgressServicesDependency,
+) -> WorkflowInputSetupStateResponse:
+    return WorkflowInputSetupStateResponse.model_validate(
+        services.artifact_references.input_setup_state(
+            project_id=project_id,
+            consumer_workflow_instance_id=instance_id,
+        )
+    )
+
+
+@router.post(
+    "/workflow-instances/{instance_id}/input-setup-decisions",
+    response_model=WorkflowInputSetupDecisionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def confirm_workflow_input_setup(
+    project_id: str,
+    instance_id: str,
+    request: WorkflowInputSetupDecisionRequest,
+    services: ProgressServicesDependency,
+) -> WorkflowInputSetupDecisionResponse:
+    decision = services.artifact_references.confirm_input_setup(
+        project_id=project_id,
+        consumer_workflow_instance_id=instance_id,
+        omitted_optional_requirement_keys=tuple(
+            request.omitted_optional_requirement_keys
+        ),
+        idempotency_key=request.idempotency_key,
+    )
+    from backend.artifact_references.service import input_setup_decision_document
+
+    return WorkflowInputSetupDecisionResponse.model_validate(
+        input_setup_decision_document(decision)
     )
 
 

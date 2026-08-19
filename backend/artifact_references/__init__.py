@@ -15,6 +15,7 @@ from .contracts import (
     DependencyBindingState,
     MaterializationMode,
     WorkflowArtifactRequirement,
+    WorkflowInputSetupDecision,
 )
 from .ports import ArtifactReferenceRepository
 from .research_flow_contracts import (
@@ -113,6 +114,7 @@ __all__ = [
     "DependencyBindingState",
     "MaterializationMode",
     "WorkflowArtifactRequirement",
+    "WorkflowInputSetupDecision",
     "ARTIFACT_CONTRACTS",
     "GENERIC_EXPERIMENT_ARTIFACT_CONTRACTS",
     "GENERIC_EXPERIMENT_V5_ARTIFACT_CONTRACTS",

@@ -35,6 +35,7 @@ from .models import (
     StepRunORM,
     UploadedProgressReportORM,
     WorkflowDefinitionORM,
+    WorkflowInputSetupDecisionORM,
     WorkflowRunORM,
 )
 
@@ -73,5 +74,6 @@ __all__ = [
     "StepRunORM",
     "UploadedProgressReportORM",
     "WorkflowDefinitionORM",
+    "WorkflowInputSetupDecisionORM",
     "WorkflowRunORM",
 ]

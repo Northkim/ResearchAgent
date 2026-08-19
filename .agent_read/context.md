@@ -2,6 +2,29 @@
 
 Last updated: 2026-08-20
 
+## Post-D1 R1B1 optional-evidence decision (2026-08-20)
+
+R1B1 adds a durable exact input-setup decision for Workflows whose required
+Artifact bindings are complete while optional evidence remains unresolved. The
+decision is bound to the current accepted binding-set checksum and exact sorted
+omission keys; any binding change makes it non-current. Materialization and
+pre-materialization Progress readiness now require that current decision.
+Existing progressed/terminal Workflows retain their historical lifecycle.
+
+The browser keeps optional evidence visible, renders accepted server bindings
+rather than optimistic radio state, keys candidates by exact Artifact identity,
+and offers one explicit `Continue without optional evidence` action. It does not
+create implicit bindings or use presentation as evidence authority. ADR 0050 is
+the durable architecture record. Migration `20260820_0035` adds only the input
+setup decision table; marked disposable PostgreSQL passed upgrade,
+downgrade/re-upgrade, repository round-trip, and Alembic check. The Owner
+database remains at 0034 and protected D1 state was not touched.
+
+R1B1 closes `D1-FRONTEND-KEY-01`, `D1-WRITING-BINDING-01`, and
+`D1-REVIEW-INPUT-LIFECYCLE-01`. R1B2 zero-paper scientific content
+qualification/publication remains separate and unimplemented; R1C package
+classification remains deferred.
+
 ## Post-D1 consolidated repair R0 (2026-08-20)
 
 The Owner-authorized consolidated repair program is frozen in

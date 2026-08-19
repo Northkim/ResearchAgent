@@ -17,7 +17,8 @@ authority problem that must not be hidden inside the compatible Local repair.
 | Subphase | Scope | Primary ledger IDs |
 |---|---|---|
 | R1A | Local exact binding/materialization/readiness/refresh | `D1-INPUT-RECONCILE-01`, `D1-INPUT-RUNNABLE-01`, `D1-INPUT-RECEIPT-01`, `D1-INPUT-REFRESH-01`; preserve `D1-INPUT-FRESH-01` |
-| R1B | Browser accepted-binding continuity, optional evidence decision, published zero-paper consumer precondition | `D1-FRONTEND-KEY-01`, `D1-WRITING-BINDING-01`, `D1-REVIEW-INPUT-LIFECYCLE-01`, `D1-UPSTREAM-ZERO-PAPER-01` |
+| R1B1 | Browser accepted-binding continuity and durable optional-evidence decision | `D1-FRONTEND-KEY-01`, `D1-WRITING-BINDING-01`, `D1-REVIEW-INPUT-LIFECYCLE-01` |
+| R1B2 | Published zero-paper consumer precondition | `D1-UPSTREAM-ZERO-PAPER-01` |
 | R1C | Package/secret/path/OS-metadata classification | `D1-PACKAGE-OS-METADATA-01`, `D1-PACKAGE-PRIVATE-PATH-01` |
 
 The relevant part of `D1-LOCAL-ORCHESTRATION-01` is limited in R1 to removing
@@ -80,12 +81,40 @@ Cloud stores exact Artifact identity/checksum/size but not an authoritative
 selected-paper count. Presentation may contain `selected_count`, but it is
 optional UI metadata and cannot be scientific readiness authority.
 
-Consequently R1B must not use presentation to classify compatibility. Before
-R1B production writes, choose the smallest forward-additive consumer contract
-that can state the minimum-content precondition and enforce it before an input
-is presented as locally runnable. Historical Idea 0.2/0.3 bytes remain
-immutable. If authoritative Cloud pre-evaluation requires a new bounded
-Artifact fact, freeze that additive contract and migration separately.
+Consequently R1B must not use presentation to classify compatibility. Source
+recovery found no existing durable input-setup decision and no scientific
+content fact in `ArtifactReference`. R1B is therefore split again so the UI
+decision lifecycle and the new publication/content authority are independently
+reviewable.
+
+R1B1 adds one Project/Workflow-scoped input-setup decision. Its immutable
+decision payload is the exact active-binding-set checksum plus the exact set of
+unbound optional requirement keys the Owner deliberately omitted. It is current
+only while those values still match. It neither creates a binding nor makes an
+omitted Artifact scientific evidence. The materialization-plan endpoint and
+Progress readiness require a current decision only when required inputs are
+complete and optional requirements remain unresolved. Existing terminal
+Workflows remain terminal; existing Workflows with no optional requirements are
+unchanged.
+
+R1B2 uses a separate checksum-bound Artifact content qualification reported by
+Local only after validating the exact Artifact bytes. Presentation is not read
+or copied. The first qualification is deliberately narrow:
+
+```text
+schema = reagent.artifact-qualification.selected-paper-library/v0.1
+artifact_id + artifact_checksum + selected_count
+```
+
+Cloud validates that schema/payload/checksum pairing and stores only this
+bounded fact. Re-report is idempotent; any different payload for the same exact
+Artifact conflicts. A forward Idea Definition 0.3 / Capsule 0.4 publishes a
+`paper_library` content precondition requiring this qualification with
+`selected_count >= 1`. Historical Idea 0.2 / Capsule 0.3 bytes and behavior stay
+immutable. Fresh Full Research advances to the exact new pin. Binding,
+candidate eligibility, Progress readiness, and materialization all share the
+same backend compatibility evaluator. A zero-paper library remains a valid
+Artifact and remains eligible for consumers without that precondition.
 
 ### R1C
 
@@ -192,6 +221,39 @@ editing Idea 0.2/0.3 or the library v1 schema in place. Stop with
 `OWNER_DECISION_REQUIRED` if an additive authoritative content fact would make
 Cloud store information outside the Owner-approved bounded coordination model.
 
+### 4.1 R1B1 durable optional-evidence decision
+
+The accepted-binding set is canonicalized by requirement key and contains exact
+binding ID, Artifact ID, and expected checksum. The decision checksum covers:
+
+- Project and Workflow Instance identity;
+- consumer Definition/version;
+- current exact binding-set checksum;
+- sorted omitted optional requirement keys;
+- decision `CONTINUE_WITHOUT_OPTIONAL_EVIDENCE`;
+- decision time and idempotency key.
+
+A later binding replacement/addition makes the old decision non-current without
+deleting history. Confirming an already-current equivalent decision is
+idempotent. The browser renders from the returned/current Cloud record and
+query invalidation, never from radio state. Materialization is unavailable
+until the current decision exists when omissions remain.
+
+### 4.2 R1B2 content qualification and publication
+
+The qualification is coordination metadata derived from exact Local scientific
+bytes, analogous to the existing exact Artifact declaration but distinct from
+optional presentation. It is not a second Artifact and does not upload paper
+records. The qualification checksum binds its schema, Artifact ID/checksum, and
+selected count. Cloud validates the exact `selected-paper-library/v1` pairing
+and non-negative bounded count.
+
+The forward Idea publication stores the precondition in immutable Definition
+and Capsule compatibility. No generic expression language is introduced. The
+shared evaluator recognizes the one reviewed precondition schema and fails
+closed for missing/mismatched qualification. The consumer package retains the
+existing Local byte-level check as defense in depth.
+
 ## 5. R1C target contract
 
 | Input class | Required outcome |
@@ -217,11 +279,19 @@ Expected R1A tests:
 - one readiness/public command test file only if the public invariant cannot be
   proven in the handoff fixture.
 
-R1B expected owners:
+R1B1 expected owners:
 
 - Progress/input application projection;
+- dependency/input-setup service and persistence;
 - binding hooks and `workflow-input-setup.tsx` / downstream Detail;
-- forward Idea publication only if the precondition audit proves necessary;
+- focused service/frontend/PostgreSQL tests.
+
+R1B2 expected owners:
+
+- Artifact qualification contract/reporting/persistence;
+- one shared dependency compatibility evaluator and candidate projection;
+- forward Idea Definition 0.3 / Capsule 0.4 publication, sync builder, and exact
+  Full Research pin;
 - focused service/frontend/PostgreSQL/public Workspace tests.
 
 R1C expected owners:
@@ -251,15 +321,25 @@ R1A tests must first demonstrate:
    latest plan is durable, no stale runnable state is reported.
 7. fresh first materialization and replay remain idempotent and exact.
 
-R1B tests must demonstrate:
+R1B1 tests must demonstrate:
 
 1. two candidates for one role have unique exact component identities;
 2. changed confirmation displays the accepted B binding;
 3. unresolved optional evidence stays visible and requires explicit continue;
 4. omission creates no binding and remains visible in Review scope;
-5. zero-paper producer is valid while the forward Idea consumer is blocked at
+5. adding or replacing a binding invalidates the prior omission decision;
+6. materialization refuses unresolved optional evidence without a current
+   decision.
+
+R1B2 tests must demonstrate:
+
+1. zero-paper producer is valid while the forward Idea consumer is blocked at
    its published precondition before materialization/run;
-6. a one-paper exact library passes the same path.
+2. a one-paper exact library passes the same path;
+3. qualification replay is idempotent and drift conflicts;
+4. presentation absence/change cannot satisfy or alter qualification;
+5. historical Idea 0.2 / Capsule 0.3 bytes remain exact;
+6. fresh Full Research pins Idea 0.3 / Capsule 0.4 exactly.
 
 R1C tests must cover the complete table in section 5.
 
@@ -277,10 +357,12 @@ qualification uses marked disposable PostgreSQL and disposable Workspaces.
 
 - R1A: `MIGRATION_REQUIRED = NO`; publication change = 0.
 - R1C: `MIGRATION_REQUIRED = NO`; publication change = 0.
-- R1B: unresolved until the authoritative precondition design is frozen.
-  Historical bytes must remain immutable; any required persistence/publication
-  is forward-additive and qualified by upgrade/downgrade/re-upgrade before Owner
-  use.
+- R1B1: `MIGRATION_REQUIRED = YES`, one additive input-setup-decision table.
+- R1B2: extends the same not-yet-applied R1 migration with one additive Artifact
+  qualification table and publishes forward Idea 0.3 / Capsule 0.4. If R1B1 is
+  committed before R1B2, R1B2 receives the next forward migration instead;
+  historical bytes remain immutable. Every migration is qualified by
+  upgrade/downgrade/re-upgrade before Owner use.
 
 ## 10. Stop conditions
 
@@ -296,6 +378,6 @@ Stop rather than implement if any repair:
 - requires a second execution engine;
 - changes a fixture to encode the broken behavior.
 
-R1A is ready for failing tests and focused implementation. R1B is not ready for
-publication writes until its precondition authority is resolved. R1C is ready
-after R1A is independently committed.
+R1A is complete at `5124fc13840e2ed73343e2f39283dfbdc5203a9f`.
+R1B1 and R1B2 now have separate frozen authorities and are ready for failing
+tests and focused implementation. R1C remains independently bounded.

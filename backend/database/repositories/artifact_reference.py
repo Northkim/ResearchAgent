@@ -14,6 +14,7 @@ from backend.artifact_references.contracts import (
     DependencyBindingState,
     MaterializationMode,
     WorkflowArtifactRequirement,
+    WorkflowInputSetupDecision,
 )
 from backend.workflow_packages.serialization import to_json_value
 from backend.artifact_references.errors import ArtifactReferenceConflictError
@@ -22,6 +23,7 @@ from backend.database.orm import (
     ArtifactDependencyBindingORM,
     LocalArtifactReferenceORM,
     WorkflowArtifactRequirementORM,
+    WorkflowInputSetupDecisionORM,
 )
 
 from ._helpers import pending_by_composite_key, pending_instances
@@ -410,6 +412,84 @@ class SQLAlchemyArtifactReferenceRepository(ArtifactReferenceRepository):
             for row in pending_instances(self.session, ArtifactDependencyBindingORM)
         )
 
+    def add_input_setup_decision(
+        self, decision: WorkflowInputSetupDecision
+    ) -> None:
+        existing = self.get_input_setup_decision_by_idempotency(
+            decision.project_id,
+            decision.consumer_workflow_instance_id,
+            decision.idempotency_key,
+        )
+        if existing is not None:
+            if existing != decision:
+                raise ArtifactReferenceConflictError(
+                    "Input setup decision idempotency conflict"
+                )
+            return
+        self.session.add(WorkflowInputSetupDecisionORM(
+            decision_id=decision.decision_id,
+            project_id=decision.project_id,
+            consumer_workflow_instance_id=decision.consumer_workflow_instance_id,
+            consumer_workflow_definition_id=decision.consumer_workflow_definition_id,
+            consumer_workflow_version=decision.consumer_workflow_version,
+            binding_set_checksum=decision.binding_set_checksum,
+            omitted_optional_requirement_keys=list(
+                decision.omitted_optional_requirement_keys
+            ),
+            decision=decision.decision,
+            idempotency_key=decision.idempotency_key,
+            decision_checksum=decision.decision_checksum,
+            decided_at=decision.decided_at,
+        ))
+
+    def get_input_setup_decision_by_idempotency(
+        self, project_id: str, consumer_workflow_instance_id: str, idempotency_key: str
+    ) -> WorkflowInputSetupDecision | None:
+        rows = list(self.session.scalars(
+            select(WorkflowInputSetupDecisionORM).where(
+                WorkflowInputSetupDecisionORM.project_id == project_id,
+                WorkflowInputSetupDecisionORM.consumer_workflow_instance_id
+                == consumer_workflow_instance_id,
+                WorkflowInputSetupDecisionORM.idempotency_key == idempotency_key,
+            )
+        ))
+        rows.extend(
+            row
+            for row in pending_instances(self.session, WorkflowInputSetupDecisionORM)
+            if row.project_id == project_id
+            and row.consumer_workflow_instance_id == consumer_workflow_instance_id
+            and row.idempotency_key == idempotency_key
+            and row not in rows
+        )
+        return None if not rows else _input_setup_decision(rows[0])
+
+    def list_input_setup_decisions(
+        self, project_id: str, consumer_workflow_instance_id: str
+    ) -> tuple[WorkflowInputSetupDecision, ...]:
+        return tuple(
+            item
+            for item in self.list_project_input_setup_decisions(project_id)
+            if item.consumer_workflow_instance_id == consumer_workflow_instance_id
+        )
+
+    def list_project_input_setup_decisions(
+        self, project_id: str
+    ) -> tuple[WorkflowInputSetupDecision, ...]:
+        rows = list(self.session.scalars(
+            select(WorkflowInputSetupDecisionORM).where(
+                WorkflowInputSetupDecisionORM.project_id == project_id
+            )
+        ))
+        rows.extend(
+            row
+            for row in pending_instances(self.session, WorkflowInputSetupDecisionORM)
+            if row.project_id == project_id and row not in rows
+        )
+        rows.sort(key=lambda row: (
+            row.consumer_workflow_instance_id, row.decided_at, row.decision_id
+        ))
+        return tuple(_input_setup_decision(row) for row in rows)
+
 
 def _artifact_filters(statement, *, producer_workflow_instance_id, artifact_type, state):
     if producer_workflow_instance_id is not None:
@@ -482,4 +562,24 @@ def _binding(row: ArtifactDependencyBindingORM) -> ArtifactDependencyBinding:
         created_at=row.created_at,
         updated_at=row.updated_at,
         retired_at=row.retired_at,
+    )
+
+
+def _input_setup_decision(
+    row: WorkflowInputSetupDecisionORM,
+) -> WorkflowInputSetupDecision:
+    return WorkflowInputSetupDecision(
+        decision_id=row.decision_id,
+        project_id=row.project_id,
+        consumer_workflow_instance_id=row.consumer_workflow_instance_id,
+        consumer_workflow_definition_id=row.consumer_workflow_definition_id,
+        consumer_workflow_version=row.consumer_workflow_version,
+        binding_set_checksum=row.binding_set_checksum,
+        omitted_optional_requirement_keys=tuple(
+            row.omitted_optional_requirement_keys
+        ),
+        decision=row.decision,
+        idempotency_key=str(row.idempotency_key),
+        decision_checksum=row.decision_checksum,
+        decided_at=row.decided_at,
     )

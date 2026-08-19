@@ -36,6 +36,7 @@ from .contracts import (
     CompatibilityMode,
     DependencyBindingState,
     MaterializationMode,
+    WorkflowInputSetupDecision,
 )
 from .errors import ArtifactReferenceConflictError
 from .upstream_presentations import (
@@ -539,6 +540,142 @@ class ArtifactReferenceService:
             "has_more": offset + len(values) < total,
         }
 
+    def input_setup_state(
+        self, *, project_id: str, consumer_workflow_instance_id: str
+    ) -> dict[str, Any]:
+        consumer, requirements, bindings = self._input_setup_authority(
+            project_id=project_id,
+            consumer_workflow_instance_id=consumer_workflow_instance_id,
+        )
+        state = evaluate_input_setup(
+            requirements=requirements,
+            bindings=bindings,
+            decisions=self._uow.artifact_references.list_input_setup_decisions(
+                project_id, consumer_workflow_instance_id
+            ),
+        )
+        return input_setup_state_document(consumer, state)
+
+    def confirm_input_setup(
+        self,
+        *,
+        project_id: str,
+        consumer_workflow_instance_id: str,
+        omitted_optional_requirement_keys: tuple[str, ...],
+        idempotency_key: str,
+    ) -> WorkflowInputSetupDecision:
+        _canonical_uuid(idempotency_key)
+        consumer, requirements, bindings = self._input_setup_authority(
+            project_id=project_id,
+            consumer_workflow_instance_id=consumer_workflow_instance_id,
+        )
+        state = evaluate_input_setup(
+            requirements=requirements,
+            bindings=bindings,
+            decisions=(),
+        )
+        if state["missing_required_requirement_keys"]:
+            raise ApplicationCodedValidationError(
+                "Required Artifact inputs must be selected before input setup can be confirmed",
+                code="DEPENDENCY_UNRESOLVED",
+            )
+        omitted = tuple(sorted(set(omitted_optional_requirement_keys)))
+        if omitted != tuple(omitted_optional_requirement_keys):
+            raise ApplicationCodedValidationError(
+                "Omitted optional requirement keys must be unique and sorted",
+                code="INVALID_REQUEST",
+            )
+        if omitted != state["omitted_optional_requirement_keys"]:
+            raise ApplicationCodedConflictError(
+                "Input setup omissions differ from the current exact bindings",
+                code="INPUT_SETUP_CHANGED",
+            )
+        if not omitted:
+            raise ApplicationCodedValidationError(
+                "No unresolved optional evidence requires an omission decision",
+                code="INVALID_REQUEST",
+            )
+        existing = self._uow.artifact_references.get_input_setup_decision_by_idempotency(
+            project_id, consumer_workflow_instance_id, idempotency_key
+        )
+        now = _aware(self._clock())
+        payload = {
+            "schema_version": "reagent.workflow-input-setup-decision/v0.1",
+            "project_id": project_id,
+            "consumer_workflow_instance_id": consumer_workflow_instance_id,
+            "consumer_workflow_definition_id": consumer.workflow_definition_id,
+            "consumer_workflow_version": consumer.workflow_version,
+            "binding_set_checksum": state["binding_set_checksum"],
+            "omitted_optional_requirement_keys": list(omitted),
+            "decision": "CONTINUE_WITHOUT_OPTIONAL_EVIDENCE",
+            "idempotency_key": idempotency_key,
+            "decided_at": now.isoformat().replace("+00:00", "Z"),
+        }
+        decision = WorkflowInputSetupDecision(
+            decision_id="input-decision-" + uuid5(
+                UUID(idempotency_key), canonical_json(payload)
+            ).hex,
+            project_id=project_id,
+            consumer_workflow_instance_id=consumer_workflow_instance_id,
+            consumer_workflow_definition_id=consumer.workflow_definition_id,
+            consumer_workflow_version=consumer.workflow_version,
+            binding_set_checksum=state["binding_set_checksum"],
+            omitted_optional_requirement_keys=omitted,
+            decision="CONTINUE_WITHOUT_OPTIONAL_EVIDENCE",
+            idempotency_key=idempotency_key,
+            decision_checksum=canonical_hash(payload),
+            decided_at=now,
+        )
+        if existing is not None:
+            if not valid_input_setup_decision(existing):
+                raise ApplicationCodedConflictError(
+                    "Stored input setup decision integrity is invalid",
+                    code="INPUT_SETUP_CHANGED",
+                )
+            if (
+                existing.binding_set_checksum,
+                existing.omitted_optional_requirement_keys,
+                existing.decision,
+            ) != (
+                decision.binding_set_checksum,
+                decision.omitted_optional_requirement_keys,
+                decision.decision,
+            ):
+                raise ApplicationCodedConflictError(
+                    "Input setup idempotency key was reused after inputs changed",
+                    code="IDEMPOTENCY_CONFLICT",
+                )
+            return existing
+        self._uow.artifact_references.add_input_setup_decision(decision)
+        self._uow.commit()
+        return decision
+
+    def _input_setup_authority(
+        self, *, project_id: str, consumer_workflow_instance_id: str
+    ):
+        consumer = self._uow.workflow_foundation.get_workflow_instance(
+            consumer_workflow_instance_id
+        )
+        if consumer is None or consumer.project_id != project_id:
+            raise ApplicationCodedNotFoundError(
+                "Consumer Workflow Instance not found",
+                code="WORKFLOW_INSTANCE_NOT_FOUND",
+            )
+        requirements = tuple(
+            item
+            for item in self._uow.artifact_references.list_requirements()
+            if item.workflow_definition_id == consumer.workflow_definition_id
+            and item.workflow_version == consumer.workflow_version
+        )
+        bindings = tuple(
+            item
+            for item in self._uow.artifact_references.list_bindings(
+                project_id, consumer_workflow_instance_id, limit=1_000
+            )
+            if item.state is DependencyBindingState.ACTIVE
+        )
+        return consumer, requirements, bindings
+
     def materialization_plan(
         self, *, project_id: str, consumer_workflow_instance_id: str
     ) -> dict[str, Any]:
@@ -555,6 +692,12 @@ class ArtifactReferenceService:
             raise ApplicationCodedValidationError(
                 "Consumer Capsule pin is unavailable", code="DEPENDENCY_UNRESOLVED"
             )
+        requirements = tuple(
+            item
+            for item in self._uow.artifact_references.list_requirements()
+            if item.workflow_definition_id == consumer.workflow_definition_id
+            and item.workflow_version == consumer.workflow_version
+        )
         plans: list[dict[str, Any]] = []
         bindings = tuple(
             binding
@@ -563,6 +706,23 @@ class ArtifactReferenceService:
             )
             if binding.state is DependencyBindingState.ACTIVE
         )
+        setup = evaluate_input_setup(
+            requirements=requirements,
+            bindings=bindings,
+            decisions=self._uow.artifact_references.list_input_setup_decisions(
+                project_id, consumer_workflow_instance_id
+            ),
+        )
+        if setup["missing_required_requirement_keys"]:
+            raise ApplicationCodedValidationError(
+                "Required Artifact inputs are not selected",
+                code="DEPENDENCY_UNRESOLVED",
+            )
+        if setup["decision_required"] and setup["current_decision"] is None:
+            raise ApplicationCodedValidationError(
+                "Resolve optional evidence or explicitly continue without it before materialization",
+                code="INPUT_SETUP_DECISION_REQUIRED",
+            )
         created_at = max(
             (binding.updated_at for binding in bindings),
             default=project.updated_at,
@@ -682,6 +842,126 @@ def _require_compatible(requirement, artifact: ArtifactReference) -> None:
             "Dependency is not approved for local verified-copy materialization",
             code="DEPENDENCY_UNRESOLVED",
         )
+
+
+def exact_binding_set_checksum(bindings) -> str:
+    return canonical_hash([
+        {
+            "requirement_key": item.requirement_key,
+            "binding_id": item.binding_id,
+            "artifact_id": item.artifact_id,
+            "expected_checksum": item.expected_checksum,
+        }
+        for item in sorted(
+            (
+                item for item in bindings
+                if item.state is DependencyBindingState.ACTIVE
+            ),
+            key=lambda item: (item.requirement_key, item.binding_id),
+        )
+    ])
+
+
+def evaluate_input_setup(*, requirements, bindings, decisions) -> dict[str, Any]:
+    active = {
+        item.requirement_key: item
+        for item in bindings
+        if item.state is DependencyBindingState.ACTIVE
+    }
+    missing_required = tuple(sorted(
+        item.requirement_key
+        for item in requirements
+        if item.required and item.requirement_key not in active
+    ))
+    omitted_optional = tuple(sorted(
+        item.requirement_key
+        for item in requirements
+        if not item.required and item.requirement_key not in active
+    ))
+    binding_set_checksum = exact_binding_set_checksum(bindings)
+    current = max(
+        (
+            item
+            for item in decisions
+            if valid_input_setup_decision(item)
+            and item.binding_set_checksum == binding_set_checksum
+            and item.omitted_optional_requirement_keys == omitted_optional
+            and item.decision == "CONTINUE_WITHOUT_OPTIONAL_EVIDENCE"
+        ),
+        key=lambda item: (item.decided_at, item.decision_id),
+        default=None,
+    )
+    return {
+        "binding_set_checksum": binding_set_checksum,
+        "missing_required_requirement_keys": missing_required,
+        "omitted_optional_requirement_keys": omitted_optional,
+        "decision_required": not missing_required and bool(omitted_optional),
+        "current_decision": current,
+    }
+
+
+def valid_input_setup_decision(decision: WorkflowInputSetupDecision) -> bool:
+    payload = {
+        "schema_version": "reagent.workflow-input-setup-decision/v0.1",
+        "project_id": decision.project_id,
+        "consumer_workflow_instance_id": decision.consumer_workflow_instance_id,
+        "consumer_workflow_definition_id": decision.consumer_workflow_definition_id,
+        "consumer_workflow_version": decision.consumer_workflow_version,
+        "binding_set_checksum": decision.binding_set_checksum,
+        "omitted_optional_requirement_keys": list(
+            decision.omitted_optional_requirement_keys
+        ),
+        "decision": decision.decision,
+        "idempotency_key": decision.idempotency_key,
+        "decided_at": decision.decided_at.isoformat().replace("+00:00", "Z"),
+    }
+    expected_id = "input-decision-" + uuid5(
+        UUID(decision.idempotency_key), canonical_json(payload)
+    ).hex
+    return (
+        decision.decision_id == expected_id
+        and decision.decision_checksum == canonical_hash(payload)
+    )
+
+
+def input_setup_decision_document(
+    decision: WorkflowInputSetupDecision,
+) -> dict[str, Any]:
+    return {
+        "decision_id": decision.decision_id,
+        "project_id": decision.project_id,
+        "consumer_workflow_instance_id": decision.consumer_workflow_instance_id,
+        "consumer_workflow_definition_id": decision.consumer_workflow_definition_id,
+        "consumer_workflow_version": decision.consumer_workflow_version,
+        "binding_set_checksum": decision.binding_set_checksum,
+        "omitted_optional_requirement_keys": list(
+            decision.omitted_optional_requirement_keys
+        ),
+        "decision": decision.decision,
+        "idempotency_key": decision.idempotency_key,
+        "decision_checksum": decision.decision_checksum,
+        "decided_at": decision.decided_at.isoformat().replace("+00:00", "Z"),
+    }
+
+
+def input_setup_state_document(consumer, state: dict[str, Any]) -> dict[str, Any]:
+    current = state["current_decision"]
+    return {
+        "schema_version": "reagent.workflow-input-setup-state/v0.1",
+        "project_id": consumer.project_id,
+        "consumer_workflow_instance_id": consumer.workflow_instance_id,
+        "binding_set_checksum": state["binding_set_checksum"],
+        "missing_required_requirement_keys": list(
+            state["missing_required_requirement_keys"]
+        ),
+        "omitted_optional_requirement_keys": list(
+            state["omitted_optional_requirement_keys"]
+        ),
+        "decision_required": state["decision_required"],
+        "current_decision": (
+            None if current is None else input_setup_decision_document(current)
+        ),
+    }
 
 
 def _output_contracts(compatibility) -> dict[str, dict[str, str]]:

@@ -1526,6 +1526,56 @@ class ArtifactDependencyBindingORM(Base):
     retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class WorkflowInputSetupDecisionORM(Base):
+    __tablename__ = "project_workflow_input_setup_decisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "consumer_workflow_instance_id"],
+            [
+                "project_workflow_instances.project_id",
+                "project_workflow_instances.workflow_instance_id",
+            ],
+            name="fk_input_setup_decisions_consumer_instance",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "consumer_workflow_instance_id",
+            "idempotency_key",
+            name="uq_input_setup_decisions_idempotency",
+        ),
+        CheckConstraint(
+            "decision = 'CONTINUE_WITHOUT_OPTIONAL_EVIDENCE'",
+            name="input_setup_decision_supported",
+        ),
+        CheckConstraint(
+            "binding_set_checksum ~ '^sha256:[0-9a-f]{64}$'",
+            name="input_setup_binding_set_checksum",
+        ),
+        CheckConstraint(
+            "decision_checksum ~ '^sha256:[0-9a-f]{64}$'",
+            name="input_setup_decision_checksum",
+        ),
+        Index(
+            "ix_input_setup_decisions_current",
+            "project_id",
+            "consumer_workflow_instance_id",
+            "decided_at",
+        ),
+    )
+
+    decision_id: Mapped[str] = mapped_column(String(47), primary_key=True)
+    project_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    consumer_workflow_instance_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    consumer_workflow_definition_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    consumer_workflow_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    binding_set_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    omitted_optional_requirement_keys: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
+    decision: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), nullable=False)
+    decision_checksum: Mapped[str] = mapped_column(String(71), nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class ProjectResourceReferenceORM(Base):
     """Project-scoped credential-free metadata for one immutable Resource."""
 

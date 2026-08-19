@@ -8,6 +8,7 @@ from .contracts import (
     ArtifactDependencyBinding,
     ArtifactPresentation,
     ArtifactReference,
+    WorkflowInputSetupDecision,
     WorkflowArtifactRequirement,
 )
 
@@ -94,3 +95,23 @@ class ArtifactReferenceRepository(ABC):
     def count_bindings(
         self, project_id: str, consumer_workflow_instance_id: str
     ) -> int: ...
+
+    @abstractmethod
+    def add_input_setup_decision(
+        self, decision: WorkflowInputSetupDecision
+    ) -> None: ...
+
+    @abstractmethod
+    def get_input_setup_decision_by_idempotency(
+        self, project_id: str, consumer_workflow_instance_id: str, idempotency_key: str
+    ) -> WorkflowInputSetupDecision | None: ...
+
+    @abstractmethod
+    def list_input_setup_decisions(
+        self, project_id: str, consumer_workflow_instance_id: str
+    ) -> tuple[WorkflowInputSetupDecision, ...]: ...
+
+    @abstractmethod
+    def list_project_input_setup_decisions(
+        self, project_id: str
+    ) -> tuple[WorkflowInputSetupDecision, ...]: ...

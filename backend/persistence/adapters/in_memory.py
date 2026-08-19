@@ -15,6 +15,7 @@ from backend.artifact_references.contracts import (
     ArtifactPresentation,
     ArtifactReference,
     WorkflowArtifactRequirement,
+    WorkflowInputSetupDecision,
 )
 from backend.artifact_references.errors import ArtifactReferenceConflictError
 from backend.artifact_references.ports import ArtifactReferenceRepository
@@ -136,6 +137,9 @@ class InMemoryDatabase:
         tuple[str, str, str], WorkflowArtifactRequirement
     ] = field(default_factory=dict)
     artifact_dependency_bindings: dict[str, ArtifactDependencyBinding] = field(
+        default_factory=dict
+    )
+    workflow_input_setup_decisions: dict[str, WorkflowInputSetupDecision] = field(
         default_factory=dict
     )
     project_resource_references: dict[str, ProjectResourceReference] = field(
@@ -522,6 +526,59 @@ class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
             and item.consumer_workflow_instance_id == consumer_workflow_instance_id
             for item in self._uow._artifact_dependency_bindings.values()
         )
+
+    def add_input_setup_decision(
+        self, decision: WorkflowInputSetupDecision
+    ) -> None:
+        existing = self.get_input_setup_decision_by_idempotency(
+            decision.project_id,
+            decision.consumer_workflow_instance_id,
+            decision.idempotency_key,
+        )
+        if existing is not None:
+            if existing != decision:
+                raise ArtifactReferenceConflictError(
+                    "Input setup decision idempotency conflict"
+                )
+            return
+        self._uow._workflow_input_setup_decisions[decision.decision_id] = decision
+        self._uow._dirty_workflow_input_setup_decisions.add(decision.decision_id)
+
+    def get_input_setup_decision_by_idempotency(
+        self, project_id: str, consumer_workflow_instance_id: str, idempotency_key: str
+    ) -> WorkflowInputSetupDecision | None:
+        return next((
+            item
+            for item in self._uow._workflow_input_setup_decisions.values()
+            if item.project_id == project_id
+            and item.consumer_workflow_instance_id == consumer_workflow_instance_id
+            and item.idempotency_key == idempotency_key
+        ), None)
+
+    def list_input_setup_decisions(
+        self, project_id: str, consumer_workflow_instance_id: str
+    ) -> tuple[WorkflowInputSetupDecision, ...]:
+        return tuple(
+            item
+            for item in self.list_project_input_setup_decisions(project_id)
+            if item.consumer_workflow_instance_id == consumer_workflow_instance_id
+        )
+
+    def list_project_input_setup_decisions(
+        self, project_id: str
+    ) -> tuple[WorkflowInputSetupDecision, ...]:
+        return tuple(sorted(
+            (
+                item
+                for item in self._uow._workflow_input_setup_decisions.values()
+                if item.project_id == project_id
+            ),
+            key=lambda item: (
+                item.consumer_workflow_instance_id,
+                item.decided_at,
+                item.decision_id,
+            ),
+        ))
 
 
 class InMemoryWorkflowFoundationRepository(WorkflowFoundationRepository):
@@ -1784,6 +1841,10 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.artifact_dependency_bindings[binding_id] = (
                 self._artifact_dependency_bindings[binding_id]
             )
+        for decision_id in self._dirty_workflow_input_setup_decisions:
+            self.database.workflow_input_setup_decisions[decision_id] = (
+                self._workflow_input_setup_decisions[decision_id]
+            )
         for resource_id in self._dirty_project_resource_references:
             self.database.project_resource_references[resource_id] = (
                 self._project_resource_references[resource_id]
@@ -1978,6 +2039,9 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._artifact_dependency_bindings = dict(
             self.database.artifact_dependency_bindings
         )
+        self._workflow_input_setup_decisions = dict(
+            self.database.workflow_input_setup_decisions
+        )
         self._project_resource_references = dict(
             self.database.project_resource_references
         )
@@ -2027,6 +2091,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_artifact_presentations: set[str] = set()
         self._dirty_workflow_artifact_requirements: set[tuple[str, str, str]] = set()
         self._dirty_artifact_dependency_bindings: set[str] = set()
+        self._dirty_workflow_input_setup_decisions: set[str] = set()
         self._dirty_project_resource_references: set[str] = set()
         self._dirty_workflow_resource_requirements: set[tuple[str, str, str]] = set()
         self._dirty_workflow_resource_bindings: set[str] = set()

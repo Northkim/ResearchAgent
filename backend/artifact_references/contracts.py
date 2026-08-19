@@ -35,6 +35,7 @@ _PROJECT_ID = re.compile(r"^project-[0-9a-f]{32}$")
 _INSTANCE_ID = re.compile(r"^wfi-[0-9a-f]{32}$")
 _CAPSULE_ID = re.compile(r"^capsule-[0-9a-f]{32}$")
 _BINDING_ID = re.compile(r"^artifact-binding-[0-9a-f]{32}$")
+_INPUT_DECISION_ID = re.compile(r"^input-decision-[0-9a-f]{32}$")
 _TYPE = re.compile(r"^[a-z][a-z0-9._-]{1,139}(?:/v[0-9]+(?:\.[0-9]+)?)?$")
 _SCHEMA = re.compile(
     r"^(?:reagent\.artifact\.[a-z][a-z0-9._-]*/v[0-9]+\.[0-9]+|"
@@ -291,6 +292,53 @@ class ArtifactDependencyBinding:
         _aware(self.updated_at, "updated_at")
         if self.retired_at is not None:
             _aware(self.retired_at, "retired_at")
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowInputSetupDecision:
+    """Durable Owner decision to proceed with an exact set of input bindings."""
+
+    decision_id: str
+    project_id: str
+    consumer_workflow_instance_id: str
+    consumer_workflow_definition_id: str
+    consumer_workflow_version: str
+    binding_set_checksum: str
+    omitted_optional_requirement_keys: tuple[str, ...]
+    decision: str
+    idempotency_key: str
+    decision_checksum: str
+    decided_at: datetime
+
+    def __post_init__(self) -> None:
+        _match(self.decision_id, _INPUT_DECISION_ID, "decision_id")
+        _match(self.project_id, _PROJECT_ID, "project_id")
+        _match(
+            self.consumer_workflow_instance_id,
+            _INSTANCE_ID,
+            "consumer_workflow_instance_id",
+        )
+        _match(
+            self.consumer_workflow_definition_id,
+            _KEY,
+            "consumer_workflow_definition_id",
+        )
+        _match(self.consumer_workflow_version, _SEMVER, "consumer_workflow_version")
+        require_sha256(self.binding_set_checksum, "binding_set_checksum")
+        omitted = tuple(self.omitted_optional_requirement_keys)
+        if omitted != tuple(sorted(set(omitted))):
+            raise ValueError("omitted optional requirements must be unique and sorted")
+        for key in omitted:
+            _match(key, _KEY, "omitted_optional_requirement_key")
+        object.__setattr__(self, "omitted_optional_requirement_keys", omitted)
+        if self.decision != "CONTINUE_WITHOUT_OPTIONAL_EVIDENCE":
+            raise ValueError("input setup decision is unsupported")
+        from uuid import UUID
+
+        if str(UUID(self.idempotency_key)) != self.idempotency_key:
+            raise ValueError("idempotency_key must use canonical UUID text")
+        require_sha256(self.decision_checksum, "decision_checksum")
+        _aware(self.decided_at, "decided_at")
 
 
 @dataclass(frozen=True, slots=True)

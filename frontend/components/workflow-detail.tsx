@@ -748,7 +748,7 @@ function DownstreamWorkflowDetail({
   const command = completed ? null : localCommand(state.action.next_action.code, instance.workflow_instance_id);
   const roleName = role === "INITIAL" ? "Initial Writing" : role === "REVIEW" ? "Review" : "Writing Revision";
   const sourceTitle = role === "INITIAL" ? "Research inputs" : role === "REVIEW" ? "Manuscript under review" : "Revision source";
-  const sourceRows = requirements.filter((requirement) => requirement.required || dependencies.some((edge) => edge.requirement_key === requirement.requirement_key));
+  const sourceRows = requirements;
   const reviewPresentationReady = role === "REVIEW"
     && latestArtifact?.presentation?.schema_identity === "reagent.artifact-presentation.review-report/v0.1";
   const parentDependency = dependencies.find((edge) => edge.requirement_key === "manuscript");
@@ -776,8 +776,8 @@ function DownstreamWorkflowDetail({
     <ProjectNavigation projectId={project.project_id} active="Workflows" />
 
     <section id="inputs" className="plain-section" aria-labelledby="downstream-sources-title"><p className="eyebrow">Source</p><h2 id="downstream-sources-title">{sourceTitle}</h2>
-      <div className="input-readiness-list">{sourceRows.map((requirement) => { const bound = dependencies.find((edge) => edge.requirement_key === requirement.requirement_key); return <div key={requirement.requirement_key}><div><strong>{requirementLabel(requirement.artifact_type)}</strong><small>{bound ? "Exact input selected" : requirement.required ? "Required before work can continue" : "Optional evidence not selected"}</small></div><span>{bound ? "Ready" : requirement.required ? "Missing" : "Optional"}</span></div>; })}</div>
-      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /> : null}
+      <div className="input-readiness-list">{sourceRows.map((requirement) => { const bound = dependencies.find((edge) => edge.requirement_key === requirement.requirement_key); return <div key={requirement.requirement_key}><div><strong>{requirementLabel(requirement.artifact_type)}</strong><small>{bound ? "Exact input selected" : requirement.required ? "Required before work can continue" : "Optional evidence not selected"}</small></div><span>{bound ? "Selected" : requirement.required ? "Missing" : "Optional · Not selected"}</span></div>; })}</div>
+      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /> : state.action.next_action.code === "MATERIALIZE" ? <details className="secondary-control"><summary>Add or change evidence</summary><WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /></details> : null}
     </section>
 
     <section className="current-action-panel" aria-labelledby="downstream-current-task"><div className="current-action-main"><p className="attention-copy">{completed ? "Completed" : state.action.attention_state === "OWNER_ACTION_REQUIRED" ? "Needs your review" : "Current task"}</p><h2 id="downstream-current-task">{task.title}</h2><p>{task.next}</p></div>{!completed && command ? <aside className="current-action-next"><span>Primary action</span><a className="button button-primary" href="#local-workflow">Continue locally</a></aside> : null}</section>
@@ -899,7 +899,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
             <div className="input-readiness-list">
               {visibleRequirements.map((requirement) => {
                 const bound = dependencies.find((edge) => edge.requirement_key === requirement.requirement_key && edge.state === "ACTIVE");
-                return <div key={requirement.requirement_key}><div><strong>{requirementLabel(requirement.artifact_type)}</strong><small>{bound ? "Selected for this workflow" : requirement.required ? "Required before work can continue" : "Optional supporting input"}</small></div><span>{bound ? "Ready" : requirement.required ? "Missing" : "Optional · Not provided"}</span></div>;
+                return <div key={requirement.requirement_key}><div><strong>{requirementLabel(requirement.artifact_type)}</strong><small>{bound ? "Selected for this workflow" : requirement.required ? "Required before work can continue" : "Optional supporting input"}</small></div><span>{bound ? "Selected" : requirement.required ? "Missing" : "Optional · Not selected"}</span></div>;
               })}
             </div>
           ) : <p className="muted-copy">No upstream research input is required.</p>}
