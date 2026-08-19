@@ -4069,3 +4069,18 @@ upgrade/downgrade/re-upgrade, source Foundation idempotency, compileall, and sol
 head 0037. The protected Owner D1 database and Project were not accessed.
 Experiment methodology/run/result checkpoints remain explicitly open for R3;
 safe next phase is the Generic Experiment architecture packet, not R6 UX work.
+
+## Post-D1 R3A Generic Harness foundation (2026-08-20)
+
+R3A commit `e22be88` adds exact `GENERIC_AGENT_HARNESS` implementation, validation,
+environment, execution-unit, and resume contracts plus an explicitly owned Local
+namespace at `.reagent/experiments/<workflow-instance-id>/`. This path is not a
+reviewed ExperimentCapability and grants no authority to User Skills. Environment
+discovery inspects only existing explicit candidates and never installs software;
+completed execution units are reusable only when their exact declared outputs and
+checksums still verify.
+
+R3A changes no publication, preset, migration, API, frontend, Artifact schema, or
+Owner D1 state. Focused tests passed 8/8 and historical Generic Experiment/v5 tests
+passed 52 with one opt-in real-Codex skip. Safe next subphase is R3B forward
+publication and lifecycle integration.

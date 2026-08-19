@@ -34,6 +34,9 @@ Implementation progress through 2026-08-20:
 - R2 natural checkpoints, managed Harness, Progress recovery, and continuation:
   `f8754bb`.
 - R2 forward upstream Owner-decision durability: `68cc605`.
+- R2 governance closure: `be5ac43`.
+- R3 architecture/change packet: `2923b77`.
+- R3A Generic Harness contracts and Workspace-owned state: `e22be88`.
 
 R1B2 publishes forward Idea Definition 0.3 / Capsule 0.4 under migration
 `20260820_0036`. It preserves the valid zero-paper producer Artifact while a
