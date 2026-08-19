@@ -503,6 +503,7 @@ function GenericExperimentDetail({
   const checkpointDetail = ownerSafeDetail(state.latest_summary);
   const approvalRequest = approvalProjection.data?.request ?? null;
   const approvalStatus = approvalRequest?.status ?? null;
+  const experimentPathSelected = pathASelected || approvalRequest !== null || Boolean(artifact);
   const runSummary = approvalRequest?.summary;
   const dependencies = progress.dependency_edges.filter((edge) => edge.consumer_workflow_instance_id === instance.workflow_instance_id && edge.state === "ACTIVE");
   const ideaBinding = dependencies.find((edge) => edge.artifact_type === "selected-research-idea/v1");
@@ -650,12 +651,12 @@ function GenericExperimentDetail({
       {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /> : ideaBinding ? <details className="secondary-control"><summary>Change research idea</summary><WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /></details> : null}
     </section>
 
-    {ideaBinding && !pathASelected ? <section className="plain-section experiment-current-task" aria-labelledby="experiment-start-title"><p className="eyebrow">Current task</p><h2 id="experiment-start-title">How would you like to start?</h2><p>Choose how ReAgent should begin preparing this experiment.</p><div className="workflow-support-grid">
+    {ideaBinding && !experimentPathSelected ? <section className="plain-section experiment-current-task" aria-labelledby="experiment-start-title"><p className="eyebrow">Current task</p><h2 id="experiment-start-title">How would you like to start?</h2><p>Choose how ReAgent should begin preparing this experiment.</p><div className="workflow-support-grid">
       <article className="output-highlight"><p className="attention-copy">Recommended</p><h3>Prepare a new experiment with ReAgent</h3><p>ReAgent will help turn the research objective into a reproducible local experiment. No existing code or Git repository is required.</p><button type="button" className="button button-primary" aria-pressed={pathASelected} onClick={() => setPathASelected(true)}>{pathASelected ? "Selected" : "Choose this path"}</button></article>
       <article className="output-highlight"><p className="attention-copy">Coming next</p><h3>Use an existing local project</h3><p>Start from research code or files already on this computer. Git is optional.</p><button type="button" className="button button-ghost" disabled>Not available in this build</button></article>
     </div></section> : null}
 
-    {ideaBinding && pathASelected ? <>
+    {ideaBinding && experimentPathSelected ? <>
       {currentTask}
       {resultIsPrimary ? resultSection : null}
       {resultIsPrimary ? <details className="experiment-history"><summary>Experiment history</summary><div>{startSummary}{designSection}{preparationSection}</div></details> : <>{startSummary}{designSection}{(methodologyDecision || designCheckpoint) ? <details className="experiment-upcoming"><summary>Preparation · Not yet started</summary><p>Preparation begins after the scientific design and required Owner decisions are resolved.</p></details> : preparationSection}</>}

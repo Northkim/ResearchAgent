@@ -595,6 +595,24 @@ test("Run Approval uses the controlled-local request and updates the Local hando
   expect(screen.getByText(requested.execution_plan_checksum)).not.toBeVisible();
 });
 
+test("an exact reported run restores the Generic Harness path after a browser reload", async () => {
+  const approval = controlledLocalApproval();
+  arrangeGenericExperiment({
+    workflowVersion: "0.8.0",
+    summary: "RUN_APPROVAL_REQUIRED: review the exact Generic Harness run.",
+    reportCount: 0,
+    approval: {
+      ...approval,
+      summary: { ...approval.summary, preparation_method: "System Generic Agent Harness" },
+    },
+  });
+  render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
+
+  expect(await screen.findByRole("heading", { name: "Exact run summary" })).toBeVisible();
+  expect(screen.queryByRole("heading", { name: "How would you like to start?" })).not.toBeInTheDocument();
+  expect(screen.getAllByText("System Generic Agent Harness").length).toBeGreaterThan(0);
+});
+
 test("Run Approval offers bounded rejection and translates changed-plan failures", async () => {
   const requested = controlledLocalApproval();
   arrangeGenericExperiment({
