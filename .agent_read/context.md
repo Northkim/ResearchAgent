@@ -2,6 +2,28 @@
 
 Last updated: 2026-08-20
 
+## Post-D1 R1B2 Idea content precondition (2026-08-20)
+
+R1B2 resolves the Cloud/Local compatibility split that allowed a valid
+zero-paper Literature result to be bound to forward Idea Discovery even though
+the Idea runtime required at least one selected paper. The producer Artifact
+remains valid. A new immutable bounded content qualification records only the
+exact Artifact ID/checksum and selected-paper count derived from validated
+Local bytes; it is not presentation and cannot replace scientific evidence.
+
+The shared compatibility evaluator now governs server candidate listing,
+binding, Progress readiness, and materialization. Fresh Full Research Projects
+pin forward Idea Definition 0.3 / Capsule 0.4, whose exact reviewed requirement
+declares the one-paper content precondition. Historical Idea 0.2 / Capsule 0.3
+bytes and behavior remain unchanged. ADR 0051 records the boundary.
+
+Migration `20260820_0036` passed empty-database upgrade, Alembic drift check,
+downgrade/re-upgrade, exact publication/source equivalence, SQL qualification
+round-trip, and identity-verified cleanup on marked disposable PostgreSQL. The
+Owner database remains at 0034 and protected D1 state was not touched. Backend
+R1B2a is commit `4b19881`; frontend R1B2b is `5dec904`. R1C platform/package
+classification is the next R1 subphase; do not begin R2 before R1 closes.
+
 ## Post-D1 R1B1 optional-evidence decision (2026-08-20)
 
 R1B1 adds a durable exact input-setup decision for Workflows whose required

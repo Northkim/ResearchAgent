@@ -1,6 +1,6 @@
 # Post-D1 consolidated repair program
 
-Status: **R0 COMPLETE — GOVERNANCE / VERIFICATION DESIGN ONLY**
+Status: **R1B2 COMPLETE — R1C NEXT**
 
 Date: 2026-08-20
 
@@ -17,6 +17,22 @@ phase entry below is a routing decision, not permission to blur phase scope.
 The Owner's program prompt is the separate implementation authorization; each
 behavioral phase must still freeze its exact pre-write contract and pass its
 phase gate before code is written.
+
+Implementation progress through 2026-08-20:
+
+- R0 governance matrix: `ff41b6d`.
+- R1A exact Local input reconciliation/readiness: `5124fc1`.
+- R1B1 explicit optional-input setup decision: `54a26fc`.
+- R1B2a forward Idea content precondition/publication: `4b19881`.
+- R1B2b server-qualified browser candidates: `5dec904`.
+
+R1B2 publishes forward Idea Definition 0.3 / Capsule 0.4 under migration
+`20260820_0036`. It preserves the valid zero-paper producer Artifact while a
+single shared evaluator blocks it as input to the forward Idea consumer. The
+bounded exact content qualification is derived from Local Artifact bytes and
+does not become presentation or evidence authority. R1C package/platform
+classification remains the only open R1 implementation subphase before the
+consolidated R1 qualification gate.
 
 ## 1. Recovered baseline
 
@@ -168,7 +184,7 @@ repaired invariant carried through every relevant phase.
 | D1-FRONTEND-KEY-01 | R1 | Candidate identity used role rather than exact Artifact identity. | `workflow-input-setup.tsx`, relevant custom setup | multi-candidate component/browser | 0 |
 | D1-WRITING-BINDING-01 | R1 | Optimistic UI projection diverged from accepted dependency. | binding API/hooks/input setup | accepted-binding response + browser exact ID | 0 |
 | D1-REVIEW-INPUT-LIFECYCLE-01 | R1 | Required completion locks setup before explicit optional decision. | Workflow Detail/input setup + dependency service | omitted/selected optional cases E3/E6 | 0 |
-| D1-UPSTREAM-ZERO-PAPER-01 | R1 | Type compatibility omits consumer content precondition. | Idea requirement/readiness/runtime | valid producer + blocked consumer parity | Forward-additive publication only if current published consumer contract lacks an expressible precondition; otherwise 0 |
+| D1-UPSTREAM-ZERO-PAPER-01 | R1B2 COMPLETE | Forward Idea 0.3/0.4 declares an exact one-paper content precondition; one shared evaluator now governs candidates, bind, readiness, and materialization. | Artifact qualification/reporting, Idea requirement/readiness/runtime, input-selection UI | valid zero-paper producer + blocked forward consumer; one-paper candidate/bind/materialize; historical Idea 0.2; PostgreSQL publication cycle | `20260820_0036`; forward-additive only; historical 0.2/0.3 unchanged |
 | D1-CHECKPOINT-PRESENTATION-01 | R2 | Durable file creation is not a human checkpoint renderer. | Workflow runtimes/runner bridge + Workflow Detail | checkpoint contract/component/browser across four roles | 0 expected |
 | D1-APPROVAL-BRIDGE-01 | R2 | Chat decision and exact approval recorder are disconnected. | approval contracts/services/routes/launcher | natural decision → exact durable record; replay | additive persistence only if existing approval stores cannot represent the shared contract |
 | D1-HARNESS-TERMINATION-01 | R2 | Phase completion lacks a terminal launcher/session handshake. | Workflow runtimes and `workspace_cli.py` process management | clean exit/cancel/resume process tests | 0 |
