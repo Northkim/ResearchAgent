@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 from .contracts import (
+    ArtifactContentQualification,
     ArtifactDependencyBinding,
     ArtifactPresentation,
     ArtifactReference,
@@ -50,6 +51,21 @@ class ArtifactReferenceRepository(ABC):
 
     @abstractmethod
     def add_presentation(self, presentation: ArtifactPresentation) -> None: ...
+
+    @abstractmethod
+    def get_content_qualification(
+        self, artifact_id: str
+    ) -> ArtifactContentQualification | None: ...
+
+    @abstractmethod
+    def list_content_qualifications(
+        self, artifact_ids: tuple[str, ...]
+    ) -> tuple[ArtifactContentQualification, ...]: ...
+
+    @abstractmethod
+    def add_content_qualification(
+        self, qualification: ArtifactContentQualification
+    ) -> None: ...
 
     @abstractmethod
     def add_requirement(self, requirement: WorkflowArtifactRequirement) -> None: ...

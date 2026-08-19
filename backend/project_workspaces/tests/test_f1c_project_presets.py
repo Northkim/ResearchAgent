@@ -64,7 +64,7 @@ def test_server_resolved_presets_create_one_revision_atomically(tmp_path, setup,
     versions = {item["workflow_definition_id"]: (item["workflow_version"], item["capsule_version"]) for item in instances["items"]}
     assert versions["literature-search-local-experimental"] == ("0.4.0", "0.6.0")
     if setup == "full-research":
-        assert versions["idea-discovery-local-experimental"] == ("0.2.0", "0.3.0")
+        assert versions["idea-discovery-local-experimental"] == ("0.3.0", "0.4.0")
         assert versions["reproduction-experiment-local-experimental"] == ("0.7.0", "0.10.0")
         assert versions["writing-local-experimental"] == ("0.5.0", "0.7.0")
         assert versions["review-local-experimental"] == ("0.4.0", "0.6.0")
@@ -148,7 +148,7 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
             "0.4.0", "0.6.0", "capsule-e9e6a2e0aa46146818fb6123e03877f3"
         ),
         "idea-discovery-local-experimental": (
-            "0.2.0", "0.3.0", "capsule-3976596c49e3df30e08774233055bcce"
+            "0.3.0", "0.4.0", "capsule-717aa7729919ccef977520a3622fb44f"
         ),
         "reproduction-experiment-local-experimental": (
             "0.7.0", "0.10.0", "capsule-cd7ff18e9857b6d20fbe9ba2ccab7ba6"
@@ -244,7 +244,7 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     assert "Core: Scaffold" not in human_list.stdout
     for display_name, version in (
         ("Literature Search", "0.4.0"),
-        ("Idea Discovery", "0.2.0"),
+        ("Idea Discovery", "0.3.0"),
         ("Reproduction & Experiment", "0.7.0"),
         ("Initial Writing", "0.5.0"),
         ("Review", "0.4.0"),

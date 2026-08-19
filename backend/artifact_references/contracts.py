@@ -21,6 +21,12 @@ from .upstream_presentations import (
 ARTIFACT_REFERENCE_SCHEMA = "reagent.artifact-reference/v0.1"
 ARTIFACT_PAGE_SCHEMA = "reagent.artifact-reference-page/v0.1"
 MATERIALIZATION_PLAN_SCHEMA = "reagent.artifact-materialization-plan/v0.1"
+PAPER_LIBRARY_QUALIFICATION_SCHEMA = (
+    "reagent.artifact-qualification.selected-paper-library/v0.1"
+)
+PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA = (
+    "reagent.artifact-precondition.selected-paper-library-nonempty/v0.1"
+)
 EXPERIMENT_PRESENTATION_SCHEMA = "reagent.artifact-presentation.experiment-record/v0.2"
 ARTIFACT_PRESENTATION_SCHEMAS = frozenset({
     EXPERIMENT_PRESENTATION_SCHEMA,
@@ -221,6 +227,37 @@ class ArtifactPresentation:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactContentQualification:
+    """One exact bounded content fact derived from verified Local Artifact bytes."""
+
+    artifact_id: str
+    artifact_checksum: str
+    schema_identity: str
+    qualification_checksum: str
+    payload: Mapping[str, Any]
+    reported_at: datetime
+
+    def __post_init__(self) -> None:
+        _match(self.artifact_id, _ARTIFACT_ID, "artifact_id")
+        require_sha256(self.artifact_checksum, "artifact_checksum")
+        if self.schema_identity != PAPER_LIBRARY_QUALIFICATION_SCHEMA:
+            raise ValueError("Artifact qualification schema is unsupported")
+        require_sha256(self.qualification_checksum, "qualification_checksum")
+        object.__setattr__(self, "payload", freeze_json(self.payload))
+        _aware(self.reported_at, "reported_at")
+
+    def immutable_identity(self) -> tuple[Any, ...]:
+        return (
+            self.artifact_id,
+            self.artifact_checksum,
+            self.schema_identity,
+            self.qualification_checksum,
+            self.payload,
+            self.reported_at,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class WorkflowArtifactRequirement:
     workflow_definition_id: str
     workflow_version: str
@@ -235,6 +272,7 @@ class WorkflowArtifactRequirement:
     target_relative_path: str
     created_at: datetime
     updated_at: datetime
+    content_precondition: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         _match(self.workflow_definition_id, _KEY, "workflow_definition_id")
@@ -249,6 +287,22 @@ class WorkflowArtifactRequirement:
             raise ValueError("Artifact materialization target must be under inputs/")
         _aware(self.created_at, "created_at")
         _aware(self.updated_at, "updated_at")
+        if self.content_precondition is not None:
+            precondition = freeze_json(self.content_precondition)
+            if (
+                set(precondition) != {
+                    "schema", "qualification_schema", "minimum_selected_count",
+                }
+                or precondition["schema"]
+                != PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA
+                or precondition["qualification_schema"]
+                != PAPER_LIBRARY_QUALIFICATION_SCHEMA
+                or precondition["minimum_selected_count"] != 1
+                or self.artifact_type != "selected-paper-library/v1"
+                or self.schema_constraint != "selected-paper-library/v1"
+            ):
+                raise ValueError("Artifact content precondition is unsupported")
+            object.__setattr__(self, "content_precondition", precondition)
 
 
 @dataclass(frozen=True, slots=True)

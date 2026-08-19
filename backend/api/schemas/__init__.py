@@ -8,6 +8,7 @@ from .approvals import (
     RejectRequest,
 )
 from .artifact_references import (
+    ArtifactContentQualificationResponse,
     ArtifactDependencyBindRequest,
     ArtifactDependencyPageResponse,
     ArtifactDependencyResponse,
@@ -72,6 +73,7 @@ __all__ = [
     "ApprovalPageResponse",
     "ApprovalResponse",
     "ArtifactDependencyBindRequest",
+    "ArtifactContentQualificationResponse",
     "ArtifactDependencyPageResponse",
     "ArtifactDependencyResponse",
     "WorkflowInputSetupDecisionRequest",

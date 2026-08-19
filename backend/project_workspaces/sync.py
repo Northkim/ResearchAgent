@@ -24,6 +24,8 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+    IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+    IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
     EXPERIMENT_WORKFLOW_ID,
     EXPERIMENT_INTERACTIVE_CAPSULE_VERSION,
     EXPERIMENT_COMPLETION_CAPSULE_VERSION,
@@ -52,6 +54,7 @@ from backend.workflow_packages.production_workflows import (
     build_idea_discovery_package,
     build_idea_discovery_v0_2_package,
     build_idea_discovery_v0_3_package,
+    build_idea_discovery_v0_4_package,
     build_literature_search_v0_6_package,
     build_writing_scaffold_package,
     build_review_scaffold_package,
@@ -593,6 +596,16 @@ class WorkspaceSyncApplicationService:
                 f"idea-discovery-{project.project_id}-{instance.workflow_instance_id}-v0.3"
             )
             builder = build_idea_discovery_v0_3_package
+        elif (
+            instance.workflow_definition_id == IDEA_DISCOVERY_WORKFLOW_ID
+            and instance.workflow_version == IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION
+            and instance.capsule_version == IDEA_DISCOVERY_V0_4_CAPSULE_VERSION
+        ):
+            package_id = (
+                f"idea-discovery-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.4"
+            )
+            builder = build_idea_discovery_v0_4_package
         elif (
             instance.workflow_definition_id in {
                 WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID, EXPERIMENT_WORKFLOW_ID,

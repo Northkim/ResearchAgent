@@ -27,6 +27,9 @@ from backend.artifact_references.generic_experiment_contracts import (
 from .contracts import (
     ARTIFACT_PAGE_SCHEMA,
     MATERIALIZATION_PLAN_SCHEMA,
+    PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA,
+    PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+    ArtifactContentQualification,
     ArtifactDeclaration,
     ArtifactDependencyBinding,
     ArtifactPresentation,
@@ -340,6 +343,9 @@ class ArtifactReferenceService:
                     item,
                     maturities[item.producer_workflow_instance_id],
                     self._uow.artifact_references.get_presentation(item.artifact_id),
+                    self._uow.artifact_references.get_content_qualification(
+                        item.artifact_id
+                    ),
                 )
                 for item in values
             ],
@@ -403,6 +409,120 @@ class ArtifactReferenceService:
         self._uow.commit()
         return _presentation_document(presentation)
 
+    def report_content_qualification(
+        self, *, project_id: str, artifact_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Accept one immutable bounded fact derived from exact Local bytes."""
+
+        project = self._uow.project_manifests.get_project(project_id)
+        if project is None:
+            raise ApplicationCodedNotFoundError(
+                "Project not found", code="PROJECT_NOT_FOUND"
+            )
+        artifact = self._uow.artifact_references.get_artifact(artifact_id)
+        if artifact is None or artifact.project_id != project_id:
+            raise ApplicationCodedNotFoundError(
+                "Artifact not found", code="ARTIFACT_NOT_FOUND"
+            )
+        normalized = _validate_content_qualification(artifact, payload)
+        existing = self._uow.artifact_references.get_content_qualification(artifact_id)
+        if existing is not None:
+            if (
+                existing.artifact_checksum != artifact.content_checksum
+                or existing.schema_identity != normalized["schema"]
+                or existing.qualification_checksum
+                != normalized["qualification_checksum"]
+                or to_json_value(existing.payload) != normalized
+            ):
+                raise ApplicationCodedConflictError(
+                    "Artifact content qualification is immutable and already differs",
+                    code="ARTIFACT_QUALIFICATION_CONFLICT",
+                )
+            return _qualification_document(existing)
+        qualification = ArtifactContentQualification(
+            artifact_id=artifact.artifact_id,
+            artifact_checksum=artifact.content_checksum,
+            schema_identity=normalized["schema"],
+            qualification_checksum=normalized["qualification_checksum"],
+            payload=normalized,
+            reported_at=_aware(self._clock()),
+        )
+        try:
+            self._uow.artifact_references.add_content_qualification(qualification)
+        except ArtifactReferenceConflictError as error:
+            raise ApplicationCodedConflictError(
+                str(error), code="ARTIFACT_QUALIFICATION_CONFLICT"
+            ) from error
+        self._uow.commit()
+        return _qualification_document(qualification)
+
+    def list_compatible_artifacts(
+        self,
+        *,
+        project_id: str,
+        consumer_workflow_instance_id: str,
+        requirement_key: str,
+        offset: int,
+        limit: int,
+    ) -> dict[str, Any]:
+        consumer = self._uow.workflow_foundation.get_workflow_instance(
+            consumer_workflow_instance_id
+        )
+        if consumer is None or consumer.project_id != project_id:
+            raise ApplicationCodedNotFoundError(
+                "Consumer Workflow Instance not found",
+                code="WORKFLOW_INSTANCE_NOT_FOUND",
+            )
+        requirement = self._uow.artifact_references.get_requirement(
+            consumer.workflow_definition_id,
+            consumer.workflow_version,
+            requirement_key,
+        )
+        if requirement is None:
+            raise ApplicationCodedNotFoundError(
+                "Consumer Artifact requirement not found",
+                code="DEPENDENCY_NOT_FOUND",
+            )
+        candidates = tuple(
+            item
+            for item in self._uow.artifact_references.list_artifacts(
+                project_id=project_id,
+                artifact_type=requirement.artifact_type,
+                limit=1_000,
+            )
+            if is_compatible_artifact(
+                requirement,
+                item,
+                self._uow.artifact_references.get_content_qualification(
+                    item.artifact_id
+                ),
+            )
+        )
+        page = candidates[offset:offset + limit]
+        maturities = self._uow.workflow_foundation.get_instance_maturities(
+            project_id,
+            tuple(sorted({item.producer_workflow_instance_id for item in page})),
+        )
+        return {
+            "schema_version": ARTIFACT_PAGE_SCHEMA,
+            "project_id": project_id,
+            "artifacts": [
+                _artifact_document(
+                    item,
+                    maturities[item.producer_workflow_instance_id],
+                    self._uow.artifact_references.get_presentation(item.artifact_id),
+                    self._uow.artifact_references.get_content_qualification(
+                        item.artifact_id
+                    ),
+                )
+                for item in page
+            ],
+            "offset": offset,
+            "limit": limit,
+            "total": len(candidates),
+            "has_more": offset + len(page) < len(candidates),
+        }
+
     def bind_dependency(
         self,
         *,
@@ -439,7 +559,11 @@ class ArtifactReferenceService:
             raise ApplicationCodedNotFoundError(
                 "Artifact Reference not found", code="ARTIFACT_REFERENCE_NOT_FOUND"
             )
-        _require_compatible(requirement, artifact)
+        _require_compatible(
+            requirement,
+            artifact,
+            self._uow.artifact_references.get_content_qualification(artifact_id),
+        )
         existing_replay = self._uow.artifact_references.get_binding_by_idempotency(
             project_id, consumer_workflow_instance_id, idempotency_key
         )
@@ -751,7 +875,13 @@ class ArtifactReferenceService:
                     "Artifact producer Project identity mismatch",
                     code="ARTIFACT_PROJECT_MISMATCH",
                 )
-            _require_compatible(requirement, artifact)
+            _require_compatible(
+                requirement,
+                artifact,
+                self._uow.artifact_references.get_content_qualification(
+                    artifact.artifact_id
+                ),
+            )
             if binding.expected_checksum != artifact.content_checksum:
                 raise ApplicationCodedConflictError(
                     "Artifact binding checksum drift detected",
@@ -816,7 +946,11 @@ class ArtifactReferenceService:
             )
 
 
-def _require_compatible(requirement, artifact: ArtifactReference) -> None:
+def _require_compatible(
+    requirement,
+    artifact: ArtifactReference,
+    qualification: ArtifactContentQualification | None = None,
+) -> None:
     if artifact.state not in {ArtifactState.LOCAL_AVAILABLE, ArtifactState.RETIRED}:
         raise ApplicationCodedValidationError(
             "Artifact lifecycle is not eligible for local materialization",
@@ -842,6 +976,38 @@ def _require_compatible(requirement, artifact: ArtifactReference) -> None:
             "Dependency is not approved for local verified-copy materialization",
             code="DEPENDENCY_UNRESOLVED",
         )
+    precondition = requirement.content_precondition
+    if precondition is None:
+        return
+    if (
+        precondition.get("schema") != PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA
+        or precondition.get("qualification_schema")
+        != PAPER_LIBRARY_QUALIFICATION_SCHEMA
+        or precondition.get("minimum_selected_count") != 1
+    ):
+        raise ApplicationCodedValidationError(
+            "Artifact content precondition is unsupported",
+            code="DEPENDENCY_TYPE_MISMATCH",
+        )
+    if (
+        qualification is None
+        or qualification.artifact_id != artifact.artifact_id
+        or qualification.artifact_checksum != artifact.content_checksum
+        or qualification.schema_identity != PAPER_LIBRARY_QUALIFICATION_SCHEMA
+        or qualification.payload.get("selected_count", 0) < 1
+    ):
+        raise ApplicationCodedValidationError(
+            "Idea Discovery requires a paper library with at least one selected paper",
+            code="ARTIFACT_CONTENT_PRECONDITION_UNSATISFIED",
+        )
+
+
+def is_compatible_artifact(requirement, artifact, qualification=None) -> bool:
+    try:
+        _require_compatible(requirement, artifact, qualification)
+    except ApplicationCodedValidationError:
+        return False
+    return True
 
 
 def exact_binding_set_checksum(bindings) -> str:
@@ -1020,6 +1186,7 @@ def _artifact_document(
     item: ArtifactReference,
     producer_core_capability_maturity: str,
     presentation: ArtifactPresentation | None = None,
+    qualification: ArtifactContentQualification | None = None,
 ) -> dict[str, Any]:
     return {
         "schema_version": "reagent.artifact-reference/v0.1",
@@ -1047,6 +1214,9 @@ def _artifact_document(
         "presentation": (
             None if presentation is None else _presentation_document(presentation)
         ),
+        "content_qualification": (
+            None if qualification is None else _qualification_document(qualification)
+        ),
     }
 
 
@@ -1059,6 +1229,52 @@ def _presentation_document(presentation: ArtifactPresentation) -> dict[str, Any]
         "payload": to_json_value(presentation.payload),
         "reported_at": _utc_text(presentation.reported_at),
     }
+
+
+def _qualification_document(
+    qualification: ArtifactContentQualification,
+) -> dict[str, Any]:
+    return {
+        "schema_identity": qualification.schema_identity,
+        "artifact_id": qualification.artifact_id,
+        "artifact_checksum": qualification.artifact_checksum,
+        "qualification_checksum": qualification.qualification_checksum,
+        "payload": to_json_value(qualification.payload),
+        "reported_at": _utc_text(qualification.reported_at),
+    }
+
+
+def _validate_content_qualification(
+    artifact: ArtifactReference, value: dict[str, Any]
+) -> dict[str, Any]:
+    fields = {
+        "schema", "artifact_id", "artifact_checksum", "selected_count",
+        "qualification_checksum",
+    }
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ApplicationCodedValidationError(
+            "Artifact content qualification fields mismatch",
+            code="ARTIFACT_QUALIFICATION_INVALID",
+        )
+    payload = dict(value)
+    checksum = payload.pop("qualification_checksum")
+    selected_count = payload.get("selected_count")
+    if (
+        payload.get("schema") != PAPER_LIBRARY_QUALIFICATION_SCHEMA
+        or artifact.artifact_type != "selected-paper-library/v1"
+        or artifact.artifact_schema_version != "selected-paper-library/v1"
+        or payload.get("artifact_id") != artifact.artifact_id
+        or payload.get("artifact_checksum") != artifact.content_checksum
+        or isinstance(selected_count, bool)
+        or not isinstance(selected_count, int)
+        or not 0 <= selected_count <= 10_000
+        or checksum != canonical_hash(payload)
+    ):
+        raise ApplicationCodedValidationError(
+            "Artifact content qualification is invalid",
+            code="ARTIFACT_QUALIFICATION_INVALID",
+        )
+    return value
 
 
 _PRESENTATION_SECRET = re.compile(
@@ -1180,10 +1396,10 @@ def _validate_registered_presentation(*, artifact, value: Any) -> dict[str, Any]
         ) from error
 
 
-def require_compatible_artifact(requirement, artifact) -> None:
+def require_compatible_artifact(requirement, artifact, qualification=None) -> None:
     """Expose the exact binding compatibility guard to product orchestrators."""
 
-    _require_compatible(requirement, artifact)
+    _require_compatible(requirement, artifact, qualification)
 
 
 def binding_document(binding: ArtifactDependencyBinding) -> dict[str, Any]:

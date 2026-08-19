@@ -11,6 +11,7 @@ from backend.domain.models import ApprovalRequest, ArtifactMetadata, Checkpoint,
 from backend.domain.services import ExecutionState
 from backend.controlled_local_run_approvals import ControlledLocalRunApproval
 from backend.artifact_references.contracts import (
+    ArtifactContentQualification,
     ArtifactDependencyBinding,
     ArtifactPresentation,
     ArtifactReference,
@@ -133,6 +134,9 @@ class InMemoryDatabase:
     ] = field(default_factory=dict)
     local_artifact_references: dict[str, ArtifactReference] = field(default_factory=dict)
     artifact_presentations: dict[str, ArtifactPresentation] = field(default_factory=dict)
+    artifact_content_qualifications: dict[
+        str, ArtifactContentQualification
+    ] = field(default_factory=dict)
     workflow_artifact_requirements: dict[
         tuple[str, str, str], WorkflowArtifactRequirement
     ] = field(default_factory=dict)
@@ -407,6 +411,41 @@ class InMemoryArtifactReferenceRepository(ArtifactReferenceRepository):
         if existing is None:
             self._uow._artifact_presentations[presentation.artifact_id] = presentation
             self._uow._dirty_artifact_presentations.add(presentation.artifact_id)
+
+    def get_content_qualification(
+        self, artifact_id: str
+    ) -> ArtifactContentQualification | None:
+        return self._uow._artifact_content_qualifications.get(artifact_id)
+
+    def list_content_qualifications(
+        self, artifact_ids: tuple[str, ...]
+    ) -> tuple[ArtifactContentQualification, ...]:
+        return tuple(
+            self._uow._artifact_content_qualifications[artifact_id]
+            for artifact_id in artifact_ids
+            if artifact_id in self._uow._artifact_content_qualifications
+        )
+
+    def add_content_qualification(
+        self, qualification: ArtifactContentQualification
+    ) -> None:
+        if qualification.artifact_id not in self._uow._local_artifact_references:
+            raise ValueError("Artifact does not exist")
+        existing = self.get_content_qualification(qualification.artifact_id)
+        if (
+            existing is not None
+            and existing.immutable_identity() != qualification.immutable_identity()
+        ):
+            raise ArtifactReferenceConflictError(
+                "Artifact content qualification is immutable and already differs"
+            )
+        if existing is None:
+            self._uow._artifact_content_qualifications[
+                qualification.artifact_id
+            ] = qualification
+            self._uow._dirty_artifact_content_qualifications.add(
+                qualification.artifact_id
+            )
 
     def add_requirement(self, requirement: WorkflowArtifactRequirement) -> None:
         key = (
@@ -1833,6 +1872,10 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.artifact_presentations[artifact_id] = (
                 self._artifact_presentations[artifact_id]
             )
+        for artifact_id in self._dirty_artifact_content_qualifications:
+            self.database.artifact_content_qualifications[artifact_id] = (
+                self._artifact_content_qualifications[artifact_id]
+            )
         for key in self._dirty_workflow_artifact_requirements:
             self.database.workflow_artifact_requirements[key] = (
                 self._workflow_artifact_requirements[key]
@@ -2033,6 +2076,9 @@ class InMemoryUnitOfWork(UnitOfWork):
             self.database.local_artifact_references
         )
         self._artifact_presentations = dict(self.database.artifact_presentations)
+        self._artifact_content_qualifications = dict(
+            self.database.artifact_content_qualifications
+        )
         self._workflow_artifact_requirements = dict(
             self.database.workflow_artifact_requirements
         )
@@ -2089,6 +2135,7 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_installation_acknowledgements: set[str] = set()
         self._dirty_local_artifact_references: set[str] = set()
         self._dirty_artifact_presentations: set[str] = set()
+        self._dirty_artifact_content_qualifications: set[str] = set()
         self._dirty_workflow_artifact_requirements: set[tuple[str, str, str]] = set()
         self._dirty_artifact_dependency_bindings: set[str] = set()
         self._dirty_workflow_input_setup_decisions: set[str] = set()

@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.artifact_references.contracts import (
+    ArtifactContentQualification,
     ArtifactDependencyBinding,
     ArtifactPresentation,
     ArtifactReference,
@@ -207,6 +208,76 @@ class SQLAlchemyArtifactReferenceRepository(ArtifactReferenceRepository):
         row.presentation_json = to_json_value(presentation.payload)
         row.presentation_reported_at = presentation.reported_at
 
+    def get_content_qualification(
+        self, artifact_id: str
+    ) -> ArtifactContentQualification | None:
+        row = next(
+            (
+                item
+                for item in pending_instances(self.session, LocalArtifactReferenceORM)
+                if item.artifact_id == artifact_id
+            ),
+            None,
+        ) or self.session.get(LocalArtifactReferenceORM, artifact_id)
+        if row is None or row.qualification_json is None:
+            return None
+        return ArtifactContentQualification(
+            artifact_id=row.artifact_id,
+            artifact_checksum=row.content_checksum,
+            schema_identity=row.qualification_schema_id,
+            qualification_checksum=row.qualification_checksum,
+            payload=row.qualification_json,
+            reported_at=row.qualification_reported_at,
+        )
+
+    def list_content_qualifications(
+        self, artifact_ids: tuple[str, ...]
+    ) -> tuple[ArtifactContentQualification, ...]:
+        if not artifact_ids:
+            return ()
+        rows = self.session.execute(
+            select(LocalArtifactReferenceORM).where(
+                LocalArtifactReferenceORM.artifact_id.in_(artifact_ids),
+                LocalArtifactReferenceORM.qualification_schema_id.is_not(None),
+            )
+        ).scalars()
+        return tuple(
+            ArtifactContentQualification(
+                artifact_id=row.artifact_id,
+                artifact_checksum=row.content_checksum,
+                schema_identity=row.qualification_schema_id,
+                qualification_checksum=row.qualification_checksum,
+                payload=row.qualification_json,
+                reported_at=row.qualification_reported_at,
+            )
+            for row in rows
+        )
+
+    def add_content_qualification(
+        self, qualification: ArtifactContentQualification
+    ) -> None:
+        row = next(
+            (
+                item
+                for item in pending_instances(self.session, LocalArtifactReferenceORM)
+                if item.artifact_id == qualification.artifact_id
+            ),
+            None,
+        ) or self.session.get(LocalArtifactReferenceORM, qualification.artifact_id)
+        if row is None:
+            raise ValueError("Artifact does not exist")
+        existing = self.get_content_qualification(qualification.artifact_id)
+        if existing is not None:
+            if existing.immutable_identity() != qualification.immutable_identity():
+                raise ArtifactReferenceConflictError(
+                    "Artifact content qualification is immutable and already differs"
+                )
+            return
+        row.qualification_schema_id = qualification.schema_identity
+        row.qualification_checksum = qualification.qualification_checksum
+        row.qualification_json = to_json_value(qualification.payload)
+        row.qualification_reported_at = qualification.reported_at
+
     def add_requirement(self, requirement: WorkflowArtifactRequirement) -> None:
         existing = self.get_requirement(
             requirement.workflow_definition_id,
@@ -231,6 +302,11 @@ class SQLAlchemyArtifactReferenceRepository(ArtifactReferenceRepository):
             required=requirement.required,
             materialization_mode=requirement.materialization_mode.value,
             target_relative_path=requirement.target_relative_path,
+            content_precondition=(
+                None
+                if requirement.content_precondition is None
+                else to_json_value(requirement.content_precondition)
+            ),
             created_at=requirement.created_at,
             updated_at=requirement.updated_at,
         ))
@@ -544,6 +620,7 @@ def _requirement(row: WorkflowArtifactRequirementORM) -> WorkflowArtifactRequire
         target_relative_path=row.target_relative_path,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        content_precondition=row.content_precondition,
     )
 
 

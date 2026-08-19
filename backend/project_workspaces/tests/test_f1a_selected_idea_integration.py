@@ -57,6 +57,11 @@ def test_selected_idea_progress_promotes_one_canonical_artifact_and_retries(
         f"/projects/{project_id}/artifacts",
         params={"artifact_type": "selected-paper-library/v1"},
     ).json()["artifacts"][0]
+    workspace_cli.refresh_artifact_index(
+        workspace_root=workspace,
+        transport=transport,
+        now=datetime(2026, 8, 7, 0, 9, tzinfo=UTC),
+    )
 
     catalog = client.get(
         "/workflow-definitions/idea-discovery-local-experimental"

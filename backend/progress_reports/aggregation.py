@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from html import escape
 
 from backend.application.errors import ApplicationCodedNotFoundError
-from backend.artifact_references.service import evaluate_input_setup
+from backend.artifact_references.service import (
+    evaluate_input_setup,
+    is_compatible_artifact,
+)
 from backend.persistence.ports import UnitOfWork
 from backend.project_workspaces.contracts import WorkflowInstanceDesiredState
 
@@ -88,6 +91,12 @@ class ProjectProgressAggregationService:
                 limit=max(artifact_total, 1),
             )
         }
+        qualifications = {
+            item.artifact_id: item
+            for item in self._uow.artifact_references.list_content_qualifications(
+                tuple(artifacts)
+            )
+        }
         friendly_labels = _friendly_labels(
             instances, definitions, definition_versions
         )
@@ -127,6 +136,7 @@ class ProjectProgressAggregationService:
                 input_setup_decisions=input_setup_decisions,
                 resource_bindings=resource_bindings,
                 artifacts=tuple(artifacts.values()),
+                qualifications=qualifications,
                 friendly_label=friendly_labels[instance.workflow_instance_id],
             ))
         projections = tuple(projection_items)
@@ -227,6 +237,7 @@ class ProjectProgressAggregationService:
         input_setup_decisions,
         resource_bindings,
         artifacts,
+        qualifications,
         friendly_label: str,
     ) -> WorkflowInstanceProgressProjection:
         if definition_version is None:
@@ -273,9 +284,11 @@ class ProjectProgressAggregationService:
         required = tuple(item for item in requirements if item.required)
         compatible_counts = {
             item.requirement_key: sum(
-                artifact.artifact_type == item.artifact_type
-                and artifact.artifact_schema_version == item.schema_constraint
-                and artifact.state.value in {"LOCAL_AVAILABLE", "EXTERNAL_AVAILABLE"}
+                is_compatible_artifact(
+                    item,
+                    artifact,
+                    qualifications.get(artifact.artifact_id),
+                )
                 for artifact in artifacts
             )
             for item in required

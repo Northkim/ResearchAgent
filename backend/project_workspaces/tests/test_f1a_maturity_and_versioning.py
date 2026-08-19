@@ -38,11 +38,12 @@ def test_catalog_exposes_reviewed_maturity_and_recommends_new_idea_version(
     )
     assert detail.status_code == 200
     body = detail.json()
-    assert body["recommended_version"]["version"] == "0.2.0"
+    assert body["recommended_version"]["version"] == "0.3.0"
     assert body["recommended_version"]["core_capability_maturity"] == "REVIEWED_CORE"
-    assert body["recommended_capsule"]["capsule_version"] == "0.3.0"
+    assert body["recommended_capsule"]["capsule_version"] == "0.4.0"
     assert [(item["version"], item["core_capability_maturity"]) for item in body["versions"]] == [
-        ("0.1.0", "REVIEWED_CORE"), ("0.2.0", "REVIEWED_CORE")
+        ("0.1.0", "REVIEWED_CORE"), ("0.2.0", "REVIEWED_CORE"),
+        ("0.3.0", "REVIEWED_CORE"),
     ]
     assert set(database.workflow_definitions) == {
         "literature-search-local-experimental",
@@ -74,7 +75,7 @@ def test_existing_idea_instance_remains_pinned_when_new_version_is_seeded(
     catalog = client.get(
         "/workflow-definitions/idea-discovery-local-experimental"
     ).json()
-    assert catalog["recommended_version"]["version"] == "0.2.0"
+    assert catalog["recommended_version"]["version"] == "0.3.0"
     instances = client.get(f"/projects/{project_id}/workflow-instances").json()
     old_instance = next(
         item for item in instances["items"]
@@ -108,7 +109,7 @@ def test_existing_idea_0_2_capsule_is_not_silently_upgraded(tmp_path) -> None:
     catalog = client.get(
         "/workflow-definitions/idea-discovery-local-experimental"
     ).json()
-    assert catalog["recommended_capsule"]["capsule_version"] == "0.3.0"
+    assert catalog["recommended_capsule"]["capsule_version"] == "0.4.0"
 
 
 def test_existing_experiment_0_3_capsule_is_not_silently_upgraded(tmp_path) -> None:

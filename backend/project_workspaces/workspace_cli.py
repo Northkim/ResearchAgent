@@ -79,6 +79,10 @@ SUPPORTED_CAPSULE_PINS = {
         "idea-discovery-package-experimental",
         False,
     ),
+    ("idea-discovery-local-experimental", "0.3.0", "0.4.0"): (
+        "idea-discovery-package-experimental",
+        False,
+    ),
     ("writing-local-experimental", "0.1.0", "0.1.0"): (
         "writing-scaffold-package-experimental",
         False,
@@ -1859,6 +1863,16 @@ class HTTPWorkspaceSyncTransport:
         return self._json_request(
             "PUT",
             f"/projects/{project_id}/artifacts/{artifact_id}/presentation",
+            payload,
+        )
+
+    def report_artifact_content_qualification(
+        self, project_id: str, artifact_id: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        _match(artifact_id, ARTIFACT_ID, "artifact_id")
+        return self._json_request(
+            "PUT",
+            f"/projects/{project_id}/artifacts/{artifact_id}/content-qualification",
             payload,
         )
 
@@ -3912,6 +3926,44 @@ def _project_artifact_presentation(
     return {**payload, "presentation_checksum": canonical_hash(payload)}
 
 
+def _project_artifact_content_qualification(
+    *, artifact: dict[str, Any], content: bytes
+) -> dict[str, Any] | None:
+    if artifact.get("artifact_type") != "selected-paper-library/v1":
+        return None
+    value = _artifact_json(content, expected_schema="selected-paper-library/v1")
+    if set(value) != {"schema", "source_schemas", "source_checksums", "papers"}:
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            "Selected paper library fields are invalid",
+            EXIT_VALIDATION,
+        )
+    papers = value["papers"]
+    if not isinstance(papers, list) or len(papers) > 10_000:
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            "Selected paper library is outside supported bounds",
+            EXIT_VALIDATION,
+        )
+    if any(
+        not isinstance(item, dict)
+        or set(item) != {"candidate_id", "paper", "selection"}
+        for item in papers
+    ):
+        raise WorkspaceCLIError(
+            "LOCAL_ARTIFACT_DRIFT",
+            "Selected paper library entries are invalid",
+            EXIT_VALIDATION,
+        )
+    payload = {
+        "schema": "reagent.artifact-qualification.selected-paper-library/v0.1",
+        "artifact_id": artifact["artifact_id"],
+        "artifact_checksum": artifact["content_checksum"],
+        "selected_count": len(papers),
+    }
+    return {**payload, "qualification_checksum": canonical_hash(payload)}
+
+
 # Preserve the qualified U1 helper seam while widening its exact registry.
 _project_upstream_presentation = _project_artifact_presentation
 
@@ -3965,6 +4017,46 @@ def _report_artifact_presentations(
     return reported, tuple(warnings)
 
 
+def _report_artifact_content_qualifications(
+    *,
+    descriptor: dict[str, Any],
+    cloud_artifacts: list[dict[str, Any]],
+    verified_sources: dict[str, Path],
+    transport: Any,
+) -> tuple[int, tuple[str, ...]]:
+    reported = 0
+    warnings: list[str] = []
+    for artifact in cloud_artifacts:
+        source = verified_sources.get(artifact.get("artifact_id"))
+        if source is None or artifact.get("artifact_type") != "selected-paper-library/v1":
+            continue
+        try:
+            payload = _project_artifact_content_qualification(
+                artifact=artifact,
+                content=source.read_bytes(),
+            )
+            assert payload is not None
+            existing = artifact.get("content_qualification")
+            if isinstance(existing, dict):
+                if existing.get("payload") != payload:
+                    raise WorkspaceCLIError(
+                        "ARTIFACT_QUALIFICATION_CONFLICT",
+                        "Reported content qualification differs from exact Local bytes",
+                        EXIT_VALIDATION,
+                    )
+                continue
+            transport.report_artifact_content_qualification(
+                descriptor["project_id"], artifact["artifact_id"], payload
+            )
+            reported += 1
+        except (WorkspaceCLIError, AttributeError):
+            warnings.append(
+                "Selected paper count was not reported from the exact Local Artifact; "
+                "retry normal input preparation before Idea Discovery."
+            )
+    return reported, tuple(warnings)
+
+
 def _report_completed_workflow_preview(
     *, workspace: Path, descriptor: dict[str, Any], installed: dict[str, Any], transport: Any
 ) -> tuple[int, tuple[str, ...]]:
@@ -3995,12 +4087,19 @@ def _report_completed_workflow_preview(
                 EXIT_VALIDATION,
             )
         sources[artifact["artifact_id"]] = source
-    return _report_artifact_presentations(
+    _, qualification_warnings = _report_artifact_content_qualifications(
         descriptor=descriptor,
         cloud_artifacts=relevant,
         verified_sources=sources,
         transport=transport,
     )
+    reported, presentation_warnings = _report_artifact_presentations(
+        descriptor=descriptor,
+        cloud_artifacts=relevant,
+        verified_sources=sources,
+        transport=transport,
+    )
+    return reported, qualification_warnings + presentation_warnings
 
 
 def refresh_artifact_index(
@@ -4089,6 +4188,12 @@ def refresh_artifact_index(
         document = {**payload, "index_checksum": canonical_hash(payload)}
         _atomic_write_json(index_path, document)
         _read_artifact_index(index_path, descriptor)
+        _, qualification_warnings = _report_artifact_content_qualifications(
+            descriptor=descriptor,
+            cloud_artifacts=cloud_artifacts,
+            verified_sources=verified_sources,
+            transport=transport,
+        )
         reported, warnings = _report_artifact_presentations(
             descriptor=descriptor,
             cloud_artifacts=cloud_artifacts,
@@ -4101,7 +4206,7 @@ def refresh_artifact_index(
             workspace_id=descriptor["workspace_id"],
             artifact_count=len(entries),
             presentation_count=reported,
-            warnings=warnings,
+            warnings=qualification_warnings + warnings,
         )
 
 
@@ -4376,7 +4481,8 @@ def _validate_cloud_artifact(artifact: Any, workspace: dict[str, Any]) -> None:
         "produced_at", "retired_at", "created_at", "updated_at",
     }
     fields = frozenset(value)
-    if fields not in {frozenset(required), frozenset(required | {"presentation"})}:
+    optional = {"presentation", "content_qualification"}
+    if not required.issubset(fields) or not fields.issubset(required | optional):
         raise _identity("ARTIFACT_INDEX_INVALID", "Cloud Artifact Reference fields are invalid")
     if value["schema_version"] != "reagent.artifact-reference/v0.1":
         raise _identity("ARTIFACT_INDEX_INVALID", "Cloud Artifact schema is unsupported")
@@ -4398,6 +4504,50 @@ def _validate_cloud_artifact(artifact: Any, workspace: dict[str, Any]) -> None:
         or value["cloud_metadata_available"] is not True
     ):
         raise _identity("ARTIFACT_INDEX_INVALID", "Cloud Artifact bounds are invalid")
+    qualification = value.get("content_qualification")
+    if qualification is not None:
+        item = _object(qualification, "Artifact content qualification")
+        if set(item) != {
+            "schema_identity", "artifact_id", "artifact_checksum",
+            "qualification_checksum", "payload", "reported_at",
+        }:
+            raise _identity(
+                "ARTIFACT_INDEX_INVALID",
+                "Artifact content qualification fields are invalid",
+            )
+        payload = _object(item["payload"], "Artifact content qualification payload")
+        selected_count = payload.get("selected_count")
+        if (
+            set(payload) != {
+                "schema", "artifact_id", "artifact_checksum", "selected_count",
+                "qualification_checksum",
+            }
+            or item["schema_identity"]
+            != "reagent.artifact-qualification.selected-paper-library/v0.1"
+            or item["artifact_id"] != value["artifact_id"]
+            or item["artifact_checksum"] != value["content_checksum"]
+            or payload.get("artifact_id") != value["artifact_id"]
+            or payload.get("artifact_checksum") != value["content_checksum"]
+            or payload.get("schema") != item["schema_identity"]
+            or isinstance(selected_count, bool)
+            or not isinstance(selected_count, int)
+            or not 0 <= selected_count <= 10_000
+            or payload.get("qualification_checksum")
+            != item["qualification_checksum"]
+            or item["qualification_checksum"] != canonical_hash({
+                key: payload[key]
+                for key in (
+                    "schema", "artifact_id", "artifact_checksum", "selected_count"
+                )
+                if key in payload
+            })
+        ):
+            raise _identity(
+                "ARTIFACT_INDEX_INVALID",
+                "Artifact content qualification identity is invalid",
+            )
+        _checksum(item["qualification_checksum"], "qualification_checksum")
+        _timestamp(item["reported_at"], "reported_at")
 
 
 def _require_installed_lock(workspace: Path, descriptor: dict[str, Any]) -> dict[str, Any]:

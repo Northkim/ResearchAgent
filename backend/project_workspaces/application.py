@@ -41,7 +41,8 @@ from backend.workflow_packages.generic_experiment_v5_publication import (
 from backend.workflow_packages.production_workflows import (
     EXPERIMENT_WORKFLOW_ID,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
-    IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+    IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+    IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
     IDEA_DISCOVERY_WORKFLOW_ID,
     LITERATURE_SEARCH_CAPSULE_VERSION,
     LITERATURE_SEARCH_WORKFLOW_ID,
@@ -80,7 +81,7 @@ from .legacy import (
 from .manifest import build_desired_manifest, mutation_idempotency_key
 from .presets import FULL_RESEARCH, resolve_project_setup
 from .production_workflows import (
-    IDEA_DISCOVERY_V0_3_CAPSULE_ID,
+    IDEA_DISCOVERY_V0_4_CAPSULE_ID,
     LITERATURE_SEARCH_V0_6_CAPSULE_ID,
     REAL_REVIEW_CAPSULE_ID,
     REAL_WRITING_CAPSULE_ID,
@@ -101,9 +102,9 @@ _FULL_RESEARCH_INITIAL_PINS = (
     ),
     (
         IDEA_DISCOVERY_WORKFLOW_ID,
-        IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
-        IDEA_DISCOVERY_V0_3_CAPSULE_ID,
-        IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+        IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+        IDEA_DISCOVERY_V0_4_CAPSULE_ID,
+        IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
     ),
     (
         EXPERIMENT_WORKFLOW_ID,

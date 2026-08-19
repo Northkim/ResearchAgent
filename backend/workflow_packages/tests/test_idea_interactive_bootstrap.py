@@ -11,8 +11,11 @@ import pytest
 from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+    IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+    IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
     _idea_v0_2_runner_source,
     build_idea_discovery_v0_3_package,
+    build_idea_discovery_v0_4_package,
 )
 from backend.workflow_packages.serialization import canonical_json, sha256_bytes
 
@@ -54,6 +57,33 @@ def test_idea_0_3_changes_only_harness_integration_assets(tmp_path: Path) -> Non
     assert manifest["package_template_version"] == IDEA_DISCOVERY_V0_3_CAPSULE_VERSION
     assert manifest["prompt_pins"][0]["version"] == "0.2.0"
     assert manifest["skill_pins"][0]["semantic_version"] == "0.2.0"
+
+
+def test_forward_idea_0_3_package_publishes_nonempty_input_precondition(
+    tmp_path: Path,
+) -> None:
+    package = build_idea_discovery_v0_4_package(
+        project_id="project-" + "7" * 32,
+        project_name="Forward Idea precondition fixture",
+        research_topic="Bounded synthetic research",
+        output_root=tmp_path / "idea-forward",
+        package_id="idea-discovery-project-forward-wfi-forward-v0.4",
+    )
+    manifest = json.loads((package.package_root / "package-manifest.json").read_text())
+    workflow = json.loads((package.package_root / "workflow/workflow.json").read_text())
+    assert manifest["workflow_version"] == IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION
+    assert manifest["package_template_version"] == IDEA_DISCOVERY_V0_4_CAPSULE_VERSION
+    assert workflow["input_requirements"][0]["content_precondition"] == {
+        "schema": (
+            "reagent.artifact-precondition."
+            "selected-paper-library-nonempty/v0.1"
+        ),
+        "qualification_schema": (
+            "reagent.artifact-qualification.selected-paper-library/v0.1"
+        ),
+        "minimum_selected_count": 1,
+    }
+    assert package.validation.valid and package.archive_validation.valid
 
 
 def test_current_idea_harness_requires_and_delivers_bounded_initial_prompt(

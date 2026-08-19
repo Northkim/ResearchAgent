@@ -58,6 +58,11 @@ class WorkflowVersionCatalogResponse(StrictDTO):
                 "schema_constraint": item.schema_constraint,
                 "required": item.required,
                 "target_relative_path": item.target_relative_path,
+                "content_precondition": (
+                    None
+                    if item.content_precondition is None
+                    else to_json_value(item.content_precondition)
+                ),
             } for item in requirements],
             skills=[{
                 "skill_id": pin.skill_id,

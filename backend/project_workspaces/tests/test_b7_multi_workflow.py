@@ -59,6 +59,16 @@ class _Transport:
         assert response.status_code == 200, response.text
         return response.json()
 
+    def report_artifact_content_qualification(
+        self, project_id, artifact_id, payload
+    ):
+        response = self.client.put(
+            f"/projects/{project_id}/artifacts/{artifact_id}/content-qualification",
+            json=payload,
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
     def materialization_plan(self, project_id, consumer_workflow_instance_id):
         response = self.client.get(
             f"/projects/{project_id}/workflow-instances/"

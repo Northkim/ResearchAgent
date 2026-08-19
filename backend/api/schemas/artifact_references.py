@@ -18,6 +18,15 @@ class ArtifactPresentationResponse(StrictDTO):
     reported_at: datetime
 
 
+class ArtifactContentQualificationResponse(StrictDTO):
+    schema_identity: str
+    artifact_id: str
+    artifact_checksum: str
+    qualification_checksum: str
+    payload: dict
+    reported_at: datetime
+
+
 class ArtifactReferenceResponse(StrictDTO):
     schema_version: str
     artifact_id: str
@@ -42,6 +51,9 @@ class ArtifactReferenceResponse(StrictDTO):
     created_at: datetime
     updated_at: datetime
     presentation: ArtifactPresentationResponse | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    content_qualification: ArtifactContentQualificationResponse | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
 

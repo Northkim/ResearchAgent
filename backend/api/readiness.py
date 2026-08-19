@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine, text
 
 
-EXPECTED_MIGRATION_HEAD = "20260820_0035"
+EXPECTED_MIGRATION_HEAD = "20260820_0036"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,22 +45,27 @@ def check_postgres_readiness(engine: Engine) -> ReadinessResult:
                       EXISTS (
                         SELECT 1 FROM local_workflow_definition_versions
                         WHERE workflow_definition_id = 'idea-discovery-local-experimental'
-                          AND version = '0.2.0' AND review_status = 'REVIEWED'
+                          AND version = '0.3.0' AND review_status = 'REVIEWED'
                           AND core_capability_maturity = 'REVIEWED_CORE'
                       ) AS idea,
                       EXISTS (
                         SELECT 1 FROM local_workflow_capsule_versions
                         WHERE workflow_definition_id = 'idea-discovery-local-experimental'
-                          AND workflow_version = '0.2.0'
-                          AND capsule_version = '0.3.0'
+                          AND workflow_version = '0.3.0'
+                          AND capsule_version = '0.4.0'
                           AND review_status = 'REVIEWED'
                       ) AS idea_interactive_capsule,
                       EXISTS (
                         SELECT 1 FROM workflow_artifact_requirements
                         WHERE workflow_definition_id = 'idea-discovery-local-experimental'
-                          AND workflow_version = '0.2.0'
+                          AND workflow_version = '0.3.0'
                           AND requirement_key = 'paper_library'
                           AND artifact_type = 'selected-paper-library/v1'
+                          AND content_precondition = '{
+                            "schema": "reagent.artifact-precondition.selected-paper-library-nonempty/v0.1",
+                            "qualification_schema": "reagent.artifact-qualification.selected-paper-library/v0.1",
+                            "minimum_selected_count": 1
+                          }'::jsonb
                       ) AS dependency
                       ,EXISTS (
                         SELECT 1 FROM local_workflow_definition_versions

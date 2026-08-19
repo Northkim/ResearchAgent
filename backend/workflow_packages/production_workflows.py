@@ -64,6 +64,11 @@ IDEA_DISCOVERY_V0_2_SKILL_VERSION = "0.2.0"
 # Owner-test integration repair: research semantics stay pinned to Workflow 0.2,
 # while the immutable Harness integration is published as Capsule 0.3.
 IDEA_DISCOVERY_V0_3_CAPSULE_VERSION = "0.3.0"
+# Post-D1 forward publication: Idea 0.3 makes the existing non-empty Local
+# preflight an explicit Cloud-visible exact content precondition. Historical
+# Idea 0.2 / Capsule 0.3 remains immutable.
+IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION = "0.3.0"
+IDEA_DISCOVERY_V0_4_CAPSULE_VERSION = "0.4.0"
 
 WRITING_WORKFLOW_ID = "writing-local-experimental"
 REVIEW_WORKFLOW_ID = "review-local-experimental"
@@ -730,6 +735,29 @@ def idea_discovery_v0_2_workflow_document() -> dict[str, Any]:
     return value
 
 
+def idea_discovery_v0_3_workflow_document() -> dict[str, Any]:
+    """Forward contract with an exact non-empty paper-library precondition."""
+
+    value = idea_discovery_v0_2_workflow_document()
+    value["workflow_version"] = IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION
+    value["input_requirements"] = [{
+        **value["input_requirements"][0],
+        "content_precondition": {
+            "schema": (
+                "reagent.artifact-precondition."
+                "selected-paper-library-nonempty/v0.1"
+            ),
+            "qualification_schema": (
+                "reagent.artifact-qualification."
+                "selected-paper-library/v0.1"
+            ),
+            "minimum_selected_count": 1,
+        },
+    }]
+    value["immutable_versioning"] = "0.2.0 remains independently valid"
+    return value
+
+
 def literature_search_contract_checksum() -> str:
     return canonical_hash(literature_search_workflow_document())
 
@@ -740,6 +768,10 @@ def idea_discovery_contract_checksum() -> str:
 
 def idea_discovery_v0_2_contract_checksum() -> str:
     return canonical_hash(idea_discovery_v0_2_workflow_document())
+
+
+def idea_discovery_v0_3_contract_checksum() -> str:
+    return canonical_hash(idea_discovery_v0_3_workflow_document())
 
 
 def _json(value: Any) -> bytes:
@@ -1034,6 +1066,23 @@ def _idea_v0_3_validator_source() -> bytes:
     ).encode("utf-8")
 
 
+def _idea_v0_4_validator_source() -> bytes:
+    source = _idea_v0_3_validator_source().decode("utf-8")
+    workflow_pin = 'manifest.get("workflow_version") != "0.2.0"'
+    capsule_pin = 'manifest.get("package_template_version") != "0.3.0"'
+    if workflow_pin not in source or capsule_pin not in source:
+        raise RuntimeError("accepted Idea 0.3 validator pins are unavailable")
+    return source.replace(
+        workflow_pin,
+        'manifest.get("workflow_version") != "0.3.0"',
+        1,
+    ).replace(
+        capsule_pin,
+        'manifest.get("package_template_version") != "0.4.0"',
+        1,
+    ).encode("utf-8")
+
+
 def _replace_spec(files: dict[str, FileSpec], path: str, content: bytes) -> None:
     current = files[path]
     files[path] = FileSpec(
@@ -1321,6 +1370,43 @@ def _idea_v0_3_files(
     ))
     _replace_spec(files, "reagent_local.py", _idea_v0_3_runner_source())
     _replace_spec(files, "validate_package.py", _idea_v0_3_validator_source())
+    return files
+
+
+def _idea_v0_4_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    """Render forward Idea 0.3 / Capsule 0.4 without changing older bytes."""
+
+    files = dict(_idea_v0_3_files(
+        project_id=project_id,
+        project_name=project_name,
+        package_id=package_id,
+        package_checksum=package_checksum,
+        research_topic=research_topic,
+    ))
+    _replace_spec(
+        files,
+        "workflow/workflow.json",
+        _json(idea_discovery_v0_3_workflow_document()),
+    )
+    _replace_spec(files, "validate_package.py", _idea_v0_4_validator_source())
+    context_text = files["memory/context.md"].content.decode("utf-8")
+    prefix, remainder = context_text.split("```json\n", 1)
+    encoded, suffix = remainder.split("\n```", 1)
+    context_payload = json.loads(encoded)
+    context_payload["workflow_version"] = IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION
+    context_payload["context_checksum"] = canonical_hash(
+        {**context_payload, "context_checksum": None}
+    )
+    _replace_spec(
+        files,
+        "memory/context.md",
+        (
+            prefix + "```json\n" + canonical_json(context_payload) + "\n```" + suffix
+        ).encode("utf-8"),
+    )
     return files
 
 
@@ -3804,6 +3890,22 @@ def build_idea_discovery_v0_3_package(
         workflow_version=IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
         template_id=IDEA_DISCOVERY_TEMPLATE_ID,
         template_version=IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+    )
+
+
+def build_idea_discovery_v0_4_package(
+    *, project_id: str, project_name: str, research_topic: str,
+    output_root: str | Path, package_id: str,
+) -> BuildResult:
+    return _build(
+        renderer=_idea_v0_4_files,
+        project_id=project_id, project_name=project_name,
+        research_topic=research_topic, output_root=output_root,
+        package_id=package_id, workflow_type="Idea Discovery",
+        workflow_id=IDEA_DISCOVERY_WORKFLOW_ID,
+        workflow_version=IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+        template_id=IDEA_DISCOVERY_TEMPLATE_ID,
+        template_version=IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
     )
 
 

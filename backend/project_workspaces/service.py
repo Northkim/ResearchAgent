@@ -56,6 +56,9 @@ from .production_workflows import (
     idea_discovery_v0_2_definition_version,
     idea_discovery_v0_2_requirement,
     idea_discovery_v0_3_capsule,
+    idea_discovery_v0_3_definition_version,
+    idea_discovery_v0_3_requirement,
+    idea_discovery_v0_4_capsule,
     literature_search_capsule as production_literature_search_capsule,
     literature_search_definition_version as production_literature_search_version,
     SCAFFOLD_WORKFLOWS,
@@ -230,6 +233,8 @@ def ensure_production_workflow_foundation(
     idea_version = idea_discovery_v0_2_definition_version(timestamp)
     idea_capsule = idea_discovery_v0_2_capsule(timestamp)
     current_idea_capsule = idea_discovery_v0_3_capsule(timestamp)
+    forward_idea_version = idea_discovery_v0_3_definition_version(timestamp)
+    forward_idea_capsule = idea_discovery_v0_4_capsule(timestamp)
     repository = uow.workflow_foundation
     repository.add_definition_version(literature_version)
     repository.add_capsule_version(literature_capsule)
@@ -239,9 +244,12 @@ def ensure_production_workflow_foundation(
     repository.add_definition_version(idea_version)
     repository.add_capsule_version(idea_capsule)
     repository.add_capsule_version(current_idea_capsule)
+    repository.add_definition_version(forward_idea_version)
+    repository.add_capsule_version(forward_idea_capsule)
     for requirement in (
         idea_discovery_requirement(timestamp),
         idea_discovery_v0_2_requirement(timestamp),
+        idea_discovery_v0_3_requirement(timestamp),
     ):
         existing_requirement = uow.artifact_references.get_requirement(
             requirement.workflow_definition_id,
@@ -262,6 +270,7 @@ def ensure_production_workflow_foundation(
             existing_requirement.required,
             existing_requirement.materialization_mode,
             existing_requirement.target_relative_path,
+            existing_requirement.content_precondition,
         ) != (
             requirement.workflow_definition_id,
             requirement.workflow_version,
@@ -274,6 +283,7 @@ def ensure_production_workflow_foundation(
             requirement.required,
             requirement.materialization_mode,
             requirement.target_relative_path,
+            requirement.content_precondition,
         ):
             raise WorkflowFoundationConflictError(
                 "Idea Discovery Artifact requirement immutable-content conflict"
@@ -661,6 +671,7 @@ def _requirement_content(value):
         value.required,
         value.materialization_mode,
         value.target_relative_path,
+        value.content_precondition,
     )
 
 

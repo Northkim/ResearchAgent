@@ -22,6 +22,7 @@ from ..schemas import (
     ArtifactReferencePageResponse,
 )
 from ..schemas.artifact_references import ArtifactPresentationResponse
+from ..schemas.artifact_references import ArtifactContentQualificationResponse
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["local-artifact-references"])
 
@@ -38,6 +39,25 @@ async def report_artifact_presentation(
 ) -> ArtifactPresentationResponse:
     return ArtifactPresentationResponse.model_validate(
         services.artifact_references.report_presentation(
+            project_id=project_id,
+            artifact_id=artifact_id,
+            payload=payload,
+        )
+    )
+
+
+@router.put(
+    "/artifacts/{artifact_id}/content-qualification",
+    response_model=ArtifactContentQualificationResponse,
+)
+async def report_artifact_content_qualification(
+    project_id: str,
+    artifact_id: str,
+    payload: dict[str, Any],
+    services: ProgressServicesDependency,
+) -> ArtifactContentQualificationResponse:
+    return ArtifactContentQualificationResponse.model_validate(
+        services.artifact_references.report_content_qualification(
             project_id=project_id,
             artifact_id=artifact_id,
             payload=payload,
@@ -84,6 +104,30 @@ async def list_workflow_instance_artifacts(
             producer_workflow_instance_id=instance_id,
             artifact_type=None,
             state=None,
+            offset=offset,
+            limit=limit,
+        )
+    )
+
+
+@router.get(
+    "/workflow-instances/{instance_id}/artifact-requirements/"
+    "{requirement_key}/candidates",
+    response_model=ArtifactReferencePageResponse,
+)
+async def list_compatible_artifact_candidates(
+    project_id: str,
+    instance_id: str,
+    requirement_key: str,
+    services: ProgressServicesDependency,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+) -> ArtifactReferencePageResponse:
+    return ArtifactReferencePageResponse.model_validate(
+        services.artifact_references.list_compatible_artifacts(
+            project_id=project_id,
+            consumer_workflow_instance_id=instance_id,
+            requirement_key=requirement_key,
             offset=offset,
             limit=limit,
         )

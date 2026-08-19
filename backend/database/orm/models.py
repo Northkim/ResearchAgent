@@ -1374,6 +1374,21 @@ class LocalArtifactReferenceORM(Base):
             "presentation_json IS NULL OR octet_length(presentation_json::text) <= 65536",
             name="local_artifact_reference_presentation_size",
         ),
+        CheckConstraint(
+            "(qualification_schema_id IS NULL AND qualification_checksum IS NULL "
+            "AND qualification_json IS NULL AND qualification_reported_at IS NULL) OR "
+            "(qualification_schema_id IS NOT NULL AND qualification_checksum IS NOT NULL "
+            "AND qualification_json IS NOT NULL AND qualification_reported_at IS NOT NULL)",
+            name="local_artifact_reference_qualification_all_or_none",
+        ),
+        CheckConstraint(
+            "qualification_checksum IS NULL OR qualification_checksum ~ '^sha256:[0-9a-f]{64}$'",
+            name="local_artifact_reference_qualification_checksum",
+        ),
+        CheckConstraint(
+            "qualification_json IS NULL OR octet_length(qualification_json::text) <= 4096",
+            name="local_artifact_reference_qualification_size",
+        ),
         Index(
             "ix_local_artifact_references_project_produced",
             "project_id", "produced_at", "artifact_id",
@@ -1409,6 +1424,12 @@ class LocalArtifactReferenceORM(Base):
     presentation_checksum: Mapped[str | None] = mapped_column(String(71))
     presentation_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     presentation_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    qualification_schema_id: Mapped[str | None] = mapped_column(String(200))
+    qualification_checksum: Mapped[str | None] = mapped_column(String(71))
+    qualification_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    qualification_reported_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
     produced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -1458,6 +1479,7 @@ class WorkflowArtifactRequirementORM(Base):
     required: Mapped[bool] = mapped_column(Boolean, nullable=False)
     materialization_mode: Mapped[str] = mapped_column(String(24), nullable=False)
     target_relative_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    content_precondition: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

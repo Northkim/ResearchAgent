@@ -8,6 +8,8 @@ from datetime import datetime
 from backend.artifact_references.contracts import (
     CompatibilityMode,
     MaterializationMode,
+    PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA,
+    PAPER_LIBRARY_QUALIFICATION_SCHEMA,
     WorkflowArtifactRequirement,
 )
 from backend.workflow_packages.contracts import PACKAGE_SCHEMA_VERSION
@@ -18,6 +20,8 @@ from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_WORKFLOW_VERSION,
     IDEA_DISCOVERY_V0_2_CAPSULE_VERSION,
     IDEA_DISCOVERY_V0_3_CAPSULE_VERSION,
+    IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+    IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
     IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION,
     IDEA_INPUT_TARGET,
     EXPERIMENT_RECORD_TYPE,
@@ -72,6 +76,7 @@ from backend.workflow_packages.production_workflows import (
     WRITING_WORKFLOW_ID,
     idea_discovery_contract_checksum,
     idea_discovery_v0_2_contract_checksum,
+    idea_discovery_v0_3_contract_checksum,
     literature_search_contract_checksum,
     real_experiment_contract_checksum,
     real_writing_contract_checksum,
@@ -213,6 +218,37 @@ IDEA_DISCOVERY_V0_3_CAPSULE_CHECKSUM = canonical_hash(
 )
 IDEA_DISCOVERY_V0_3_CAPSULE_ID = (
     "capsule-" + IDEA_DISCOVERY_V0_3_CAPSULE_CHECKSUM[7:39]
+)
+
+IDEA_DISCOVERY_V0_4_CAPSULE_CHECKSUM = canonical_hash(
+    {
+        "generator_version": (
+            "reagent-idea-discovery-local-experimental-compiler/0.4.0"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": IDEA_DISCOVERY_TEMPLATE_ID,
+        "package_template_version": IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
+        "workflow_checksum": idea_discovery_v0_3_contract_checksum(),
+        "artifact_input": {
+            "requirement_key": "paper_library",
+            "artifact_type": SELECTED_PAPER_LIBRARY_TYPE,
+            "artifact_schema": SELECTED_PAPER_LIBRARY_SCHEMA,
+            "target_relative_path": IDEA_INPUT_TARGET,
+            "selection_policy": "EXPLICIT_SPECIFIC_ARTIFACT",
+            "materialization_mode": "VERIFIED_COPY",
+            "content_precondition": {
+                "schema": PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA,
+                "qualification_schema": PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+                "minimum_selected_count": 1,
+            },
+        },
+        "artifact_outputs": [selected_research_idea_output_contract()],
+        "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+        "harness_integration": "BOUNDED_INTERACTIVE_INPUT_REVIEW_BOOTSTRAP",
+    }
+)
+IDEA_DISCOVERY_V0_4_CAPSULE_ID = (
+    "capsule-" + IDEA_DISCOVERY_V0_4_CAPSULE_CHECKSUM[7:39]
 )
 
 
@@ -729,6 +765,79 @@ def idea_discovery_v0_3_capsule(now: datetime) -> WorkflowCapsuleVersion:
     )
 
 
+def idea_discovery_v0_3_definition_version(
+    now: datetime,
+) -> WorkflowDefinitionVersion:
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=IDEA_DISCOVERY_DEFINITION_ID,
+        version=IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+        contract_checksum=idea_discovery_v0_3_contract_checksum(),
+        input_schema_id=SELECTED_PAPER_LIBRARY_SCHEMA,
+        output_schema_id="selected-research-idea/v1",
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "artifact_requirement_key": "paper_library",
+            "artifact_outputs": [selected_research_idea_output_contract()],
+            "explicit_selection_policy": "EXACTLY_ONE_USER_CONFIRMED",
+            "novelty_claim_policy": "GLOBAL_NOVELTY_NOT_PROVEN",
+            "content_precondition": {
+                "schema": PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA,
+                "qualification_schema": PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+                "minimum_selected_count": 1,
+            },
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def idea_discovery_v0_4_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    requirement = {
+        "requirement_key": "paper_library",
+        "artifact_type": SELECTED_PAPER_LIBRARY_TYPE,
+        "artifact_schema_version": SELECTED_PAPER_LIBRARY_SCHEMA,
+        "selection_policy": "EXPLICIT_SPECIFIC_ARTIFACT",
+        "materialization_mode": "VERIFIED_COPY",
+        "target_relative_path": IDEA_INPUT_TARGET,
+        "content_precondition": {
+            "schema": PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA,
+            "qualification_schema": PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+            "minimum_selected_count": 1,
+        },
+    }
+    return WorkflowCapsuleVersion(
+        capsule_id=IDEA_DISCOVERY_V0_4_CAPSULE_ID,
+        capsule_version=IDEA_DISCOVERY_V0_4_CAPSULE_VERSION,
+        workflow_definition_id=IDEA_DISCOVERY_DEFINITION_ID,
+        workflow_version=IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+        definition_checksum=IDEA_DISCOVERY_V0_4_CAPSULE_CHECKSUM,
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=("memory/context.md", "memory/progress", "outputs", "inputs"),
+        capability_requirements=(
+            "progress.upload/v0.2", "artifact.materialize/v0.1",
+            "artifact.publish/v0.1",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": IDEA_DISCOVERY_TEMPLATE_ID,
+            "trust_classification": (
+                CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value
+            ),
+            "artifact_requirements": [requirement],
+            "artifact_outputs": [selected_research_idea_output_contract()],
+            "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
 def idea_discovery_v0_2_requirement(now: datetime) -> WorkflowArtifactRequirement:
     return WorkflowArtifactRequirement(
         workflow_definition_id=IDEA_DISCOVERY_DEFINITION_ID,
@@ -744,6 +853,29 @@ def idea_discovery_v0_2_requirement(now: datetime) -> WorkflowArtifactRequiremen
         target_relative_path=IDEA_INPUT_TARGET,
         created_at=now,
         updated_at=now,
+    )
+
+
+def idea_discovery_v0_3_requirement(now: datetime) -> WorkflowArtifactRequirement:
+    return WorkflowArtifactRequirement(
+        workflow_definition_id=IDEA_DISCOVERY_DEFINITION_ID,
+        workflow_version=IDEA_DISCOVERY_V0_3_WORKFLOW_VERSION,
+        requirement_key="paper_library",
+        artifact_type=SELECTED_PAPER_LIBRARY_TYPE,
+        compatibility_mode=CompatibilityMode.EXACT,
+        schema_constraint=SELECTED_PAPER_LIBRARY_SCHEMA,
+        cardinality_min=1,
+        cardinality_max=1,
+        required=True,
+        materialization_mode=MaterializationMode.VERIFIED_COPY,
+        target_relative_path=IDEA_INPUT_TARGET,
+        created_at=now,
+        updated_at=now,
+        content_precondition={
+            "schema": PAPER_LIBRARY_NONEMPTY_PRECONDITION_SCHEMA,
+            "qualification_schema": PAPER_LIBRARY_QUALIFICATION_SCHEMA,
+            "minimum_selected_count": 1,
+        },
     )
 
 
