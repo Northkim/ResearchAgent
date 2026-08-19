@@ -3840,7 +3840,7 @@ def _make_manifest(
         proxy = "NO NETWORK; REVIEWED LOCAL BUILDER; LOCAL FOREGROUND EXECUTION ONLY"
     elif (
         workflow_id == EXPERIMENT_WORKFLOW_ID
-        and workflow_version in {"0.6.0", "0.7.0"}
+            and workflow_version in {"0.6.0", "0.7.0", "0.8.0"}
     ):
         skill_id = "sklearn-tabular-classification-preparation-local-builtin"
         skill_root = f"workflow/skills/{skill_id}"
@@ -3873,7 +3873,12 @@ def _make_manifest(
             "application/json", "CLOUD_SUPPLIED",
         ),)
         continuation = "DURABLE TYPED CHECKPOINTS; LOCAL EXACT RECEIPTS; NO CHAT-HISTORY AUTHORITY"
-        proxy = "NO NETWORK; EXACT REVIEWED CAPABILITY SET; EXISTING BOUNDED RUNNER ONLY"
+        proxy = (
+            "NO NETWORK; EXACT REVIEWED FAST PATH OR SYSTEM GENERIC HARNESS; "
+            "EXISTING BOUNDED RUNNER ONLY"
+            if workflow_version == "0.8.0"
+            else "NO NETWORK; EXACT REVIEWED CAPABILITY SET; EXISTING BOUNDED RUNNER ONLY"
+        )
     else:
         config = json.loads(files["workflow/scaffold.json"].content)
         if workflow_version in {

@@ -56,6 +56,13 @@ from backend.workflow_packages.generic_harness_workspace import (
     GenericHarnessWorkspace,
     RuntimeDiscovery,
 )
+from backend.workflow_packages.generic_harness_public_runtime import (
+    load_evaluation,
+    load_implementation_specification,
+    load_methodology_proposal,
+    validate_implementation,
+)
+from backend.workflow_packages.serialization import canonical_json
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes
 
 SHA = ["sha256:" + char * 64 for char in "abcdef0123456789"]
@@ -283,3 +290,66 @@ def test_pre_execution_lifecycle_rebuild_is_exact_and_idempotent(tmp_path: Path)
     assert design_approval_from_mapping(approval.to_dict()) == approval
     assert specification_from_mapping(specification.to_dict()) == specification
     assert validation_from_mapping(validation.to_dict()) == validation
+
+
+def test_public_runtime_validates_harness_documents_without_running_science(tmp_path: Path):
+    capsule = tmp_path / "capsule"
+    (capsule / "memory").mkdir(parents=True)
+    method = _methodology().to_dict()
+    proposal = {
+        name: value for name, value in method.items()
+        if name not in {
+            "research_objective", "domain_methodology_ref", "schema",
+            "methodology_checksum",
+        }
+    }
+    (capsule / "memory/methodology-proposal.json").write_text(
+        canonical_json(proposal), encoding="utf-8"
+    )
+    methodology = load_methodology_proposal(capsule, _objective())
+    assert methodology == _methodology()
+
+    managed = tmp_path / "managed"
+    managed.mkdir()
+    (managed / "run.py").write_text("print('bounded')\n", encoding="utf-8")
+    spec = _spec()
+    spec_path = tmp_path / "implementation-specification.json"
+    spec_path.write_text(canonical_json(spec), encoding="utf-8")
+    assert load_implementation_specification(spec_path) == spec
+    calls: list[tuple[str, ...]] = []
+
+    def validate(command, root):
+        calls.append(command)
+        assert root == managed
+        return {"returncode": 0, "stdout_checksum": SHA[7], "stderr_checksum": SHA[8]}
+
+    receipt = validate_implementation(
+        implementation_root=managed, methodology=methodology,
+        specification=spec, execute_validation=validate,
+        validated_at="2026-08-20T08:00:00Z",
+    )
+    assert calls == [spec.validation_commands[0]]
+    assert receipt.package_tree_checksum == GenericHarnessExperimentCoordinator._scan_package(managed)
+
+    outputs = (NamedChecksum("experiment-result", SHA[9]),)
+    evaluation = GenericHarnessEvaluation(
+        spec.specification_checksum, SHA[1], outputs,
+        {"primary_metric_delta": 0.125}, EvaluationValidity.VALID,
+        ScientificEvidenceStatus.SUPPORTS_BOUNDED_FINDINGS,
+        ("Controlled evidence only.",), "2026-08-20T08:00:01Z", True,
+    )
+    evaluation_path = tmp_path / "evaluation.json"
+    evaluation_path.write_text(canonical_json(evaluation), encoding="utf-8")
+    source = EvidenceSourceRef(
+        EvidenceSourceKind.RESULT_PAYLOAD, "result-payload",
+        canonical_hash(evaluation.result_payload),
+    )
+    block = ScientificEvidenceBlock(
+        "evidence-primary-delta", EvidenceKind.SCALAR,
+        "Primary metric delta", 0.125, (source,),
+    )
+    evidence_path = tmp_path / "evidence.json"
+    evidence_path.write_text(canonical_json([block]), encoding="utf-8")
+    loaded_evaluation, blocks = load_evaluation(evaluation_path, evidence_path)
+    assert loaded_evaluation == evaluation
+    assert blocks == (block,)

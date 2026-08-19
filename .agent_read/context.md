@@ -4111,3 +4111,17 @@ compares the package before reuse and never executes scientific work.
 Experiment 0.8/0.11 remains unpublished and unpinned. Three focused lifecycle
 tests pass. No migration, API, frontend, Provider, Owner database, or historical
 publication changed. Safe next subphase is R3B3 public runtime and publication.
+
+## Post-D1 R3B3 Generic Harness forward package compiler (2026-08-20)
+
+R3B3 adds buildable immutable source authority for Experiment 0.8 / Capsule 0.11
+with unchanged `experiment-record/v5`. The contract records reviewed-fast-path
+selection plus a separately truthful `GENERIC_AGENT_HARNESS` fallback, no User
+Skill/scientific authority, the managed execution namespace, and local-first
+execution-unit durability. Capsule helpers validate exact methodology,
+implementation, evaluation, bounded evidence, Artifact, and Progress documents.
+
+The package and archive validate, six focused tests pass, and frozen 0.7/0.10
+checksums remain exact. No database row or Full Research preset has been changed;
+Alembic remains 0037. Safe next subphase is R3B4 launcher/approval/execution
+integration followed by schema-free publication only after qualification.
