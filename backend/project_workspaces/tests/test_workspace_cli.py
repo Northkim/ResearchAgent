@@ -135,6 +135,78 @@ def test_declared_artifact_allows_local_provenance_path_but_rejects_credentials(
         workspace_cli._scan_capsule_for_credentials(built.package_root)
 
 
+def test_capsule_scan_distinguishes_private_paths_from_credentials(
+    tmp_path: Path,
+) -> None:
+    built = build_real_writing_v0_5_package(
+        project_id="project-" + "a" * 32,
+        project_name="Security classification",
+        research_topic="Controlled",
+        output_root=tmp_path / "built",
+        package_id="package-" + "b" * 32,
+    )
+    operator_state = built.package_root / "memory/operator-preflight.json"
+    operator_state.write_text(
+        json.dumps({"environment": "/Users/researcher/controlled-env"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(WorkspaceCLIError) as path_error:
+        workspace_cli._scan_capsule_for_credentials(built.package_root)
+    assert path_error.value.code == "LEGACY_PACKAGE_PRIVATE_PATH"
+    assert "private machine path" in str(path_error.value)
+    assert "credential" not in str(path_error.value)
+
+    operator_state.write_text(
+        "OPENAI_API_KEY=not-allowed-in-capsule\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(WorkspaceCLIError) as credential_error:
+        workspace_cli._scan_capsule_for_credentials(built.package_root)
+    assert credential_error.value.code == "LEGACY_PACKAGE_UNSUPPORTED"
+    assert "prohibited credential" in str(credential_error.value)
+
+
+def test_bounded_macos_metadata_is_ignored_before_security_and_comparison(
+    workspace_fixture,
+) -> None:
+    source = workspace_fixture["source"]
+    metadata = source / ".DS_Store"
+    metadata.write_bytes(
+        b"/Users/researcher/controlled-env\x00"
+        b"OPENAI_API_KEY=credential-shaped-metadata"
+    )
+    manifest, tree_checksum = workspace_cli._validate_legacy_package(
+        source, workspace_fixture["descriptor"]
+    )
+    assert manifest["package_id"]
+    assert tree_checksum == workspace_cli._tree_checksum(source)
+    workspace_cli._scan_capsule_for_credentials(source)
+
+    metadata.write_bytes(b"x" * (workspace_cli.MAX_MACOS_METADATA_BYTES + 1))
+    with pytest.raises(WorkspaceCLIError, match="exceeds the safe bound"):
+        workspace_cli._validate_legacy_package(
+            source, workspace_fixture["descriptor"]
+        )
+
+
+def test_macos_cleanup_is_exact_and_preserves_unknown_files(tmp_path: Path) -> None:
+    capsule = tmp_path / "capsule"
+    nested = capsule / "memory"
+    nested.mkdir(parents=True)
+    root_metadata = capsule / ".DS_Store"
+    nested_metadata = nested / ".DS_Store"
+    unknown = nested / "operator-state.json"
+    root_metadata.write_bytes(b"root metadata")
+    nested_metadata.write_bytes(b"nested metadata")
+    unknown.write_text("{}\n", encoding="utf-8")
+
+    assert workspace_cli._remove_managed_macos_metadata(capsule) == 2
+    assert not root_metadata.exists()
+    assert not nested_metadata.exists()
+    assert unknown.read_text(encoding="utf-8") == "{}\n"
+    assert workspace_cli._remove_managed_macos_metadata(capsule) == 0
+
+
 def test_real_writing_progress_readiness_does_not_use_scaffold_provenance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -313,6 +385,16 @@ Metadata and abstracts only.
     repeated = workspace_cli.adopt_legacy_package(source=source, workspace_root=target)
     assert repeated.status == "ALREADY_ADOPTED"
     assert workspace_cli._tree_checksum(capsule) == source_hash
+
+    assert workspace_cli._remove_managed_macos_metadata(capsule) == 1
+    assert (source / ".DS_Store").read_bytes() == b"harmless metadata"
+    assert not (capsule / ".DS_Store").exists()
+    assert workspace_cli._tree_checksum(capsule) == source_hash
+
+    after_cleanup = workspace_cli.adopt_legacy_package(
+        source=source, workspace_root=target
+    )
+    assert after_cleanup.status == "ALREADY_ADOPTED"
 
 
 def test_archive_adoption_and_identity_checksum_conflicts(

@@ -6,6 +6,7 @@ import os
 import runpy
 import shutil
 import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -636,6 +637,47 @@ def test_h1_workflow_list_and_stable_selector_are_user_oriented_and_json_stable(
     assert workflow["workflow_instance_id"] not in human
     workspace_cli._print_result(synced, json_output=True)
     assert capsys.readouterr().out.strip() == workspace_cli.canonical_json(synced.as_dict())
+
+
+def test_workflow_list_cleans_only_bounded_managed_macos_metadata(sync_fixture):
+    workspace = sync_fixture["workspace"]
+    workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=_ClientTransport(sync_fixture["client"]),
+    )
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    capsule = workspace / lock["installed_capsules"][0]["relative_path"]
+    metadata = capsule / ".DS_Store"
+    metadata.write_bytes(
+        b"/Users/researcher/controlled-env\x00"
+        b"OPENAI_API_KEY=credential-shaped-metadata"
+    )
+
+    public = subprocess.run(
+        [
+            sys.executable,
+            str(workspace / "reagent_local.py"),
+            "workflow",
+            "list",
+            str(workspace),
+            "--json",
+        ],
+        cwd=workspace,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert public.returncode == 0, public.stderr
+    listed = json.loads(public.stdout)
+
+    assert listed["status"] == "WORKFLOWS_LISTED"
+    assert not metadata.exists()
+
+    unknown = capsule / "unexpected.txt"
+    unknown.write_text("ordinary undeclared content\n", encoding="utf-8")
+    with pytest.raises(WorkspaceCLIError, match="undeclared"):
+        workspace_cli.workflow_list(workspace)
+    assert unknown.read_text(encoding="utf-8") == "ordinary undeclared content\n"
 
 
 def test_h1_stable_selector_fails_closed_when_same_type_is_ambiguous(sync_fixture):

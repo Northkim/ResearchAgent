@@ -248,6 +248,7 @@ MAX_FILES = 5_000
 MAX_PACKAGE_BYTES = 536_870_912
 MAX_FILE_BYTES = 134_217_728
 MAX_CONTROL_JSON_BYTES = 2_097_152
+MAX_MACOS_METADATA_BYTES = 1_048_576
 REAL_PROVIDER_DISCLOSURE_VERSION = "reagent.openalex-owner-disclosure/v0.1"
 REAL_PROVIDER_CONFIRMATION = "continue-real-search"
 PROVIDER_CREDENTIAL_ENV_VARS = (
@@ -270,7 +271,7 @@ PROGRESS_REPORT_FIELDS = {
     "experimental_declaration",
 }
 
-_SECRET_PATTERNS = (
+_CREDENTIAL_PATTERNS = (
     re.compile(b"sk-" + rb"ant-[A-Za-z0-9_-]{8,}"),
     re.compile(b"sk-" + rb"proj-[A-Za-z0-9_-]{8,}"),
     re.compile(b"-----BEGIN " + rb"(?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
@@ -279,11 +280,12 @@ _SECRET_PATTERNS = (
         rb"(?:REAGENT_)?OPENALEX_API_KEY\s*=\s*(?!['\"]?<)[^\s]+"
     ),
     re.compile(b"postgres" + rb"(?:ql)?://[^\s/:]+:[^\s/@]+@"),
+)
+_PRIVATE_PATH_PATTERNS = (
     re.compile(b"/" + b"Users/"),
     re.compile(b"/" + b"Volumes/"),
     re.compile(rb"[A-Za-z]:\\\\"),
 )
-_CREDENTIAL_PATTERNS = _SECRET_PATTERNS[:6]
 
 _WORKSPACE_FIELDS = {
     "schema_version",
@@ -1046,6 +1048,14 @@ def _validate_legacy_package(
         _record_case_path(case_paths, relative, allow_same=True)
         if kind == "directory":
             continue
+        if _is_bounded_macos_metadata(path):
+            total_bytes += path.stat(follow_symlinks=False).st_size
+            if total_bytes > MAX_PACKAGE_BYTES:
+                raise _package_error(
+                    "LEGACY_PACKAGE_UNSUPPORTED",
+                    "Legacy Package exceeds size limits",
+                )
+            continue
         if relative == "package-manifest.json":
             content = path.read_bytes()
             _reject_secrets(content)
@@ -1065,10 +1075,6 @@ def _validate_legacy_package(
                 error.code,
                 f"{error} in {relative}",
             ) from error
-        if path.name == ".DS_Store":
-            if len(content) > 1_048_576:
-                raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "macOS metadata exceeds the safe bound")
-            continue
         entry = declared.get(relative)
         if (
             entry is None
@@ -1402,6 +1408,8 @@ def _walk_safe_tree(root: Path) -> Iterable[tuple[Path, str, str]]:
 def _tree_checksum(root: Path) -> str:
     entries: list[dict[str, Any]] = []
     for path, relative, kind in _walk_safe_tree(root):
+        if kind == "file" and _is_bounded_macos_metadata(path):
+            continue
         if kind == "directory":
             entries.append({"path": relative, "kind": kind})
         else:
@@ -1415,6 +1423,46 @@ def _tree_checksum(root: Path) -> str:
                 }
             )
     return canonical_hash(entries)
+
+
+def _is_bounded_macos_metadata(path: Path) -> bool:
+    """Recognize only one safe regular `.DS_Store` metadata file."""
+
+    if path.name != ".DS_Store":
+        return False
+    metadata = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise _package_error(
+            "UNSAFE_PACKAGE_PATH", "macOS metadata has an unsafe file type"
+        )
+    if metadata.st_size > MAX_MACOS_METADATA_BYTES:
+        raise _package_error(
+            "LEGACY_PACKAGE_UNSUPPORTED", "macOS metadata exceeds the safe bound"
+        )
+    return True
+
+
+def _remove_managed_macos_metadata(capsule: Path) -> int:
+    """Remove bounded OS metadata only from an installed managed Capsule."""
+
+    candidates = tuple(
+        path
+        for path, _relative, kind in _walk_safe_tree(capsule)
+        if kind == "file" and _is_bounded_macos_metadata(path)
+    )
+    directories: set[Path] = set()
+    try:
+        for path in candidates:
+            path.unlink()
+            directories.add(path.parent)
+        for directory in sorted(directories, key=lambda item: item.as_posix()):
+            _fsync_directory(directory)
+    except OSError as error:
+        raise _filesystem(
+            "FILESYSTEM_OPERATION_FAILED",
+            "Managed macOS metadata could not be removed safely",
+        ) from error
+    return len(candidates)
 
 
 def _immutable_contract_checksum(root: Path, manifest: dict[str, Any]) -> str:
@@ -1691,8 +1739,13 @@ def _hash_file(path: Path) -> str:
 
 
 def _reject_secrets(content: bytes) -> None:
-    if any(pattern.search(content) for pattern in _SECRET_PATTERNS):
+    if any(pattern.search(content) for pattern in _CREDENTIAL_PATTERNS):
         raise _package_error("LEGACY_PACKAGE_UNSUPPORTED", "Legacy Package contains prohibited credential material")
+    if any(pattern.search(content) for pattern in _PRIVATE_PATH_PATTERNS):
+        raise _package_error(
+            "LEGACY_PACKAGE_PRIVATE_PATH",
+            "Legacy Package contains private machine path metadata",
+        )
 
 
 def _reject_credentials(content: bytes) -> None:
@@ -2896,6 +2949,7 @@ def _verify_locked_capsules(workspace, lock, bootstrap):
     for item in lock["installed_capsules"]:
         destination = workspace / item["relative_path"]
         _assert_within(workspace, destination)
+        _remove_managed_macos_metadata(destination)
         pin = (
             item["workflow_definition_id"],
             item["workflow_definition_version"],
@@ -7182,6 +7236,8 @@ def _scan_capsule_for_credentials(capsule: Path) -> None:
             continue
         relative = path.relative_to(capsule).as_posix()
         try:
+            if _is_bounded_macos_metadata(path):
+                continue
             if relative in materialized_inputs or relative.startswith("outputs/artifacts/"):
                 # Exact Artifact provenance may honestly contain a local execution
                 # path. Artifact bytes remain local and checksum-bound; credential
