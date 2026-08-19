@@ -50,6 +50,11 @@ LITERATURE_SEARCH_PROMPT_VERSION = "0.4.0"
 # validator-owned durable state. The accepted 0.4/0.6 publication stays frozen.
 LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION = "0.5.0"
 LITERATURE_SEARCH_V0_7_CAPSULE_VERSION = "0.7.0"
+# R4 forward publication. Historical 0.5/0.7 bytes remain frozen.
+LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION = "0.6.0"
+LITERATURE_SEARCH_V0_8_CAPSULE_VERSION = "0.8.0"
+LITERATURE_SEARCH_V0_6_SKILL_VERSION = "0.6.0"
+LITERATURE_SEARCH_V0_6_PROMPT_VERSION = "0.6.0"
 
 IDEA_DISCOVERY_WORKFLOW_ID = "idea-discovery-local-experimental"
 IDEA_DISCOVERY_WORKFLOW_VERSION = "0.1.0"
@@ -783,6 +788,24 @@ def literature_search_v0_5_workflow_document() -> dict[str, Any]:
     return value
 
 
+def literature_search_v0_6_workflow_document() -> dict[str, Any]:
+    """Researcher-oriented bounded search strategy with exact decisions."""
+
+    value = literature_search_v0_5_workflow_document()
+    value["workflow_version"] = LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION
+    value["query_strategy"] = {
+        "owner_input": "RESEARCH_DIRECTION_AND_OPTIONAL_DOMAIN_KEYWORDS",
+        "agent_query_families": [
+            "DIRECT", "SUPPORTING", "CONTEXTUAL", "BACKGROUND",
+        ],
+        "adaptation": "OWNER_REVIEWED_BOUNDED_BROADEN_OR_NARROW",
+        "global_novelty_claim": False,
+        "user_skill_scientific_authority": False,
+    }
+    value["immutable_versioning"] = "0.5.0 remains independently valid"
+    return value
+
+
 def idea_discovery_v0_4_workflow_document() -> dict[str, Any]:
     """Forward Idea contract with durable exact Owner selection."""
 
@@ -818,6 +841,10 @@ def idea_discovery_v0_3_contract_checksum() -> str:
 
 def literature_search_v0_5_contract_checksum() -> str:
     return canonical_hash(literature_search_v0_5_workflow_document())
+
+
+def literature_search_v0_6_contract_checksum() -> str:
+    return canonical_hash(literature_search_v0_6_workflow_document())
 
 
 def idea_discovery_v0_4_contract_checksum() -> str:
@@ -1675,6 +1702,83 @@ def _literature_v0_7_files(
         "exact durable Owner screening decisions",
         True,
         "STATE",
+    )
+    return files
+
+
+_R4_LITERATURE_STRATEGY = b"""
+
+## Research strategy and authority
+
+The Owner supplies a research direction or question and may supply a small set
+of domain keywords. The Agent, not the Owner, proposes the bounded search
+strategy. Before transport, present query families labelled DIRECT,
+SUPPORTING, CONTEXTUAL, or BACKGROUND, with one concise purpose and evidence
+boundary for each query. Use only two or three total queries and the existing
+three-call/fifteen-candidate limits. With Owner review, broaden or narrow the
+remaining queries when retrieved evidence shows a coverage gap.
+
+Direct evidence need not be the only useful evidence. Supporting evidence may
+ground methods or mechanisms; contextual evidence may ground datasets or
+applications; background evidence may ground established concepts. Preserve
+these distinctions in the plan and report. Never infer global novelty from this
+bounded retrieval.
+
+Pinned reviewed Skills and any Project user Skills are instructions for the
+Agent Harness. They do not determine scientific truth, evidence sufficiency, or
+screening disposition. Exact provider records, explicit Owner decisions, and
+the published validators remain the admissibility authorities.
+"""
+
+
+def _literature_v0_8_files(
+    *, project_id: str, project_name: str, package_id: str,
+    package_checksum: str, research_topic: str,
+) -> dict[str, FileSpec]:
+    files = dict(_literature_v0_7_files(
+        project_id=project_id,
+        project_name=project_name,
+        package_id=package_id,
+        package_checksum=package_checksum,
+        research_topic=research_topic,
+    ))
+    _replace_spec(
+        files,
+        "workflow/workflow.json",
+        _json(literature_search_v0_6_workflow_document()),
+    )
+    workflow_checksum = literature_search_v0_6_contract_checksum()
+    control = json.loads(files["memory/round-control.json"].content)
+    control["workflow_version"] = LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION
+    control["workflow_checksum"] = workflow_checksum
+    _replace_spec(files, "memory/round-control.json", _json(control))
+    context_text = files["memory/context.md"].content.decode("utf-8")
+    prefix, remainder = context_text.split("```json\n", 1)
+    encoded, suffix = remainder.split("\n```", 1)
+    context_payload = json.loads(encoded)
+    context_payload["workflow_version"] = LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION
+    context_payload["context_checksum"] = canonical_hash(
+        {**context_payload, "context_checksum": None}
+    )
+    _replace_spec(
+        files,
+        "memory/context.md",
+        (prefix + "```json\n" + canonical_json(context_payload) + "\n```" + suffix).encode(),
+    )
+    for path in (
+        "AGENT.md",
+        "workflow/prompts/one-round.md",
+        "workflow/skills/literature-search/SKILL.md",
+    ):
+        _replace_spec(files, path, files[path].content + _R4_LITERATURE_STRATEGY)
+    skill_contract = json.loads(
+        files["workflow/skills/literature-search/skill.json"].content
+    )
+    skill_contract["semantic_version"] = LITERATURE_SEARCH_V0_6_SKILL_VERSION
+    _replace_spec(
+        files,
+        "workflow/skills/literature-search/skill.json",
+        _json(skill_contract),
     )
     return files
 
@@ -3627,11 +3731,17 @@ def _make_manifest(
     workflow = json.loads(files["workflow/workflow.json"].content)
     workflow_checksum = canonical_hash(workflow)
     if workflow_id == LITERATURE_SEARCH_WORKFLOW_ID:
+        forward_strategy = (
+            workflow_version == LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION
+        )
         skill_path = "workflow/skills/literature-search/SKILL.md"
         skill_contract_path = "workflow/skills/literature-search/skill.json"
         skills = (SkillPin(
             name="reagent.local-literature-search",
-            semantic_version=LITERATURE_SEARCH_SKILL_VERSION,
+            semantic_version=(
+                LITERATURE_SEARCH_V0_6_SKILL_VERSION
+                if forward_strategy else LITERATURE_SEARCH_SKILL_VERSION
+            ),
             source_type="BUNDLED_REAGENT_ORIGINAL",
             source_identity="reagent-r1a-local-literature-search",
             checksum=canonical_hash({
@@ -3646,7 +3756,10 @@ def _make_manifest(
         ),)
         prompt_path = "workflow/prompts/one-round.md"
         prompt_id = "literature-search-one-round"
-        prompt_version = LITERATURE_SEARCH_PROMPT_VERSION
+        prompt_version = (
+            LITERATURE_SEARCH_V0_6_PROMPT_VERSION
+            if forward_strategy else LITERATURE_SEARCH_PROMPT_VERSION
+        )
         outputs = (
             PackageOutputContract("outputs/search_plan.md", "SEARCH_PLAN", "text/markdown", "search-plan/v0.2", "Codex Agent Harness", "reviewed headings"),
             PackageOutputContract("outputs/candidate_papers.json", "CANDIDATE_LIBRARY", "application/json", "candidate-papers/v0.2", "Codex Agent Harness", "exact validated records"),
@@ -4191,6 +4304,22 @@ def build_literature_search_v0_7_package(
         workflow_version=LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
         template_id=LITERATURE_SEARCH_TEMPLATE_ID,
         template_version=LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
+    )
+
+
+def build_literature_search_v0_8_package(
+    *, project_id: str, project_name: str, research_topic: str,
+    output_root: str | Path, package_id: str,
+) -> BuildResult:
+    return _build(
+        renderer=_literature_v0_8_files,
+        project_id=project_id, project_name=project_name,
+        research_topic=research_topic, output_root=output_root,
+        package_id=package_id, workflow_type="Literature Search",
+        workflow_id=LITERATURE_SEARCH_WORKFLOW_ID,
+        workflow_version=LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION,
+        template_id=LITERATURE_SEARCH_TEMPLATE_ID,
+        template_version=LITERATURE_SEARCH_V0_8_CAPSULE_VERSION,
     )
 
 
