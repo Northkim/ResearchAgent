@@ -1,6 +1,6 @@
 # Post-D1 consolidated repair program
 
-Status: **R1B2 COMPLETE — R1C NEXT**
+Status: **R1 COMPLETE — R2 NEXT**
 
 Date: 2026-08-20
 
@@ -25,14 +25,19 @@ Implementation progress through 2026-08-20:
 - R1B1 explicit optional-input setup decision: `54a26fc`.
 - R1B2a forward Idea content precondition/publication: `4b19881`.
 - R1B2b server-qualified browser candidates: `5dec904`.
+- R1B2 governance: `58992e6`.
+- R1C bounded platform metadata/private-path classification: `70a97d2`.
+- Current-head migration qualification correction: `6df58be`.
+- R1 controlled-browser fixture alignment: `ffadc38`.
 
 R1B2 publishes forward Idea Definition 0.3 / Capsule 0.4 under migration
 `20260820_0036`. It preserves the valid zero-paper producer Artifact while a
 single shared evaluator blocks it as input to the forward Idea consumer. The
 bounded exact content qualification is derived from Local Artifact bytes and
-does not become presentation or evidence authority. R1C package/platform
-classification remains the only open R1 implementation subphase before the
-consolidated R1 qualification gate.
+does not become presentation or evidence authority. R1C implements ADR 0052's
+bounded managed `.DS_Store` handling and distinct private-path diagnosis without
+weakening unknown-file or real-secret rejection. Consolidated R1 qualification is
+recorded in `2026-08-20_post_d1_r1_complete.md`; R2 is next.
 
 ## 1. Recovered baseline
 
@@ -205,7 +210,7 @@ repaired invariant carried through every relevant phase.
 | D1-LIT-QUERY-01 | R4 | Query-shaped prompt rather than research-strategy checkpoint. | Literature runtime/contracts | controlled query-family checkpoint | Forward-additive publication likely if immutable Capsule instructions change |
 | D1-LIT-ITERATIVE-01 | R4 | Singular exact downstream contract; no explicit composition. | Artifact contracts/Idea/Writing input requirements | exact multi-source/composition negatives and positives | architecture decision and forward-additive schema/publication if implemented |
 | D1-LIT-SCHEMA-01 | R4 audit | Observe only unless consumers lose uncertain/excluded semantics. | selected-paper-library contracts/consumers | round-trip semantic audit | 0 unless audit proves a forward schema is needed |
-| D1-WORKFLOW-ORDINAL-01 | R6 | Cloud/Local sort independently and Writing family shares ordinal namespace. | Progress projection + Workspace CLI + UI | repeated-role projection/browser | 0 |
+| D1-WORKFLOW-ORDINAL-01 | R6 | Cloud/Local sort independently, Writing family shares ordinal namespace, and downstream Detail hard-codes Revision 0.6 so forward 0.7/0.9 routes as generic Writing. | Progress projection + Workspace CLI + role-aware Detail routing | repeated-role projection/browser | 0 |
 | D1-WRITING-ENTRY-01 | R6 | “Ready” conflates Cloud selection and Local run readiness. | Workflow Detail | component/browser state table | 0 |
 | D1-WRITING-UX-02 | R6 | Generic resume copy reused for materialization. | Local handoff presenter | component/browser | 0 |
 | D1-WORKSPACE-UX-01 | R6 | Project acknowledgement drift is rendered per Workflow. | Overview/board sync projections | component/browser | 0 |

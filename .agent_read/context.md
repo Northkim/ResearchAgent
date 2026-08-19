@@ -4023,3 +4023,26 @@ copied-CLI test, and three targeted marked PostgreSQL cases. No frontend, API,
 database schema, migration, Workflow/Capsule, Artifact schema, scientific output,
 or protected Owner D1 row changed. Alembic remains `20260819_0034`. R1B and R1C
 remain separate pending subphases.
+
+## Post-D1 R1 complete (2026-08-20)
+
+R1 is complete across ADRs 0049–0052. Current-plan exact readiness, atomic
+ReAgent-managed A→B replacement, unchanged-sibling receipt carry-forward,
+automatic Artifact Index reconciliation, explicit optional-evidence decisions,
+server-qualified exact candidates, and the forward Idea non-empty Literature
+precondition are qualified together. A zero-paper Literature Artifact remains
+valid; only forward Idea 0.3 / Capsule 0.4 rejects it as consumer input.
+
+Workspace platform handling now permits only bounded regular `.DS_Store` metadata
+for installed managed Capsules, continues to reject arbitrary undeclared files and
+actual secrets, and reports absolute private-path metadata separately from
+credentials. Historical embedded Capsule validators were not changed.
+
+Consolidated evidence passed 115 backend/local tests including all four D1 repair
+locks, 20 frontend files / 72 tests, two focused real-service/system-Chrome tests,
+TypeScript, ESLint, compileall, production build, and Alembic sole head
+`20260820_0036`. The Owner database remains 0034 and the protected D1 Project was
+untouched. The full EP-D2 browser run also refined an existing R6 root: frontend
+Detail guesses Revision from version 0.6 and does not route forward 0.7/0.9 through
+the role-aware Revision UI. This is deferred to R6, not repaired in R1. Safe next
+phase is R2 only.
