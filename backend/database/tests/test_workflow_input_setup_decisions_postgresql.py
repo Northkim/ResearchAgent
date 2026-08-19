@@ -21,7 +21,7 @@ PROJECT_ID = "project-35353535353535353535353535353535"
 NOW = datetime(2026, 8, 20, 2, tzinfo=UTC)
 
 
-def test_input_setup_decision_roundtrip_and_migration_reversibility(
+def test_input_setup_decision_migration_is_reversible_without_project_rows(
     postgres_engine,
 ) -> None:
     database_url = os.environ["REAGENT_TEST_DATABASE_URL"]
@@ -30,6 +30,25 @@ def test_input_setup_decision_roundtrip_and_migration_reversibility(
         database_url=database_url,
         expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
     )
+    configuration = Config("alembic.ini")
+    configuration.set_main_option("sqlalchemy.url", database_url)
+    command.downgrade(configuration, "20260819_0034")
+    try:
+        assert not inspect(postgres_engine).has_table(
+            "project_workflow_input_setup_decisions"
+        )
+    finally:
+        command.upgrade(configuration, "20260820_0036")
+    with postgres_engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
+            "20260820_0036"
+        )
+    assert inspect(postgres_engine).has_table(
+        "project_workflow_input_setup_decisions"
+    )
+
+
+def test_input_setup_decision_roundtrip(postgres_engine) -> None:
     session_factory = create_session_factory(postgres_engine)
     uow = SQLAlchemyUnitOfWork(session_factory)
     project = LocalProject(
@@ -74,23 +93,6 @@ def test_input_setup_decision_roundtrip_and_migration_reversibility(
         PROJECT_ID, review.workflow_instance_id
     ) == (decision,)
     replay.close()
-
-    configuration = Config("alembic.ini")
-    configuration.set_main_option("sqlalchemy.url", database_url)
-    command.downgrade(configuration, "20260819_0034")
-    try:
-        assert not inspect(postgres_engine).has_table(
-            "project_workflow_input_setup_decisions"
-        )
-    finally:
-        command.upgrade(configuration, "20260820_0035")
-    with postgres_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "20260820_0035"
-        )
-    assert inspect(postgres_engine).has_table(
-        "project_workflow_input_setup_decisions"
-    )
 
 
 def _instance_id() -> str:
