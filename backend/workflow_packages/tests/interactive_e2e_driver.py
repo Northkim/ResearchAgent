@@ -19,6 +19,11 @@ RESPONSES = (
     (b"CHECKPOINT: CANDIDATE SCREENING", b"continue\n"),
     (b"CHECKPOINT: FINALIZATION", b"finish\n"),
 )
+WORKSPACE_RESPONSES = (
+    (b"Literature search plan is ready", b"approve\n"),
+    (b"Literature screening is ready", b"approve\n"),
+    (b"Literature result is ready to finalize", b"approve\n"),
+)
 REAL_PROVIDER_CONSENT_MARKER = b"Type continue-real-search"
 
 
@@ -31,13 +36,14 @@ def drive(
     interrupt_at: str | None,
     resume: bool,
     expect_marker: bytes | None,
+    responses_contract: tuple[tuple[bytes, bytes], ...] = RESPONSES,
 ) -> int:
     pid, descriptor = pty.fork()
     if pid == 0:
         os.chdir(cwd)
         os.execvpe(command[0], command, os.environ)
     buffer = b""
-    responses = RESPONSES[1:] if resume else RESPONSES
+    responses = responses_contract[1:] if resume else responses_contract
     next_response = 0
     real_provider_consent_sent = False
     expected_marker_seen = expect_marker is None
@@ -185,6 +191,11 @@ def main() -> int:
         resume=args.resume,
         expect_marker=(
             args.expect_marker.encode("utf-8") if args.expect_marker else None
+        ),
+        responses_contract=(
+            WORKSPACE_RESPONSES
+            if args.workspace_root is not None
+            else RESPONSES
         ),
     )
     if result != args.expect_exit:

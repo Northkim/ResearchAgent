@@ -210,17 +210,40 @@ def _reach_search_completed(capsule: Path) -> tuple[dict, int]:
     return control, fake.invocation_count
 
 
-def _synced_full_research_workspace(tmp_path: Path):
+def _synced_full_research_workspace(
+    tmp_path: Path, *, enable_local_workflow_sessions: bool = False
+):
     database = InMemoryDatabase()
     from backend.project_workspaces.tests.test_generic_experiment_v5_workspace import (
         _seed_forward,
     )
     _seed_forward(database)
     package_root = tmp_path / "cloud-packages"
-    client = TestClient(create_app(ApplicationContainer(
-        unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
-        local_package_root=str(package_root),
-    )))
+    proxy_container = None
+    if enable_local_workflow_sessions:
+        proxy_database = InMemoryProxyDatabase()
+        proxy_container = ProxyApplicationContainer(service=CloudAPIProxyService(
+            unit_of_work_factory=lambda: InMemoryProxyUnitOfWork(proxy_database),
+            adapter=DeterministicFakePaperSearchAdapter(),
+        ))
+    client = TestClient(
+        create_app(
+            ApplicationContainer(
+                unit_of_work_factory=lambda: InMemoryUnitOfWork(database),
+                local_package_root=str(package_root),
+            ),
+            proxy_container=proxy_container,
+            enable_experimental_proxy=enable_local_workflow_sessions,
+            enable_local_workflow_sessions=enable_local_workflow_sessions,
+            deployment_settings=(
+                DeploymentSettings.isolated_test_defaults()
+                if enable_local_workflow_sessions
+                else None
+            ),
+        ),
+        base_url="http://127.0.0.1",
+        client=("127.0.0.1", 50000),
+    )
     created = client.post("/projects", json={
         "name": "F1F relative launcher regression",
         "research_topic": "Synthetic fixture",
@@ -800,15 +823,18 @@ def test_capsule_launcher_path_is_interpreted_once_for_supported_workspace_forms
     installed = lock["installed_capsules"][0]
     captured = {}
 
-    def launch(command, *, cwd, env, check):
-        captured.update(command=command, cwd=Path(cwd), env=env, check=check)
-        target = Path(cwd) / command[1]
-        if not target.is_absolute():
-            target = Path.cwd() / target
-        assert target.is_file()
-        return subprocess.CompletedProcess(command, 0)
+    def advance(**kwargs):
+        captured.update(
+            workspace=kwargs["workspace"],
+            capsule=kwargs["capsule"],
+            mode=kwargs["mode"],
+            env=workspace_cli._capsule_child_environment(),
+        )
+        return {"status": "COMPLETED"}
 
-    monkeypatch.setattr(workspace_cli.subprocess, "run", launch)
+    monkeypatch.setattr(
+        workspace_cli, "_advance_literature_checkpoint_workflow", advance
+    )
     sentinel = "synthetic-secret-sentinel"
     for key in workspace_cli.PROVIDER_CREDENTIAL_ENV_VARS:
         monkeypatch.setenv(key, sentinel)
@@ -821,10 +847,12 @@ def test_capsule_launcher_path_is_interpreted_once_for_supported_workspace_forms
         consent_input=lambda _: workspace_cli.REAL_PROVIDER_CONFIRMATION,
     )
 
-    assert result.status == "RUN_COMPLETED"
-    assert captured["command"][1:] == ["reagent_local.py", "run", "."]
-    assert "capsules" not in captured["command"][1]
-    assert captured["cwd"] == workspace_argument / installed["relative_path"]
+    assert result.status == "PROGRESS_SYNCHRONIZED"
+    assert captured["workspace"].resolve() == workspace.resolve()
+    assert captured["capsule"].resolve() == (
+        workspace.resolve() / installed["relative_path"]
+    )
+    assert captured["mode"] == "NORMAL"
     assert transport.consents == 1
     assert all(key not in captured["env"] for key in workspace_cli.PROVIDER_CREDENTIAL_ENV_VARS)
     assert "REAGENT_DATABASE_URL" not in captured["env"]
@@ -881,15 +909,13 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
     )
     captured = {}
 
-    def launch(command, *, cwd, env, check):
-        target = Path(cwd) / command[1]
-        if not target.is_absolute():
-            target = Path.cwd() / target
-        captured.update(command=command, cwd=Path(cwd), target=target)
-        assert target.is_file()
-        return subprocess.CompletedProcess(command, 0)
+    def advance(**kwargs):
+        captured.update(capsule=kwargs["capsule"], mode=kwargs["mode"])
+        return {"status": "COMPLETED"}
 
-    monkeypatch.setattr(subprocess, "run", launch)
+    namespace["run_workflow"].__globals__[
+        "_advance_literature_checkpoint_workflow"
+    ] = advance
     namespace["continue_workflow"].__kwdefaults__["consent_input"] = (
         lambda _: workspace_cli.REAL_PROVIDER_CONFIRMATION
     )
@@ -902,13 +928,9 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
     ])
 
     assert exit_code == workspace_cli.EXIT_SUCCESS
-    assert captured["command"][1:] == ["reagent_local.py", "run", "."]
-    assert captured["target"] == (
-        Path.cwd() / captured["cwd"] / "reagent_local.py"
-    )
-    capsule_text = captured["cwd"].as_posix()
-    assert captured["target"].as_posix().count(capsule_text) == 1
-    assert "Local Workspace operation: Run Completed" in capsys.readouterr().out
+    assert captured["capsule"].is_dir()
+    assert captured["mode"] == "NORMAL"
+    assert "Local Workspace operation: Progress Synchronized" in capsys.readouterr().out
 
 
 def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
@@ -969,11 +991,13 @@ def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
         )
         captured = {}
 
-        def launch(command, *, cwd, env, check):
-            captured.update(command=command, cwd=Path(cwd), env=env, check=check)
-            return subprocess.CompletedProcess(command, 0)
+        def advance(**kwargs):
+            captured.update(capsule=kwargs["capsule"], mode=kwargs["mode"])
+            return {"status": "COMPLETED"}
 
-        monkeypatch.setattr(subprocess, "run", launch)
+        namespace["run_workflow"].__globals__[
+            "_advance_literature_checkpoint_workflow"
+        ] = advance
         monkeypatch.chdir(workspace)
         exit_code = namespace["main"]([
             "run", ".", "--workflow",
@@ -981,10 +1005,8 @@ def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
         ])
 
     assert exit_code == workspace_cli.EXIT_SUCCESS
-    assert captured["command"][1:] == [
-        "reagent_local.py", "run", ".", "--mode", "demo",
-    ]
-    assert captured["cwd"].name == "0.8.0"
+    assert captured["capsule"].name == "0.8.0"
+    assert captured["mode"] == "DEMO"
     assert fake.invocation_count == 0
 
 
@@ -1013,11 +1035,16 @@ def test_owner_search_completed_state_projects_resume_and_generic_run_uses_it(
 
     captured = {}
 
-    def launch(command, *, cwd, env, check):
-        captured.update(command=command, cwd=Path(cwd), env=env, check=check)
-        return subprocess.CompletedProcess(command, 0)
+    def advance(**kwargs):
+        current = json.loads(
+            (kwargs["capsule"] / "memory/round-control.json").read_text()
+        )
+        captured.update(state=current["state"], checksums=current["search_result_checksums"])
+        return {"status": "COMPLETED"}
 
-    monkeypatch.setattr(workspace_cli.subprocess, "run", launch)
+    monkeypatch.setattr(
+        workspace_cli, "_advance_literature_checkpoint_workflow", advance
+    )
     monkeypatch.chdir(workspace)
     result = workspace_cli.run_workflow(
         workspace_root=Path("."),
@@ -1025,10 +1052,9 @@ def test_owner_search_completed_state_projects_resume_and_generic_run_uses_it(
         transport=_DemoClientTransport(transport.client),
         api_url="http://127.0.0.1:8000",
     )
-    assert result.status == "RUN_COMPLETED"
-    assert captured["command"][1:] == [
-        "reagent_local.py", "run", ".", "--mode", "demo", "--resume",
-    ]
+    assert result.status == "PROGRESS_SYNCHRONIZED"
+    assert captured["state"] == "SEARCH_COMPLETED"
+    assert captured["checksums"] == result_checksums
     current = json.loads((capsule / "memory/round-control.json").read_text())
     assert current["search_result_checksums"] == result_checksums
     assert initial_calls == 2
@@ -1043,6 +1069,17 @@ def test_failed_generic_harness_marks_valid_post_search_interruption(
     initial_control, _ = _reach_search_completed(capsule)
     checksums = initial_control["search_result_checksums"]
 
+    runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    runtime["_check_backend"] = lambda _url: None
+    real_run_path = workspace_cli.runpy.run_path
+
+    def run_path(path, *args, **kwargs):
+        if Path(path) == capsule / "legacy_reagent_local.py":
+            return runtime
+        return real_run_path(path, *args, **kwargs)
+
+    monkeypatch.setattr(workspace_cli.runpy, "run_path", run_path)
+
     monkeypatch.setattr(
         workspace_cli.subprocess,
         "run",
@@ -1055,12 +1092,12 @@ def test_failed_generic_harness_marks_valid_post_search_interruption(
             transport=_DemoClientTransport(transport.client),
             api_url="http://127.0.0.1:8000",
         )
-    assert raised.value.code == "WORKFLOW_RUN_FAILED"
+    assert raised.value.code == "LOCAL_PROGRESS_INVALID"
     control = json.loads((capsule / "memory/round-control.json").read_text())
-    assert control["state"] == "INTERRUPTED"
+    assert control["state"] == "SEARCH_COMPLETED"
     assert control["last_completed_state"] == "SEARCH_COMPLETED"
-    assert control["interrupted_stage"] == "POST_SEARCH_INTERACTION"
-    assert control["failure_code"] == "HARNESS_SESSION_STOPPED"
+    assert control["interrupted_stage"] is None
+    assert control["failure_code"] is None
     assert control["candidate_review_confirmed"] is False
     assert control["finalization_confirmed"] is False
     assert control["search_result_checksums"] == checksums
@@ -1070,7 +1107,7 @@ def test_failed_generic_harness_marks_valid_post_search_interruption(
         for item in workspace_cli.workflow_list(workspace)["workflows"]
         if item["workflow_instance_id"] == installed["workflow_instance_id"]
     )
-    assert literature["local_readiness"] == "INTERRUPTED"
+    assert literature["local_readiness"] == "FINALIZATION_PENDING"
     assert literature["next_action"] == "RESUME"
 
 

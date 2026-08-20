@@ -410,6 +410,17 @@ def main() -> int:
         except KeyboardInterrupt:
             print("Codex fixture interrupted safely.", file=sys.stderr, flush=True)
             return 130
+    elif "LITERATURE CHECKPOINT SYNTHESIS" in instruction:
+        synthesize(root)
+        owner = json.loads((root / "memory/owner-decisions.json").read_text())
+        write_json(
+            root / "memory/proposed-screening.json",
+            {
+                "schema_version": "reagent.literature-screening-proposal/v0.1",
+                "decisions": owner["decisions"],
+            },
+        )
+        (root / "memory/owner-decisions.json").unlink()
     else:
         return 2
     return 0

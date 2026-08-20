@@ -4281,3 +4281,27 @@ accessed. Detailed evidence is in
 Program state: `POST_D1_CONSOLIDATED_REPAIR = PASS`. The ledger preserves one
 `OBSERVATION_NEEDS_CONFIRMATION` (`D1-OVERVIEW-VISUAL-01`) and makes no Q1 or
 release claim.
+
+## Re-acceptance Literature checkpoint repair (2026-08-20)
+
+`REACCEPTANCE-HARNESS-TIMEOUT-01` is implemented as ADR 0056. The normal root
+Workspace path now ends each bounded Literature Harness phase before Owner
+review, releases Provider authority immediately after exact queries, stores an
+exact local screening/finalization checkpoint, and automatically synchronizes
+bounded Progress. Accepted screening dispositions are bound to the exact
+candidate-set checksum; pending decisions are never fabricated. The published
+Literature 0.6/0.8 Capsule and `selected-paper-library/v1` remain unchanged.
+
+Controlled E1-E5 fake-Harness evidence and all four D1 locks pass. Real loopback
++ real-PTY (fake Harness) passes end-to-end including idempotent resume. The
+real-Codex contract-staging gap (REACCEPTANCE-SYNTHESIS-CONTRACT-01) found
+during real-Harness qualification was fixed: the staged synthesis context now
+carries the authoritative package schemas/validator and a coordinator proposal
+schema derived from the same constants the validator enforces. Real Codex CLI
+(deepseek / deepseek-v4-flash) then completed the full public path with exact
+conforming output; OpenAI-hosted model is not claimed. The combined repair is
+committed; the fresh re-acceptance Workspace remains `INTERRUPTED` after three
+preserved exact searches with no search, Artifact, Progress, Owner decision,
+database row, or protected D1 state changed. Recovery may resume and must stop
+at the Owner reconfirmation checkpoint for `2 selected / 0 uncertain / 11
+excluded`.
