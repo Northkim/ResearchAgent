@@ -3772,6 +3772,54 @@ def _make_manifest(
         )
         continuation = "ONE ROUND; explicit finish publishes selected-paper-library/v1; upload-only retry remains idempotent"
         proxy = "SHORT_LIVED EXACT-PACKAGE LOCAL SESSION; OPENALEX ONLY; NO CREDENTIAL IN PACKAGE"
+    elif workflow_id == "literature-consolidation-local-experimental":
+        skill_path = "workflow/skills/literature-consolidation/SKILL.md"
+        skill_contract_path = "workflow/skills/literature-consolidation/skill.json"
+        skills = (SkillPin(
+            name="reagent.local-literature-consolidation",
+            semantic_version="0.1.0",
+            source_type="BUNDLED_REAGENT_ORIGINAL",
+            source_identity="reagent-r4-literature-consolidation",
+            checksum=canonical_hash({
+                "instructions": sha256_bytes(files[skill_path].content),
+                "contract": sha256_bytes(files[skill_contract_path].content),
+            }),
+            relative_path=skill_path,
+            required_capabilities=(
+                "read_materialized_input", "write_declared_outputs",
+                "update_local_context", "append_progress_report",
+                "progress.upload/v0.2",
+            ),
+        ),)
+        prompt_path = "workflow/prompts/one-round.md"
+        prompt_id = "literature-consolidation"
+        prompt_version = "0.1.0"
+        outputs = (
+            PackageOutputContract(
+                "outputs/candidate_papers.json", "CANDIDATE_LIBRARY",
+                "application/json", "candidate-papers/v0.2",
+                "ReAgent exact composition runtime", "deterministic source join",
+            ),
+            PackageOutputContract(
+                "outputs/selected_papers.json", "SELECTED_PAPER_LIBRARY",
+                "application/json", "selected-papers/v0.2",
+                "Codex Agent Harness", "exact Owner decisions",
+            ),
+            PackageOutputContract(
+                "outputs/literature_search_report.md", "LITERATURE_SEARCH_REPORT",
+                "text/markdown", "literature-consolidation-report/v0.1",
+                "Codex Agent Harness", "two-source scope and evidence limits",
+            ),
+        )
+        inputs = (PackageInputManifest(
+            "local-project-display", "inputs/project.json",
+            sha256_bytes(files["inputs/project.json"].content), True,
+            "application/json", "CLOUD_SUPPLIED",
+        ),)
+        continuation = (
+            "ONE EXACT TWO-SOURCE COMPOSITION; OWNER SCREENING; IDEMPOTENT V1"
+        )
+        proxy = "NO PROVIDER OR NETWORK; TWO EXACT LOCAL ARTIFACT INPUTS ONLY"
     elif workflow_id == IDEA_DISCOVERY_WORKFLOW_ID:
         idea_v0_2 = workflow_version == IDEA_DISCOVERY_V0_2_WORKFLOW_VERSION
         idea_skill_version = (

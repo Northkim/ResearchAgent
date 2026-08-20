@@ -38,10 +38,10 @@ def test_input_setup_decision_migration_is_reversible_without_project_rows(
             "project_workflow_input_setup_decisions"
         )
     finally:
-        command.upgrade(configuration, "20260820_0038")
+        command.upgrade(configuration, "20260820_0039")
     with postgres_engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == (
-            "20260820_0038"
+            "20260820_0039"
         )
     assert inspect(postgres_engine).has_table(
         "project_workflow_input_setup_decisions"

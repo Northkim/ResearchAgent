@@ -73,6 +73,14 @@ SUPPORTED_CAPSULE_PINS = {
         PACKAGE_TEMPLATE_ID,
         False,
     ),
+    (WORKFLOW_ID, "0.6.0", "0.8.0"): (
+        PACKAGE_TEMPLATE_ID,
+        False,
+    ),
+    ("literature-consolidation-local-experimental", "0.1.0", "0.1.0"): (
+        "literature-consolidation-package",
+        False,
+    ),
     ("idea-discovery-local-experimental", "0.1.0", "0.1.0"): (
         "idea-discovery-package-experimental",
         False,
@@ -1145,6 +1153,7 @@ def _declared_dynamic_input_paths(
         "workflow/real-review.json",
         "workflow/writing-revision.json",
         "workflow/generic-experiment.json",
+        "workflow/literature-consolidation.json",
     ):
         descriptor_entry = declared.get(descriptor_path)
         if descriptor_entry is None:
@@ -1192,6 +1201,7 @@ def _declared_runtime_dynamic_paths(
         "workflow/real-writing.json", "workflow/real-review.json",
         "workflow/writing-revision.json",
         "workflow/generic-experiment.json",
+        "workflow/literature-consolidation.json",
     ):
         descriptor_entry = declared.get(descriptor_path)
         if descriptor_entry is None:
@@ -5804,6 +5814,84 @@ def _scaffold_provenance_is_exact(
     return True
 
 
+def _literature_consolidation_provenance_is_exact(
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+) -> bool:
+    """Verify both exact consolidation inputs against current managed receipts."""
+
+    config = _read_package_json(
+        capsule / "workflow/literature-consolidation.json"
+    )
+    provenance = _read_package_json(capsule / "memory/input-provenance.json")
+    requirements = config.get("input_requirements")
+    records = provenance.get("artifacts")
+    if (
+        config.get("workflow_id")
+        != "literature-consolidation-local-experimental"
+        or provenance.get("schema_version")
+        != "reagent.literature-consolidation-input-provenance/v0.1"
+        or provenance.get("workflow_instance_id")
+        != installed["workflow_instance_id"]
+        or not isinstance(requirements, list)
+        or not isinstance(records, dict)
+    ):
+        return False
+    contracts = {
+        item.get("requirement_key"): item
+        for item in requirements
+        if isinstance(item, dict)
+    }
+    if set(contracts) != {"base_library", "additional_library"}:
+        return False
+    if set(records) != set(contracts):
+        return False
+    receipts_root = workspace / MATERIALIZATION_RECEIPTS_ROOT
+    if receipts_root.is_symlink() or not receipts_root.is_dir():
+        return False
+    receipts: dict[str, dict[str, Any]] = {}
+    for path in receipts_root.glob("artifact-binding-*.json"):
+        if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
+            return False
+        receipt = _validate_materialization_receipt(_read_json(path), descriptor)
+        if receipt["consumer_workflow_instance_id"] != installed["workflow_instance_id"]:
+            continue
+        key = receipt["requirement_key"]
+        if key in receipts:
+            return False
+        receipts[key] = receipt
+    if set(receipts) != set(records):
+        return False
+    for key, record in records.items():
+        contract = contracts[key]
+        receipt = receipts[key]
+        expected_target = (
+            f"{installed['relative_path']}/{contract['target_relative_path']}"
+        )
+        if (
+            not isinstance(record, dict)
+            or record
+            != {
+                "artifact_id": receipt["artifact_id"],
+                "artifact_type": receipt["artifact_type"],
+                "sha256": receipt["target_checksum"],
+            }
+            or receipt["target_relative_path"] != expected_target
+            or receipt["artifact_type"] != contract["artifact_type"]
+        ):
+            return False
+        checksum, _ = _verified_regular_file(
+            workspace / expected_target,
+            allowed_root=capsule,
+            missing_code="LOCAL_PROGRESS_INVALID",
+        )
+        if checksum != receipt["target_checksum"]:
+            return False
+    return True
+
+
 def _legacy_scaffold_context_drift_is_exact(
     *,
     workspace: Path,
@@ -7394,10 +7482,14 @@ def run_workflow(
             ("writing-local-experimental", "0.7.0", "0.9.0"),
         }
         is_literature = pin[0] == WORKFLOW_ID
+        is_literature_consolidation = pin == (
+            "literature-consolidation-local-experimental", "0.1.0", "0.1.0"
+        )
         manifest = _read_package_json(capsule / "package-manifest.json")
         coordinated_result: dict[str, Any] | None = None
         supports_progress_recovery = any((
             is_literature,
+            is_literature_consolidation,
             is_idea,
             is_scaffold,
             is_real_experiment,
@@ -7407,7 +7499,10 @@ def run_workflow(
             is_writing_revision,
             is_forward_generic_harness,
         ))
-        requires_root_post_run_progress = supports_progress_recovery and not is_literature
+        requires_root_post_run_progress = (
+            supports_progress_recovery
+            and not is_literature
+        )
         local_reports: list[dict[str, Any]] = []
         if not preflight_only and supports_progress_recovery:
             readiness = _evaluate_local_progress_readiness(
@@ -7438,7 +7533,8 @@ def run_workflow(
                     presentation_count = 0
                     presentation_warnings: tuple[str, ...] = ()
                     if (
-                        is_idea or is_real_writing or is_real_review
+                        is_literature_consolidation or is_idea
+                        or is_real_writing or is_real_review
                         or is_writing_revision or is_forward_generic_harness
                     ):
                         try:
@@ -7854,6 +7950,23 @@ def run_workflow(
                     workflow_instance_id=workflow_instance_id,
                     capsule_relative_path=installed["relative_path"],
                 )
+        elif is_literature_consolidation:
+            _prepare_scaffold_input_provenance(
+                workspace=workspace,
+                descriptor=descriptor,
+                capsule=capsule,
+                workflow_instance_id=workflow_instance_id,
+                transport=transport,
+                literature_consolidation=True,
+            )
+            command.extend([
+                "run", ".", "--workflow-instance", workflow_instance_id,
+                "--api-url", api_url,
+            ])
+            if preflight_only:
+                command.append("--preflight-only")
+            if codex_executable is not None:
+                command.extend(["--codex-executable", codex_executable])
         elif is_scaffold:
             if pin in {
                 ("reproduction-experiment-local-experimental", "0.3.0", "0.3.0"),
@@ -8031,7 +8144,8 @@ def run_workflow(
         presentation_count = 0
         presentation_warnings: tuple[str, ...] = ()
         if not preflight_only and (
-            is_literature or is_idea or is_real_writing or is_real_review
+            is_literature or is_literature_consolidation or is_idea
+            or is_real_writing or is_real_review
             or is_writing_revision or is_forward_generic_harness
         ):
             try:
@@ -8467,11 +8581,17 @@ def _prepare_scaffold_input_provenance(
     writing_revision: bool = False,
     prepared_experiment: bool = False,
     generic_experiment: bool = False,
+    literature_consolidation: bool = False,
 ) -> None:
-    if sum((real_experiment, real_writing, real_review, writing_revision, prepared_experiment, generic_experiment)) > 1:
+    reviewed_modes = (
+        real_experiment, real_writing, real_review, writing_revision,
+        prepared_experiment, generic_experiment, literature_consolidation,
+    )
+    if sum(reviewed_modes) > 1:
         raise _identity("LOCAL_CAPSULE_DRIFT", "reviewed Workflow descriptor is ambiguous")
     descriptor_path = (
-        "workflow/generic-experiment.json" if generic_experiment
+        "workflow/literature-consolidation.json" if literature_consolidation
+        else "workflow/generic-experiment.json" if generic_experiment
         else "workflow/prepared-experiment.json" if prepared_experiment
         else "workflow/real-experiment.json" if real_experiment
         else "workflow/real-writing.json" if real_writing
@@ -8482,10 +8602,11 @@ def _prepare_scaffold_input_provenance(
     config = _read_json(capsule / descriptor_path)
     if (
         config.get("core_capability_maturity")
-        != ("REVIEWED_CORE" if (real_experiment or prepared_experiment or generic_experiment or real_writing or real_review or writing_revision) else "SCAFFOLD_CORE")
+        != ("REVIEWED_CORE" if any(reviewed_modes) else "SCAFFOLD_CORE")
         or config.get("workflow_id") not in {
             "writing-local-experimental", "review-local-experimental",
             "reproduction-experiment-local-experimental",
+            "literature-consolidation-local-experimental",
         }
     ):
         raise _identity(
@@ -8564,11 +8685,13 @@ def _prepare_scaffold_input_provenance(
             "artifact_type": item["artifact_type"],
             "sha256": item["expected_checksum"],
         }
-        if not (real_experiment or prepared_experiment or generic_experiment or real_writing or real_review or writing_revision):
+        if not any(reviewed_modes):
             records[key]["relative_path"] = item["target_relative_path"]
     _atomic_write_json(capsule / "memory/input-provenance.json", {
         "schema_version": (
-            "reagent.generic-experiment-input-provenance/v0.1"
+            "reagent.literature-consolidation-input-provenance/v0.1"
+            if literature_consolidation
+            else "reagent.generic-experiment-input-provenance/v0.1"
             if generic_experiment
             else "reagent.real-experiment-input-provenance/v0.1"
             if real_experiment
@@ -9029,6 +9152,15 @@ def _evaluate_local_progress_readiness(
         installed.get("capsule_version", manifest["package_template_version"]),
     )
     provenance_exact = True
+    if pin == (
+        "literature-consolidation-local-experimental", "0.1.0", "0.1.0"
+    ):
+        try:
+            provenance_exact = _literature_consolidation_provenance_is_exact(
+                workspace, descriptor, installed, capsule
+            )
+        except (OSError, WorkspaceCLIError):
+            provenance_exact = False
     if pin[0] in {
         "writing-local-experimental", "review-local-experimental",
         "reproduction-experiment-local-experimental",
@@ -9052,7 +9184,13 @@ def _evaluate_local_progress_readiness(
             provenance_exact = False
     if not provenance_exact:
         return LocalProgressReadiness(
-            "INVALID", tuple(reports), "Scaffold input provenance is not exact"
+            "INVALID",
+            tuple(reports),
+            (
+                "Literature Consolidation input provenance is not exact"
+                if pin[0] == "literature-consolidation-local-experimental"
+                else "Scaffold input provenance is not exact"
+            ),
         )
     try:
         acknowledged = _local_progress_acknowledged(

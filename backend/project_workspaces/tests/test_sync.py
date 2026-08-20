@@ -984,7 +984,7 @@ def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
     assert captured["command"][1:] == [
         "reagent_local.py", "run", ".", "--mode", "demo",
     ]
-    assert captured["cwd"].name == "0.7.0"
+    assert captured["cwd"].name == "0.8.0"
     assert fake.invocation_count == 0
 
 

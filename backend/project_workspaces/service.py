@@ -66,6 +66,12 @@ from .production_workflows import (
     literature_search_definition_version as production_literature_search_version,
     literature_search_v0_5_definition_version,
     literature_search_v0_7_capsule,
+    literature_search_v0_6_definition_version,
+    literature_search_v0_8_capsule,
+    literature_consolidation_capsule,
+    literature_consolidation_definition,
+    literature_consolidation_definition_version,
+    literature_consolidation_requirements,
     SCAFFOLD_WORKFLOWS,
     scaffold_capsule,
     scaffold_definition,
@@ -242,6 +248,11 @@ def ensure_production_workflow_foundation(
     forward_idea_capsule = idea_discovery_v0_4_capsule(timestamp)
     durable_literature_version = literature_search_v0_5_definition_version(timestamp)
     durable_literature_capsule = literature_search_v0_7_capsule(timestamp)
+    strategy_literature_version = literature_search_v0_6_definition_version(timestamp)
+    strategy_literature_capsule = literature_search_v0_8_capsule(timestamp)
+    consolidation_definition = literature_consolidation_definition(timestamp)
+    consolidation_version = literature_consolidation_definition_version(timestamp)
+    consolidation_capsule = literature_consolidation_capsule(timestamp)
     durable_idea_version = idea_discovery_v0_4_definition_version(timestamp)
     durable_idea_capsule = idea_discovery_v0_5_capsule(timestamp)
     repository = uow.workflow_foundation
@@ -257,6 +268,11 @@ def ensure_production_workflow_foundation(
     repository.add_capsule_version(forward_idea_capsule)
     repository.add_definition_version(durable_literature_version)
     repository.add_capsule_version(durable_literature_capsule)
+    repository.add_definition_version(strategy_literature_version)
+    repository.add_capsule_version(strategy_literature_capsule)
+    repository.add_definition(consolidation_definition)
+    repository.add_definition_version(consolidation_version)
+    repository.add_capsule_version(consolidation_capsule)
     repository.add_definition_version(durable_idea_version)
     repository.add_capsule_version(durable_idea_capsule)
     for requirement in (
@@ -264,6 +280,7 @@ def ensure_production_workflow_foundation(
         idea_discovery_v0_2_requirement(timestamp),
         idea_discovery_v0_3_requirement(timestamp),
         idea_discovery_v0_4_requirement(timestamp),
+        *literature_consolidation_requirements(timestamp),
     ):
         existing_requirement = uow.artifact_references.get_requirement(
             requirement.workflow_definition_id,

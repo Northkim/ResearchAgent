@@ -30,7 +30,7 @@ def _client(tmp_path):
     ))), database
 
 
-def test_production_registry_has_exactly_five_real_workflow_types(tmp_path) -> None:
+def test_production_registry_has_six_reviewed_workflow_types(tmp_path) -> None:
     client, _ = _client(tmp_path)
     client.post("/projects", json={
         "name": "F1B registry", "research_topic": "Synthetic",
@@ -39,19 +39,23 @@ def test_production_registry_has_exactly_five_real_workflow_types(tmp_path) -> N
     items = client.get("/workflow-definitions").json()["items"]
     assert {item["workflow_definition_id"] for item in items} == {
         "literature-search-local-experimental",
+        "literature-consolidation-local-experimental",
         "idea-discovery-local-experimental",
         WRITING_WORKFLOW_ID, REVIEW_WORKFLOW_ID, EXPERIMENT_WORKFLOW_ID,
     }
-    assert len(items) == 5
+    assert len(items) == 6
+    current_versions = {
+        WRITING_WORKFLOW_ID: "0.5.0",
+        REVIEW_WORKFLOW_ID: "0.4.0",
+        EXPERIMENT_WORKFLOW_ID: "0.8.0",
+    }
     for workflow_id in SCAFFOLD_WORKFLOWS:
         detail = client.get(f"/workflow-definitions/{workflow_id}").json()
         assert detail["lifecycle"] == "AVAILABLE"
         assert detail["creatable"] is True
         assert detail["allows_multiple_instances"] is True
-        assert detail["recommended_version"]["version"] == (
-            "0.3.0" if workflow_id == EXPERIMENT_WORKFLOW_ID else "0.2.0"
-        )
-        assert detail["recommended_version"]["core_capability_maturity"] == "SCAFFOLD_CORE"
+        assert detail["recommended_version"]["version"] == current_versions[workflow_id]
+        assert detail["recommended_version"]["core_capability_maturity"] == "REVIEWED_CORE"
         legacy = next(
             item for item in detail["capsules"]
             if item["capsule_version"] == "0.1.0"

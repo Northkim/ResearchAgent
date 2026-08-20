@@ -108,7 +108,7 @@ def test_generic_harness_publication_is_exact_idempotent_and_reversible(
         database_url=database_url,
         expected_identity=os.environ.get("REAGENT_TEST_DATABASE_IDENTITY"),
     )
-    assert _head(postgres_engine) == "20260820_0038"
+    assert _head(postgres_engine) == "20260820_0039"
     assert _counts(postgres_engine) == (1, 1, 1, 1)
     now = datetime(2026, 8, 20, tzinfo=UTC)
     session_factory = create_session_factory(postgres_engine)
@@ -166,6 +166,6 @@ def test_generic_harness_publication_is_exact_idempotent_and_reversible(
                 "9a0883b3164627dcd12d07e6eb634ad4"
             )
     finally:
-        command.upgrade(configuration, "20260820_0038")
-    assert _head(postgres_engine) == "20260820_0038"
+        command.upgrade(configuration, "20260820_0039")
+    assert _head(postgres_engine) == "20260820_0039"
     assert _counts(postgres_engine) == (1, 1, 1, 1)

@@ -55,6 +55,8 @@ from backend.workflow_packages.production_workflows import (
     LITERATURE_SEARCH_WORKFLOW_VERSION as PRODUCTION_LITERATURE_SEARCH_VERSION,
     LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
     LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
+    LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_8_CAPSULE_VERSION,
     build_idea_discovery_package,
     build_idea_discovery_v0_2_package,
     build_idea_discovery_v0_3_package,
@@ -62,6 +64,7 @@ from backend.workflow_packages.production_workflows import (
     build_idea_discovery_v0_5_package,
     build_literature_search_v0_6_package,
     build_literature_search_v0_7_package,
+    build_literature_search_v0_8_package,
     build_writing_scaffold_package,
     build_review_scaffold_package,
     build_experiment_scaffold_package,
@@ -81,6 +84,12 @@ from backend.workflow_packages.production_workflows import (
     build_real_writing_v0_5_package,
     build_real_review_v0_5_package,
     build_writing_revision_v0_6_package,
+)
+from backend.workflow_packages.literature_consolidation import (
+    CAPSULE_VERSION as LITERATURE_CONSOLIDATION_CAPSULE_VERSION,
+    WORKFLOW_ID as LITERATURE_CONSOLIDATION_WORKFLOW_ID,
+    WORKFLOW_VERSION as LITERATURE_CONSOLIDATION_WORKFLOW_VERSION,
+    build_package as build_literature_consolidation_package,
 )
 from backend.workflow_packages.serialization import canonical_hash, sha256_bytes, to_json_value
 from backend.workflow_packages.generic_experiment_publication import (
@@ -590,6 +599,26 @@ class WorkspaceSyncApplicationService:
                 f"{instance.workflow_instance_id}-v0.7"
             )
             builder = build_literature_search_v0_7_package
+        elif (
+            instance.workflow_definition_id == LITERATURE_SEARCH_DEFINITION_ID
+            and instance.workflow_version == LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION
+            and instance.capsule_version == LITERATURE_SEARCH_V0_8_CAPSULE_VERSION
+        ):
+            package_id = (
+                f"literature-search-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.8"
+            )
+            builder = build_literature_search_v0_8_package
+        elif (
+            instance.workflow_definition_id == LITERATURE_CONSOLIDATION_WORKFLOW_ID
+            and instance.workflow_version == LITERATURE_CONSOLIDATION_WORKFLOW_VERSION
+            and instance.capsule_version == LITERATURE_CONSOLIDATION_CAPSULE_VERSION
+        ):
+            package_id = (
+                f"literature-consolidation-{project.project_id}-"
+                f"{instance.workflow_instance_id}-v0.1"
+            )
+            builder = build_literature_consolidation_package
         elif (
             instance.workflow_definition_id == IDEA_DISCOVERY_WORKFLOW_ID
             and instance.workflow_version == IDEA_DISCOVERY_WORKFLOW_VERSION

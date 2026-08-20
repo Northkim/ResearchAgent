@@ -58,6 +58,8 @@ from backend.workflow_packages.production_workflows import (
     LITERATURE_SEARCH_WORKFLOW_VERSION,
     LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
     LITERATURE_SEARCH_V0_7_CAPSULE_VERSION,
+    LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_8_CAPSULE_VERSION,
     SELECTED_PAPER_LIBRARY_SCHEMA,
     SELECTED_PAPER_LIBRARY_TYPE,
     MANUSCRIPT_DRAFT_TYPE,
@@ -84,6 +86,7 @@ from backend.workflow_packages.production_workflows import (
     idea_discovery_v0_4_contract_checksum,
     literature_search_contract_checksum,
     literature_search_v0_5_contract_checksum,
+    literature_search_v0_6_contract_checksum,
     real_experiment_contract_checksum,
     real_writing_contract_checksum,
     real_review_contract_checksum,
@@ -94,6 +97,16 @@ from backend.workflow_packages.production_workflows import (
     scaffold_output_contract,
 )
 from backend.workflow_packages.serialization import canonical_hash
+from backend.workflow_packages.literature_consolidation import (
+    CAPSULE_CHECKSUM as LITERATURE_CONSOLIDATION_CAPSULE_CHECKSUM,
+    CAPSULE_ID as LITERATURE_CONSOLIDATION_CAPSULE_ID,
+    CAPSULE_VERSION as LITERATURE_CONSOLIDATION_CAPSULE_VERSION,
+    TEMPLATE_ID as LITERATURE_CONSOLIDATION_TEMPLATE_ID,
+    WORKFLOW_ID as LITERATURE_CONSOLIDATION_WORKFLOW_ID,
+    WORKFLOW_VERSION as LITERATURE_CONSOLIDATION_WORKFLOW_VERSION,
+    contract_checksum as literature_consolidation_contract_checksum,
+    workflow_document as literature_consolidation_workflow_document,
+)
 
 from .skills import (
     PRODUCTION_SKILLS,
@@ -274,6 +287,27 @@ LITERATURE_SEARCH_V0_7_CAPSULE_CHECKSUM = canonical_hash(
 )
 LITERATURE_SEARCH_V0_7_CAPSULE_ID = (
     "capsule-" + LITERATURE_SEARCH_V0_7_CAPSULE_CHECKSUM[7:39]
+)
+
+LITERATURE_SEARCH_V0_8_CAPSULE_CHECKSUM = canonical_hash(
+    {
+        "generator_version": (
+            "reagent-literature-search-local-experimental-compiler/0.8.0"
+        ),
+        "package_schema_version": PACKAGE_SCHEMA_VERSION,
+        "package_template_id": LITERATURE_SEARCH_TEMPLATE_ID,
+        "package_template_version": LITERATURE_SEARCH_V0_8_CAPSULE_VERSION,
+        "workflow_checksum": literature_search_v0_6_contract_checksum(),
+        "artifact_outputs": [selected_paper_library_output_contract()],
+        "decision_durability": (
+            "CANDIDATE_SET_CHECKSUM_AND_EXACT_OWNER_DISPOSITIONS"
+        ),
+        "query_strategy": "DIRECT_SUPPORTING_CONTEXTUAL_BACKGROUND",
+        "user_skill_scientific_authority": False,
+    }
+)
+LITERATURE_SEARCH_V0_8_CAPSULE_ID = (
+    "capsule-" + LITERATURE_SEARCH_V0_8_CAPSULE_CHECKSUM[7:39]
 )
 
 IDEA_DISCOVERY_V0_5_CAPSULE_CHECKSUM = canonical_hash(
@@ -720,6 +754,171 @@ def literature_search_v0_7_capsule(now: datetime) -> WorkflowCapsuleVersion:
         legacy_package_compatible=False,
         created_at=now,
         updated_at=now,
+    )
+
+
+def literature_search_v0_6_definition_version(
+    now: datetime,
+) -> WorkflowDefinitionVersion:
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=LITERATURE_SEARCH_WORKFLOW_ID,
+        version=LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION,
+        contract_checksum=literature_search_v0_6_contract_checksum(),
+        input_schema_id="research-request/v0.2",
+        output_schema_id="literature-search-report/v0.2",
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "production_artifact_type": SELECTED_PAPER_LIBRARY_TYPE,
+            "decision_durability": (
+                "CANDIDATE_SET_CHECKSUM_AND_EXACT_OWNER_DISPOSITIONS"
+            ),
+            "query_strategy": "DIRECT_SUPPORTING_CONTEXTUAL_BACKGROUND",
+            "user_skill_scientific_authority": False,
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def literature_search_v0_8_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    return WorkflowCapsuleVersion(
+        capsule_id=LITERATURE_SEARCH_V0_8_CAPSULE_ID,
+        capsule_version=LITERATURE_SEARCH_V0_8_CAPSULE_VERSION,
+        workflow_definition_id=LITERATURE_SEARCH_WORKFLOW_ID,
+        workflow_version=LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION,
+        definition_checksum=LITERATURE_SEARCH_V0_8_CAPSULE_CHECKSUM,
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=(
+            "memory/context.md", "memory/owner-decisions.json",
+            "memory/progress", "memory/round-control.json", "memory/search",
+            "outputs",
+        ),
+        capability_requirements=(
+            "paper.search/v0.1", "progress.read/v0.1", "progress.upload/v0.2",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": LITERATURE_SEARCH_TEMPLATE_ID,
+            "trust_classification": (
+                CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value
+            ),
+            "artifact_outputs": [selected_paper_library_output_contract()],
+            "decision_durability": (
+                "CANDIDATE_SET_CHECKSUM_AND_EXACT_OWNER_DISPOSITIONS"
+            ),
+            "query_strategy": "DIRECT_SUPPORTING_CONTEXTUAL_BACKGROUND",
+            "user_skill_scientific_authority": False,
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def literature_consolidation_definition(now: datetime) -> WorkflowDefinition:
+    return WorkflowDefinition(
+        workflow_definition_id=LITERATURE_CONSOLIDATION_WORKFLOW_ID,
+        display_name="Literature Consolidation",
+        description=(
+            "Explicitly combine two exact paper-library Artifacts into one "
+            "Owner-reviewed downstream library."
+        ),
+        lifecycle=WorkflowDefinitionLifecycle.AVAILABLE,
+        allows_multiple_instances=True,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def literature_consolidation_definition_version(
+    now: datetime,
+) -> WorkflowDefinitionVersion:
+    return WorkflowDefinitionVersion(
+        workflow_definition_id=LITERATURE_CONSOLIDATION_WORKFLOW_ID,
+        version=LITERATURE_CONSOLIDATION_WORKFLOW_VERSION,
+        contract_checksum=literature_consolidation_contract_checksum(),
+        input_schema_id="artifact-bindings/v0.1",
+        output_schema_id=SELECTED_PAPER_LIBRARY_TYPE,
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "artifact_requirements": literature_consolidation_workflow_document()[
+                "input_requirements"
+            ],
+            "artifact_outputs": [selected_paper_library_output_contract()],
+            "composition_policy": "EXPLICIT_TWO_SOURCE_RECURSIVE",
+            "implicit_latest": False,
+            "default_project_setup": True,
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        core_capability_maturity=CoreCapabilityMaturity.REVIEWED_CORE,
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def literature_consolidation_capsule(now: datetime) -> WorkflowCapsuleVersion:
+    return WorkflowCapsuleVersion(
+        capsule_id=LITERATURE_CONSOLIDATION_CAPSULE_ID,
+        capsule_version=LITERATURE_CONSOLIDATION_CAPSULE_VERSION,
+        workflow_definition_id=LITERATURE_CONSOLIDATION_WORKFLOW_ID,
+        workflow_version=LITERATURE_CONSOLIDATION_WORKFLOW_VERSION,
+        definition_checksum=LITERATURE_CONSOLIDATION_CAPSULE_CHECKSUM,
+        archive_size_bytes=0,
+        archive_media_type="application/zip",
+        mutable_roots=(
+            "memory/context.md", "memory/input-provenance.json",
+            "memory/owner-decisions.json", "memory/current-artifact.json",
+            "memory/progress", "outputs", "inputs",
+        ),
+        capability_requirements=(
+            "artifact.materialize/v0.1", "artifact.publish/v0.1",
+            "progress.upload/v0.2",
+        ),
+        compatibility={
+            "package_schema_version": PACKAGE_SCHEMA_VERSION,
+            "package_template_id": LITERATURE_CONSOLIDATION_TEMPLATE_ID,
+            "trust_classification": (
+                CapsuleTrustClassification.TRUSTED_BUILT_IN_UNSIGNED.value
+            ),
+            "artifact_requirements": literature_consolidation_workflow_document()[
+                "input_requirements"
+            ],
+            "artifact_outputs": [selected_paper_library_output_contract()],
+            "core_capability_maturity": CoreCapabilityMaturity.REVIEWED_CORE.value,
+        },
+        review_status=WorkflowReviewStatus.REVIEWED,
+        legacy_package_compatible=False,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def literature_consolidation_requirements(
+    now: datetime,
+) -> tuple[WorkflowArtifactRequirement, ...]:
+    return tuple(
+        WorkflowArtifactRequirement(
+            workflow_definition_id=LITERATURE_CONSOLIDATION_WORKFLOW_ID,
+            workflow_version=LITERATURE_CONSOLIDATION_WORKFLOW_VERSION,
+            requirement_key=item["requirement_key"],
+            artifact_type=item["artifact_type"],
+            compatibility_mode=CompatibilityMode.EXACT,
+            schema_constraint=item["artifact_schema"],
+            cardinality_min=1,
+            cardinality_max=1,
+            required=True,
+            materialization_mode=MaterializationMode.VERIFIED_COPY,
+            target_relative_path=item["target_relative_path"],
+            created_at=now,
+            updated_at=now,
+        )
+        for item in literature_consolidation_workflow_document()["input_requirements"]
     )
 
 

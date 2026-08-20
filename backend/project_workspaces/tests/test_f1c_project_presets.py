@@ -62,7 +62,7 @@ def test_server_resolved_presets_create_one_revision_atomically(tmp_path, setup,
     assert {item["workflow_definition_id"] for item in instances["items"]} == set(expected)
     assert len(manifest["manifest"]["workflow_instances"]) == len(expected)
     versions = {item["workflow_definition_id"]: (item["workflow_version"], item["capsule_version"]) for item in instances["items"]}
-    assert versions["literature-search-local-experimental"] == ("0.5.0", "0.7.0")
+    assert versions["literature-search-local-experimental"] == ("0.6.0", "0.8.0")
     if setup == "full-research":
         assert versions["idea-discovery-local-experimental"] == ("0.4.0", "0.5.0")
         assert versions["reproduction-experiment-local-experimental"] == (
@@ -147,7 +147,7 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     assert len(descriptor["workflow_capsules"]) == 5
     expected_pins = {
         "literature-search-local-experimental": (
-            "0.5.0", "0.7.0", "capsule-5600c6c42c85d3a2ab8beb8e112216df"
+            "0.6.0", "0.8.0", "capsule-5d6056c7c5e6a9d8df6bbdab161c2fb0"
         ),
         "idea-discovery-local-experimental": (
             "0.4.0", "0.5.0", "capsule-db831c40287135691c7c1c41a2a16934"

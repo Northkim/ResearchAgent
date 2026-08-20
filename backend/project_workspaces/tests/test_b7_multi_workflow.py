@@ -15,13 +15,13 @@ from backend.progress_reports.contracts import ProgressReportUploadEnvelope
 from backend.project_workspaces import workspace_cli
 from backend.project_workspaces.production_workflows import (
     IDEA_DISCOVERY_CAPSULE_ID,
-    LITERATURE_SEARCH_V0_7_CAPSULE_ID,
+    LITERATURE_SEARCH_V0_8_CAPSULE_ID,
 )
 from backend.workflow_packages.production_workflows import (
     IDEA_DISCOVERY_WORKFLOW_ID,
     IDEA_DISCOVERY_WORKFLOW_VERSION,
     LITERATURE_SEARCH_WORKFLOW_ID,
-    LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION,
+    LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION,
 )
 from backend.workflow_packages.serialization import canonical_json
 
@@ -325,8 +325,8 @@ def qualify_real_multi_workflow_artifact_handoff(
     project_id = project.json()["project_id"]
     bootstrap = client.get(f"/projects/{project_id}/workspace-bootstrap").json()
     literature = bootstrap["workflow_capsules"][0]
-    assert literature["workflow_definition_version"] == LITERATURE_SEARCH_V0_5_WORKFLOW_VERSION
-    assert literature["capsule_id"] == LITERATURE_SEARCH_V0_7_CAPSULE_ID
+    assert literature["workflow_definition_version"] == LITERATURE_SEARCH_V0_6_WORKFLOW_VERSION
+    assert literature["capsule_id"] == LITERATURE_SEARCH_V0_8_CAPSULE_ID
     assert literature["legacy_package_compatible"] is False
     workspace = tmp_path / "workspace"
     workspace_cli.bootstrap_workspace(target=workspace, descriptor=bootstrap)

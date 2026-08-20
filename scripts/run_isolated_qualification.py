@@ -569,7 +569,9 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
                             text(
                                 "SELECT name, count(*) FROM local_projects "
                                 "WHERE name IN ('H1 controlled product journey', "
-                                "'F1F browser product width') GROUP BY name ORDER BY name"
+                                "'F1F browser product width', "
+                                "'R4 explicit Literature composition') "
+                                "GROUP BY name ORDER BY name"
                             )
                         ).all()
                     expected = {}
@@ -577,6 +579,8 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
                         expected["F1F browser product width"] = 1
                     if any(Path(spec).name == "h1-product-journey.spec.ts" for spec in specs):
                         expected["H1 controlled product journey"] = 1
+                    if any(Path(spec).name == "r4-literature-consolidation.spec.ts" for spec in specs):
+                        expected["R4 explicit Literature composition"] = 1
                     if dict(markers) != expected:
                         raise RuntimeError(
                             "controlled E2E Projects were not isolated in the qualification database"

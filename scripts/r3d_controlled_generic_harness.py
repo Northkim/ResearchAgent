@@ -60,7 +60,7 @@ from backend.workflow_packages.serialization import (  # noqa: E402
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
 EXPECTED_INITIAL = {
-    "literature-search-local-experimental": ("0.5.0", "0.7.0"),
+    "literature-search-local-experimental": ("0.6.0", "0.8.0"),
     "idea-discovery-local-experimental": ("0.4.0", "0.5.0"),
     "reproduction-experiment-local-experimental": ("0.8.0", "0.11.0"),
     "writing-local-experimental": ("0.5.0", "0.7.0"),
