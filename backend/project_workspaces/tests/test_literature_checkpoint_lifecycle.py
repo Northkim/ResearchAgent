@@ -532,9 +532,7 @@ def test_public_workspace_run_uses_one_attached_interactive_session(
             (capsule / "package-manifest.json").read_text()
         ))
 
-    # runpy.run_path returns a globals copy; the controller resolves internal
-    # calls through the real module globals, so patch those directly.
-    runtime["_execute_queries"].__globals__["_execute_queries"] = execute
+    runtime["_execute_queries"] = execute
     runtime["_cleanup_session"] = lambda **kwargs: calls.__setitem__(
         "close", calls["close"] + 1
     )

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import runpy
 import shutil
@@ -15,6 +16,7 @@ from backend.project_workspaces.tests.test_literature_checkpoint_lifecycle impor
 )
 from backend.project_workspaces.tests.test_sync import (
     _ClientTransport,
+    _DemoClientTransport,
     _literature_capsule,
     _synced_full_research_workspace,
 )
@@ -83,21 +85,28 @@ def test_literature_run_selects_single_attached_interactive_session(
         path.unlink(missing_ok=True)
 
     calls = {"open": 0, "execute": 0, "close": 0}
+    events: list[str] = []
     runtime["_open_session"] = lambda **kwargs: (
-        calls.__setitem__("open", calls["open"] + 1)
+        (events.append("open"), calls.__setitem__("open", calls["open"] + 1))[-1]
         or {"session_id": "session", "session_token": "token"}
     )
 
     def execute(**kwargs) -> None:
+        events.append("execute")
         calls["execute"] += 1
         _write_results(capsule, runtime, manifest)
 
-    # runpy.run_path returns a globals copy; the controller resolves internal
-    # calls through the real module globals, so patch those directly.
-    runtime["_execute_queries"].__globals__["_execute_queries"] = execute
-    runtime["_cleanup_session"] = lambda **kwargs: calls.__setitem__(
-        "close", calls["close"] + 1
-    )
+    runtime["_execute_queries"] = execute
+    runtime["_cleanup_session"] = lambda **kwargs: (
+        events.append("close"), calls.__setitem__("close", calls["close"] + 1)
+    )[-1]
+    original_mark_search_completed = runtime["_mark_search_completed"]
+
+    def mark_search_completed(root: Path) -> None:
+        events.append("completed")
+        original_mark_search_completed(root)
+
+    runtime["_mark_search_completed"] = mark_search_completed
     runtime["_upload_with_fresh_session"] = _stub_upload("receipt-one-session")
     monkeypatch.setenv("REAGENT_FAKE_CODEX_AUTO_CONFIRM", "1")
 
@@ -124,6 +133,10 @@ def test_literature_run_selects_single_attached_interactive_session(
     )
     assert result["status"] == "ROUND_COMPLETED"
     assert calls == {"open": 1, "execute": 1, "close": 1}
+    # Provider capability is created only at plan confirmation and revoked
+    # immediately after the bounded queries, BEFORE SEARCH_COMPLETED is
+    # published — the same Codex TUI continues with no active capability.
+    assert events == ["open", "execute", "close", "completed"]
     # ONE run must open exactly ONE attached interactive Codex session.
     assert len(invoked) == 1
     assert all(interactive for interactive, _ in invoked)
@@ -131,6 +144,19 @@ def test_literature_run_selects_single_attached_interactive_session(
     assert "MVP-LS2 INTERACTIVE_ONE_ROUND" in texts
     assert "AUTO_PLANNING_STAGE" not in texts
     assert "AUTO_SYNTHESIS_STAGE" not in texts
+    # The restored single-session path must bind generation to the immutable
+    # schema contracts (the previous real acceptance defect was Codex writing
+    # exact outputs without receiving the authoritative schemas).
+    for relative in (
+        "workflow/schemas/candidate-papers.schema.json",
+        "workflow/schemas/selected-papers.schema.json",
+        "workflow/schemas/selected-paper-library.schema.json",
+        "workflow/schemas/progress-report.schema.json",
+        "workflow/schemas/round-control.schema.json",
+        "validate_package.py",
+    ):
+        assert relative in texts
+        assert (capsule / relative).is_file()
     control = runtime["_load_control"](capsule, manifest)
     assert control["state"] == "UPLOADED"
     assert control["plan_confirmation_count"] >= 1
@@ -207,9 +233,11 @@ def test_owner_abort_is_safe_and_does_not_finalize(
         capsule / "memory" / "search" / "query_plan.json",
     ):
         path.unlink(missing_ok=True)
-    runtime["_open_session"] = lambda **kwargs: {
-        "session_id": "session", "session_token": "token"
-    }
+    opened: list[dict] = []
+    runtime["_open_session"] = lambda **kwargs: (
+        opened.append(kwargs)
+        or {"session_id": "session", "session_token": "token"}
+    )
     runtime["_cleanup_session"] = lambda **kwargs: None
     monkeypatch.setenv("REAGENT_FAKE_CODEX_ABORT", "1")
     with pytest.raises(workspace_cli.OwnerCheckpointStopped, match="aborted"):
@@ -223,6 +251,10 @@ def test_owner_abort_is_safe_and_does_not_finalize(
         )
     control = runtime["_load_control"](capsule, manifest)
     assert control["state"] == "INTERRUPTED"
+    # Aborting before plan confirmation must never have created a Provider
+    # capability: the scoped search session only exists during a confirmed
+    # bounded query batch.
+    assert opened == []
     assert not list((capsule / "memory/progress/reports").glob("prv2-*.json"))
     assert not list(
         (capsule / "outputs/artifacts/selected-paper-library").glob("sha256-*.json")
@@ -267,3 +299,110 @@ def test_interactive_harness_keeps_stdin_attached_and_has_no_wall_clock_timeout(
     # Harness timeout.
     assert "stdin" not in captured["kwargs"]
     assert "timeout" not in captured["kwargs"]
+
+
+def _knn_like_accidental_demo_state(capsule: Path) -> None:
+    """Recreate the current KNN accidental DEMO planning state (read-only)."""
+
+    manifest = json.loads((capsule / "package-manifest.json").read_text())
+    runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    control = runtime["_load_control"](capsule, manifest)
+    control.update({
+        "mode": "DEMO",
+        "execution_style": "INTERACTIVE",
+        "state": "NOT_STARTED",
+        "last_completed_state": "NOT_STARTED",
+        "plan_confirmation_count": 0,
+    })
+    runtime["_write_control"](capsule, control)
+    (capsule / "outputs/search_plan.md").write_text(
+        "# Search plan — FICTIONAL DEMO EVIDENCE\n\nAccidental planning state.\n",
+        encoding="utf-8",
+    )
+    topic = json.loads(
+        (capsule / "inputs/research_request.json").read_text()
+    )["topic"]
+    fake_codex_cli.write_json(
+        capsule / "memory/search/query_plan.json",
+        {
+            "schema_version": "literature-search-query-plan/v0.1",
+            "status": "READY",
+            "original_topic": topic,
+            "queries": [
+                {"query_id": "query-1", "query": topic},
+                {"query_id": "query-2", "query": f"{topic} transparent evidence"},
+            ],
+        },
+    )
+
+
+def test_restart_round_resets_then_runs_in_the_same_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace, _descriptor, base_transport = _synced_full_research_workspace(
+        tmp_path, enable_local_workflow_sessions=True
+    )
+    capsule, installed = _literature_capsule(workspace)
+    _knn_like_accidental_demo_state(capsule)
+    prompts: list[str] = []
+    monkeypatch.setattr(
+        builtins,
+        "input",
+        lambda prompt: (prompts.append(prompt) or "restart-round"),
+    )
+    captured: dict[str, object] = {}
+
+    def advance(**kwargs):
+        captured["control"] = json.loads(
+            (kwargs["capsule"] / "memory/round-control.json").read_text()
+        )
+        captured["search_plan_exists"] = (
+            kwargs["capsule"] / "outputs/search_plan.md"
+        ).is_file()
+        return {"status": "ROUND_COMPLETED", "report_id": None}
+
+    monkeypatch.setattr(
+        workspace_cli, "_run_literature_interactive_round", advance
+    )
+    result = workspace_cli.run_workflow(
+        workspace_root=workspace,
+        workflow_instance_id=installed["workflow_instance_id"],
+        transport=_DemoClientTransport(base_transport.client),
+        api_url="http://127.0.0.1:8000",
+        mode="DEMO",
+        restart_round=True,
+    )
+    assert result.status == "PROGRESS_SYNCHRONIZED"
+    # Owner confirmation happens before the reset, and the reset completes
+    # BEFORE the round runs in the SAME command (RESET_AND_RUN).
+    assert prompts and "restart-round" in prompts[0]
+    assert captured["control"]["mode"] is None
+    assert captured["control"]["state"] == "NOT_STARTED"
+    assert captured["search_plan_exists"] is False
+
+
+def test_restart_round_reset_completes_before_normal_required(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace, _descriptor, base_transport = _synced_full_research_workspace(
+        tmp_path, enable_local_workflow_sessions=True
+    )
+    capsule, installed = _literature_capsule(workspace)
+    _knn_like_accidental_demo_state(capsule)
+    monkeypatch.setattr(builtins, "input", lambda _prompt: "restart-round")
+
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as error:
+        workspace_cli.run_workflow(
+            workspace_root=workspace,
+            workflow_instance_id=installed["workflow_instance_id"],
+            transport=_DemoClientTransport(base_transport.client),
+            api_url="http://127.0.0.1:8000",
+            restart_round=True,
+        )
+    assert error.value.code == "NORMAL_REQUIRED"
+    # The reset completed before the fail-closed mode gate, so a failed NORMAL
+    # launch leaves the Capsule correctly reset and ready for a clean retry.
+    control = json.loads((capsule / "memory/round-control.json").read_text())
+    assert control["mode"] is None
+    assert control["state"] == "NOT_STARTED"
+    assert not (capsule / "outputs/search_plan.md").exists()

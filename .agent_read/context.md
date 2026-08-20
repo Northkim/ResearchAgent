@@ -4349,3 +4349,18 @@ attached interactive Codex TUIs (previously headless `codex exec`). The KNN
 backend currently runs the isolated-controlled-test profile reporting
 `mode: DEMO`; the authoritative real-owner profile is `local-development`
 (the default), which serves NORMAL when the real OpenAlex proxy is configured.
+
+Final verification (2026-08-21): the restored single-session instruction now
+appends an AUTHORITATIVE OUTPUT CONTRACTS directive binding Codex generation to
+the immutable `workflow/schemas/*` files and `validate_package.py`, closing the
+schema-availability gap on the restored path. The scoped Provider search
+session is created only when a PLAN_CONFIRMED batch is due and revoked
+immediately after that batch, so no Provider capability exists while the TUI
+waits at plan/candidate/finalization checkpoints; NORMAL refreshes the
+short-lived exact-scope consent with the Owner's already-supplied confirmation
+before each activation. `--restart-round` is RESET_AND_RUN: the Owner confirms,
+the reset completes, then the same command proceeds into the run (or fails
+closed with NORMAL_REQUIRED after the reset if the backend is DEMO-only).
+Historical contracts verified: Literature/Idea are single-session TUI;
+Writing/Review/Writing-Revision/Generic Experiment are multi-phase attached-TUI
+contracts from their reviewed introductions (`7d842aa`, `6b94e75`).

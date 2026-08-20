@@ -7672,6 +7672,187 @@ def _publish_literature_checkpoint(
     return artifact, report
 
 
+# The restored single-session instruction names the four output files but does
+# not point Codex at the authoritative schema contracts. The previous real
+# acceptance defect was exactly this: Codex generated exact outputs without
+# receiving the schemas. These files are immutable Capsule bytes the live Codex
+# session can read directly; the directive below binds generation to them and
+# to the package validator, so generation and validation cannot drift.
+_LITERATURE_INTERACTIVE_SCHEMA_DIRECTIVE = """\
+AUTHORITATIVE OUTPUT CONTRACTS. Before final writing, read these immutable
+schema contracts inside this Capsule and conform every generated file exactly:
+- workflow/schemas/candidate-papers.schema.json -> outputs/candidate_papers.json
+- workflow/schemas/selected-papers.schema.json -> outputs/selected_papers.json
+- workflow/schemas/selected-paper-library.schema.json -> governs the
+  content-addressed selected-paper-library/v1 Artifact the launcher builds from
+  the exact validated candidate and selection records after finish
+- workflow/schemas/progress-report.schema.json -> memory/progress/report-draft.json
+- workflow/schemas/round-control.schema.json -> memory/round-control.json
+validate_package.py is the authoritative validator; you may read it to confirm
+field-level rules but do not execute it (the launcher validates with it after
+the session). Generation and validation use the same contracts: no extra or
+missing fields, DEMO records keep openalex_id null, NORMAL records require the
+exact OpenAlex identity, and the report Markdown must contain the six declared
+headings."""
+
+
+def _literature_interactive_instruction(
+    runtime: dict[str, Any],
+    mode: str,
+    *,
+    resume: bool,
+) -> str:
+    """Compose the single-session instruction with the schema contract bound."""
+
+    return (
+        runtime["_interactive_instruction"](mode, resume=resume)
+        + "\n\n"
+        + _LITERATURE_INTERACTIVE_SCHEMA_DIRECTIVE
+    )
+
+
+def _bounded_literature_provider_controller(
+    *,
+    root: Path,
+    base_url: str,
+    manifest: dict[str, Any],
+    runtime: dict[str, Any],
+    mode: str,
+    topic: str,
+    stop: threading.Event,
+    errors: list[BaseException],
+    transport: Any | None = None,
+    consent_confirmation: str | None = None,
+) -> None:
+    """Run bounded Provider transport only while a confirmed plan batch is due.
+
+    The scoped search session is created only after the durable PLAN_CONFIRMED
+    checkpoint appears and is revoked immediately after that batch's queries
+    complete, while the same interactive Codex TUI stays open. Between batches
+    (candidate discussion, optional additional query review) no Provider
+    capability exists in the process. NORMAL mode refreshes the short-lived
+    exact-scope consent with the Owner's already-supplied confirmation so a
+    slow plan discussion cannot expire the authorization.
+    """
+
+    project_id = manifest["experimental_project_identity"]
+    package_identity = {
+        "package_id": manifest["package_id"],
+        "package_checksum": manifest["package_checksum"],
+        "workflow_id": manifest["workflow_id"],
+        "workflow_version": manifest["workflow_version"],
+        "workflow_checksum": manifest["workflow_checksum"],
+    }
+    processed: str | None = None
+    try:
+        while not stop.wait(float(runtime["CONTROL_POLL_SECONDS"])):
+            control = runtime["_load_control"](root, manifest)
+            if control["state"] in {
+                "FINALIZED", "REPORT_FINALIZED", "UPLOADED",
+                "INTERRUPTED", "FAILED",
+            }:
+                return
+            if control["state"] != "PLAN_CONFIRMED":
+                continue
+            if (
+                control["mode"] != mode
+                or control["execution_style"] != "INTERACTIVE"
+                or control["plan_confirmation_count"] < 1
+            ):
+                raise OwnerCheckpointInvalid(
+                    "Confirmed plan scope is inconsistent with the local session"
+                )
+            checksum = control["query_plan_checksum"]
+            plan_path = root / "memory/search/query_plan.json"
+            if (
+                not isinstance(checksum, str)
+                or checksum != runtime["sha256_bytes"](plan_path.read_bytes())
+            ):
+                raise OwnerCheckpointInvalid(
+                    "Confirmed query-plan checksum is invalid"
+                )
+            if checksum == processed:
+                continue
+            queries = runtime["_validate_query_plan"](root, topic)
+            if control["plan_confirmation_count"] == 2 and len(queries) != 3:
+                raise OwnerCheckpointInvalid(
+                    "The optional additional search must remain within query 3"
+                )
+            print(
+                f"[4/6] Search plan confirmed; executing {len(queries)} "
+                "bounded Provider query slots...",
+                flush=True,
+            )
+            session: dict[str, Any] | None = None
+            try:
+                if mode == "NORMAL":
+                    if transport is None or consent_confirmation is None:
+                        raise OwnerCheckpointInvalid(
+                            "Normal Provider capability cannot be activated "
+                            "without the Owner's exact consent"
+                        )
+                    consent = transport.grant_real_provider_consent(
+                        project_id,
+                        package_identity,
+                        confirmation=consent_confirmation,
+                    )
+                    _validate_real_provider_consent(
+                        consent,
+                        project_id=project_id,
+                        package_identity=package_identity,
+                    )
+                session = runtime["_open_session"](
+                    base_url=base_url,
+                    manifest=manifest,
+                    mode=mode,
+                )
+                runtime["_execute_queries"](
+                    root=root,
+                    base_url=base_url,
+                    manifest=manifest,
+                    session=session,
+                    mode=mode,
+                    queries=queries,
+                )
+                processed = checksum
+            finally:
+                if session is not None:
+                    try:
+                        runtime["_cleanup_session"](
+                            base_url=base_url,
+                            manifest=manifest,
+                            session=session,
+                            label="Search",
+                        )
+                    except Exception:
+                        pass
+                    session = None
+            current = runtime["_load_control"](root, manifest)
+            if current["state"] not in {"INTERRUPTED", "FAILED"}:
+                runtime["_mark_search_completed"](root)
+                print(
+                    "[4/6] Candidate metadata is ready; returning control to Codex.",
+                    flush=True,
+                )
+    except BaseException as error:
+        errors.append(error)
+        try:
+            control = runtime["_load_control"](root, manifest)
+            if control["state"] == "INTERRUPTED":
+                return
+            if control["state"] in runtime["COMPLETED_STATES"]:
+                control["last_completed_state"] = control["state"]
+            control.update(
+                {
+                    "state": "FAILED",
+                    "failure_code": "BOUNDED_PROVIDER_CONTROLLER_FAILED",
+                }
+            )
+            runtime["_write_control"](root, control)
+        except Exception:
+            return
+
+
 def _run_literature_interactive_round(
     *,
     capsule: Path,
@@ -7681,6 +7862,8 @@ def _run_literature_interactive_round(
     mode: str,
     codex_executable: str | None,
     resume: bool = False,
+    transport: Any | None = None,
+    consent_confirmation: str | None = None,
 ) -> dict[str, Any]:
     """Run one Literature round as ONE attached interactive Codex session.
 
@@ -7708,24 +7891,21 @@ def _run_literature_interactive_round(
         _read_json(capsule / "inputs/research_request.json"),
         "Literature research request",
     )["topic"]
-    session = runtime["_open_session"](
-        base_url=base_url,
-        manifest=manifest,
-        mode=mode,
-    )
     stop = threading.Event()
     errors: list[BaseException] = []
     controller = threading.Thread(
-        target=runtime["_provider_controller"],
+        target=_bounded_literature_provider_controller,
         kwargs={
             "root": capsule,
             "base_url": base_url,
             "manifest": manifest,
-            "session": session,
+            "runtime": runtime,
             "mode": mode,
             "topic": topic,
             "stop": stop,
             "errors": errors,
+            "transport": transport,
+            "consent_confirmation": consent_confirmation,
         },
         name="reagent-bounded-provider-controller",
     )
@@ -7735,7 +7915,7 @@ def _run_literature_interactive_round(
             _managed_harness(
                 capsule,
                 executable,
-                runtime["_interactive_instruction"](mode, resume=resume),
+                _literature_interactive_instruction(runtime, mode, resume=resume),
                 environment=_capsule_child_environment(),
                 interactive=True,
             )
@@ -7745,15 +7925,6 @@ def _run_literature_interactive_round(
     finally:
         stop.set()
         controller.join(timeout=float(runtime["HTTP_TIMEOUT_SECONDS"]) + 2)
-        try:
-            runtime["_cleanup_session"](
-                base_url=base_url,
-                manifest=manifest,
-                session=session,
-                label="Search",
-            )
-        except Exception:
-            pass
     if controller.is_alive():
         raise OwnerCheckpointInvalid(
             "Bounded Provider controller did not stop cleanly"
@@ -9425,6 +9596,7 @@ def run_workflow(
             provider_work_pending = literature_runtime["_effective_state"](
                 literature_control
             ) in {"NOT_STARTED", "PLAN_CONFIRMED"}
+            consent_confirmation: str | None = None
             if mode_response["mode"] == "NORMAL" and provider_work_pending:
                 confirmation = _confirm_real_provider_disclosure(consent_input)
                 consent_response = transport.grant_real_provider_consent(
@@ -9437,6 +9609,7 @@ def run_workflow(
                     project_id=descriptor["project_id"],
                     package_identity=package_identity,
                 )
+                consent_confirmation = confirmation
             try:
                 coordinated_result = _run_literature_interactive_round(
                     capsule=capsule,
@@ -9445,6 +9618,8 @@ def run_workflow(
                     api_url=api_url,
                     mode=mode,
                     codex_executable=codex_executable,
+                    transport=transport,
+                    consent_confirmation=consent_confirmation,
                 )
             except OwnerCheckpointStopped as error:
                 return WorkflowRunResult(
