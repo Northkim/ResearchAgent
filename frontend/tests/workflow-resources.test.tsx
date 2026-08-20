@@ -136,7 +136,8 @@ test("renders the Real Experiment source repository as an exact required owner-s
   expect(screen.getByText(
     `python reagent_local.py resource stage . <package-path> --workflow-instance ${instance.workflow_instance_id}`,
   )).toBeVisible();
-  expect(screen.getByRole("button", { name: "Copy Experiment Package staging command" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "Copy Experiment Package staging command" })).not.toBeInTheDocument();
+  expect(screen.getByText("Local command template")).toBeVisible();
   expect(screen.getByRole("button", { name: "Use this source" })).toBeDisabled();
   expect(screen.queryByText("Add reference metadata")).not.toBeInTheDocument();
   expect(screen.queryByText("Bind exact Resource")).not.toBeInTheDocument();

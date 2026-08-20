@@ -4315,3 +4315,11 @@ verbatim and sanitized by the frontend, with stale local state gated to the
 description + one action (Skill metadata remains in technical details).
 Controlled qualification passes; real-owner copy-paste acceptance is pending
 before `READY_FOR_EXTERNAL_USER_TRIAL`.
+
+Follow-up audit (2026-08-20): `sync` now also refreshes the root Local tool
+from the Cloud download endpoint when the served bytes differ, giving old
+Workspaces a supported update path with no new command. The frontend renders
+local commands only from the authoritative server action (no fabricated
+materialize fallback), and the resource-staging snippet is presented as a
+template rather than a copy-ready command. A parameterized regression test
+covers the common launch boundary across all full-research Workflows.

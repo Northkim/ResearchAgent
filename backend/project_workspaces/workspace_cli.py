@@ -1948,6 +1948,25 @@ class HTTPWorkspaceSyncTransport:
     def project_status(self, project_id: str) -> dict[str, Any]:
         return self._json_get(f"/projects/{project_id}")
 
+    def local_client_source(self) -> tuple[bytes, str]:
+        """Download the exact Local tool bytes served by Cloud."""
+
+        request = urllib.request.Request(
+            self._base_url + "/local-client/reagent_local.py", method="GET"
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                if response.status != 200:
+                    raise OSError("unexpected response status")
+                if response.geturl() != self._base_url + "/local-client/reagent_local.py":
+                    raise OSError("Local tool download redirect is forbidden")
+                content = response.read(MAX_PACKAGE_BYTES + 1)
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError) as error:
+            raise WorkspaceCLIError(
+                "CLI_DOWNLOAD_FAILED", "Local tool download did not complete", EXIT_CLOUD
+            ) from error
+        return content, sha256_bytes(content)
+
     def download(self, path: str, expected: dict[str, Any] | None = None) -> bytes:
         if not path.startswith("/projects/") or not path.endswith("/download"):
             raise WorkspaceCLIError(
@@ -2467,6 +2486,8 @@ def sync_workspace(
     now: datetime | None = None,
     skill_source_resolver: Callable[[str, str], dict[str, bytes]] | None = None,
 ) -> WorkspaceSyncResult:
+    """Synchronize Cloud configuration, Packages, Skills, and the Local tool."""
+
     workspace, descriptor, cached_bootstrap = load_workspace(workspace_root)
     project_status = getattr(transport, "project_status", None)
     if callable(project_status):
@@ -2485,11 +2506,13 @@ def sync_workspace(
                 _atomic_write_json(path, {**envelope, "local_status": "ACKNOWLEDGED_STALE"})
             else:
                 capsule_result = _sync_result("ACKNOWLEDGED", lock, receipt["status"])
-                return _reconcile_project_skills(
+                result = _reconcile_project_skills(
                     workspace, descriptor, capsule_result, transport,
                     now=now or datetime.now(timezone.utc),
                     source_resolver=skill_source_resolver or _resolve_github_skill_package,
                 )
+                _refresh_workspace_cli_copy(workspace, transport)
+                return result
 
         lock = _load_or_migrate_lock(
             workspace, descriptor, cached_bootstrap, now=now or datetime.now(timezone.utc)
@@ -2536,11 +2559,40 @@ def sync_workspace(
         )
         if capsule_result.acknowledgement_status == "ACK_PENDING":
             return capsule_result
-        return _reconcile_project_skills(
+        result = _reconcile_project_skills(
             workspace, descriptor, capsule_result, transport,
             now=now or datetime.now(timezone.utc),
             source_resolver=skill_source_resolver or _resolve_github_skill_package,
         )
+        _refresh_workspace_cli_copy(workspace, transport)
+        return result
+
+
+def _refresh_workspace_cli_copy(workspace: Path, transport: Any) -> None:
+    """Refresh the root Local tool from Cloud when sync succeeds.
+
+    Uses the existing Cloud download endpoint and atomically replaces the
+    Workspace copy when the served bytes differ, so an existing Workspace
+    receives the current Local CLI through the normal ``sync`` action. Best
+    effort: transports without the capability and transient failures never
+    block configuration synchronization.
+    """
+
+    fetch = getattr(transport, "local_client_source", None)
+    if not callable(fetch):
+        return
+    cli_path = workspace / "reagent_local.py"
+    if cli_path.is_symlink() or not cli_path.is_file():
+        return
+    try:
+        content, checksum = fetch()
+        if sha256_bytes(cli_path.read_bytes()) == checksum:
+            return
+        _atomic_write_bytes(cli_path, content, mode=0o700)
+    except WorkspaceCLIError:
+        raise
+    except Exception:
+        return
 
 
 def validate_sync_plan(document: Any, workspace: dict[str, Any]) -> dict[str, Any]:

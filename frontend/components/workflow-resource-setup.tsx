@@ -10,8 +10,6 @@ import {
 } from "@/api/hooks";
 import type { ProjectWorkflowInstance, WorkflowResourceRequirement } from "@/types/api";
 
-import { CopyCommand } from "./copy-command";
-
 const EXTERNAL_PROVIDERS = ["GITHUB", "HUGGING_FACE"] as const;
 
 function cardinality(requirement: WorkflowResourceRequirement): string {
@@ -209,8 +207,8 @@ export function WorkflowResourceSetup({
               <p className="step-label">Step 3</p>
               <h3 id="experiment-package-step-3">Stage and verify locally</h3>
               <p>After selecting the source, stage the local Experiment Package from your Local Workspace. Replace <code>&lt;package-path&gt;</code> with its local directory.</p>
-              <p className="exact-command-label">Exact local command</p>
-              <CopyCommand command={stageCommand} label="Experiment Package staging command" />
+              <p className="exact-command-label">Local command template</p>
+              <code>{stageCommand}</code>
               <p>The Local Runner verifies the package manifest and checksum. It blocks execution when the source is unresolved or the staged package has drifted. Run the experiment only after this command succeeds.</p>
             </section>
           </div>

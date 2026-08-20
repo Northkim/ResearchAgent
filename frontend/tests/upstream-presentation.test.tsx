@@ -209,3 +209,45 @@ test("manuscript and Review previews prioritize bounded content over identities"
   expect(screen.getByText(/minor issue/)).toBeVisible();
   expect(screen.getAllByText("Add the retained limitation.").length).toBeGreaterThan(0);
 });
+
+test("materialization command is rendered only from the authoritative Cloud action", async () => {
+  vi.spyOn(apiClient, "getWorkflowInputSetup").mockResolvedValue({
+    decision_required: false,
+    current_decision: null,
+  } as never);
+  const instance = workflowInstancesFixture.items[0];
+  const base = {
+    projectId,
+    instance,
+    instances: workflowInstancesFixture.items,
+    projections: projectProgressFixture.instances,
+    requirements: [{
+      requirement_key: "literature_library",
+      artifact_type: "selected-paper-library/v1",
+      schema_constraint: "selected-paper-library/v1",
+      required: true,
+      target_relative_path: "inputs/selected-paper-library.json",
+    }],
+    dependencies: [{
+      binding_id: `artifact-binding-${"7".repeat(32)}`,
+      consumer_workflow_instance_id: instance.workflow_instance_id,
+      requirement_key: "literature_library",
+      artifact_id: `artifact-${"b".repeat(32)}`,
+      expected_checksum: `sha256:${"b".repeat(64)}`,
+      state: "ACTIVE" as const,
+      producer_workflow_instance_id: `wfi-${"a".repeat(32)}`,
+      artifact_type: "selected-paper-library/v1",
+      artifact_schema_version: "selected-paper-library/v1",
+      produced_at: "2026-08-17T01:00:00Z",
+    }],
+  };
+  const { rerender } = render(<Providers><WorkflowInputSetup {...base} code="MATERIALIZE" command="python reagent_local.py artifact materialize . --workflow-instance wfi-11111111111111111111111111111111" /></Providers>);
+  expect(await screen.findByText("python reagent_local.py artifact materialize . --workflow-instance wfi-11111111111111111111111111111111")).toBeVisible();
+
+  rerender(<Providers><WorkflowInputSetup {...base} code="MATERIALIZE" command={null} /></Providers>);
+  expect(screen.queryByText(/artifact materialize/)).not.toBeInTheDocument();
+  expect(screen.getByText(/not available from Cloud yet/)).toBeVisible();
+
+  rerender(<Providers><WorkflowInputSetup {...base} code="CONTINUE" command="python reagent_local.py run . --workflow-instance wfi-11111111111111111111111111111111" /></Providers>);
+  expect(screen.queryByText(/artifact materialize/)).not.toBeInTheDocument();
+});

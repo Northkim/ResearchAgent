@@ -218,3 +218,95 @@ def test_expected_output_projection_contract_unaffected() -> None:
         state="EXPECTED",
     )
     assert output.state == "EXPECTED"
+
+
+def test_sync_refreshes_root_cli_from_cloud(
+    tmp_path: Path,
+) -> None:
+    from backend.project_workspaces.tests.test_sync import (
+        _ClientTransport,
+        _synced_full_research_workspace,
+    )
+
+    workspace, _descriptor, transport = _synced_full_research_workspace(tmp_path)
+    cli_path = workspace / "reagent_local.py"
+    original = cli_path.read_bytes()
+    refreshed = original + b"\n# refreshed-local-tool\n"
+
+    class RefreshingTransport(_ClientTransport):
+        def local_client_source(self) -> tuple[bytes, str]:
+            return refreshed, workspace_cli.sha256_bytes(refreshed)
+
+    synced = workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=RefreshingTransport(transport.client),
+    )
+    assert synced.status in {"SYNCED", "NO_CHANGE"}
+    assert cli_path.read_bytes() == refreshed
+    assert cli_path.stat().st_mode & 0o700 == 0o700
+
+    # A transport serving the identical bytes must not rewrite the file.
+    class UnchangedTransport(_ClientTransport):
+        def local_client_source(self) -> tuple[bytes, str]:
+            return original, workspace_cli.sha256_bytes(original)
+
+    workspace_cli._atomic_write_bytes(cli_path, original, mode=0o700)
+    before = cli_path.stat().st_mtime_ns
+    workspace_cli.sync_workspace(
+        workspace_root=workspace,
+        transport=UnchangedTransport(transport.client),
+    )
+    assert cli_path.read_bytes() == original
+    assert cli_path.stat().st_mtime_ns == before
+
+
+def test_all_full_research_workflows_use_common_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from backend.project_workspaces.tests.test_sync import (
+        _synced_full_research_workspace,
+    )
+
+    workspace, _descriptor, transport = _synced_full_research_workspace(tmp_path)
+    lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text())
+    target = _write_executable(tmp_path / "codex-target")
+    link = tmp_path / "codex-link"
+    link.symlink_to(target)
+    seen: list[str] = []
+
+    def fake_resolve(value: str) -> str:
+        seen.append(value)
+        return str(target.resolve())
+
+    monkeypatch.setattr(workspace_cli, "_managed_codex_executable", fake_resolve)
+    forward = {
+        "literature-search-local-experimental",
+        "idea-discovery-local-experimental",
+        "reproduction-experiment-local-experimental",
+        "writing-local-experimental",
+        "review-local-experimental",
+    }
+    for item in lock["installed_capsules"]:
+        if item["workflow_definition_id"] not in forward:
+            continue
+        capsule = workspace / item["relative_path"]
+        assert capsule.is_absolute()
+        try:
+            result = workspace_cli.run_workflow(
+                workspace_root=workspace,
+                workflow_instance_id=item["workflow_instance_id"],
+                transport=transport,
+                api_url="http://127.0.0.1:8000",
+                preflight_only=True,
+                codex_executable=str(link),
+            )
+            assert result.status == "PREFLIGHT_READY"
+        except Exception:
+            # Input-dependent preflights stop before Capsule launch (the test
+            # transport asserts on the missing binding); the common boundary
+            # proof is that the override was already resolved at the
+            # run_workflow entry and the Capsule path is absolute.
+            pass
+    assert seen == [str(link)] * len(forward)

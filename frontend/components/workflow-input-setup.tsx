@@ -70,7 +70,7 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
   );
 }
 
-export function WorkflowInputSetup({ projectId, instance, instances, projections, requirements, dependencies, command }: {
+export function WorkflowInputSetup({ projectId, instance, instances, projections, requirements, dependencies, command, code }: {
   projectId: string;
   instance: ProjectWorkflowInstance;
   instances: ProjectWorkflowInstance[];
@@ -78,6 +78,7 @@ export function WorkflowInputSetup({ projectId, instance, instances, projections
   requirements: WorkflowArtifactRequirement[];
   dependencies: ArtifactDependencyEdge[];
   command?: string | null;
+  code?: string | null;
 }) {
   const setup = useWorkflowInputSetup(projectId, instance.workflow_instance_id);
   const confirmSetup = useConfirmWorkflowInputSetup(
@@ -112,11 +113,13 @@ export function WorkflowInputSetup({ projectId, instance, instances, projections
       ) : setup.data?.current_decision ? (
         <p>Optional evidence was intentionally left unselected for this pass.</p>
       ) : null}
-      {dependencies.some((edge) => edge.state === "ACTIVE") && setupReady ? (
+      {dependencies.some((edge) => edge.state === "ACTIVE") && setupReady && code === "MATERIALIZE" && command ? (
         <div>
           <p>Prepare verified local copies of the selected research inputs:</p>
-          <CopyCommand command={command ?? "python reagent_local.py artifact materialize . --workflow-instance " + instance.workflow_instance_id} label="input materialization command" />
+          <CopyCommand command={command} label="input materialization command" />
         </div>
+      ) : setupReady && code === "MATERIALIZE" ? (
+        <p>The exact materialization command is not available from Cloud yet.</p>
       ) : null}
     </div>
   );

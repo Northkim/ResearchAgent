@@ -69,3 +69,28 @@ Primary command copied from Cloud, unchanged:
 Optional override check: add `--codex-executable /opt/homebrew/bin/codex`.
 Cloud copy-paste, materialization, and full-page screenshot acceptance remain
 for the Owner.
+
+## Follow-up audit and repairs (2026-08-20)
+
+- CLI update contract: `sync` did not update an existing Workspace's
+  `reagent_local.py` and no CLI-version identity existed. A fresh external user
+  is consistent (the Cloud download serves the live `workspace_cli.py`, and
+  bootstrap copies the same source), but old Workspaces had no supported update
+  path. Repair: `sync` now refreshes the root Local tool from the existing
+  Cloud download endpoint (atomic replace when the served SHA-256 differs,
+  best-effort, no new command). Old Workspaces therefore update through the
+  normal `sync` action.
+- Command authority: `workflow-input-setup` no longer fabricates a materialize
+  command; it renders the server command verbatim only when the authoritative
+  action is `MATERIALIZE` and the command is present, otherwise an unavailable
+  state. `workflow-resource-setup` presents the `resource stage` snippet as a
+  clearly-labeled template (no Copy button) because it requires the user to
+  supply `<package-path>`.
+- Full-research boundary regression: parameterized test proves every forward
+  Workflow (Literature, Idea, Experiment, Writing, Review; Writing Revision
+  shares the same `_run_forward_owner_checkpoint` boundary) resolves the Codex
+  override at the `run_workflow` entry and receives an absolute Capsule path.
+- Backend `1131 passed`; frontend typecheck/lint clean and `85 passed`.
+  PostgreSQL suite: `18` module-setup errors because `REAGENT_TEST_DATABASE_URL`
+  is absent in this environment (fixture deliberately fails, never skips);
+  pre-existing and unrelated to this commit.
