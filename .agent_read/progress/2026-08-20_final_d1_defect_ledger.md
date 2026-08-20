@@ -188,9 +188,9 @@ designed as one coherent path rather than another reviewed-method catalog.
 ### F. Review / Revision evidence contracts
 
 Preserve the completed repairs `D1-REVIEW-CONTRACT-01` and
-`D1-REVISION-CONTRACT-01`; address only the still-open
-`D1-REVIEW-SEMANTICS-01`. Do not regress subset semantics or historical
-publication immutability.
+`D1-REVISION-CONTRACT-01`. `D1-REVIEW-SEMANTICS-01` is also preserved by the
+accepted optional-evidence semantics and its R4 regression. Do not regress
+subset semantics or historical publication immutability.
 
 ### G. Skill / Project lifecycle
 
@@ -217,15 +217,16 @@ file and real-secret rejection.
 ## Reconciliation counts
 
 - Unique root findings/records: **52**.
-- Literal `OPEN`: **3**.
-- `CONFIRMED`: **20**.
-- `CONFIRMED_CROSS_WORKFLOW`: **7**.
-- Unresolved evidenced (`OPEN` + both confirmed statuses): **30**.
-- `FOUND_AND_REPAIRED_DURING_D1`: **4**.
-- `FOUND_AND_REPAIRED_POST_D1`: **10**.
-- `OBSERVATION_NEEDS_CONFIRMATION`: **3**.
-- `EXPECTED_BEHAVIOR`: **1**.
-- `DEFERRED_PRODUCT_DESIGN`: **4**.
+- Literal `OPEN`: **0**.
+- `CONFIRMED`: **0**.
+- `CONFIRMED_CROSS_WORKFLOW`: **0**.
+- Unresolved evidenced (`OPEN` + both confirmed statuses): **0**.
+- `FOUND_AND_REPAIRED_DURING_D1`: **5**.
+- `FOUND_AND_REPAIRED_POST_D1`: **43**.
+- `OBSERVATION_NEEDS_CONFIRMATION`: **1**.
+- `EXPECTED_BEHAVIOR`: **3**.
+- `DEFERRED_PRODUCT_DESIGN`: **0**.
 
 The repaired findings remain in the ledger and do not erase their E9/E8
-occurrence. No overall release/Q1 claim follows from this reconciliation.
+occurrence. R7 qualification closes the authorized consolidated repair program;
+it does not by itself claim release/Q1 qualification.

@@ -4246,3 +4246,38 @@ The protected Owner D1 state was not accessed. The historical Owner Overview
 overlap remains an observation because the bounded long-topic controlled case did
 not reproduce it. R6 verification independence is limited. Safe next phase is R7
 full-system qualification only.
+
+## Post-D1 R7 blocked (2026-08-20)
+
+R7 stopped under `NEW_PRODUCT_DEFECT` on
+`R7-INPUT-SETUP-DECISION-TIMEZONE-01`. PostgreSQL accepted an exact optional-
+evidence setup decision with HTTP 201, but a fresh read invalidated it because
+decision integrity hashes the textual `decided_at` timezone-offset form rather
+than a UTC-normalized instant. The unchanged setup then returned
+`current_decision: null` and materialization failed with
+`INPUT_SETUP_DECISION_REQUIRED`.
+
+No repair, R7 browser run, Owner database access, protected D1 access, migration,
+or publication change followed the stop. All disposable databases were removed.
+R7 test/fixture alignment remains uncommitted together with the failing
+PostgreSQL reload assertion. See
+`.agent_read/progress/2026-08-20_post_d1_r7_blocked.md`.
+
+## Post-D1 R7 and consolidated repair complete (2026-08-20)
+
+The bounded input-setup decision timezone repair is committed as `86abbc1`.
+Exact decision timestamps are canonical aware-UTC instants across PostgreSQL
+offset reloads; real instant, binding-set, omission-set, and tamper changes still
+invalidate the decision. No migration or legacy row rewrite was required.
+
+R7 then passed the full qualified backend/PostgreSQL/public-Workspace/frontend
+matrix, cumulative repository browser scenarios, and the independent B0
+three-viewport runtime/teardown gate. Alembic remains `20260820_0039`; all
+disposable databases, controlled services, ports, and temporary qualification
+roots were cleaned. The Owner database and protected D1 Project were not
+accessed. Detailed evidence is in
+`.agent_read/progress/2026-08-20_post_d1_r7_complete.md`.
+
+Program state: `POST_D1_CONSOLIDATED_REPAIR = PASS`. The ledger preserves one
+`OBSERVATION_NEEDS_CONFIRMATION` (`D1-OVERVIEW-VISUAL-01`) and makes no Q1 or
+release claim.

@@ -1,6 +1,6 @@
 # Post-D1 consolidated repair program
 
-Status: **R2 COMPLETE — R3 NEXT**
+Status: **R7 COMPLETE — POST-D1 CONSOLIDATED REPAIR PASS**
 
 Date: 2026-08-20
 
@@ -37,6 +37,13 @@ Implementation progress through 2026-08-20:
 - R2 governance closure: `be5ac43`.
 - R3 architecture/change packet: `2923b77`.
 - R3A Generic Harness contracts and Workspace-owned state: `e22be88`.
+- R3 completion: `b3ca13d` plus governance `d34e852`.
+- R4 completion: `c9938d3` plus governance `67da8f1`.
+- R5 completion: `758eb6f` plus governance `321d195`.
+- R6 completion: `39f4d72` plus governance `a6d4443`.
+- R7 bounded decision-timezone repair: `86abbc1`.
+- R7 full-system qualification: `c255ce5`; evidence in
+  `2026-08-20_post_d1_r7_complete.md`.
 
 R1B2 publishes forward Idea Definition 0.3 / Capsule 0.4 under migration
 `20260820_0036`. It preserves the valid zero-paper producer Artifact while a
@@ -492,3 +499,50 @@ product behavior and must run the complete controlled verification matrix,
 migration cycle, immutable-publication checks, all four D1 locks, public copied
 Workspace paths, and repository-native browser paths. A new HIGH/CORE defect
 stops under `NEW_PRODUCT_DEFECT`.
+
+## 12. R7 stop — durable input-setup decision timezone integrity
+
+R7 stopped under `NEW_PRODUCT_DEFECT` after PostgreSQL qualification proved
+`R7-INPUT-SETUP-DECISION-TIMEZONE-01`.
+
+The supported input-setup decision endpoint accepted an exact omission decision
+with HTTP 201, but a fresh PostgreSQL read returned the unchanged setup with
+`current_decision: null` and materialization failed with
+`INPUT_SETUP_DECISION_REQUIRED`. Decision integrity currently hashes the textual
+`decided_at` offset form. A `timestamptz` instant created as UTC and reloaded in
+the database session timezone can therefore hash differently despite representing
+the same instant.
+
+No repair was attempted because this is a new CORE durable-decision defect. R7
+E5/E6 did not start after the stop. The full evidence and safety state are in
+`2026-08-20_post_d1_r7_blocked.md`. Resume requires a separately bounded repair
+and PostgreSQL reload regression before R7 continues.
+
+The stop was subsequently resolved under separate Owner authorization by commit
+`86abbc196fe388d1c7f6cd1030d8afbc7bba89dc`. The original stop record remains
+preserved; it is superseded operationally by the passing repair report and R7
+completion record.
+
+## 13. R7 completion and program result
+
+R7 resumed at the first unmet PostgreSQL gate. Same-instant timestamps now
+canonicalize identically across offsets and real `timestamptz` reloads, while
+real timestamp changes, binding changes, omission changes, and tampering still
+invalidate the exact decision. No migration or historical compatibility rewrite
+was needed.
+
+The full qualified backend/PostgreSQL/public-Workspace/frontend/browser matrix
+passed, including all four D1 locks, controlled Generic Experiment admission,
+exact input replacement, explicit optional evidence, Project/Skill lifecycle,
+platform safety, and the cumulative 9/9 repository browser scenarios. B0 passed
+all seven browser/runtime/teardown gates at three viewports. All controlled
+services and temporary state were removed, and the final disposable database
+count is zero.
+
+The authoritative ledger now contains 52 preserved root findings: 43 repaired
+post-D1, 5 repaired during D1, 3 expected safety/semantic behaviors, and 1
+observation that still needs reproduction. There are no remaining OPEN,
+CONFIRMED, CONFIRMED_CROSS_WORKFLOW, or DEFERRED_PRODUCT_DESIGN rows assigned to
+this program. The protected Owner database and D1 Project were not accessed.
+
+Program result: **POST_D1_CONSOLIDATED_REPAIR = PASS**.
