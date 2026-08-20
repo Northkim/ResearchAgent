@@ -469,3 +469,26 @@ contract and still satisfies the program invariants. Other stop statuses are
   and turn the ledger reproductions into failing tests before behavior edits.
 
 R0 status: **PASS_POST_D1_R0_REPAIR_ARCHITECTURE**.
+
+## 11. R6 completion and R7 entry
+
+R6 product and direct qualification commit:
+`39f4d72a67ca52d962bd0dcf552b930ae9e3b0cb`.
+
+Eleven assigned R6 findings passed their direct E1/E2, E5, and E6 acceptance
+cases. The real controlled browser path passed `3/3` against FastAPI, Next.js,
+system Chrome, and a marker-verified disposable PostgreSQL database that was
+dropped. No migration or scientific publication changed; all four accepted D1
+regression locks pass. The protected Owner D1 state was not accessed.
+
+`D1-OVERVIEW-VISUAL-01` remains `OBSERVATION_NEEDS_CONFIRMATION`: its Owner E9
+evidence is preserved, while the controlled long-topic case did not reproduce
+the overlap. The combined historical H1 runner still has stale/failed
+interactive-resume expectations and must be classified in R7; it was not used to
+weaken the scoped R6 E6 gate.
+
+R7 entry baseline is the clean R6 product plus governance commits. R7 changes no
+product behavior and must run the complete controlled verification matrix,
+migration cycle, immutable-publication checks, all four D1 locks, public copied
+Workspace paths, and repository-native browser paths. A new HIGH/CORE defect
+stops under `NEW_PRODUCT_DEFECT`.

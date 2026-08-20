@@ -4227,3 +4227,22 @@ skip); frontend component, TypeScript, ESLint, and production build passed.
 Controlled real-application E6 passed with one browser test and a marked database
 that was dropped. R5 verification independence is limited because the implementing
 session also verified it. Safe next phase is R6 subtractive UX/labels only.
+
+## Post-D1 R6 complete (2026-08-20)
+
+R6 product and direct qualification commit `39f4d72` centralizes explicit
+role-aware Workflow labels, deterministic repeated-role ordinals, forward typed
+output names, exact per-Capsule acknowledgement, completed-outcome priority,
+retired-history hierarchy, report-scoped Activity status, bounded Review
+presentation v0.2, idempotent v4/v3 presentation backfill, and a more compact
+Outputs/Overview layout. No scientific Artifact, binding, Workflow publication,
+or migration changed; Alembic remains `20260820_0039`.
+
+Focused/broader backend evidence passed (119 and 159 tests), the full frontend
+suite passed (21 files / 81 tests), and TypeScript, ESLint, compileall, production
+build, E5 copied Workspace, and controlled real FastAPI/Next.js/system-Chrome E6
+all passed. The marked qualification database was dropped and services stopped.
+The protected Owner D1 state was not accessed. The historical Owner Overview
+overlap remains an observation because the bounded long-topic controlled case did
+not reproduce it. R6 verification independence is limited. Safe next phase is R7
+full-system qualification only.
