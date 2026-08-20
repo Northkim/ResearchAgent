@@ -82,6 +82,16 @@ summary:focus-visible {
   z-index: 20;
 }
 
+.app-sidebar-background {
+  background: #17251f;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 220px;
+}
+
 .brand-lockup {
   align-items: center;
   display: flex;
@@ -2140,6 +2150,7 @@ code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 }
 
 @media (max-width: 780px) {
+  .app-sidebar-background { display: none; }
   .app-sidebar {
     align-items: center;
     flex-direction: row;

@@ -9,7 +9,8 @@ const navigation = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-canvas text-ink">
+    <div className="relative min-h-screen bg-canvas text-ink">
+      <div className="app-sidebar-background" aria-hidden="true" />
       <aside className="app-sidebar">
         <Link href="/projects" className="brand-lockup" aria-label="ReAgent projects">
           <span className="brand-mark">R</span>
