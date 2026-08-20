@@ -181,14 +181,14 @@ repaired invariant carried through every relevant phase.
 
 | Ledger ID | Primary phase | Known root / disposition | Owning components | Required evidence | Migration expectation |
 |---|---|---|---|---|---|
-| D1-SKILL-NAV-01 | R5 | Scoped query survives same-path global navigation. | `frontend/components/app-shell.tsx`, Skills page | navigation component + browser | 0 |
-| D1-SKILL-EMPTY-01 | R5 | Empty state has attach-only actions. | `frontend/app/skills/page.tsx`, Project Overview | component + browser | 0 |
-| D1-SKILL-DETAIL-01 | R5 | M1 omitted a secondary detail surface. | user-Skill API/page | API/component/browser | 0 |
-| D1-SKILL-LIFECYCLE-01 | R5 | Backend delete seam exists; safe associated-record policy/UX must be proven. | `backend/user_skills.py`, routers, Skills page | service/API/PostgreSQL/browser | 0 expected |
-| D1-SKILL-SUBTRACTIVE-01 | R5 | Audit first; do not infer behavior from unbounded visual concern. | Skills UI | bounded screenshot review | 0 |
-| D1-PROJECT-NAV-01 | R5 | Current-task CTA displaced stable Project entry. | Project list/navigation | component + browser | 0 |
-| D1-LOCAL-GUIDANCE-IA-01 | R5 | Contextual Help and global guide evolved independently. | project Help, global Local guide | IA component + browser | 0 |
-| D1-PROJECT-LIFECYCLE-01 | R5 | Cloud deletion lifecycle absent. | Project service/repository/router/UI; FK ownership | service/API/PostgreSQL/local-orphan E2E/browser | 0 expected; stop if schema ownership is insufficient |
+| D1-SKILL-NAV-01 | R5 COMPLETE | Unscoped global Skills uses an exact `/skills` destination and escapes scoped state. | `frontend/components/app-shell.tsx`, Skills page | component + E6 browser | 0 |
+| D1-SKILL-EMPTY-01 | R5 COMPLETE | Scoped empty state provides one compact global-library/Add path. | `frontend/app/skills/page.tsx`, Project Overview | component + E6 browser | 0 |
+| D1-SKILL-DETAIL-01 | R5 COMPLETE | Bounded detail shows purpose, Project usage, source, and secondary provenance. | user-Skill API/page | API/component/E6 browser | 0 |
+| D1-SKILL-LIFECYCLE-01 | R5 COMPLETE | Attached deletion fails safely; unattached exact Skill deletion succeeds. | `backend/user_skills.py`, routers, Skills page | service/API/PostgreSQL/E6 browser | 0 |
+| D1-SKILL-SUBTRACTIVE-01 | R5 AUDITED | Bounded screenshots reproduce no distinct remaining defect; technical and destructive controls remain secondary. | Skills UI | bounded E6 screenshot review | 0 |
+| D1-PROJECT-NAV-01 | R5 COMPLETE | Project identity opens Overview; Help is an explicit secondary destination. | Project list/navigation | component + E6 browser | 0 |
+| D1-LOCAL-GUIDANCE-IA-01 | R5 COMPLETE | Project Help is contextual; global Local Guide is generic reference. | project Help, global Local guide | component + build + browser review | 0 |
+| D1-PROJECT-LIFECYCLE-01 | R5 COMPLETE | One exact transaction removes Project-owned relational Cloud state, preserves global records, and never accesses Local files. | Project service/UoW/router/UI; Workspace preflight | service/API/PostgreSQL/E5 orphan/E6 browser | 0 |
 | D1-LOCAL-ORCHESTRATION-01 | R2 COMPLETE | Public Local `run` composes sync, exact materialization, pending recovery, managed Harness phase, finalization, and bounded upload; low-level commands remain diagnostics. | `workspace_cli.py` | controlled high-level command, cancellation, exact materialization, D1 locks | 0 |
 | D1-INPUT-FRESH-01 | R1 | Positive invariant, not a defect. | binding/materialization services | exact no-auto-latest regression | 0 |
 | D1-INPUT-RECONCILE-01 | R1 | No ownership-proven atomic A→B replacement. | Artifact reference service, `workspace_cli.py` | managed vs ambiguous replacement tests + E5 | 0 |

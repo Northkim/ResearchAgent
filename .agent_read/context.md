@@ -4205,3 +4205,25 @@ marked PostgreSQL upgrade/downgrade/re-upgrade, public Workspace materialization
 fake-Harness finalization, downstream exact selection, frontend build, and all
 four D1 locks pass. The protected Owner D1 database and Project were untouched.
 ADR 0054 governs explicit Literature composition. Safe next phase is R5 only.
+
+## Post-D1 R5 complete (2026-08-20)
+
+R5 adds a bounded Owner-managed Skill detail/lifecycle surface, stable Project
+and global-Skills navigation, distinct contextual Project Help versus the generic
+Local Guide, and explicit Cloud-only Project deletion. Skill deletion remains
+detach-first; deleting one Project removes only its associations and never a
+global User Skill, reviewed publication, or ExperimentCapability.
+
+Project deletion is centralized at the Unit-of-Work persistence boundary and
+qualified transactionally against marked disposable PostgreSQL. A deleted
+Project's old Local Workspace is detected by exact Cloud identity before the
+Workspace write boundary and fails with `PROJECT_NOT_FOUND`; it is never deleted,
+rewritten, rebound, or used to recreate the Project. No migration or immutable
+publication changed; Alembic remains `20260820_0039` and the protected Owner D1
+database/Project were not accessed.
+
+Focused backend and all four D1 locks passed (94 passed, one opt-in/environment
+skip); frontend component, TypeScript, ESLint, and production build passed.
+Controlled real-application E6 passed with one browser test and a marked database
+that was dropped. R5 verification independence is limited because the implementing
+session also verified it. Safe next phase is R6 subtractive UX/labels only.
