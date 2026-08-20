@@ -6,7 +6,12 @@ from datetime import UTC, datetime
 import pytest
 
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
-from backend.progress_reports.contracts import ChainState, ValidationStatus
+from backend.progress_reports.contracts import (
+    ChainState,
+    ProgressStatus,
+    ValidationStatus,
+    UploadedProgressReport,
+)
 from backend.progress_reports.contracts import (
     ACCEPTED_REPORT_MEDIA_TYPE,
     PROGRESS_REPORT_SCHEMA_V1,
@@ -64,6 +69,110 @@ def test_upload_retains_original_and_reupload_is_idempotent(tmp_path) -> None:
     assert len(database.progress_reports) == 1
     assert stored is not None
     assert _service(database, storage).read_original(stored) == report_bytes(report)
+
+
+def test_terminal_completed_supersedes_stale_in_progress_checkpoint(tmp_path) -> None:
+    database = InMemoryDatabase()
+    storage = LocalFilesystemArtifactStorage(tmp_path / "artifacts")
+    service = _service(database, storage)
+    checkpoint = native_report(
+        status=ProgressStatus.IN_PROGRESS,
+        current_state="SEARCH_PLAN_DECISION_REQUIRED",
+    )
+    checkpoint_receipt = service.upload(upload_envelope(checkpoint))
+    assert checkpoint_receipt.validation_status is ValidationStatus.ACCEPTED
+
+    terminal = native_report(
+        status=ProgressStatus.COMPLETED,
+        current_state="Round completed with selected papers.",
+    )
+    terminal_receipt = service.upload(upload_envelope(terminal))
+    assert terminal_receipt.validation_status is ValidationStatus.ACCEPTED
+    assert terminal_receipt.chain_state is ChainState.VALID_CHAIN
+    assert terminal_receipt.accepted_for_projection
+    assert terminal_receipt.warning_count > 0
+    projection = service.get_projection(project_id=terminal.project_id)
+    assert projection is not None
+    assert projection.latest_accepted_report_id == terminal.report_id
+    assert projection.latest_status is ProgressStatus.COMPLETED
+
+    # A second COMPLETED report for the same round remains an incompatible
+    # conflict even after supersession.
+    competing = native_report(
+        status=ProgressStatus.COMPLETED,
+        current_state="A different completed outcome.",
+    )
+    competing_receipt = service.upload(upload_envelope(competing))
+    assert competing_receipt.validation_status is ValidationStatus.REJECTED
+    assert competing_receipt.chain_state is ChainState.BRANCHED_HISTORY
+
+    # Re-uploading the exact terminal report is an idempotent replay.
+    replay = service.upload(upload_envelope(terminal))
+    assert replay.idempotent_replay
+    assert replay.receipt_id == terminal_receipt.receipt_id
+
+
+def test_previously_rejected_exact_report_is_revalidated_on_retry(tmp_path) -> None:
+    database = InMemoryDatabase()
+    storage = LocalFilesystemArtifactStorage(tmp_path / "artifacts")
+    service = _service(database, storage)
+    checkpoint = native_report(
+        status=ProgressStatus.IN_PROGRESS,
+        current_state="SEARCH_PLAN_DECISION_REQUIRED",
+    )
+    assert service.upload(upload_envelope(checkpoint)).accepted_for_projection
+
+    terminal = native_report(
+        status=ProgressStatus.COMPLETED,
+        current_state="Round completed with selected papers.",
+    )
+    envelope = upload_envelope(terminal)
+    # Simulate the exact report being retained as REJECTED under the pre-repair
+    # chain rule (BRANCHED_HISTORY against the stale checkpoint).
+    unit_of_work = InMemoryUnitOfWork(database)
+    rejected = UploadedProgressReport(
+        receipt_id="progress-receipt-" + "e" * 64,
+        project_id=terminal.project_id,
+        workflow_instance_id="wfi-00000000000000000000000000000001",
+        package_id=terminal.package_id,
+        package_checksum=terminal.package_checksum,
+        report_id=terminal.report_id,
+        report_checksum=terminal.report_checksum,
+        report_schema_version=terminal.schema_version,
+        original_report_checksum=envelope.original_report_checksum,
+        original_report_size=envelope.original_report_size,
+        original_report_media_type=envelope.original_report_media_type,
+        original_storage_key="fictional/report.json",
+        envelope_checksum=envelope.envelope_checksum,
+        uploaded_at="2026-08-03T09:00:00Z",
+        received_at="2026-08-03T09:00:00Z",
+        uploader_type="local-cli",
+        client_version="reagent-local-literature-search/0.2.0",
+        source_path_hint="memory/progress/reports/fictional-round.json",
+        validation_status=ValidationStatus.REJECTED,
+        validation_errors=("another accepted report already occupies this execution round",),
+        validation_warnings=(),
+        chain_state=ChainState.BRANCHED_HISTORY,
+        accepted_for_projection=False,
+        normalized_record=_service(database, storage)._normalizer.normalize(
+            envelope.original_report_bytes()
+        ),
+    )
+    unit_of_work.progress_reports.append(rejected)
+    unit_of_work.commit()
+
+    retried = service.upload(envelope)
+    assert retried.validation_status is ValidationStatus.ACCEPTED
+    assert retried.chain_state is ChainState.VALID_CHAIN
+    assert not retried.idempotent_replay
+    assert retried.receipt_id != rejected.receipt_id
+    projection = service.get_projection(project_id=terminal.project_id)
+    assert projection is not None
+    assert projection.latest_accepted_report_id == terminal.report_id
+
+    replay = service.upload(envelope)
+    assert replay.idempotent_replay
+    assert replay.receipt_id == retried.receipt_id
 
 
 def test_legacy_v1_upload_retains_bytes_and_projects_with_explicit_warnings(

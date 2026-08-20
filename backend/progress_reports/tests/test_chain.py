@@ -105,6 +105,58 @@ def test_duplicate_round_is_branch_and_non_monotonic_round_is_incomplete() -> No
     )
 
 
+def test_terminal_completed_supersedes_stale_in_progress_checkpoint() -> None:
+    validator = ProgressReportChainValidator()
+    checkpoint = native_report(
+        status=ProgressStatus.IN_PROGRESS,
+        current_state="Search plan review.",
+    )
+    terminal = native_report(
+        status=ProgressStatus.COMPLETED,
+        current_state="Round completed with selected papers.",
+    )
+    result = validator.validate(_normalized(terminal), (_accepted(checkpoint),))
+    assert result.state is ChainState.VALID_CHAIN
+    assert result.accepted_for_projection
+    assert "supersedes" in result.warnings[0]
+
+
+def test_completed_duplicate_of_completed_round_still_branches() -> None:
+    validator = ProgressReportChainValidator()
+    first = native_report(
+        status=ProgressStatus.COMPLETED,
+        current_state="First completed outcome.",
+    )
+    second = native_report(
+        status=ProgressStatus.COMPLETED,
+        current_state="Second completed outcome.",
+    )
+    assert (
+        validator.validate(_normalized(second), (_accepted(first),)).state
+        is ChainState.BRANCHED_HISTORY
+    )
+
+
+def test_checkpoint_with_accepted_successor_blocks_supersession() -> None:
+    validator = ProgressReportChainValidator()
+    checkpoint = native_report(status=ProgressStatus.IN_PROGRESS)
+    successor = native_report(
+        execution_round=2,
+        previous=checkpoint,
+        context_before_checksum=checkpoint.context_after_checksum,
+    )
+    terminal = native_report(
+        status=ProgressStatus.COMPLETED,
+        current_state="A different terminal outcome.",
+    )
+    result = validator.validate(
+        _normalized(terminal),
+        (_accepted(checkpoint), _accepted(successor)),
+    )
+    assert result.state is ChainState.BRANCHED_HISTORY
+    assert not result.accepted_for_projection
+
+
 def test_completed_round_requires_explicit_new_request_reason() -> None:
     validator = ProgressReportChainValidator()
     first = native_report(status=ProgressStatus.COMPLETED)

@@ -45,11 +45,31 @@ class ProgressReportChainValidator:
             item for item in same_scope if item.execution_round == candidate.execution_round
         )
         if same_round and all(item.report_id != candidate.report_id for item in same_round):
-            return ChainValidation(
-                state=ChainState.BRANCHED_HISTORY,
-                accepted_for_projection=False,
-                errors=("another accepted report already occupies this execution round",),
+            # A terminal COMPLETED report supersedes a stale IN_PROGRESS
+            # checkpoint of the same exact scope/round when that checkpoint has
+            # no accepted successor. This is the round's eventual outcome, not
+            # a competing branch: two COMPLETED reports for one round remain a
+            # conflict, and any accepted later round chained from the
+            # checkpoint blocks the supersession.
+            supersedable = all(
+                item.status is ProgressStatus.IN_PROGRESS
+                and not any(
+                    other.previous_report_id == item.report_id
+                    for other in normalized_history
+                )
+                for item in same_round
             )
+            if not (
+                candidate.status is ProgressStatus.COMPLETED and supersedable
+            ):
+                return ChainValidation(
+                    state=ChainState.BRANCHED_HISTORY,
+                    accepted_for_projection=False,
+                    errors=("another accepted report already occupies this execution round",),
+                )
+            superseding_checkpoint = True
+        else:
+            superseding_checkpoint = False
 
         legacy = candidate.source_schema_version == PROGRESS_REPORT_SCHEMA_V1
         if candidate.execution_round == 1:
@@ -70,6 +90,14 @@ class ProgressReportChainValidator:
             return ChainValidation(
                 state=ChainState.VALID_CHAIN,
                 accepted_for_projection=True,
+                warnings=(
+                    (
+                        "terminal report supersedes an earlier IN_PROGRESS "
+                        "checkpoint for this execution round",
+                    )
+                    if superseding_checkpoint
+                    else ()
+                ),
             )
 
         if candidate.previous_report_id is None:
@@ -151,4 +179,12 @@ class ProgressReportChainValidator:
         return ChainValidation(
             state=ChainState.VALID_CHAIN,
             accepted_for_projection=True,
+            warnings=(
+                (
+                    "terminal report supersedes an earlier IN_PROGRESS "
+                    "checkpoint for this execution round",
+                )
+                if superseding_checkpoint
+                else ()
+            ),
         )

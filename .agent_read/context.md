@@ -4364,3 +4364,17 @@ closed with NORMAL_REQUIRED after the reset if the backend is DEMO-only).
 Historical contracts verified: Literature/Idea are single-session TUI;
 Writing/Review/Writing-Revision/Generic Experiment are multi-phase attached-TUI
 contracts from their reviewed introductions (`7d842aa`, `6b94e75`).
+
+Progress upload lifecycle repair (2026-08-21): the real KNN NORMAL round was
+rejected at upload with `PROGRESS_REPORT_UPLOAD / CONFLICT` because Cloud still
+held an ACCEPTED stale IN_PROGRESS round-1 checkpoint (uploaded by the old
+coordinator), so the terminal COMPLETED report was classified BRANCHED_HISTORY.
+Repairs: the chain validator now lets a terminal COMPLETED report supersede a
+stale same-round IN_PROGRESS checkpoint with no accepted successor (a second
+COMPLETED remains a conflict); the projection and client accepted-history
+comparison keep the round's terminal report; `_recover_progress_backlog`
+re-uploads a local terminal report that supersedes a stale checkpoint;
+previously-REJECTED exact reports are re-validated on retry instead of replaying
+their rejection; and the capsule upload path now raises the accurate
+`PROGRESS_UPLOAD_CONFLICT` message ("finalized and preserved locally ... no
+research work needs to be repeated") instead of INTERNAL_FAILURE.

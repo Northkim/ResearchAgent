@@ -406,3 +406,51 @@ def test_restart_round_reset_completes_before_normal_required(
     assert control["mode"] is None
     assert control["state"] == "NOT_STARTED"
     assert not (capsule / "outputs/search_plan.md").exists()
+
+
+def test_finalized_upload_failure_raises_accurate_partial_success_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workspace, capsule, _descriptor, _installed, manifest, _control, executable = _fixture(
+        tmp_path
+    )
+    runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    control = runtime["_load_control"](capsule, manifest)
+    control.update({
+        "state": "NOT_STARTED",
+        "last_completed_state": "NOT_STARTED",
+        "plan_confirmation_count": 0,
+        "query_plan_checksum": None,
+        "search_result_checksums": [],
+    })
+    runtime["_write_control"](capsule, control)
+    for path in (
+        capsule / "outputs" / "search_plan.md",
+        capsule / "memory" / "search" / "query_plan.json",
+    ):
+        path.unlink(missing_ok=True)
+    runtime["_open_session"] = lambda **kwargs: {
+        "session_id": "session", "session_token": "token"
+    }
+    runtime["_execute_queries"] = lambda **kwargs: _write_results(
+        capsule, runtime, manifest
+    )
+    runtime["_cleanup_session"] = lambda **kwargs: None
+    runtime["_upload_with_fresh_session"] = lambda **kwargs: (_ for _ in ()).throw(
+        RuntimeError("simulated upload CONFLICT")
+    )
+    monkeypatch.setenv("REAGENT_FAKE_CODEX_AUTO_CONFIRM", "1")
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as error:
+        workspace_cli._run_literature_interactive_round(
+            capsule=capsule,
+            manifest=manifest,
+            runtime=runtime,
+            api_url="http://127.0.0.1:8000",
+            mode="DEMO",
+            codex_executable=str(executable),
+        )
+    assert error.value.code == "PROGRESS_UPLOAD_CONFLICT"
+    assert "preserved" in str(error.value)
+    control = runtime["_load_control"](capsule, manifest)
+    assert control["state"] == "REPORT_FINALIZED"
+    assert control["receipt_id"] is None

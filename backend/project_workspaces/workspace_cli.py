@@ -6372,8 +6372,22 @@ def _accepted_cloud_progress(
             raise _identity("CLOUD_PROGRESS_INVALID", "Cloud Progress package scope is invalid")
         accepted.append(uploaded)
     accepted.sort(key=lambda item: (
-        item["normalized_record"]["execution_round"], item["report_id"]
+        item["normalized_record"]["execution_round"],
+        item["normalized_record"].get("completed_at") or "",
+        1 if item["normalized_record"].get("status") == "COMPLETED" else 0,
+        item["report_id"],
     ))
+    # A terminal COMPLETED report supersedes a stale IN_PROGRESS checkpoint of
+    # the same round (server chain contract). Keep only each round's
+    # representative so the contiguous-chain comparison and local reconciliation
+    # treat the round as occupied once by its terminal report.
+    representative: dict[int, dict[str, Any]] = {}
+    for item in accepted:
+        representative[int(item["normalized_record"]["execution_round"])] = item
+    accepted = [
+        representative[round_number]
+        for round_number in sorted(representative)
+    ]
     rounds = [item["normalized_record"]["execution_round"] for item in accepted]
     if rounds != list(range(1, len(accepted) + 1)):
         raise _identity("CLOUD_PROGRESS_INVALID", "Accepted Cloud Progress is not a contiguous chain")
@@ -6651,6 +6665,7 @@ def _recover_progress_backlog(
     )
     if len(accepted) > len(reports):
         raise _identity("PROGRESS_HISTORY_CONFLICT", "Cloud Progress is ahead of local history")
+    pending: list[dict[str, Any]] = []
     for report, uploaded in zip(reports, accepted):
         if (
             report["report_id"] != uploaded.get("report_id")
@@ -6658,7 +6673,23 @@ def _recover_progress_backlog(
             or report["execution_round"]
             != uploaded.get("normalized_record", {}).get("execution_round")
         ):
-            raise _identity("PROGRESS_HISTORY_CONFLICT", "Cloud and local Progress histories diverge")
+            # A terminal COMPLETED local report supersedes a stale IN_PROGRESS
+            # Cloud checkpoint of the same round (server chain contract); the
+            # local report is re-uploaded below so Cloud accepts the terminal
+            # outcome instead of treating the round as a branch.
+            uploaded_record = uploaded.get("normalized_record") or {}
+            if (
+                report.get("status") == "COMPLETED"
+                and uploaded_record.get("status") == "IN_PROGRESS"
+                and report.get("execution_round")
+                == uploaded_record.get("execution_round")
+            ):
+                pending.append(report)
+                continue
+            raise _identity(
+                "PROGRESS_HISTORY_CONFLICT",
+                "Cloud and local Progress histories diverge",
+            )
         _store_progress_acknowledgement(
             workspace=workspace,
             descriptor=descriptor,
@@ -6667,10 +6698,25 @@ def _recover_progress_backlog(
             report=report,
             receipt=_history_receipt(uploaded),
         )
+    pending.extend(reports[len(accepted):])
     uploaded_count = 0
-    for report in reports[len(accepted):]:
-        if report["execution_round"] != len(accepted) + uploaded_count + 1:
+    next_expected_round = (
+        accepted[-1]["normalized_record"]["execution_round"] if accepted else 0
+    ) + 1
+    superseded_rounds = {
+        item["normalized_record"]["execution_round"]
+        for item in accepted
+        if item["normalized_record"].get("status") == "IN_PROGRESS"
+    }
+    for report in pending:
+        pending_round = report["execution_round"]
+        if (
+            pending_round not in superseded_rounds
+            and pending_round != next_expected_round
+        ):
             raise _identity("LOCAL_PROGRESS_GAP", "Pending Progress does not continue Cloud history")
+        if pending_round == next_expected_round:
+            next_expected_round += 1
         receipt = transport.upload_progress_report(
             descriptor["project_id"],
             installed["workflow_instance_id"],
@@ -6694,12 +6740,18 @@ def _recover_progress_backlog(
             installed=installed,
             manifest=manifest,
         )
-        expected_count = len(accepted) + uploaded_count + 1
-        if len(confirmed) != expected_count:
-            raise _identity("CLOUD_PROGRESS_INVALID", "Cloud did not acknowledge the uploaded Progress round")
-        latest = confirmed[-1]
+        latest = next(
+            (
+                item
+                for item in confirmed
+                if item["normalized_record"]["execution_round"]
+                == report["execution_round"]
+            ),
+            None,
+        )
         if (
-            latest.get("report_id") != report["report_id"]
+            latest is None
+            or latest.get("report_id") != report["report_id"]
             or latest.get("report_checksum") != report["report_checksum"]
             or receipt.get("receipt_id") != latest.get("receipt_id")
         ):
@@ -7949,12 +8001,19 @@ def _run_literature_interactive_round(
     )
     runtime["_mark_report_finalized"](capsule, report_path)
     runtime["_validate_package"](capsule)
-    receipt = runtime["_upload_with_fresh_session"](
-        root=capsule,
-        base_url=base_url,
-        manifest=manifest,
-        report_path=report_path,
-    )
+    try:
+        receipt = runtime["_upload_with_fresh_session"](
+            root=capsule,
+            base_url=base_url,
+            manifest=manifest,
+            report_path=report_path,
+        )
+    except Exception as error:
+        raise WorkspaceCLIError(
+            "PROGRESS_UPLOAD_CONFLICT",
+            "Cloud Progress upload did not complete; the finalized local report was preserved",
+            EXIT_CLOUD,
+        ) from error
     runtime["_mark_uploaded"](capsule, receipt)
     runtime["_validate_package"](capsule)
     return {"status": "ROUND_COMPLETED", "report_id": receipt["report_id"]}
@@ -11909,6 +11968,10 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
     "PROGRESS_UPLOAD_FAILED": (
         "Cloud Progress acknowledgement did not complete.",
         "Keep the local Workflow and Artifact unchanged, verify the loopback backend, then retry the same printed run command. ReAgent will continue from the Cloud's latest accepted execution round without starting the Agent Harness for a locally completed result.",
+    ),
+    "PROGRESS_UPLOAD_CONFLICT": (
+        "The Literature Search results were finalized and preserved locally, but ReAgent could not confirm the final Cloud upload.",
+        "No research work needs to be repeated. Keep the Workspace unchanged and retry the same command to reconcile the upload.",
     ),
     "LOCAL_PROGRESS_GAP": (
         "The local append-only Progress history is missing or mislinks an execution round.",

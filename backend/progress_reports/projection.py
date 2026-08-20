@@ -8,6 +8,7 @@ from .contracts import (
     PROGRESS_REPORT_SCHEMA_V1,
     PROJECTION_SCHEMA_VERSION,
     ZERO_HASH,
+    ProgressStatus,
     ProjectProgressProjection,
     UploadedProgressReport,
 )
@@ -29,6 +30,7 @@ def build_projection(
             key=lambda item: (
                 item.normalized_record.execution_round,  # type: ignore[union-attr]
                 item.normalized_record.completed_at,  # type: ignore[union-attr]
+                1 if item.normalized_record.status is ProgressStatus.COMPLETED else 0,  # type: ignore[union-attr]
                 item.report_id,
             ),
         )

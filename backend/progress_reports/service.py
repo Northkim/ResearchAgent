@@ -85,8 +85,15 @@ class ProgressReportService:
             and item.report_checksum == envelope.report_checksum
             and item.original_report_checksum == envelope.original_report_checksum
         )
-        if len(exact_historical) == 1:
-            historical = exact_historical[0]
+        # Only an ACCEPTED exact row is an idempotent replay. A previously
+        # REJECTED exact row is retained audit evidence but must be re-validated
+        # on retry so a later change of blocking conditions (for example a stale
+        # IN_PROGRESS checkpoint superseded by the terminal report) can admit it.
+        accepted_exact = tuple(
+            item for item in exact_historical if item.accepted_for_projection
+        )
+        if len(accepted_exact) == 1:
+            historical = accepted_exact[0]
             derived_replay = False
             if (
                 not artifact_declarations
@@ -113,7 +120,7 @@ class ProgressReportService:
                 self._commit()
             self._assert_artifact_replay(historical.receipt_id, artifact_declarations)
             return self._receipt(historical, idempotent=True)
-        if len(exact_historical) > 1:
+        if len(accepted_exact) > 1:
             raise ValueError("immutable Progress Report identity is ambiguous")
         resolved_instance_id = self._resolve_workflow_identity(
             envelope,
@@ -129,7 +136,7 @@ class ProgressReportService:
             report_checksum=envelope.report_checksum,
             original_report_checksum=envelope.original_report_checksum,
         )
-        if replay is not None:
+        if replay is not None and replay.accepted_for_projection:
             derived_replay = False
             if (
                 not artifact_declarations
