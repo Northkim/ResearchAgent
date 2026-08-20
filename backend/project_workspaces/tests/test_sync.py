@@ -1002,6 +1002,7 @@ def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
         exit_code = namespace["main"]([
             "run", ".", "--workflow",
             "literature-search-local-experimental",
+            "--mode", "demo",
         ])
 
     assert exit_code == workspace_cli.EXIT_SUCCESS
@@ -1051,6 +1052,7 @@ def test_owner_search_completed_state_projects_resume_and_generic_run_uses_it(
         workflow_instance_id=installed["workflow_instance_id"],
         transport=_DemoClientTransport(transport.client),
         api_url="http://127.0.0.1:8000",
+        mode="DEMO",
     )
     assert result.status == "PROGRESS_SYNCHRONIZED"
     assert captured["state"] == "SEARCH_COMPLETED"
@@ -1091,6 +1093,7 @@ def test_failed_generic_harness_marks_valid_post_search_interruption(
             workflow_instance_id=installed["workflow_instance_id"],
             transport=_DemoClientTransport(transport.client),
             api_url="http://127.0.0.1:8000",
+            mode="DEMO",
         )
     assert raised.value.code == "LOCAL_PROGRESS_INVALID"
     control = json.loads((capsule / "memory/round-control.json").read_text())

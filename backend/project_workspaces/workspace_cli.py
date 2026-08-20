@@ -2575,6 +2575,15 @@ _CLI_UPDATE_REQUIRED_MESSAGE = (
     "Your research state was not changed."
 )
 
+_LITERATURE_NORMAL_REQUIRED_MESSAGE = (
+    "Normal real Literature Search is required for this Project.\n\n"
+    "ReAgent is currently configured for Demo mode, which uses fictional "
+    "evidence.\n\n"
+    "Next: enable real Provider access on this backend, then run the same "
+    "command again.\n\n"
+    "No research state was changed."
+)
+
 
 def _refresh_workspace_cli_copy(workspace: Path, transport: Any) -> None:
     """Refresh the root Local tool from Cloud before any confirmation.
@@ -6765,28 +6774,53 @@ def _managed_harness(
     *,
     environment: dict[str, str],
     timeout_seconds: float | None = None,
+    interactive: bool = False,
 ) -> None:
     """Run one bounded noninteractive Codex phase and regain control on exit."""
 
-    command = [
-        executable,
-        "exec",
-        "--ephemeral",
-        "--skip-git-repo-check",
-        "--sandbox",
-        "workspace-write",
-        "--config",
-        'approval_policy="never"',
-        "-C",
-        str(root),
-        instruction,
-    ]
+    if interactive:
+        # Attached interactive Codex TUI: the Agent Harness owns the human
+        # conversation. ReAgent supplies the pinned phase instruction and keeps
+        # stdin/stdout/stderr attached.
+        if Path(executable).name == "codex" and not (
+            sys.stdin.isatty() and sys.stdout.isatty() and sys.stderr.isatty()
+        ):
+            raise OwnerCheckpointInvalid(
+                "Interactive Codex requires an attached terminal; run this "
+                "command from a terminal"
+            )
+        command = [
+            executable,
+            "--sandbox",
+            "workspace-write",
+            "--ask-for-approval",
+            "on-request",
+            "--no-alt-screen",
+            "-C",
+            str(root),
+            instruction,
+        ]
+    else:
+        command = [
+            executable,
+            "exec",
+            "--ephemeral",
+            "--skip-git-repo-check",
+            "--sandbox",
+            "workspace-write",
+            "--config",
+            'approval_policy="never"',
+            "-C",
+            str(root),
+            instruction,
+        ]
     run_options: dict[str, Any] = {
         "cwd": root,
         "env": environment,
-        "stdin": subprocess.DEVNULL,
         "check": False,
     }
+    if not interactive:
+        run_options["stdin"] = subprocess.DEVNULL
     if timeout_seconds is not None:
         run_options["timeout"] = timeout_seconds
     try:
@@ -7081,8 +7115,40 @@ def _literature_checkpoint_base(
     }
 
 
-def _literature_synthesis_instruction() -> str:
-    return f"""REAGENT LITERATURE CHECKPOINT SYNTHESIS
+def _literature_planning_instruction(mode: str) -> str:
+    return f"""REAGENT LITERATURE PLANNING - INTERACTIVE PHASE
+
+This is one bounded attached interactive Codex session for the Literature
+Search plan phase. Read AGENT.md, the pinned Workflow/Skill, the immutable
+inputs, and the current round-control in this Capsule. Do not use the network
+and do not perform Provider work in this phase.
+
+Present directly to the Owner, in the conversation:
+- your interpretation of the immutable topic;
+- 2-3 bounded query variants with families (DIRECT/SUPPORTING/CONTEXTUAL);
+- search bounds (at most 3 queries, 5 results per query, 15 candidates);
+- screening rules and the metadata/abstract-only evidence boundary.
+
+Ask the Owner to approve, revise, narrow, broaden, explain, or abort. Do not
+write any plan file before the Owner approves.
+
+After explicit Owner approval, write:
+- outputs/search_plan.md with all six required headings and a
+  {"FICTIONAL DEMO EVIDENCE" if mode == "DEMO" else "NORMAL"} mode label;
+- memory/search/query_plan.json with schema literature-search-query-plan/v0.1,
+  status READY, the exact original topic, and ordered query-1..N entries;
+- atomically update memory/round-control.json: state and last_completed_state
+  to PLAN_CONFIRMED, increment plan_confirmation_count by one, set
+  query_plan_checksum to the SHA-256 of the query plan file, and preserve every
+  other field.
+
+Do not create candidates, selections, reports, receipts, or context changes.
+Stop and exit normally as soon as the plan files and PLAN_CONFIRMED state are
+complete."""
+
+
+def _literature_screening_instruction(mode: str) -> str:
+    return f"""REAGENT LITERATURE SCREENING - INTERACTIVE PHASE
 
 This is one bounded active Harness phase. Read the staged exact files under
 inputs/, memory/search/, memory/context.md, memory/progress/report-draft.json,
@@ -7097,7 +7163,14 @@ The authoritative output contracts are staged with you and govern exactly:
 - validate_package.py is the authoritative validator; you may read it, but do
   not execute it (the coordinator validates exactly after this phase).
 
-From the normalized provider results, write these exact staged proposal files:
+From the normalized provider results, present the candidates directly to the
+Owner in this conversation: bounded retrieved/deduplicated/likely-relevant/
+uncertain/excluded counts and major themes. Let the Owner inspect inclusion and
+exclusion reasoning, revise criteria, or change dispositions. Do not write the
+proposal before the Owner has provided an explicit disposition
+(SELECTED/UNCERTAIN/EXCLUDED) for every candidate.
+
+After the Owner provides the dispositions, write these exact staged files:
 - outputs/candidate_papers.json: exactly the candidate-papers/v0.2 contract;
   top-level fields exactly schema_version, mode, candidates; every candidate
   exactly the declared fields with candidate_id matching
@@ -7107,7 +7180,8 @@ From the normalized provider results, write these exact staged proposal files:
   proposal, not approval).
 - outputs/literature_search_report.md: the proposed final report.
 - memory/proposed-screening.json: exactly the two fields schema_version and
-  decisions, one decision per candidate, each decision exactly candidate_id,
+  decisions; one decision per candidate reflecting the Owner's explicit
+  dispositions from this conversation; each decision exactly candidate_id,
   disposition SELECTED/UNCERTAIN/EXCLUDED, and a concise evidence-grounded
   reason; no extra fields.
 - memory/context.md: the proposed final local-context state; preserve the exact
@@ -7119,8 +7193,25 @@ From the normalized provider results, write these exact staged proposal files:
   creating a Progress Report.
 
 Preserve exact provider identities/checksums and query order. Never claim full
-text was read. Do not label the proposal as an Owner decision. Stop normally as
-soon as these files are complete and conform to the staged contracts."""
+text was read. Do not label the proposal as a final decision beyond recording
+the Owner's explicit dispositions. Stop and exit normally as soon as these
+files are complete and conform to the staged contracts."""
+
+
+def _literature_finalization_instruction(mode: str) -> str:
+    return f"""REAGENT LITERATURE FINALIZATION - INTERACTIVE PHASE
+
+This is one bounded attached interactive Codex session for finalization. Read
+the staged exact proposal files in this directory and present the final result
+to the Owner in the conversation: selected/uncertain/excluded counts and the
+metadata/abstract-only evidence boundary.
+
+Wait for the Owner to type the unambiguous command: finish
+Before finish, do not finalize anything and do not modify any files.
+
+After the Owner types finish, confirm completion and exit normally. The
+coordinator performs deterministic validation, publication, and Progress upload
+after this phase."""
 
 
 def _prepare_literature_synthesis_checkpoint(
@@ -7184,9 +7275,12 @@ def _prepare_literature_synthesis_checkpoint(
         _managed_harness(
             staged,
             executable,
-            _literature_synthesis_instruction(),
+            _literature_screening_instruction(
+                (control.get("mode") or "NORMAL")
+            ),
             environment=_capsule_child_environment(),
             timeout_seconds=LITERATURE_ACTIVE_HARNESS_TIMEOUT_SECONDS,
+            interactive=True,
         )
         validator = runpy.run_path(str(capsule / "validate_package.py"))
         validator["_validate_literature_outputs"](staged)
@@ -7444,91 +7538,6 @@ def _sync_literature_progress(
     )
 
 
-def _literature_screening_decision(
-    root: Path,
-    checkpoint: dict[str, Any],
-    *,
-    decision_input: DecisionInput,
-) -> dict[str, Any]:
-    candidates = _object(
-        _read_json(root / "staged/outputs/candidate_papers.json"),
-        "Literature candidates",
-    )["candidates"]
-    decisions = [dict(item) for item in _literature_proposed_decisions(root)]
-    by_id = {item["candidate_id"]: item for item in candidates}
-    while True:
-        counts = {
-            name: sum(1 for item in decisions if item["disposition"] == name)
-            for name in ("SELECTED", "UNCERTAIN", "EXCLUDED")
-        }
-        selected_titles = [
-            str(by_id[item["candidate_id"]].get("title"))
-            for item in decisions if item["disposition"] == "SELECTED"
-        ]
-        _present(
-            "Literature screening is ready",
-            [
-                f"Candidates: {len(candidates)}",
-                (
-                    f"Disposition: {counts['SELECTED']} selected, "
-                    f"{counts['UNCERTAIN']} uncertain, {counts['EXCLUDED']} excluded"
-                ),
-                "Selected: " + ("; ".join(selected_titles) if selected_titles else "none"),
-                "Evidence boundary: metadata and available abstracts; no full text",
-            ],
-            explanation=(
-                "Approval durably records this exact candidate disposition. "
-                "Final publication remains a separate Owner decision."
-            ),
-        )
-        decision = decision_input("Approve / Revise / Explain / Abort: ").strip().casefold()
-        if decision in {"approve", "approved"}:
-            return _write_literature_checkpoint(root, {
-                **checkpoint,
-                "phase": "FINALIZATION_DECISION_REQUIRED",
-                "decision_revision": 1,
-                "decisions": decisions,
-                "staged_files": _literature_staged_files(root),
-            })
-        if decision == "explain":
-            print(
-                "This records the exact candidate set and each scientific "
-                "disposition; it does not finalize or upload the paper library.",
-                flush=True,
-            )
-            continue
-        if decision == "abort":
-            raise OwnerCheckpointStopped(
-                "Owner selected ABORT; the exact screening checkpoint remains pending"
-            )
-        if decision != "revise":
-            print("Choose Approve, Revise, Explain, or Abort.", flush=True)
-            continue
-        revision = decision_input(
-            f"Candidate number (1-{len(candidates)}) and Selected/Uncertain/Excluded: "
-        ).strip().split()
-        if len(revision) != 2 or not revision[0].isdigit():
-            print("Enter a candidate number followed by one disposition.", flush=True)
-            continue
-        index = int(revision[0]) - 1
-        disposition = revision[1].upper()
-        if not 0 <= index < len(candidates) or disposition not in {
-            "SELECTED", "UNCERTAIN", "EXCLUDED"
-        }:
-            print("The candidate number or disposition is invalid.", flush=True)
-            continue
-        reason = decision_input("Brief scientific reason: ").strip()
-        if not reason:
-            print("A scientific reason is required.", flush=True)
-            continue
-        candidate_id = candidates[index]["candidate_id"]
-        for item in decisions:
-            if item["candidate_id"] == candidate_id:
-                item["disposition"] = disposition
-                item["reason"] = reason
-                break
-
-
 def _apply_literature_decisions_to_staged_outputs(
     root: Path, checkpoint: dict[str, Any]
 ) -> None:
@@ -7689,10 +7698,16 @@ def _advance_literature_checkpoint_workflow(
             _managed_harness(
                 capsule,
                 executable,
-                runtime["_planning_instruction"](mode),
+                _literature_planning_instruction(mode),
                 environment=_capsule_child_environment(),
                 timeout_seconds=LITERATURE_ACTIVE_HARNESS_TIMEOUT_SECONDS,
+                interactive=True,
             )
+            control = runtime["_load_control"](capsule, manifest)
+            if runtime["_effective_state"](control) != "PLAN_CONFIRMED":
+                raise OwnerCheckpointInvalid(
+                    "Interactive plan phase did not reach Owner confirmation"
+                )
             topic = _object(
                 _read_json(capsule / "inputs/research_request.json"),
                 "Literature research request",
@@ -7704,37 +7719,8 @@ def _advance_literature_checkpoint_workflow(
                 ),
                 capsule=capsule,
                 manifest=manifest,
-                current_state="SEARCH_PLAN_DECISION_REQUIRED",
-                completed_work=["Prepared an exact bounded Literature search plan"],
-                next_action="Review the search plan",
-            )
-            _sync_literature_progress(
-                root=_literature_checkpoint_root(
-                    workspace, installed["workflow_instance_id"]
-                ),
-                workspace=workspace, descriptor=descriptor, installed=installed,
-                capsule=capsule, manifest=manifest, transport=transport,
-            )
-            plan = (capsule / "outputs/search_plan.md").read_text(encoding="utf-8")
-            _natural_approval(
-                "Literature search plan is ready",
-                [
-                    f"Queries: {len(queries)}",
-                    "Evidence boundary: metadata and available abstracts; no full text",
-                    plan[:600].strip(),
-                ],
-                explanation="ReAgent will open Provider access only for these bounded queries.",
-                decision_input=decision_input,
-            )
-            control = runtime["_mark_plan_confirmed"](capsule)
-            _append_literature_progress(
-                root=_literature_checkpoint_root(
-                    workspace, installed["workflow_instance_id"]
-                ),
-                capsule=capsule,
-                manifest=manifest,
                 current_state="SEARCH_PLAN_APPROVED",
-                completed_work=["Owner approved the exact bounded search plan"],
+                completed_work=["Owner approved the exact bounded search plan through Codex"],
                 next_action="Run the approved Provider queries",
             )
             _sync_literature_progress(
@@ -7790,22 +7776,16 @@ def _advance_literature_checkpoint_workflow(
             codex_executable=codex_executable,
         )
         if checkpoint["phase"] == "SCREENING_DECISION_REQUIRED":
-            _append_literature_progress(
-                root=root,
-                capsule=capsule,
-                manifest=manifest,
-                current_state="CANDIDATE_SCREENING_DECISION_REQUIRED",
-                completed_work=["Completed bounded Provider retrieval without repetition"],
-                next_action="Review the exact candidate dispositions",
-            )
-            _sync_literature_progress(
-                root=root,
-                workspace=workspace, descriptor=descriptor, installed=installed,
-                capsule=capsule, manifest=manifest, transport=transport,
-            )
-            checkpoint = _literature_screening_decision(
-                root, checkpoint, decision_input=decision_input
-            )
+            # The interactive screening phase recorded the Owner's exact
+            # dispositions in the conversation; validate and persist them.
+            decisions = _literature_proposed_decisions(root)
+            checkpoint = _write_literature_checkpoint(root, {
+                **checkpoint,
+                "phase": "FINALIZATION_DECISION_REQUIRED",
+                "decision_revision": 1,
+                "decisions": decisions,
+                "staged_files": _literature_staged_files(root),
+            })
             _apply_literature_decisions_to_staged_outputs(root, checkpoint)
             checkpoint = _write_literature_checkpoint(root, {
                 **checkpoint,
@@ -7816,7 +7796,7 @@ def _advance_literature_checkpoint_workflow(
                 capsule=capsule,
                 manifest=manifest,
                 current_state="FINALIZATION_DECISION_REQUIRED",
-                completed_work=["Owner recorded the exact candidate disposition"],
+                completed_work=["Owner recorded the exact candidate disposition through Codex"],
                 next_action="Review and finalize the selected paper library",
             )
             _sync_literature_progress(
@@ -7825,25 +7805,13 @@ def _advance_literature_checkpoint_workflow(
                 capsule=capsule, manifest=manifest, transport=transport,
             )
         if checkpoint["phase"] == "FINALIZATION_DECISION_REQUIRED":
-            counts = {
-                name: sum(
-                    1 for item in checkpoint["decisions"]
-                    if item["disposition"] == name
-                )
-                for name in ("SELECTED", "UNCERTAIN", "EXCLUDED")
-            }
-            _natural_approval(
-                "Literature result is ready to finalize",
-                [
-                    f"Selected: {counts['SELECTED']}",
-                    f"Uncertain: {counts['UNCERTAIN']}",
-                    f"Excluded: {counts['EXCLUDED']}",
-                    "Complete candidate evidence remains in the Local Workspace.",
-                ],
-                explanation=(
-                    "Approval publishes the exact selected paper library and bounded Progress."
-                ),
-                decision_input=decision_input,
+            _managed_harness(
+                root / "staged",
+                _managed_codex_executable(codex_executable),
+                _literature_finalization_instruction(mode),
+                environment=_capsule_child_environment(),
+                timeout_seconds=LITERATURE_ACTIVE_HARNESS_TIMEOUT_SECONDS,
+                interactive=True,
             )
             _artifact, report = _publish_literature_checkpoint(
                 root=root,
@@ -8690,6 +8658,8 @@ def run_workflow(
     api_url: str,
     preflight_only: bool = False,
     codex_executable: str | None = None,
+    mode: str | None = None,
+    restart_round: bool = False,
     consent_input: Callable[[str], str] = input,
 ) -> WorkflowRunResult:
     """Explicitly preflight and enter one exact installed Workflow Capsule."""
@@ -9275,9 +9245,31 @@ def run_workflow(
             literature_runtime = runpy.run_path(
                 str(capsule / "legacy_reagent_local.py")
             )
+            requested_mode = (mode or "NORMAL").upper()
+            if requested_mode not in {"NORMAL", "DEMO"}:
+                raise WorkspaceCLIError(
+                    "RUN_MODE_INVALID",
+                    "Run mode must be NORMAL or DEMO",
+                    EXIT_VALIDATION,
+                )
+            if restart_round:
+                literature_runtime["_reset_round"](capsule, manifest)
             literature_control = literature_runtime["_load_control"](
                 capsule, manifest
             )
+            if mode_response["mode"] != requested_mode:
+                if requested_mode == "NORMAL":
+                    raise WorkspaceCLIError(
+                        "NORMAL_REQUIRED",
+                        _LITERATURE_NORMAL_REQUIRED_MESSAGE,
+                        EXIT_VALIDATION,
+                    )
+                raise WorkspaceCLIError(
+                    "DEMO_REQUIRED",
+                    "Demo mode is not enabled on this backend for this Project.",
+                    EXIT_VALIDATION,
+                )
+            mode = requested_mode
             provider_work_pending = literature_runtime["_effective_state"](
                 literature_control
             ) in {"NOT_STARTED", "PLAN_CONFIRMED"}
@@ -9398,9 +9390,21 @@ def run_workflow(
                     ),
                     package_identity,
                 )
-                if mode_response["mode"] == "DEMO":
-                    command.extend(["--mode", "demo"])
-                else:
+                requested_mode = (mode or "NORMAL").upper()
+                if mode_response["mode"] != requested_mode:
+                    if requested_mode == "NORMAL":
+                        raise WorkspaceCLIError(
+                            "NORMAL_REQUIRED",
+                            _LITERATURE_NORMAL_REQUIRED_MESSAGE,
+                            EXIT_VALIDATION,
+                        )
+                    raise WorkspaceCLIError(
+                        "DEMO_REQUIRED",
+                        "Demo mode is not enabled on this backend for this Project.",
+                        EXIT_VALIDATION,
+                    )
+                command.extend(["--mode", requested_mode.lower()])
+                if requested_mode == "NORMAL":
                     confirmation = _confirm_real_provider_disclosure(consent_input)
                     consent_response = transport.grant_real_provider_consent(
                         descriptor["project_id"],
@@ -9553,6 +9557,8 @@ def continue_workflow(
     api_url: str,
     preflight_only: bool = False,
     codex_executable: str | None = None,
+    mode: str | None = None,
+    restart_round: bool = False,
     consent_input: Callable[[str], str] = input,
 ) -> WorkflowRunResult:
     """Compose the safe normal Local path; low-level operations remain available."""
@@ -9584,6 +9590,8 @@ def continue_workflow(
         api_url=api_url,
         preflight_only=preflight_only,
         codex_executable=codex_executable,
+        mode=mode,
+        restart_round=restart_round,
         consent_input=consent_input,
     )
 
@@ -10173,6 +10181,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--api-url", default="http://127.0.0.1:8000")
     run.add_argument("--preflight-only", action="store_true")
     run.add_argument("--codex-executable")
+    run.add_argument("--mode", choices=("normal", "demo"))
+    run.add_argument("--restart-round", action="store_true")
     run.add_argument("--json", action="store_true")
     return parser
 
@@ -10271,6 +10281,8 @@ def main(argv: list[str] | None = None) -> int:
                 api_url=args.api_url,
                 preflight_only=args.preflight_only,
                 codex_executable=args.codex_executable,
+                mode=args.mode,
+                restart_round=args.restart_round,
             )
             json_output = args.json
         else:

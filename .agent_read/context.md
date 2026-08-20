@@ -4331,3 +4331,14 @@ re-downloading the current Local tool from Project Help and running sync once.
 required-but-failed CLI update never marks the Workspace ready. The current
 KNN Workspace CLI is the pre-fix `fa95d11` source and needs the one-time
 migration before Cloud copy-paste acceptance.
+
+Interactive Codex restore (2026-08-20): Literature now runs attached interactive
+Codex TUI phases (planning, screening, finalization) with the pinned phase
+instruction supplied automatically and the Owner conversing directly with
+Codex; durable checkpoints separate the phases so Owner dwell never holds a
+Codex process. The headless AUTO_PLANNING/AUTO_SYNTHESIS `codex exec` transcript
+path was removed. The root `run` defaults to NORMAL and fails closed
+(`NORMAL_REQUIRED`) when the backend offers Demo; `--mode demo` is the explicit
+Demo path, and `--restart-round` reuses the reviewed reset semantics. The KNN
+backend currently reports `mode: DEMO`, so the normal run must be preceded by
+configuring real Provider access (or explicitly opting into Demo).

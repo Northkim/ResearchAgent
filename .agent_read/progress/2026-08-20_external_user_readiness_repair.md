@@ -120,3 +120,38 @@ Backend `1134 passed`; frontend `85 passed`; Alembic sole head unchanged.
 The current KNN Workspace root CLI (SHA `b773c0fbe4ae6a96`) matches the
 pre-runtime-fix `fa95d11` source: it is LEGACY_PRE_SELF_UPDATE and requires the
 one-time migration before the Cloud copy-paste acceptance.
+
+## Interactive Codex restore and NORMAL/DEMO enforcement (2026-08-20)
+
+The timeout repair had routed Literature through headless `codex exec` phases
+(AUTO_PLANNING/AUTO_SYNTHESIS), printing the raw harness transcript instead of
+opening the intended attached interactive Codex TUI. Restored the reviewed
+interactive contract per phase:
+
+- `_managed_harness` gained an interactive mode launching the attached Codex
+  TUI (`codex --sandbox workspace-write --ask-for-approval on-request
+  --no-alt-screen -C <root> <instruction>`) with stdin/stdout/stderr attached,
+  still bounded by the per-phase active-work timeout. ReAgent no longer parses
+  Owner answers; the Agent Harness owns the conversation.
+- New per-phase interactive instructions: planning (Owner approves the plan in
+  Codex; Codex writes the plan and PLAN_CONFIRMED), screening (Owner provides
+  dispositions in the conversation; Codex writes the exact proposal), and
+  finalization (Owner types `finish`). Durable checkpoints separate the phases,
+  so Owner dwell never holds a Codex process and the timeout/resource-holding
+  defect does not regress. The ReAgent Approve/Revise/Explain prompts were
+  removed (`_literature_screening_decision` deleted).
+- NORMAL/DEMO: the root `run` command now defaults to NORMAL and fails closed
+  (`NORMAL_REQUIRED`) when the backend offers Demo mode; explicit `--mode demo`
+  is the only way to run Demo. Advanced `--mode` and `--restart-round` (reviewed
+  `_reset_round` semantics) flags were added to the root run. The KNN backend
+  currently returns `mode: DEMO` (isolated-controlled-test profile), so the
+  normal run fails closed until real Provider access is configured.
+- Fake Harness updated for the interactive instructions; lifecycle tests
+  rewritten; new `test_literature_interactive_harness.py` proves interactive
+  selection (no AUTO_PLANNING_STAGE), automatic prompt handoff, `finish`
+  requirement, and NORMAL fail-closed.
+
+Backend `1138 passed`; static gates PASS. Controlled real-Codex PTY run
+confirms the Codex TUI opens through ReAgent with no `codex exec` banner and no
+AUTO_PLANNING transcript; completing the Owner approval inside the TUI is the
+real-owner acceptance step.

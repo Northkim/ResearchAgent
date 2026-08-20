@@ -383,6 +383,19 @@ def compatibility_command(arguments: list[str]) -> int | None:
     return None
 
 
+def mark_plan_confirmed(root: Path) -> None:
+    control = json.loads((root / "memory/round-control.json").read_text())
+    control.update(
+        {
+            "state": "PLAN_CONFIRMED",
+            "last_completed_state": "PLAN_CONFIRMED",
+            "plan_confirmation_count": int(control.get("plan_confirmation_count") or 0) + 1,
+            "query_plan_checksum": file_checksum(root / "memory/search/query_plan.json"),
+        }
+    )
+    write_json(root / "memory/round-control.json", control)
+
+
 def main() -> int:
     compatibility = compatibility_command(sys.argv[1:])
     if compatibility is not None:
@@ -421,6 +434,22 @@ def main() -> int:
             },
         )
         (root / "memory/owner-decisions.json").unlink()
+    elif "LITERATURE PLANNING - INTERACTIVE" in instruction:
+        plan(root)
+        mark_plan_confirmed(root)
+    elif "LITERATURE SCREENING - INTERACTIVE" in instruction:
+        synthesize(root)
+        owner = json.loads((root / "memory/owner-decisions.json").read_text())
+        write_json(
+            root / "memory/proposed-screening.json",
+            {
+                "schema_version": "reagent.literature-screening-proposal/v0.1",
+                "decisions": owner["decisions"],
+            },
+        )
+        (root / "memory/owner-decisions.json").unlink()
+    elif "LITERATURE FINALIZATION - INTERACTIVE" in instruction:
+        return 0
     else:
         return 2
     return 0

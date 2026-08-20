@@ -113,21 +113,23 @@ def test_screening_checkpoint_survives_long_owner_dwell_and_resume(
     assert pending["phase"] == "SCREENING_DECISION_REQUIRED"
     assert pending["decision_revision"] == 0
 
-    fake_elapsed_seconds = 21 * 60
-
-    def decide(_prompt: str) -> str:
-        assert fake_elapsed_seconds > 20 * 60
-        return "approve"
-
-    approved = workspace_cli._literature_screening_decision(
-        root, pending, decision_input=decide
-    )
+    # The interactive screening phase recorded the Owner's exact dispositions
+    # in the conversation; the coordinator validates and persists them after
+    # the Harness has exited, so Owner dwell never holds the Harness.
+    decisions = workspace_cli._literature_proposed_decisions(root)
+    approved = workspace_cli._write_literature_checkpoint(root, {
+        **pending,
+        "phase": "FINALIZATION_DECISION_REQUIRED",
+        "decision_revision": 1,
+        "decisions": decisions,
+        "staged_files": workspace_cli._literature_staged_files(root),
+    })
     assert approved["phase"] == "FINALIZATION_DECISION_REQUIRED"
     exact = list(approved["decisions"])
 
     original = workspace_cli._managed_harness
     workspace_cli._managed_harness = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("resume repeated synthesis")
+        AssertionError("resume repeated the interactive screening phase")
     )
     try:
         _root, resumed = workspace_cli._prepare_literature_synthesis_checkpoint(
@@ -208,42 +210,37 @@ def test_provider_is_released_before_screening_wait_and_queries_do_not_repeat(
     monkeypatch.setattr(workspace_cli.runpy, "run_path", run_path)
     transport = _ProgressTransport()
 
-    def stop_at_owner(_prompt: str) -> str:
-        assert calls == {"open": 1, "execute": 1, "close": 1}
-        return "abort"
-
-    with pytest.raises(workspace_cli.OwnerCheckpointStopped):
-        workspace_cli._advance_literature_checkpoint_workflow(
-            workspace=workspace,
-            descriptor=descriptor,
-            installed=installed,
-            capsule=capsule,
-            manifest=manifest,
-            transport=transport,
-            api_url="http://127.0.0.1:8000",
-            mode="DEMO",
-            codex_executable=str(executable),
-            decision_input=stop_at_owner,
-        )
+    first = workspace_cli._advance_literature_checkpoint_workflow(
+        workspace=workspace,
+        descriptor=descriptor,
+        installed=installed,
+        capsule=capsule,
+        manifest=manifest,
+        transport=transport,
+        api_url="http://127.0.0.1:8000",
+        mode="DEMO",
+        codex_executable=str(executable),
+        decision_input=lambda _prompt: "approve",
+    )
+    assert first["status"] == "COMPLETED"
     assert calls == {"open": 1, "execute": 1, "close": 1}
-    assert transport.uploaded_rounds == [1]
 
     runtime["_open_session"] = lambda **kwargs: (_ for _ in ()).throw(
-        AssertionError("completed queries were repeated")
+        AssertionError("completed queries were repeated on replay")
     )
-    with pytest.raises(workspace_cli.OwnerCheckpointStopped):
-        workspace_cli._advance_literature_checkpoint_workflow(
-            workspace=workspace,
-            descriptor=descriptor,
-            installed=installed,
-            capsule=capsule,
-            manifest=manifest,
-            transport=transport,
-            api_url="http://127.0.0.1:8000",
-            mode="DEMO",
-            codex_executable=str(executable),
-            decision_input=lambda _prompt: "abort",
-        )
+    replay = workspace_cli._advance_literature_checkpoint_workflow(
+        workspace=workspace,
+        descriptor=descriptor,
+        installed=installed,
+        capsule=capsule,
+        manifest=manifest,
+        transport=transport,
+        api_url="http://127.0.0.1:8000",
+        mode="DEMO",
+        codex_executable=str(executable),
+        decision_input=lambda _prompt: "approve",
+    )
+    assert replay["status"] == "COMPLETED"
     assert calls["execute"] == 1
 
 
@@ -300,7 +297,7 @@ def test_synthesis_staged_context_carries_authoritative_contracts(
         (staged / "workflow/schemas/proposed-screening.schema.json").read_text()
     )
     assert proposal_schema == workspace_cli.LITERATURE_PROPOSED_SCREENING_SCHEMA
-    instruction = workspace_cli._literature_synthesis_instruction()
+    instruction = workspace_cli._literature_screening_instruction("DEMO")
     assert "workflow/schemas/candidate-papers.schema.json" in instruction
     assert "workflow/schemas/proposed-screening.schema.json" in instruction
     assert "do" in instruction and "execute it" in instruction
@@ -424,7 +421,6 @@ def test_exact_checkpoint_finalizes_and_uploads_progress_once(
             return super().upload_progress_report(*args, **kwargs)
 
     transport = Transport()
-    decisions = iter(("approve", "approve"))
     result = workspace_cli._advance_literature_checkpoint_workflow(
         workspace=workspace,
         descriptor=descriptor,
@@ -435,19 +431,19 @@ def test_exact_checkpoint_finalizes_and_uploads_progress_once(
         api_url="http://127.0.0.1:8000",
         mode="DEMO",
         codex_executable=str(executable),
-        decision_input=lambda _prompt: next(decisions),
+        decision_input=lambda _prompt: "approve",
     )
     assert result["status"] == "COMPLETED"
-    assert transport.uploaded_rounds == [1, 2, 3]
-    assert transport.declarations[:2] == [[], []]
-    assert len(transport.declarations[2]) == 1
-    assert transport.declarations[2][0]["artifact_type"] == "selected-paper-library/v1"
+    assert transport.uploaded_rounds == [1, 2]
+    assert transport.declarations[:1] == [[]]
+    assert len(transport.declarations[1]) == 1
+    assert transport.declarations[1][0]["artifact_type"] == "selected-paper-library/v1"
     root = workspace_cli._literature_checkpoint_root(workspace, INSTANCE_ID)
     reports = workspace_cli._validated_literature_checkpoint_reports(
         root, capsule, manifest
     )
     assert [item["status"] for item in reports] == [
-        "IN_PROGRESS", "IN_PROGRESS", "COMPLETED"
+        "IN_PROGRESS", "COMPLETED"
     ]
     assert workspace_cli._validated_local_progress_reports(capsule, manifest) == []
     # The immutable Capsule contract remains at its exact FINALIZED state;
@@ -456,7 +452,7 @@ def test_exact_checkpoint_finalizes_and_uploads_progress_once(
     receipts = list(
         (workspace / workspace_cli.PROGRESS_RECEIPTS_ROOT / INSTANCE_ID).glob("*.json")
     )
-    assert len(receipts) == 3
+    assert len(receipts) == 2
     owner = json.loads((capsule / "memory/owner-decisions.json").read_text())
     assert owner["decision_revision"] == 1
     assert owner["candidate_set_checksum"] == workspace_cli.sha256_bytes(
@@ -482,7 +478,7 @@ def test_exact_checkpoint_finalizes_and_uploads_progress_once(
         ),
     )
     assert replay["status"] == "COMPLETED"
-    assert transport.uploaded_rounds == [1, 2, 3]
+    assert transport.uploaded_rounds == [1, 2]
     assert len(artifacts) == 1
 
 
@@ -577,7 +573,6 @@ def test_public_workspace_run_uses_durable_checkpoint_phases(
             assert closed.status_code in {200, 204}, closed.text
             return uploaded.json()
 
-    decisions = iter(("approve", "approve", "approve"))
     transport = Transport(base_transport.client)
     result = workspace_cli.run_workflow(
         workspace_root=workspace,
@@ -585,7 +580,8 @@ def test_public_workspace_run_uses_durable_checkpoint_phases(
         transport=transport,
         api_url="http://127.0.0.1:8000",
         codex_executable=str(executable),
-        consent_input=lambda _prompt: next(decisions),
+        mode="DEMO",
+        consent_input=lambda _prompt: "approve",
     )
 
     assert result.status == "PROGRESS_SYNCHRONIZED"
@@ -596,7 +592,7 @@ def test_public_workspace_run_uses_durable_checkpoint_phases(
     )
     assert progress.status_code == 200, progress.text
     body = progress.json()
-    assert body["history_total"] == 5
+    assert body["history_total"] == 3
     assert body["projection"]["research_status"] == "COMPLETED"
     artifacts = base_transport.client.get(
         f"/projects/{project_id}/artifacts"
