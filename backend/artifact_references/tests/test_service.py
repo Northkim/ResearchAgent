@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
@@ -25,7 +25,11 @@ from backend.artifact_references.generic_experiment_contracts import (
     PresentationBlock,
     PresentationKind,
 )
-from backend.artifact_references.service import ArtifactReferenceService
+from backend.artifact_references.service import (
+    ArtifactReferenceService,
+    input_setup_decision_document,
+    valid_input_setup_decision,
+)
 from backend.local_projects.contracts import LocalProject
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.progress_reports.service import ProgressReportService
@@ -563,19 +567,35 @@ def test_optional_evidence_requires_exact_durable_omission_decision(tmp_path) ->
         )
     assert getattr(error.value, "code", None) == "INPUT_SETUP_DECISION_REQUIRED"
 
-    decision = service.confirm_input_setup(
+    offset_now = datetime(2026, 8, 7, 20, tzinfo=timezone(timedelta(hours=8)))
+    decision_service = ArtifactReferenceService(
+        unit_of_work=uow, clock=lambda: offset_now
+    )
+    decision = decision_service.confirm_input_setup(
         project_id=PROJECT_ID,
         consumer_workflow_instance_id=CONSUMER_ID,
         omitted_optional_requirement_keys=("optional-context",),
         idempotency_key="00000000-0000-4000-8000-000000000012",
     )
-    replay = service.confirm_input_setup(
+    replay = decision_service.confirm_input_setup(
         project_id=PROJECT_ID,
         consumer_workflow_instance_id=CONSUMER_ID,
         omitted_optional_requirement_keys=("optional-context",),
         idempotency_key="00000000-0000-4000-8000-000000000012",
     )
     assert replay == decision
+    assert decision.decided_at == NOW
+    same_instant_with_offset = replace(decision, decided_at=offset_now)
+    assert valid_input_setup_decision(same_instant_with_offset)
+    assert (
+        input_setup_decision_document(same_instant_with_offset)["decided_at"]
+        == input_setup_decision_document(decision)["decided_at"]
+        == "2026-08-07T12:00:00Z"
+    )
+    changed_instant = replace(
+        decision, decided_at=offset_now + timedelta(microseconds=1)
+    )
+    assert not valid_input_setup_decision(changed_instant)
     client = TestClient(create_app(ApplicationContainer(
         unit_of_work_factory=lambda: InMemoryUnitOfWork(database)
     )))

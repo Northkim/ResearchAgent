@@ -735,7 +735,7 @@ class ArtifactReferenceService:
             "omitted_optional_requirement_keys": list(omitted),
             "decision": "CONTINUE_WITHOUT_OPTIONAL_EVIDENCE",
             "idempotency_key": idempotency_key,
-            "decided_at": now.isoformat().replace("+00:00", "Z"),
+            "decided_at": _utc_text(now),
         }
         decision = WorkflowInputSetupDecision(
             decision_id="input-decision-" + uuid5(
@@ -1081,7 +1081,7 @@ def valid_input_setup_decision(decision: WorkflowInputSetupDecision) -> bool:
         ),
         "decision": decision.decision,
         "idempotency_key": decision.idempotency_key,
-        "decided_at": decision.decided_at.isoformat().replace("+00:00", "Z"),
+        "decided_at": _utc_text(decision.decided_at),
     }
     expected_id = "input-decision-" + uuid5(
         UUID(decision.idempotency_key), canonical_json(payload)
@@ -1108,7 +1108,7 @@ def input_setup_decision_document(
         "decision": decision.decision,
         "idempotency_key": decision.idempotency_key,
         "decision_checksum": decision.decision_checksum,
-        "decided_at": decision.decided_at.isoformat().replace("+00:00", "Z"),
+        "decided_at": _utc_text(decision.decided_at),
     }
 
 

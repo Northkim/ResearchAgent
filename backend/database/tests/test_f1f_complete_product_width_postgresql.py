@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -16,6 +17,9 @@ def test_complete_product_width_survives_fresh_postgresql_sessions(
     container = ApplicationContainer(
         unit_of_work_factory=sql_uow_factory,
         local_package_root=str(tmp_path / "cloud-packages"),
+        clock=lambda: datetime(
+            2026, 8, 20, 10, tzinfo=timezone(timedelta(hours=8))
+        ),
     )
     result = qualify_complete_product_width(TestClient(create_app(container)), tmp_path)
 
@@ -32,9 +36,9 @@ def test_complete_product_width_survives_fresh_postgresql_sessions(
     manifest = restarted.get(f"/projects/{project_id}/manifest").json()
 
     assert instances["total"] == 6
-    assert instances["manifest_revision"] == 2
+    assert instances["manifest_revision"] == 6
     assert progress["total_progress_report_count"] == 6
     assert artifacts["total"] == 6
     assert resources["total"] == 3
-    assert manifest["manifest_revision"] == 2
+    assert manifest["manifest_revision"] == 6
     assert len(result["artifact_ids"]) == 6
