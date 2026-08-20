@@ -2494,6 +2494,8 @@ def sync_workspace(
         # Detect an orphaned Workspace before opening the Local write boundary.
         project_status(descriptor["project_id"])
     with _WorkspaceWriteLock(workspace):
+        if not dry_run:
+            _refresh_workspace_cli_copy(workspace, transport)
         pending = _pending_acknowledgements(workspace, descriptor)
         if pending:
             lock = validate_installed_lock(_read_json(workspace / INSTALLED_LOCK), descriptor)
@@ -2511,7 +2513,6 @@ def sync_workspace(
                     now=now or datetime.now(timezone.utc),
                     source_resolver=skill_source_resolver or _resolve_github_skill_package,
                 )
-                _refresh_workspace_cli_copy(workspace, transport)
                 return result
 
         lock = _load_or_migrate_lock(
@@ -2564,18 +2565,26 @@ def sync_workspace(
             now=now or datetime.now(timezone.utc),
             source_resolver=skill_source_resolver or _resolve_github_skill_package,
         )
-        _refresh_workspace_cli_copy(workspace, transport)
         return result
 
 
+_CLI_UPDATE_REQUIRED_MESSAGE = (
+    "Local Workspace could not be synchronized completely.\n\n"
+    "ReAgent could not update the local tool required by this Project.\n\n"
+    "Next: check your connection and run the same sync command again.\n\n"
+    "Your research state was not changed."
+)
+
+
 def _refresh_workspace_cli_copy(workspace: Path, transport: Any) -> None:
-    """Refresh the root Local tool from Cloud when sync succeeds.
+    """Refresh the root Local tool from Cloud before any confirmation.
 
     Uses the existing Cloud download endpoint and atomically replaces the
     Workspace copy when the served bytes differ, so an existing Workspace
-    receives the current Local CLI through the normal ``sync`` action. Best
-    effort: transports without the capability and transient failures never
-    block configuration synchronization.
+    receives the current Local CLI through the normal ``sync`` action. The
+    update is fail-closed: when the Local CLI detects that its own refresh is
+    required and cannot complete, sync raises before any Cloud confirmation so
+    Cloud never marks an incompatible Local Workspace ready.
     """
 
     fetch = getattr(transport, "local_client_source", None)
@@ -2586,13 +2595,28 @@ def _refresh_workspace_cli_copy(workspace: Path, transport: Any) -> None:
         return
     try:
         content, checksum = fetch()
-        if sha256_bytes(cli_path.read_bytes()) == checksum:
-            return
-        _atomic_write_bytes(cli_path, content, mode=0o700)
-    except WorkspaceCLIError:
-        raise
-    except Exception:
+    except Exception as error:
+        raise WorkspaceCLIError(
+            "CLI_UPDATE_REQUIRED",
+            _CLI_UPDATE_REQUIRED_MESSAGE,
+            EXIT_VALIDATION,
+        ) from error
+    if not content or b"def main(" not in content:
+        raise WorkspaceCLIError(
+            "CLI_UPDATE_REQUIRED",
+            _CLI_UPDATE_REQUIRED_MESSAGE,
+            EXIT_VALIDATION,
+        )
+    if sha256_bytes(cli_path.read_bytes()) == checksum:
         return
+    try:
+        _atomic_write_bytes(cli_path, content, mode=0o700)
+    except Exception as error:
+        raise WorkspaceCLIError(
+            "CLI_UPDATE_REQUIRED",
+            _CLI_UPDATE_REQUIRED_MESSAGE,
+            EXIT_VALIDATION,
+        ) from error
 
 
 def validate_sync_plan(document: Any, workspace: dict[str, Any]) -> dict[str, Any]:

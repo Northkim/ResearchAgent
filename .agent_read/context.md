@@ -4323,3 +4323,11 @@ local commands only from the authoritative server action (no fabricated
 materialize fallback), and the resource-staging snippet is presented as a
 template rather than a copy-ready command. A parameterized regression test
 covers the common launch boundary across all full-research Workflows.
+
+Legacy CLI follow-up (2026-08-20): an authentic pre-self-update CLI cannot
+self-update (reproduced); the supported one-time legacy migration is
+re-downloading the current Local tool from Project Help and running sync once.
+`sync` self-update is fail-closed and runs before Cloud confirmation, so a
+required-but-failed CLI update never marks the Workspace ready. The current
+KNN Workspace CLI is the pre-fix `fa95d11` source and needs the one-time
+migration before Cloud copy-paste acceptance.

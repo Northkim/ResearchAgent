@@ -94,3 +94,29 @@ for the Owner.
   PostgreSQL suite: `18` module-setup errors because `REAGENT_TEST_DATABASE_URL`
   is absent in this environment (fixture deliberately fails, never skips);
   pre-existing and unrelated to this commit.
+
+## Legacy CLI upgrade paradox and fail-closed self-update (2026-08-20)
+
+Authentic reproduction (disposable Workspace, pre-self-update CLI from commit
+`270c9ef4`, SHA `15f94cf7acb70309`): `python reagent_local.py sync .` against
+the current backend completes and confirms Cloud readiness, but the CLI file
+stays unchanged (`15f94cf7` before and after) because the old CLI has no
+self-update code. A genuinely old Workspace cannot self-update; the supported
+one-time legacy migration is: re-download the current Local tool from Project
+Help (the download endpoint serves the live `workspace_cli.py`), place it at
+the Workspace root (state preserved), then run `sync` - thereafter the normal
+self-update path applies. Fresh users need no migration.
+
+Self-update is now fail-closed: `sync` refreshes the root Local tool BEFORE any
+Cloud confirmation. When the Local CLI detects that its own refresh is required
+and cannot complete (download failure, invalid served bytes, atomic replace
+failure), sync raises `CLI_UPDATE_REQUIRED` with the actionable message
+("Local Workspace could not be synchronized completely. ... Your research
+state was not changed.") before the acknowledgement, so Cloud never marks an
+incompatible Workspace ready. Successful replacement keeps mode 0700; same
+checksum is a no-op; dry-run stays read-only.
+
+Backend `1134 passed`; frontend `85 passed`; Alembic sole head unchanged.
+The current KNN Workspace root CLI (SHA `b773c0fbe4ae6a96`) matches the
+pre-runtime-fix `fa95d11` source: it is LEGACY_PRE_SELF_UPDATE and requires the
+one-time migration before the Cloud copy-paste acceptance.

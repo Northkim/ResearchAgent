@@ -260,6 +260,89 @@ def test_sync_refreshes_root_cli_from_cloud(
     assert cli_path.stat().st_mtime_ns == before
 
 
+def test_sync_cli_update_failure_is_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.project_workspaces.tests.test_sync import (
+        _ClientTransport,
+        _synced_full_research_workspace,
+    )
+
+    workspace, _descriptor, transport = _synced_full_research_workspace(tmp_path)
+    cli_path = workspace / "reagent_local.py"
+    cli_before = cli_path.read_bytes()
+    lock_before = (workspace / workspace_cli.INSTALLED_LOCK).read_bytes()
+
+    class FailingFetchTransport(_ClientTransport):
+        def local_client_source(self) -> tuple[bytes, str]:
+            raise OSError("download endpoint unavailable")
+
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as error:
+        workspace_cli.sync_workspace(
+            workspace_root=workspace,
+            transport=FailingFetchTransport(transport.client),
+        )
+    assert error.value.code == "CLI_UPDATE_REQUIRED"
+    assert "could not be synchronized completely" in str(error.value)
+    assert cli_path.read_bytes() == cli_before
+    assert (workspace / workspace_cli.INSTALLED_LOCK).read_bytes() == lock_before
+
+
+def test_sync_cli_update_rejects_invalid_served_bytes(
+    tmp_path: Path,
+) -> None:
+    from backend.project_workspaces.tests.test_sync import (
+        _ClientTransport,
+        _synced_full_research_workspace,
+    )
+
+    workspace, _descriptor, transport = _synced_full_research_workspace(tmp_path)
+    cli_path = workspace / "reagent_local.py"
+    cli_before = cli_path.read_bytes()
+
+    class InvalidBytesTransport(_ClientTransport):
+        def local_client_source(self) -> tuple[bytes, str]:
+            return b"", workspace_cli.sha256_bytes(b"")
+
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as error:
+        workspace_cli.sync_workspace(
+            workspace_root=workspace,
+            transport=InvalidBytesTransport(transport.client),
+        )
+    assert error.value.code == "CLI_UPDATE_REQUIRED"
+    assert cli_path.read_bytes() == cli_before
+
+
+def test_sync_cli_update_atomic_replace_failure_preserves_old_cli(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.project_workspaces.tests.test_sync import (
+        _ClientTransport,
+        _synced_full_research_workspace,
+    )
+
+    workspace, _descriptor, transport = _synced_full_research_workspace(tmp_path)
+    cli_path = workspace / "reagent_local.py"
+    cli_before = cli_path.read_bytes()
+    refreshed = cli_before + b"\n# newer\n"
+
+    class RefreshingTransport(_ClientTransport):
+        def local_client_source(self) -> tuple[bytes, str]:
+            return refreshed, workspace_cli.sha256_bytes(refreshed)
+
+    def fail_write(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(workspace_cli, "_atomic_write_bytes", fail_write)
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as error:
+        workspace_cli.sync_workspace(
+            workspace_root=workspace,
+            transport=RefreshingTransport(transport.client),
+        )
+    assert error.value.code == "CLI_UPDATE_REQUIRED"
+    assert cli_path.read_bytes() == cli_before
+
+
 def test_all_full_research_workflows_use_common_boundary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
