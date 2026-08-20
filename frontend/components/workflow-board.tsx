@@ -18,25 +18,7 @@ import type { ProjectWorkflowInstance, WorkflowCatalogItem } from "@/types/api";
 import { PageHeader } from "./page-header";
 import { ProjectNavigation } from "./project-navigation";
 import { ErrorState, LoadingState } from "./query-state";
-import { WorkflowStatusBadge } from "./workflow-status-badge";
 import { CopyCommand } from "./copy-command";
-
-function WorkflowSkills({ skills }: { skills: NonNullable<ProjectWorkflowInstance["skills"]> }) {
-  if (!skills.length) return null;
-  return (
-    <div className="boundary-callout workflow-skills" aria-label="Bundled skills">
-      <strong>Skills bundled with this Workflow</strong>
-      <ul>
-        {skills.map((skill) => (
-          <li key={`${skill.skill_id}@${skill.version}`}>
-            {skill.display_name} {skill.version} · Built-in reviewed
-          </li>
-        ))}
-      </ul>
-      <p>These exact versions arrive inside the verified Capsule when you sync. Skills do not change the Workflow&apos;s core maturity.</p>
-    </div>
-  );
-}
 
 export function WorkflowBoard({ projectId }: { projectId: string }) {
   const project = useProject(projectId);
@@ -186,7 +168,11 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
 
       <details className="technical-details">
         <summary>Cloud configuration details</summary>
-        <dl><div><dt>Revision</dt><dd>{instances.data.manifest_revision}</dd></div><div><dt>Artifact relationships</dt><dd>{relationships.length ? relationships.map((item) => `${item.producer} → ${item.consumer}${item.required ? " (required)" : " (optional)"}`).join("; ") : "None declared"}</dd></div></dl>
+        <dl>
+          <div><dt>Revision</dt><dd>{instances.data.manifest_revision}</dd></div>
+          <div><dt>Artifact relationships</dt><dd>{relationships.length ? relationships.map((item) => `${item.producer} → ${item.consumer}${item.required ? " (required)" : " (optional)"}`).join("; ") : "None declared"}</dd></div>
+          <div><dt>Bundled Workflow Skills</dt><dd>{catalog.data.items.map((item) => `${item.display_name}: ${(item.recommended_version?.skills ?? []).map((skill) => `${skill.display_name} ${skill.version}`).join(", ") || "none"}`).join(" · ")}</dd></div>
+        </dl>
       </details>
 
       <section className="workflow-catalog-section" aria-labelledby="catalog-title">
@@ -198,24 +184,19 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
           <div className="workflow-catalog-grid">
             {catalog.data.items.map((item) => {
               const canAdd = item.creatable && item.lifecycle === "AVAILABLE" && item.recommended_version && item.recommended_capsule;
+              const existingCount = activeInstances.filter(
+                (instance) => instance.workflow_definition_id === item.workflow_definition_id,
+              ).length;
               return (
                 <article key={item.workflow_definition_id}>
-                  <div className="workflow-card-heading"><h3>{item.display_name}</h3><WorkflowStatusBadge value={item.lifecycle} dimension="catalog" /></div>
-                  {item.recommended_version ? (
-                    <div className="workflow-badge-row"><WorkflowStatusBadge value={item.recommended_version.core_capability_maturity} dimension="maturity" /></div>
-                  ) : null}
+                  <div className="workflow-card-heading"><h3>{item.display_name}</h3></div>
                   <p>{item.description}</p>
-                  {item.recommended_version?.core_capability_maturity === "SCAFFOLD_CORE" ? (
-                    <p><strong>Prototype core:</strong> Product flow is functional. Research capability is placeholder.</p>
-                  ) : null}
-                  <WorkflowSkills skills={item.recommended_version?.skills ?? []} />
-                  {(item.recommended_version?.resource_requirements ?? []).length ? (
-                    <p><strong>Optional external Resources:</strong> exact references are selected per Project. GitHub/Hugging Face resolution is not implemented yet.</p>
-                  ) : null}
-                  <p className="section-caption">{item.recommended_version ? `Version ${item.recommended_version.version}` : "No published executable version"}</p>
-                  <button className="button button-secondary" disabled={!canAdd || create.isPending} onClick={() => addWorkflow(item)}>
-                    {item.lifecycle === "PLANNED" ? "Planned" : "Add workflow"}
-                  </button>
+                  <div className="workflow-card-actions">
+                    <span className="section-caption">{existingCount ? `${existingCount} already in project` : ""}</span>
+                    <button className="button button-secondary" disabled={!canAdd || create.isPending} onClick={() => addWorkflow(item)}>
+                      {item.lifecycle === "PLANNED" ? "Planned" : existingCount ? "Add another" : "Add workflow"}
+                    </button>
+                  </div>
                 </article>
               );
             })}

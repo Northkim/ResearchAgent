@@ -647,6 +647,7 @@ class WorkflowNextActionProjection(SerializableContract):
     code: str
     label: str
     description: str
+    command: str | None = None
 
     def __post_init__(self) -> None:
         if self.surface not in {"BROWSER", "LOCAL", "INFORMATIONAL", "NONE"}:

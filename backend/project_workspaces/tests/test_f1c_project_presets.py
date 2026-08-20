@@ -342,6 +342,7 @@ def test_installation_projection_distinguishes_first_setup_from_stale_sync(tmp_p
             "code": "SETUP",
             "label": "Set up Local Workspace",
             "description": "Open the supported Project setup instructions before creating and syncing the Local Workspace.",
+            "command": None,
         }
     assert progress["attention"]["recommended_workflow_label"] == "Literature Search"
     assert progress["attention"]["action"]["next_action"]["code"] == "SETUP"

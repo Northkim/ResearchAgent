@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from dataclasses import replace
 from datetime import datetime, timezone
 from html import escape
 
@@ -115,6 +116,11 @@ class ProjectProgressAggregationService:
         resource_bindings = self._uow.resource_references.list_project_bindings(
             project_id
         )
+        active_definition_counts = Counter(
+            instance.workflow_definition_id
+            for instance in instances
+            if instance.desired_state is WorkflowInstanceDesiredState.ACTIVE
+        )
         projection_items = []
         for instance in instances:
             definition_version = definition_versions.get(
@@ -151,6 +157,9 @@ class ProjectProgressAggregationService:
                 artifacts=tuple(artifacts.values()),
                 qualifications=qualifications,
                 friendly_label=friendly_labels[instance.workflow_instance_id],
+                unambiguous=(
+                    active_definition_counts[instance.workflow_definition_id] == 1
+                ),
             ))
         projections = tuple(projection_items)
         selected_history = tuple(
@@ -253,6 +262,7 @@ class ProjectProgressAggregationService:
         artifacts,
         qualifications,
         friendly_label: str,
+        unambiguous: bool,
     ) -> WorkflowInstanceProgressProjection:
         if definition_version is None:
             raise ValueError("Workflow Definition Version authority is missing")
@@ -425,6 +435,12 @@ class ProjectProgressAggregationService:
             missing=missing,
             missing_resources=missing_resources,
             latest_artifact=latest_artifact,
+        )
+        action = _attach_local_command(
+            action,
+            workflow_instance_id=instance.workflow_instance_id,
+            workflow_definition_id=instance.workflow_definition_id,
+            unambiguous=unambiguous,
         )
         return WorkflowInstanceProgressProjection(
             schema_version=WORKFLOW_INSTANCE_PROJECTION_SCHEMA_VERSION,
@@ -761,6 +777,55 @@ def _next_action(code: str) -> WorkflowNextActionProjection:
         )
     surface, label, description = _ACTION_CONTENT[code]
     return WorkflowNextActionProjection(surface, code, label, description)
+
+
+def _local_command(
+    code: str,
+    *,
+    workflow_instance_id: str,
+    workflow_definition_id: str,
+    unambiguous: bool,
+) -> str | None:
+    """Build the single authoritative local command for a LOCAL next action.
+
+    The stable ``--workflow`` selector is emitted only when exactly one active
+    instance of the definition exists in the Project; otherwise the exact
+    ``--workflow-instance`` selector is used so the copied command never
+    requires manual editing.
+    """
+    if code == "SYNC":
+        return "python reagent_local.py sync ."
+    if code not in {"RUN", "CONTINUE", "MATERIALIZE"}:
+        return None
+    selector = (
+        f"--workflow {workflow_definition_id}"
+        if unambiguous
+        else f"--workflow-instance {workflow_instance_id}"
+    )
+    verb = "run" if code in {"RUN", "CONTINUE"} else "artifact materialize"
+    return f"python reagent_local.py {verb} . {selector}"
+
+
+def _attach_local_command(
+    action: WorkflowActionProjection,
+    *,
+    workflow_instance_id: str,
+    workflow_definition_id: str,
+    unambiguous: bool,
+) -> WorkflowActionProjection:
+    next_action = action.next_action
+    command = _local_command(
+        next_action.code,
+        workflow_instance_id=workflow_instance_id,
+        workflow_definition_id=workflow_definition_id,
+        unambiguous=unambiguous,
+    )
+    if command is None or command == next_action.command:
+        return action
+    return replace(
+        action,
+        next_action=replace(next_action, command=command),
+    )
 
 
 def _expected_output(output_schema_id: str) -> WorkflowOutputProjection | None:

@@ -259,13 +259,6 @@ export function WorkflowActionPanel({
   );
 }
 
-function localCommand(code: string, workflowInstanceId: string): string | null {
-  if (code === "SYNC") return "python reagent_local.py sync .";
-  if (code === "MATERIALIZE") return `python reagent_local.py artifact materialize . --workflow-instance ${workflowInstanceId}`;
-  if (code === "RUN" || code === "CONTINUE") return `python reagent_local.py run . --workflow-instance ${workflowInstanceId}`;
-  return null;
-}
-
 type ExperimentPresentationBlock = {
   kind: "PROSE" | "SCALAR" | "TABLE" | "SERIES" | "FIGURE_REFERENCE" | "OUTPUT_REFERENCE";
   label: string;
@@ -532,7 +525,7 @@ function GenericExperimentDetail({
   const evidenceStatus = blockValue(blocks, "Scientific evidence status")
     ?? blockValue(blocks, "Scientific evidence")
     ?? (artifact ? "Not reported" : "Pending evaluation");
-  const command = `python reagent_local.py run . --workflow-instance ${instance.workflow_instance_id}`;
+  const command = state.action.next_action.command;
   const decisionPending = approvalDecision.isPending;
   const approvalError = approvalDecision.isError ? approvalOwnerError(approvalDecision.error) : null;
   const localReason = resultReviewCheckpoint
@@ -651,7 +644,7 @@ function GenericExperimentDetail({
 
     <section className="plain-section" aria-labelledby="research-objective-title"><p className="eyebrow">Research objective</p><h2 id="research-objective-title">{objective}</h2><p>{objective}</p><p className="muted-copy">{ideaBinding ? "Source · Selected research idea · exact version recorded" : "Select the exact Research Idea before experiment preparation."}</p>{ideaProducer ? <Link className="text-link" href={`/projects/${project.project_id}/workflows/${ideaProducer.workflow_instance_id}`}>View research idea →</Link> : null}
       <div className="input-readiness-list"><div><div><strong>Research Idea</strong><small>{ideaBinding ? "Exact input selected" : "Required before experiment preparation can begin"}</small></div><span>{ideaBinding ? "Selected" : "Missing"}</span></div></div>
-      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /> : ideaBinding ? <details className="secondary-control"><summary>Change research idea</summary><WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /></details> : null}
+      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} command={state.action.next_action.command} /> : ideaBinding ? <details className="secondary-control"><summary>Change research idea</summary><WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} command={state.action.next_action.command} /></details> : null}
     </section>
 
     {ideaBinding && !experimentPathSelected ? <section className="plain-section experiment-current-task" aria-labelledby="experiment-start-title"><p className="eyebrow">Current task</p><h2 id="experiment-start-title">How would you like to start?</h2><p>Choose how ReAgent should begin preparing this experiment.</p><div className="workflow-support-grid">
@@ -678,7 +671,7 @@ function GenericExperimentDetail({
         <SummaryList label="Important limitations" values={runSummary.important_limitations} />
       </div> : <p>The exact run summary has not yet been reported from Local Workspace.</p>}{approvalStatus === "REQUESTED" ? <section className="experiment-review-decision" aria-labelledby="run-approval-decision-title"><p className="eyebrow">Owner authorization</p><h3 id="run-approval-decision-title">Authorize this exact prepared experiment</h3><p>After reviewing the complete summary above, approve one local execution attempt or request changes.</p><div className="experiment-task-actions"><button type="button" className="button button-primary" disabled={decisionPending} onClick={() => decideApproval("approve")}>{decisionPending ? "Recording approval…" : "Approve this run"}</button><button type="button" className="button button-ghost" disabled={decisionPending} onClick={() => decideApproval("reject")}>Request changes</button></div></section> : null}</section> : null}
 
-      {!finalizedResult ? <section id="local-workflow" className="run-local-details" aria-labelledby="local-workflow-title"><div><p className="eyebrow">Local Workflow</p><h2 id="local-workflow-title">{resultReviewRequired ? "Record the result review locally" : "Continue safely on this computer"}</h2><p>{localReason}</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label="Experiment local workflow command" /><p>Expected next state: ReAgent resumes from the exact saved checkpoint. Use this same command after an Owner checkpoint.</p></div></section> : null}
+      {!finalizedResult && command ? <section id="local-workflow" className="run-local-details" aria-labelledby="local-workflow-title"><div><p className="eyebrow">Local Workflow</p><h2 id="local-workflow-title">{resultReviewRequired ? "Record the result review locally" : "Continue safely on this computer"}</h2><p>{localReason}</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label="Experiment local workflow command" /><p>Expected next state: ReAgent resumes from the exact saved checkpoint. Use this same command after an Owner checkpoint.</p></div></section> : null}
     </> : null}
 
     <details className="technical-details"><summary>Technical details</summary><dl>
@@ -761,7 +754,7 @@ function DownstreamWorkflowDetail({
     ?? artifacts.find((item) => item.producer_workflow_instance_id === instance.workflow_instance_id);
   const completed = Boolean(latestArtifact && ["manuscript-draft/v4", "review-report/v3", "manuscript-draft/v5"].includes(latestArtifact.artifact_type));
   const task = downstreamTask(role, state.action.stage.code, completed);
-  const command = completed ? null : localCommand(state.action.next_action.code, instance.workflow_instance_id);
+  const command = completed ? null : state.action.next_action.command;
   const roleName = role === "INITIAL" ? "Initial Writing" : role === "REVIEW" ? "Review" : "Writing Revision";
   const sourceTitle = role === "INITIAL" ? "Research inputs" : role === "REVIEW" ? "Manuscript under review" : "Revision source";
   const sourceRows = requirements;
@@ -796,7 +789,7 @@ function DownstreamWorkflowDetail({
 
     <section id="inputs" className="plain-section" aria-labelledby="downstream-sources-title"><p className="eyebrow">Source</p><h2 id="downstream-sources-title">{sourceTitle}</h2>
       <div className="input-readiness-list">{sourceRows.map((requirement) => { const bound = dependencies.find((edge) => edge.requirement_key === requirement.requirement_key); return <div key={requirement.requirement_key}><div><strong>{requirementLabel(requirement.artifact_type)}</strong><small>{bound ? "Exact input selected" : requirement.required ? "Required before work can continue" : "Optional evidence not selected"}</small></div><span>{bound ? "Selected" : requirement.required ? "Missing" : "Optional · Not selected"}</span></div>; })}</div>
-      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /> : state.action.next_action.code === "MATERIALIZE" ? <details className="secondary-control"><summary>Add or change evidence</summary><WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} /></details> : null}
+      {state.action.next_action.code === "SELECT_INPUT" ? <WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} command={state.action.next_action.command} /> : state.action.next_action.code === "MATERIALIZE" ? <details className="secondary-control"><summary>Add or change evidence</summary><WorkflowInputSetup projectId={project.project_id} instance={instance} instances={instances} projections={progress.instances} requirements={requirements} dependencies={dependencies} command={state.action.next_action.command} /></details> : null}
     </section>
 
     <section className="current-action-panel" aria-labelledby="downstream-current-task"><div className="current-action-main"><p className="attention-copy">{completed ? "Completed" : state.action.attention_state === "OWNER_ACTION_REQUIRED" ? "Needs your review" : "Current task"}</p><h2 id="downstream-current-task">{task.title}</h2><p>{task.next}</p></div>{!completed && command ? <aside className="current-action-next"><span>Primary action</span><a className="button button-primary" href="#local-workflow">Continue locally</a></aside> : null}</section>
@@ -873,7 +866,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
   ));
   const activity = progress.data.history.filter((report) => report.workflow_instance_id === workflowInstanceId).slice(0, 5);
   const latestArtifact = artifacts.data?.artifacts.find((artifact) => artifact.artifact_id === state.action.latest_output?.artifact_id);
-  const command = localCommand(state.action.next_action.code, workflowInstanceId);
+  const command = state.action.next_action.command;
   const actionHref = state.action.next_action.code === "SETUP"
     ? `/projects/${projectId}/help`
     : state.action.next_action.surface === "BROWSER" && state.action.next_action.code === "SELECT_INPUT"
@@ -924,9 +917,9 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
             </div>
           ) : <p className="muted-copy">No upstream research input is required.</p>}
           {requirements.length && state.action.next_action.code === "SELECT_INPUT" ? (
-            <WorkflowInputSetup projectId={projectId} instance={instance} instances={instances.data.items} projections={progress.data.instances} requirements={requirements} dependencies={dependencies} />
+            <WorkflowInputSetup projectId={projectId} instance={instance} instances={instances.data.items} projections={progress.data.instances} requirements={requirements} dependencies={dependencies} command={state.action.next_action.command} />
           ) : dependencies.length ? (
-            <details className="secondary-control"><summary>Manage input bindings</summary><WorkflowInputSetup projectId={projectId} instance={instance} instances={instances.data.items} projections={progress.data.instances} requirements={requirements} dependencies={dependencies} /></details>
+            <details className="secondary-control"><summary>Manage input bindings</summary><WorkflowInputSetup projectId={projectId} instance={instance} instances={instances.data.items} projections={progress.data.instances} requirements={requirements} dependencies={dependencies} command={state.action.next_action.command} /></details>
           ) : null}
         </section>
 

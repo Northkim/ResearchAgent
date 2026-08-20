@@ -4305,3 +4305,13 @@ preserved exact searches with no search, Artifact, Progress, Owner decision,
 database row, or protected D1 state changed. Recovery may resume and must stop
 at the Owner reconfirmation checkpoint for `2 selected / 0 uncertain / 11
 excluded`.
+
+External-user readiness repair (2026-08-20): Codex override now resolves
+symlinks at the root-CLI boundary and the workspace root is normalized to an
+absolute path, fixing the managed-harness `os error 2` for `run .`. Cloud
+next-action projections now carry one authoritative local command, copied
+verbatim and sanitized by the frontend, with stale local state gated to the
+`sync` action. Available Workflow cards are simplified to name + authoritative
+description + one action (Skill metadata remains in technical details).
+Controlled qualification passes; real-owner copy-paste acceptance is pending
+before `READY_FOR_EXTERNAL_USER_TRIAL`.

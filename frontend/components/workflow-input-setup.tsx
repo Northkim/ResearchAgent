@@ -70,13 +70,14 @@ function RequirementChoice({ projectId, instance, instances, projections, requir
   );
 }
 
-export function WorkflowInputSetup({ projectId, instance, instances, projections, requirements, dependencies }: {
+export function WorkflowInputSetup({ projectId, instance, instances, projections, requirements, dependencies, command }: {
   projectId: string;
   instance: ProjectWorkflowInstance;
   instances: ProjectWorkflowInstance[];
   projections: WorkflowInstanceProgress[];
   requirements: WorkflowArtifactRequirement[];
   dependencies: ArtifactDependencyEdge[];
+  command?: string | null;
 }) {
   const setup = useWorkflowInputSetup(projectId, instance.workflow_instance_id);
   const confirmSetup = useConfirmWorkflowInputSetup(
@@ -84,8 +85,6 @@ export function WorkflowInputSetup({ projectId, instance, instances, projections
     instance.workflow_instance_id,
   );
   if (!requirements.length) return null;
-  const sameType = instances.filter((item) => item.workflow_definition_id === instance.workflow_definition_id && item.desired_state === "ACTIVE");
-  const selector = sameType.length === 1 ? `--workflow ${instance.workflow_definition_id}` : `--workflow-instance ${instance.workflow_instance_id}`;
   const omitted = setup.data?.omitted_optional_requirement_keys ?? [];
   const setupReady = setup.data
     ? !setup.data.decision_required || Boolean(setup.data.current_decision)
@@ -116,7 +115,7 @@ export function WorkflowInputSetup({ projectId, instance, instances, projections
       {dependencies.some((edge) => edge.state === "ACTIVE") && setupReady ? (
         <div>
           <p>Prepare verified local copies of the selected research inputs:</p>
-          <CopyCommand command={`python reagent_local.py artifact materialize . ${selector}`} label="input materialization command" />
+          <CopyCommand command={command ?? "python reagent_local.py artifact materialize . --workflow-instance " + instance.workflow_instance_id} label="input materialization command" />
         </div>
       ) : null}
     </div>

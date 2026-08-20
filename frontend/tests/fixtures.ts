@@ -23,6 +23,7 @@ export const completedWorkflowActionFixture: WorkflowActionProjection = {
     code: "REVIEW_RESULT",
     label: "Review Output",
     description: "Review the selected paper library before continuing.",
+    command: null,
   },
   expected_output: {
     label: "Selected paper library",

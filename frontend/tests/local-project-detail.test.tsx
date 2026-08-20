@@ -38,6 +38,7 @@ const setupAction: WorkflowActionProjection = {
     code: "SETUP",
     label: "Set up Local Workspace",
     description: "Open the supported Project setup instructions before creating and syncing the Local Workspace.",
+    command: null,
   },
   expected_output: projectProgressFixture.instances[0].action.expected_output,
   latest_output: null,
@@ -104,6 +105,7 @@ const runAction: WorkflowActionProjection = {
     code: "RUN",
     label: "Start in Local Workspace",
     description: "Run this Workflow through the public local Workspace command.",
+    command: "python reagent_local.py run . --workflow literature-search-local-experimental",
   },
 };
 
@@ -247,7 +249,7 @@ test("Workflow Detail visibly opens human-labeled exact run instructions", async
   expect(reveal).toHaveAttribute("aria-expanded", "true");
   expect(instructions).toHaveAttribute("open");
   expect(screen.getByText("Exact command")).toBeVisible();
-  expect(screen.getByText(`python reagent_local.py run . --workflow-instance ${workflowInstanceId}`)).toBeVisible();
+  expect(screen.getByText("python reagent_local.py run . --workflow literature-search-local-experimental")).toBeVisible();
   expect(screen.getByText(/runs the exact Literature Search Workflow/)).toBeVisible();
   expect(screen.getByRole("button", { name: "Copy Literature Search exact command" })).toBeEnabled();
   expect(screen.getByRole("heading", { name: "Run Literature Search in your Local Workspace" })).not.toHaveTextContent("wfi-");
@@ -286,6 +288,7 @@ test("Workflow Detail resolves Artifact inputs from the exact pinned Workflow ve
       code: "SELECT_RESOURCE",
       label: "Bind exact Resource",
       description: "Select or register the exact required Resource metadata for this Workflow.",
+      command: null,
     },
   };
   const experimentProgress: ProjectProgress = {
@@ -396,6 +399,7 @@ test("Workflow Detail preserves stale installation sync semantics", async () => 
       code: "SYNC",
       label: "Sync Local Workspace",
       description: "Bring this Workflow's installed Capsule up to the current Project revision.",
+      command: "python reagent_local.py sync .",
     },
   };
   arrangeWorkflowDetail({

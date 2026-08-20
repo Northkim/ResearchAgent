@@ -487,6 +487,7 @@ export interface WorkflowNextActionProjection {
   code: string;
   label: string;
   description: string;
+  command: string | null;
 }
 
 export interface WorkflowOutputProjection {

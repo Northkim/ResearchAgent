@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.api import ApplicationContainer, create_app
@@ -197,11 +198,12 @@ def test_catalog_sync_materialize_public_checkpoint_and_durable_resume(tmp_path:
     checkpoint_bytes = (capsule / "memory/generic-checkpoint.json").read_bytes()
     assert not (capsule / "memory/preparation").exists()
     fake.unlink()
-    resumed = workspace_cli.run_workflow(
-        workspace_root=workspace,
-        workflow_instance_id=experiment["workflow_instance_id"],
-        transport=transport, api_url="http://127.0.0.1",
-        codex_executable=str(tmp_path / "missing-codex"),
-    )
-    assert resumed.status == "DESIGN_APPROVAL_REQUIRED"
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as error:
+        workspace_cli.run_workflow(
+            workspace_root=workspace,
+            workflow_instance_id=experiment["workflow_instance_id"],
+            transport=transport, api_url="http://127.0.0.1",
+            codex_executable=str(tmp_path / "missing-codex"),
+        )
+    assert error.value.code == "CODEX_UNAVAILABLE"
     assert (capsule / "memory/generic-checkpoint.json").read_bytes() == checkpoint_bytes

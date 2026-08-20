@@ -224,6 +224,7 @@ class WorkflowNextActionResponse(StrictDTO):
     code: str
     label: str
     description: str
+    command: str | None = None
 
 
 class WorkflowOutputResponse(StrictDTO):

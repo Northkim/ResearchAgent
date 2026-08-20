@@ -32,7 +32,7 @@ function state(instance: Record<string, unknown>, role: "INITIAL" | "REVIEW" | "
       ...projectProgressFixture.instances[0].action,
       stage: { code: "COMPLETED", label: "Completed" },
       attention_state: "COMPLETED",
-      next_action: { surface: "NONE", code: "REVIEW_RESULT", label: "Review", description: "Review completed output" },
+      next_action: { surface: "NONE", code: "REVIEW_RESULT", label: "Review", description: "Review completed output", command: null },
       latest_output: { label: role === "REVIEW" ? "Review report" : "Manuscript", artifact_id: artifactId, artifact_type: type, artifact_schema: type, checksum: `sha256:${"d".repeat(64)}`, produced_at: "2026-08-18T08:00:00Z", progress_round: 1, state: "PRODUCED" },
     },
   };
@@ -150,7 +150,7 @@ test("Review keeps unresolved optional evidence visible until explicit continuat
     ...completedState.action,
     stage: { code: "INPUT_REVIEW", label: "Inputs need attention" },
     attention_state: "OWNER_ACTION_REQUIRED",
-    next_action: { surface: "BROWSER", code: "SELECT_INPUT", label: "Choose input", description: "Resolve optional evidence." },
+    next_action: { surface: "BROWSER", code: "SELECT_INPUT", label: "Choose input", description: "Resolve optional evidence.", command: null },
     latest_output: null,
     },
   };

@@ -106,6 +106,9 @@ function arrangeGenericExperiment(options: {
       code: options.nextActionCode ?? (options.completed ? "REVIEW_RESULT" : "CONTINUE"),
       label: options.completed ? "Review result" : "Review methodology",
       description: options.completed ? "Review the scientific result." : "Resolve the scientific design choice.",
+      command: (options.nextActionCode ?? (options.completed ? "REVIEW_RESULT" : "CONTINUE")) === "CONTINUE"
+        ? "python reagent_local.py run . --workflow reproduction-experiment-local-experimental"
+        : null,
     },
   };
   vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue({
@@ -275,11 +278,11 @@ test("renders projection-driven Workflow rows and keeps planned definitions disa
   expect(screen.getByText("Selected paper library")).toBeVisible();
   expect(screen.getByRole("link", { name: "Open Workflow" })).toHaveAttribute("href", expect.stringContaining(workflowInstanceId));
   expect(screen.getByRole("button", { name: "Planned" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Add workflow" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Add another" })).toBeEnabled();
   expect(screen.getByRole("link", { name: "Workflows" })).toHaveAttribute("aria-current", "page");
 });
 
-test("renders production scaffold maturity and warning without a Full Flow preset", async () => {
+test("simplifies Available Workflow cards while preserving authoritative descriptions", async () => {
   arrange();
   vi.spyOn(apiClient, "listWorkflowDefinitions").mockResolvedValue({
     total: 5,
@@ -319,11 +322,29 @@ test("renders production scaffold maturity and warning without a Full Flow prese
   expect(await screen.findByRole("heading", { name: "Writing" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Review" })).toBeVisible();
   expect(screen.getByRole("heading", { name: "Reproduction & Experiment" })).toBeVisible();
-  expect(screen.getAllByText("Core · Scaffold")).toHaveLength(3);
-  expect(screen.getAllByText(/Product flow is functional/)).toHaveLength(3);
-  expect(screen.getAllByText(/Scaffold Core Safety 0.1.0/)).toHaveLength(3);
-  expect(screen.getAllByText(/Built-in reviewed skills are bundled|exact versions arrive/i)).toHaveLength(3);
+  expect(screen.getAllByText(/production scaffold flow\./)).toHaveLength(3);
+  expect(screen.queryAllByText("Core · Scaffold")).toHaveLength(0);
+  expect(screen.queryByText(/Product flow is functional/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Skills bundled with this Workflow/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Built-in reviewed|exact versions arrive/i)).not.toBeInTheDocument();
+  const writingCard = (await screen.findByRole("heading", { name: "Writing" })).closest("article")!;
+  expect(within(writingCard).queryByText(/^Version /)).not.toBeInTheDocument();
+  expect(within(writingCard).queryByText(/Scaffold Core Safety/)).not.toBeInTheDocument();
+  expect(screen.getByText("Cloud configuration details")).toBeVisible();
+  expect(screen.getByText(/Bundled Workflow Skills/)).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Add workflow" })).toHaveLength(3);
   expect(screen.queryByText(/Full Research Project/i)).not.toBeInTheDocument();
+});
+
+test("Available Workflow cards show one action and an already-in-project count", async () => {
+  arrange();
+  render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByText("Available Workflows")).toBeVisible();
+  expect(screen.getByText("1 already in project")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Add another" })).toBeEnabled();
+  expect(screen.queryByText("Skills bundled with this Workflow")).not.toBeInTheDocument();
+  expect(screen.queryByText("CORE · REVIEWED")).not.toBeInTheDocument();
 });
 
 test("distinguishes two Instances of the same Workflow Definition", async () => {
@@ -372,7 +393,7 @@ test("shows one Project sync notice and keeps retired Workflow history secondary
     ...projectProgressFixture, active_workflow_count: 2, retired_workflow_count: 1,
     instances: [
       projectProgressFixture.instances[0],
-      { ...projectProgressFixture.instances[0], workflow_instance_id: newId, friendly_instance_label: "Writing Revision", installation_state: "NOT_INSTALLED", action: { ...projectProgressFixture.instances[0].action, stage: { code: "LOCAL_SYNC", label: "Not added locally" }, next_action: { surface: "LOCAL", code: "SYNC", label: "Sync Local Workspace", description: "Add the new Workflow." } } },
+      { ...projectProgressFixture.instances[0], workflow_instance_id: newId, friendly_instance_label: "Writing Revision", installation_state: "NOT_INSTALLED", action: { ...projectProgressFixture.instances[0].action, stage: { code: "LOCAL_SYNC", label: "Not added locally" }, next_action: { surface: "LOCAL", code: "SYNC", label: "Sync Local Workspace", description: "Add the new Workflow.", command: "python reagent_local.py sync ." } } },
       { ...projectProgressFixture.instances[0], workflow_instance_id: retiredId, friendly_instance_label: "Writing Revision", lifecycle: "RETIRED", desired_state: "NOT_DESIRED" },
     ],
   });
@@ -395,7 +416,7 @@ test("does not describe an exact Capsule mismatch as a newly added Workflow", as
       action: {
         ...projectProgressFixture.instances[0].action,
         stage: { code: "LOCAL_SYNC", label: "Local Workspace out of date" },
-        next_action: { surface: "LOCAL", code: "SYNC", label: "Sync Local Workspace", description: "Reconcile the exact Capsule." },
+        next_action: { surface: "LOCAL", code: "SYNC", label: "Sync Local Workspace", description: "Reconcile the exact Capsule.", command: "python reagent_local.py sync ." },
       },
     }],
   });
@@ -751,7 +772,7 @@ test("generic Experiment renders categorical non-ML evidence and separates scien
     { kind: "SERIES", label: "Categorical sequence", value: [{ x: "Start", y: "amber" }, { x: "Finish", y: "green" }] },
     { kind: "PROSE", label: "Limitations", value: "This bounded fixture supports only a narrow categorical claim." },
   ]);
-  arrangeGenericExperiment({ artifact, completed: true, summary: "RESULT_REVIEW_REQUIRED: Owner review of the bounded evaluated result is required." });
+  arrangeGenericExperiment({ artifact, completed: true, nextActionCode: "CONTINUE", summary: "RESULT_REVIEW_REQUIRED: Owner review of the bounded evaluated result is required." });
   render(<Providers><WorkflowDetail projectId={localProjectFixture.project_id} workflowInstanceId={genericExperimentId} /></Providers>);
 
   expect(await screen.findByText("The final category was stable, but the observation set was too small for a broad claim.")).toBeVisible();

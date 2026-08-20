@@ -797,7 +797,7 @@ def bootstrap_workspace(
 
 
 def load_workspace(root: str | Path) -> tuple[Path, dict[str, Any], dict[str, Any]]:
-    workspace = Path(root).expanduser()
+    workspace = Path(root).expanduser().resolve()
     _reject_symlink_chain(workspace)
     if not workspace.is_dir() or workspace.is_symlink():
         raise _identity("WORKSPACE_DESCRIPTOR_INVALID", "Workspace root must be a real directory")
@@ -6731,12 +6731,19 @@ def _managed_codex_executable(value: str | None) -> str:
     selected = value or os.environ.get("REAGENT_CODEX_EXECUTABLE", "codex")
     if os.path.sep in selected:
         path = Path(selected)
-        if path.is_symlink() or not path.is_file() or not os.access(path, os.X_OK):
+        resolved = path.expanduser().resolve()
+        if not resolved.is_file() or not os.access(resolved, os.X_OK):
             raise OwnerCheckpointInvalid("Configured Codex executable is unavailable")
-        return str(path.resolve())
+        return str(resolved)
     resolved = shutil.which(selected)
     if resolved is None:
-        raise OwnerCheckpointInvalid("Codex CLI is unavailable")
+        raise OwnerCheckpointInvalid(
+            "Codex is not ready on this computer.\n\n"
+            "ReAgent needs Codex to run local research Workflows.\n\n"
+            "Next: install and complete the initial Codex setup, then run the "
+            "same command again.\n\n"
+            "Your Workspace was not changed."
+        )
     return resolved
 
 
@@ -7566,6 +7573,32 @@ def _advance_literature_checkpoint_workflow(
     decision_input: DecisionInput,
 ) -> dict[str, Any]:
     runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    # Resolve the Managed Harness executable before any Workflow state is
+    # initialized or mutated, so a missing Codex fails with an actionable
+    # message and leaves the Workspace unchanged.
+    checkpoint_root = (
+        workspace
+        / LITERATURE_CHECKPOINTS_ROOT
+        / installed["workflow_instance_id"]
+    )
+    control_path = capsule / "memory/round-control.json"
+    if control_path.exists():
+        pending_state = runtime["_effective_state"](
+            runtime["_load_control"](capsule, manifest)
+        )
+    else:
+        pending_state = "NOT_STARTED"
+    needs_harness = (
+        not (checkpoint_root / "checkpoint.json").is_file()
+        and pending_state in {"NOT_STARTED", "PLAN_CONFIRMED", "SEARCH_COMPLETED"}
+    )
+    if needs_harness:
+        try:
+            _managed_codex_executable(codex_executable)
+        except OwnerCheckpointInvalid as error:
+            raise WorkspaceCLIError(
+                "CODEX_UNAVAILABLE", str(error), EXIT_VALIDATION
+            ) from error
     try:
         runtime["_check_backend"](runtime["_base_url"](api_url))
         control = runtime["_initialize_control"](
@@ -8584,6 +8617,18 @@ def run_workflow(
     consent_input: Callable[[str], str] = input,
 ) -> WorkflowRunResult:
     """Explicitly preflight and enter one exact installed Workflow Capsule."""
+
+    # Resolve an explicit Codex override at the root CLI boundary so every
+    # downstream launcher (including published Capsule runtimes) receives the
+    # resolved executable target rather than a symlink. This keeps published
+    # Capsule bytes unchanged while making symlink-based installations work.
+    if codex_executable is not None:
+        try:
+            codex_executable = _managed_codex_executable(codex_executable)
+        except OwnerCheckpointInvalid as error:
+            raise WorkspaceCLIError(
+                "CODEX_UNAVAILABLE", str(error), EXIT_VALIDATION
+            ) from error
 
     workspace, descriptor, bootstrap = load_workspace(workspace_root)
     _match(workflow_instance_id, WORKFLOW_INSTANCE_ID, "workflow_instance_id")
