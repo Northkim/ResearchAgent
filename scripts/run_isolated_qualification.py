@@ -577,6 +577,11 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
                     expected = {}
                     if any(Path(spec).name == "f1f-product-width.spec.ts" for spec in specs):
                         expected["F1F browser product width"] = 1
+                        # F1F deliberately emits both isolation markers after
+                        # its screenshots so the paired historical H1/F1F
+                        # cleanup contract remains observable even when F1F is
+                        # selected on its own.
+                        expected["H1 controlled product journey"] = 1
                     if any(Path(spec).name == "h1-product-journey.spec.ts" for spec in specs):
                         expected["H1 controlled product journey"] = 1
                     if any(Path(spec).name == "r4-literature-consolidation.spec.ts" for spec in specs):

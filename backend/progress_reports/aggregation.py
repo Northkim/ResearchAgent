@@ -13,6 +13,11 @@ from backend.artifact_references.service import (
 )
 from backend.persistence.ports import UnitOfWork
 from backend.project_workspaces.contracts import WorkflowInstanceDesiredState
+from backend.project_workspaces.owner_labels import (
+    OwnerWorkflowLabelInput,
+    owner_workflow_labels,
+    writing_role_label,
+)
 
 from .contracts import (
     PROJECT_WORKFLOW_PROGRESS_SCHEMA_VERSION,
@@ -119,6 +124,14 @@ class ProjectProgressAggregationService:
                 instance=instance,
                 definition=definitions.get(instance.workflow_definition_id),
                 definition_version=definition_version,
+                capsule_version=(
+                    self._uow.workflow_foundation.get_capsule_version(
+                        instance.capsule_id, instance.capsule_version
+                    )
+                    if instance.capsule_id is not None
+                    and instance.capsule_version is not None
+                    else None
+                ),
                 reports=tuple(by_instance.get(instance.workflow_instance_id, ())),
                 current_manifest_revision=project.current_manifest_revision,
                 acknowledgements=acknowledgements,
@@ -228,6 +241,7 @@ class ProjectProgressAggregationService:
         instance,
         definition,
         definition_version,
+        capsule_version,
         reports: tuple[UploadedProgressReport, ...],
         current_manifest_revision: int,
         acknowledgements,
@@ -249,24 +263,57 @@ class ProjectProgressAggregationService:
         )
         latest = max(accepted, key=_report_activity_key) if accepted else None
         record = latest.normalized_record if latest is not None else None
-        acknowledged_revisions = tuple(
-            acknowledgement.manifest_revision
+        acknowledged_installations = tuple(
+            (acknowledgement, item)
             for acknowledgement in acknowledgements
-            if any(
-                item.get("workflow_instance_id") == instance.workflow_instance_id
-                for item in acknowledgement.installed_capsules
-            )
+            for item in acknowledgement.installed_capsules
+            if item.get("workflow_instance_id") == instance.workflow_instance_id
         )
-        if current_manifest_revision in acknowledged_revisions:
+        exact_installations = tuple(
+            acknowledgement
+            for acknowledgement, item in acknowledged_installations
+            if item.get("workflow_definition_id") == instance.workflow_definition_id
+            and item.get("workflow_definition_version") == instance.workflow_version
+            and item.get("capsule_id") == instance.capsule_id
+            and item.get("capsule_version") == instance.capsule_version
+            and capsule_version is not None
+            and item.get("capsule_definition_checksum")
+            == capsule_version.definition_checksum
+        )
+        if (
+            instance.desired_state is WorkflowInstanceDesiredState.RETIRED
+            and exact_installations
+        ):
+            # A retired Workflow remains historical provenance.  An older exact
+            # install still needs the Project-level sync boundary before the
+            # Local lock can retain/remove it under the current manifest.
+            installation_state = "ACKNOWLEDGED_STALE"
+            installation_revision = max(
+                acknowledgement.manifest_revision
+                for acknowledgement in exact_installations
+            )
+        elif any(
+            acknowledgement.manifest_revision == current_manifest_revision
+            for acknowledgement in exact_installations
+        ):
             installation_state = "ACKNOWLEDGED_CURRENT"
             installation_revision = current_manifest_revision
-        elif acknowledged_revisions:
+        elif exact_installations:
+            installation_state = "ACKNOWLEDGED_CURRENT"
+            installation_revision = max(
+                acknowledgement.manifest_revision
+                for acknowledgement in exact_installations
+            )
+        elif acknowledged_installations:
             installation_state = "ACKNOWLEDGED_STALE"
-            installation_revision = max(acknowledged_revisions)
+            installation_revision = max(
+                acknowledgement.manifest_revision
+                for acknowledgement, _item in acknowledged_installations
+            )
         elif acknowledgements:
             # The Project has an established Local Workspace, but this newly
             # desired Workflow has never appeared in an acknowledged install.
-            installation_state = "ACKNOWLEDGED_STALE"
+            installation_state = "NOT_INSTALLED"
             installation_revision = max(
                 acknowledgement.manifest_revision
                 for acknowledgement in acknowledgements
@@ -385,6 +432,12 @@ class ProjectProgressAggregationService:
             workflow_instance_id=instance.workflow_instance_id,
             workflow_definition_id=instance.workflow_definition_id,
             workflow_definition_version=instance.workflow_version,
+            workflow_role=(
+                definition_version.compatibility.get("writing_role")
+                if definition_version.compatibility.get("writing_role")
+                in {"INITIAL", "REVISION"}
+                else None
+            ),
             core_capability_maturity=definition_version.core_capability_maturity.value,
             workflow_display_name=(
                 definition.display_name if definition is not None else instance.display_name
@@ -467,11 +520,16 @@ _OUTPUT_LABELS = {
     "selected-research-idea/v1": "Selected research idea",
     "experiment-record/v1": "Experiment record",
     "experiment-record/v2": "Experiment result",
+    "experiment-record/v4": "Experiment result",
+    "experiment-record/v5": "Experiment result",
     "manuscript-draft/v1": "Manuscript draft",
     "manuscript-draft/v2": "Initial manuscript draft",
     "manuscript-draft/v3": "Revised manuscript draft",
+    "manuscript-draft/v4": "Initial manuscript",
+    "manuscript-draft/v5": "Revised manuscript",
     "review-report/v1": "Review report",
     "review-report/v2": "Structured review report",
+    "review-report/v3": "Review report",
 }
 
 _ACTION_CONTENT = {
@@ -518,6 +576,18 @@ def _workflow_action(
             blocker=WorkflowBlockerProjection(
                 "LOCAL_SYNC_REQUIRED",
                 "The Local Workspace acknowledges an older Project revision.",
+            ),
+            next_action=_next_action("SYNC"), expected_output=expected,
+            latest_output=latest,
+        )
+    if installation_state == "NOT_INSTALLED":
+        return WorkflowActionProjection(
+            stage=WorkflowStageProjection("LOCAL_SYNC", "Not added locally"),
+            actor="OWNER",
+            attention_state="ATTENTION_REQUIRED",
+            blocker=WorkflowBlockerProjection(
+                "LOCAL_SYNC_REQUIRED",
+                "This new Workflow has not been added to the Local Workspace.",
             ),
             next_action=_next_action("SYNC"), expected_output=expected,
             latest_output=latest,
@@ -797,7 +867,7 @@ def _active_stage(workflow_definition_id: str, summary: str | None) -> WorkflowS
 
 
 def _friendly_labels(instances, definitions, definition_versions) -> dict[str, str]:
-    grouped = defaultdict(list)
+    values = []
     for item in instances:
         definition_version = definition_versions.get(
             (item.workflow_definition_id, item.workflow_version)
@@ -807,20 +877,17 @@ def _friendly_labels(instances, definitions, definition_versions) -> dict[str, s
             if definition_version is not None
             else None
         )
-        base = {
-            "INITIAL": "Initial Writing",
-            "REVISION": "Writing Revision",
-        }.get(writing_role)
-        if base is None:
-            definition = definitions.get(item.workflow_definition_id)
-            base = definition.display_name if definition else item.display_name
-        grouped[(item.workflow_definition_id, base)].append(item)
-    result = {}
-    for (_definition_id, base), values in grouped.items():
-        values.sort(key=lambda item: (item.created_at, item.workflow_instance_id))
-        for index, item in enumerate(values, 1):
-            result[item.workflow_instance_id] = base if len(values) == 1 else f"{base} #{index}"
-    return result
+        definition = definitions.get(item.workflow_definition_id)
+        values.append(OwnerWorkflowLabelInput(
+            workflow_instance_id=item.workflow_instance_id,
+            workflow_definition_id=item.workflow_definition_id,
+            base_label=(
+                writing_role_label(writing_role)
+                or (definition.display_name if definition else item.display_name)
+            ),
+            writing_role=writing_role,
+        ))
+    return owner_workflow_labels(values)
 
 
 def _next_action_priority(value: str) -> int:

@@ -79,6 +79,31 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
       };
     }),
   );
+  const activeInstances = instances.data.items.filter((item) => item.desired_state === "ACTIVE");
+  const retiredInstances = instances.data.items.filter((item) => item.desired_state !== "ACTIVE");
+  const workflowsNeedingSync = activeInstances.filter(
+    (item) => projections.get(item.workflow_instance_id)?.installation_state === "NOT_INSTALLED",
+  );
+
+  const workflowRow = (instance: ProjectWorkflowInstance) => {
+    const state = projections.get(instance.workflow_instance_id);
+    const definition = catalog.data!.items.find(
+      (item) => item.workflow_definition_id === instance.workflow_definition_id,
+    );
+    if (!state) return null;
+    return (
+      <article className="workflow-work-row" key={instance.workflow_instance_id} data-attention-state={state.action.attention_state}>
+        <div className="workflow-work-identity"><p className="eyebrow">{definition?.display_name ?? state.workflow_display_name}</p><h3>{state.friendly_instance_label ?? instance.display_name}</h3><span>{state.action.stage.label}</span></div>
+        <div className="workflow-work-status"><span>Actor</span><strong>{state.action.actor === "NONE" ? "No action required" : `${state.action.actor.charAt(0)}${state.action.actor.slice(1).toLowerCase()} acts`}</strong><small>{state.action.blocker?.message ?? state.latest_summary ?? "Ready for its next valid action."}</small></div>
+        <div className="workflow-work-status"><span>Next</span><strong>{state.action.next_action.label}</strong><small>{state.action.next_action.surface === "LOCAL" ? "Local Workspace" : state.action.next_action.surface === "BROWSER" ? "Browser" : "Information"}</small></div>
+        <div className="workflow-work-status"><span>{state.action.latest_output ? "Latest Output" : "Expected Output"}</span><strong>{state.action.latest_output?.label ?? state.action.expected_output?.label ?? "No Output declared"}</strong><small>{state.latest_activity_at ? formatDateTime(state.latest_activity_at) : "No Activity yet"}</small></div>
+        <div className="workflow-row-actions">
+          <Link href={`/projects/${projectId}/workflows/${instance.workflow_instance_id}`} className="button button-secondary">Open Workflow</Link>
+          <details className="compact-row-details"><summary>Manage</summary><p>{definition?.recommended_version?.core_capability_maturity.replaceAll("_", " ") ?? "Maturity unknown"}</p>{instance.desired_state === "ACTIVE" ? <button className="button button-ghost" disabled={retire.isPending} onClick={() => retireWorkflow(instance)}>Retire</button> : null}</details>
+        </div>
+      </article>
+    );
+  };
 
   async function addWorkflow(item: WorkflowCatalogItem) {
     if (!item.recommended_version || !item.recommended_capsule) return;
@@ -144,39 +169,19 @@ export function WorkflowBoard({ projectId }: { projectId: string }) {
             : ""}
         </div>
       ) : null}
+      {workflowsNeedingSync.length ? <div className="boundary-callout project-sync-notice" role="status"><strong>Project changed — sync to add {workflowsNeedingSync.map((item) => projections.get(item.workflow_instance_id)?.friendly_instance_label ?? item.display_name).join(", ")}</strong><p>Your already installed Workflows remain valid.</p><CopyCommand command="python reagent_local.py sync ." label="local sync command" /></div> : null}
 
       <section aria-labelledby="current-workflows-title">
         <div className="section-heading">
           <div><p className="eyebrow">Current Work</p><h2 id="current-workflows-title">Workflow progression</h2></div>
-          <span className="section-caption">{instances.data.items.length} Workflow{instances.data.items.length === 1 ? "" : "s"}</span>
+          <span className="section-caption">{activeInstances.length} active Workflow{activeInstances.length === 1 ? "" : "s"}</span>
         </div>
-        {instances.data.items.length ? (
+        {activeInstances.length ? (
           <div className="workflow-work-list">
-            {instances.data.items.map((instance) => {
-              const state = projections.get(instance.workflow_instance_id);
-              const definition = catalog.data!.items.find(
-                (item) => item.workflow_definition_id === instance.workflow_definition_id,
-              );
-              if (!state) return null;
-              return (
-                <article className="workflow-work-row" key={instance.workflow_instance_id} data-attention-state={state.action.attention_state}>
-                  <div className="workflow-work-identity"><p className="eyebrow">{definition?.display_name ?? state.workflow_display_name}</p><h3>{state.friendly_instance_label ?? instance.display_name}</h3><span>{state.action.stage.label}</span></div>
-                  <div className="workflow-work-status"><span>Actor</span><strong>{state.action.actor === "NONE" ? "No action required" : `${state.action.actor.charAt(0)}${state.action.actor.slice(1).toLowerCase()} acts`}</strong><small>{state.action.blocker?.message ?? state.latest_summary ?? "Ready for its next valid action."}</small></div>
-                  <div className="workflow-work-status"><span>Next</span><strong>{state.action.next_action.label}</strong><small>{state.action.next_action.surface === "LOCAL" ? "Local Workspace" : state.action.next_action.surface === "BROWSER" ? "Browser" : "Information"}</small></div>
-                  <div className="workflow-work-status"><span>{state.action.latest_output ? "Latest Output" : "Expected Output"}</span><strong>{state.action.latest_output?.label ?? state.action.expected_output?.label ?? "No Output declared"}</strong><small>{state.latest_activity_at ? formatDateTime(state.latest_activity_at) : "No Activity yet"}</small></div>
-                  <div className="workflow-row-actions">
-                    <Link href={`/projects/${projectId}/workflows/${instance.workflow_instance_id}`} className="button button-secondary">Open Workflow</Link>
-                    <details className="compact-row-details">
-                      <summary>Manage</summary>
-                      <p>{definition?.recommended_version?.core_capability_maturity.replaceAll("_", " ") ?? "Maturity unknown"}</p>
-                      {instance.desired_state === "ACTIVE" ? <button className="button button-ghost" disabled={retire.isPending} onClick={() => retireWorkflow(instance)}>Retire</button> : null}
-                    </details>
-                  </div>
-                </article>
-              );
-            })}
+            {activeInstances.map(workflowRow)}
           </div>
         ) : <div className="empty-panel"><h3>No Workflow Instances</h3><p>Add a published Workflow from the catalog below.</p></div>}
+        {retiredInstances.length ? <details className="retired-workflow-history"><summary>{retiredInstances.length} retired Workflow{retiredInstances.length === 1 ? "" : "s"} · history</summary><div className="workflow-work-list">{retiredInstances.map(workflowRow)}</div></details> : null}
       </section>
 
       <details className="technical-details">

@@ -341,19 +341,68 @@ test("distinguishes two Instances of the same Workflow Definition", async () => 
     ...projectProgressFixture,
     active_workflow_count: 2,
     instances: [
-      ...projectProgressFixture.instances,
+      { ...projectProgressFixture.instances[0], friendly_instance_label: "Literature Search #1" },
       {
         ...projectProgressFixture.instances[0],
         workflow_instance_id: secondId,
         instance_display_name: "Literature Search B",
+        friendly_instance_label: "Literature Search #2",
         research_status: "IN_PROGRESS",
       },
     ],
   });
   render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
 
-  expect(await screen.findByText("Literature Search B")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Literature Search #1" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Literature Search #2" })).toBeVisible();
   expect(screen.getAllByText("Manage")).toHaveLength(2);
+});
+
+test("shows one Project sync notice and keeps retired Workflow history secondary", async () => {
+  arrange();
+  const newId = `wfi-${"8".repeat(32)}`;
+  const retiredId = `wfi-${"9".repeat(32)}`;
+  const newInstance = { ...workflowInstancesFixture.items[0], workflow_instance_id: newId, display_name: "Writing Revision" };
+  const retiredInstance = { ...workflowInstancesFixture.items[0], workflow_instance_id: retiredId, display_name: "Writing Revision", desired_state: "RETIRED" as const };
+  vi.spyOn(apiClient, "listProjectWorkflowInstances").mockResolvedValue({
+    ...workflowInstancesFixture, total: 3,
+    items: [workflowInstancesFixture.items[0], newInstance, retiredInstance],
+  });
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue({
+    ...projectProgressFixture, active_workflow_count: 2, retired_workflow_count: 1,
+    instances: [
+      projectProgressFixture.instances[0],
+      { ...projectProgressFixture.instances[0], workflow_instance_id: newId, friendly_instance_label: "Writing Revision", installation_state: "NOT_INSTALLED", action: { ...projectProgressFixture.instances[0].action, stage: { code: "LOCAL_SYNC", label: "Not added locally" }, next_action: { surface: "LOCAL", code: "SYNC", label: "Sync Local Workspace", description: "Add the new Workflow." } } },
+      { ...projectProgressFixture.instances[0], workflow_instance_id: retiredId, friendly_instance_label: "Writing Revision", lifecycle: "RETIRED", desired_state: "NOT_DESIRED" },
+    ],
+  });
+  render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByText("Project changed — sync to add Writing Revision")).toBeVisible();
+  expect(screen.getByText("Your already installed Workflows remain valid.")).toBeVisible();
+  expect(screen.getByText("2 active Workflows")).toBeVisible();
+  expect(screen.getByText("1 retired Workflow · history")).toBeVisible();
+  expect(screen.queryAllByText("Local Workspace out of date")).toHaveLength(0);
+});
+
+test("does not describe an exact Capsule mismatch as a newly added Workflow", async () => {
+  arrange();
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue({
+    ...projectProgressFixture,
+    instances: [{
+      ...projectProgressFixture.instances[0],
+      installation_state: "ACKNOWLEDGED_STALE",
+      action: {
+        ...projectProgressFixture.instances[0].action,
+        stage: { code: "LOCAL_SYNC", label: "Local Workspace out of date" },
+        next_action: { surface: "LOCAL", code: "SYNC", label: "Sync Local Workspace", description: "Reconcile the exact Capsule." },
+      },
+    }],
+  });
+  render(<Providers><WorkflowBoard projectId={localProjectFixture.project_id} /></Providers>);
+
+  expect(await screen.findByText("Local Workspace out of date")).toBeVisible();
+  expect(screen.queryByText(/Project changed — sync to add/)).not.toBeInTheDocument();
 });
 
 test("refreshes on Manifest revision conflict and never attempts a browser-local write", async () => {

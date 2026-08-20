@@ -19,6 +19,9 @@ MANUSCRIPT_PRESENTATION_SCHEMA = (
 REVIEW_PRESENTATION_SCHEMA = (
     "reagent.artifact-presentation.review-report/v0.1"
 )
+REVIEW_PRESENTATION_SCHEMA_V2 = (
+    "reagent.artifact-presentation.review-report/v0.2"
+)
 MAX_PRESENTATION_BYTES = 65_536
 
 _SHA = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -274,6 +277,52 @@ def validate_review_presentation(value: Mapping[str, Any]) -> dict[str, Any]:
             issue[key] = _text(issue[key], key.replace("_", " "), maximum, optional=True)
     for key, label in (
         ("requested_revisions", "requested revision"),
+        ("unresolved_evidence_gaps", "unresolved evidence gap"),
+        ("reproducibility_findings", "reproducibility finding"),
+        ("limitations", "Review limitation"),
+    ):
+        item[key] = _texts(item[key], label, count=30, length=500)
+    if item["owner_review_status"] not in {"APPROVED", "NOT_REPORTED"}:
+        raise UpstreamPresentationError("Owner review status is invalid")
+    return _finish(item)
+
+
+def validate_review_presentation_v2(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the concise, exact v3 Review companion without replacing v0.1."""
+
+    item = _object(value, {
+        "schema", "artifact_id", "artifact_checksum", "reviewed_manuscript",
+        "scope", "status", "summary", "issues", "unresolved_evidence_gaps",
+        "reproducibility_findings", "limitations", "owner_review_status",
+        "presentation_checksum",
+    }, "Review presentation")
+    _base(item, REVIEW_PRESENTATION_SCHEMA_V2)
+    item["reviewed_manuscript"] = _reference(
+        item["reviewed_manuscript"], "reviewed manuscript", {"manuscript-draft/v4"}
+    )
+    item["scope"] = _text(item["scope"], "Review scope", 1_500)
+    if item["status"] not in {"NO_BLOCKING_ISSUES", "REVISION_REQUIRED", "INSUFFICIENT_EVIDENCE"}:
+        raise UpstreamPresentationError("Review status is invalid")
+    item["summary"] = _text(item["summary"], "Review summary", 2_000)
+    issues = item["issues"]
+    if not isinstance(issues, list) or len(issues) > 100:
+        raise UpstreamPresentationError("Review issue list is invalid")
+    for raw in issues:
+        issue = _object(raw, {
+            "issue_id", "category", "severity", "blocking", "summary",
+            "requested_revision", "status",
+        }, "Review issue")
+        _text(issue["issue_id"], "Review issue identity", 160)
+        _text(issue["category"], "Review issue category", 80)
+        if issue["severity"] not in {"MAJOR", "MINOR"} or not isinstance(issue["blocking"], bool):
+            raise UpstreamPresentationError("Review issue classification is invalid")
+        issue["summary"] = _text(issue["summary"], "Review issue summary", 1_000)
+        issue["requested_revision"] = _text(
+            issue["requested_revision"], "requested revision", 1_000
+        )
+        if issue["status"] != "REPORTED":
+            raise UpstreamPresentationError("Review issue status is invalid")
+    for key, label in (
         ("unresolved_evidence_gaps", "unresolved evidence gap"),
         ("reproducibility_findings", "reproducibility finding"),
         ("limitations", "Review limitation"),

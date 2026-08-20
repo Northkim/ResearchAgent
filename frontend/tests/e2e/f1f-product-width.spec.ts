@@ -93,15 +93,15 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
     )!;
     expect(state("literature-search-local-experimental")).toMatchObject({
       research_status: "COMPLETED",
-      installation_state: "ACKNOWLEDGED_STALE",
-      action: { attention_state: "ATTENTION_REQUIRED", latest_output: { state: "PRODUCED" } },
+      installation_state: "ACKNOWLEDGED_CURRENT",
+      action: { attention_state: "COMPLETED", latest_output: { state: "PRODUCED" } },
     });
     expect(state("idea-discovery-local-experimental")).toMatchObject({
       research_status: "COMPLETED",
-      action: { attention_state: "ATTENTION_REQUIRED", latest_output: { state: "PRODUCED" } },
+      action: { attention_state: "COMPLETED", latest_output: { state: "PRODUCED" } },
     });
     expect(state("writing-local-experimental")).toMatchObject({
-      research_status: "BLOCKED", action: { attention_state: "ATTENTION_REQUIRED" },
+      research_status: "BLOCKED", action: { attention_state: "OWNER_ACTION_REQUIRED" },
     });
     expect(state("review-local-experimental")).toMatchObject({ installation_state: "ACKNOWLEDGED_STALE" });
 
@@ -135,9 +135,9 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
       expect(acknowledgement.ok()).toBe(true);
     };
 
-    // The fixture deliberately creates an acknowledged-stale installation. Exercise that
-    // state first, then restore the supported public sync acknowledgement so the same
-    // controlled journey can also review the underlying blocked and Owner-action states.
+    // The retired Review is deliberately acknowledged-stale. Existing active Capsules
+    // remain exact across the Project manifest revision; acknowledge the current manifest
+    // before reviewing the underlying blocked and Owner-action states.
     await acknowledgeCurrent(fixture.project_id);
     await acknowledgeCurrent(supportingReadyProject.project_id);
     const synchronizedResponse = await request.get(`${backend}/projects/${fixture.project_id}/progress`);
@@ -239,6 +239,9 @@ test("qualifies the FE-M task-first canonical journey", async ({ page, request }
     const workflowRows = page.locator("article.workflow-work-row");
     await expect(workflowRows).toHaveCount(4);
     await expect(workflowRows.filter({ hasText: "Idea Discovery" }).getByText("Blocked", { exact: true })).toHaveCount(0);
+    const retiredHistory = page.locator("details.retired-workflow-history");
+    await expect(retiredHistory.getByText("1 retired Workflow · history", { exact: true })).toBeVisible();
+    await expect(retiredHistory).not.toHaveAttribute("open");
     await page.goto(`/projects/${fixture.project_id}/outputs`);
     await expect(page.getByRole("heading", { name: "Selected paper library" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Selected research idea" })).toBeVisible();
@@ -370,6 +373,8 @@ test("EP-D2 qualifies the forward Full Research Owner journey", async ({ page, r
   const reviewIssue = page.getByText("The abstract-only evidence boundary is implicit.");
   const revisionButton = page.getByRole("button", { name: "Start manuscript revision" });
   await expect(reviewIssue).toBeVisible();
+  await expect(page.getByText("minor issue · blocking · evidence boundary", { exact: true })).toBeVisible();
+  await expect(page.locator(".review-issue-card")).toContainText("Requested revision: State that full-text evidence was not supplied.");
   await expect(revisionButton).toBeVisible();
   expect(await reviewIssue.evaluate((node, action) => Boolean(node.compareDocumentPosition(action as Node) & Node.DOCUMENT_POSITION_FOLLOWING), await revisionButton.elementHandle())).toBe(true);
   await shot("03-review-evidence-before-revision-action");
@@ -380,7 +385,7 @@ test("EP-D2 qualifies the forward Full Research Owner journey", async ({ page, r
   const revisedInstances = await request.get(`${backend}/projects/${fixture.eligible.project_id}/workflow-instances`);
   expect(revisedInstances.ok()).toBe(true);
   const afterAction = await revisedInstances.json() as { items: Array<{ workflow_definition_id: string; workflow_version: string }> };
-  expect(afterAction.items.filter((item) => item.workflow_definition_id === "writing-local-experimental" && item.workflow_version === "0.6.0")).toHaveLength(1);
+  expect(afterAction.items.filter((item) => item.workflow_definition_id === "writing-local-experimental" && item.workflow_version === "0.7.0")).toHaveLength(1);
   await shot("04-writing-revision-created-task-first");
 
   await page.goto(`/projects/${fixture.eligible.project_id}/workflows`);
@@ -388,6 +393,9 @@ test("EP-D2 qualifies the forward Full Research Owner journey", async ({ page, r
   await expect(postRevisionRows).toHaveCount(6);
   await expect(postRevisionRows.getByRole("heading", { name: "Initial Writing", exact: true })).toHaveCount(1);
   await expect(postRevisionRows.getByRole("heading", { name: "Writing Revision", exact: true })).toHaveCount(1);
+  await expect(page.getByText("Project changed — sync to add Writing Revision", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your already installed Workflows remain valid.", { exact: true })).toBeVisible();
+  await expect(postRevisionRows.getByText("Local Workspace out of date", { exact: true })).toHaveCount(0);
   await shot("05-post-revision-role-aware-board");
 
   await page.goto(`/projects/${fixture.completed.project_id}/workflows/${fixture.completed.instances.revision}`);
@@ -412,6 +420,8 @@ test("EP-D2 qualifies the forward Full Research Owner journey", async ({ page, r
   await shot("08-downstream-presentation-absent");
 
   await page.goto(`/projects/${fixture.completed.project_id}`);
+  await expect(page.getByText("Latest completed outcome", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Revised manuscript completed", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Recent activity" })).toBeVisible();
   const recentActivity = page.getByRole("region", { name: "Recent activity" });
   await expect(recentActivity.getByText("Writing Revision", { exact: true })).toBeVisible();
@@ -425,5 +435,7 @@ test("EP-D2 qualifies the forward Full Research Owner journey", async ({ page, r
   const activity = page.locator(".project-progress-history");
   await expect(activity.getByRole("heading", { name: "Initial Writing", exact: true })).toBeVisible();
   await expect(activity.getByRole("heading", { name: "Writing Revision", exact: true })).toBeVisible();
+  await expect(activity.getByText(/Progress report · round/).first()).toBeVisible();
+  await expect(activity.getByText(/Report status · completed/).first()).toBeVisible();
   await shot("10-forward-activity-and-role-labels");
 });

@@ -524,6 +524,7 @@ export interface WorkflowInstanceProgress {
   workflow_instance_id: string;
   workflow_definition_id: string;
   workflow_definition_version: string;
+  workflow_role?: "INITIAL" | "REVISION" | null;
   core_capability_maturity: "REVIEWED_CORE" | "SCAFFOLD_CORE";
   workflow_display_name: string;
   instance_display_name: string;

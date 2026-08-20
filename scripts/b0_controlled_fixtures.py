@@ -15,7 +15,7 @@ from backend.artifact_references.contracts import (
 from backend.artifact_references.service import ArtifactReferenceService
 from backend.artifact_references.upstream_presentations import (
     MANUSCRIPT_PRESENTATION_SCHEMA, PAPER_LIBRARY_PRESENTATION_SCHEMA,
-    RESEARCH_IDEA_PRESENTATION_SCHEMA, REVIEW_PRESENTATION_SCHEMA,
+    RESEARCH_IDEA_PRESENTATION_SCHEMA, REVIEW_PRESENTATION_SCHEMA_V2,
 )
 from backend.database import SQLAlchemyUnitOfWork, create_postgres_engine, create_session_factory
 from backend.progress_reports.contracts import (
@@ -456,8 +456,8 @@ def _seed_ep_d2_project(
         "review": next(item for item in items if item["workflow_definition_id"] == WORKFLOWS[3]),
     }
     expected = {
-        "literature": ("0.4.0", "0.6.0"), "idea": ("0.3.0", "0.4.0"),
-        "experiment": ("0.7.0", "0.10.0"), "writing": ("0.5.0", "0.7.0"),
+        "literature": ("0.6.0", "0.8.0"), "idea": ("0.4.0", "0.5.0"),
+        "experiment": ("0.8.0", "0.11.0"), "writing": ("0.5.0", "0.7.0"),
         "review": ("0.4.0", "0.6.0"),
     }
     if any((roles[key]["workflow_version"], roles[key]["capsule_version"]) != pin
@@ -621,7 +621,7 @@ def _seed_ep_d2_project(
                 payload={**initial_payload, "presentation_checksum": canonical_hash(initial_payload)},
             )
         review_payload = {
-            "schema": REVIEW_PRESENTATION_SCHEMA,
+            "schema": REVIEW_PRESENTATION_SCHEMA_V2,
             "artifact_id": review["artifact_id"],
             "artifact_checksum": review["artifact_checksum"],
             "reviewed_manuscript": manuscript,
@@ -629,11 +629,12 @@ def _seed_ep_d2_project(
             "status": "REVISION_REQUIRED",
             "summary": "One bounded limitation must be made explicit before the manuscript is complete.",
             "issues": [{
-                "issue_id": "issue-limitation-1", "severity": "MINOR", "blocking": True,
-                "anchor": "Limitations", "rationale": "The abstract-only evidence boundary is implicit.",
+                "issue_id": "issue-limitation-1", "category": "EVIDENCE_BOUNDARY",
+                "severity": "MINOR", "blocking": True,
+                "summary": "The abstract-only evidence boundary is implicit.",
                 "requested_revision": "State that full-text evidence was not supplied.",
+                "status": "REPORTED",
             }],
-            "requested_revisions": ["State that full-text evidence was not supplied."],
             "unresolved_evidence_gaps": ["Full-text evidence remains unavailable."],
             "reproducibility_findings": ["The bounded comparison protocol is described."],
             "limitations": ["This controlled Review uses only the exact supplied inputs."],

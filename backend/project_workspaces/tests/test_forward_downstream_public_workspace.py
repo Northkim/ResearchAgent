@@ -10,7 +10,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from backend.api import ApplicationContainer, create_app
-from backend.artifact_references.tests.test_forward_downstream_v5_contracts import _manuscript, _review, _v5
+from backend.artifact_references.tests.test_forward_downstream_v5_contracts import _manuscript, _rehash_review_owner, _review, _v5
 from backend.artifact_references.tests.test_research_flow_contracts import _library, _selected
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import workspace_cli
@@ -24,6 +24,22 @@ from backend.workflow_packages.forward_downstream_publication import (
 from backend.workflow_packages.revision_optional_support_publication import (
     WRITING_REVISION_CAPSULE_ID,
 )
+
+
+class _PresentationTransport(_Transport):
+    def report_artifact_presentation(self, project_id, artifact_id, payload):
+        response = self.client.put(
+            f"/projects/{project_id}/artifacts/{artifact_id}/presentation", json=payload
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def report_artifact_content_qualification(self, project_id, artifact_id, payload):
+        response = self.client.put(
+            f"/projects/{project_id}/artifacts/{artifact_id}/content-qualification", json=payload
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
 
 
 def test_public_workspace_sync_bind_materialize_preflight_and_role_selection(tmp_path: Path) -> None:
@@ -50,7 +66,7 @@ def test_public_workspace_sync_bind_materialize_preflight_and_role_selection(tmp
 
     workspace = tmp_path / "workspace"
     workspace_cli.bootstrap_workspace(target=workspace, descriptor=client.get(f"/projects/{project_id}/workspace-bootstrap").json())
-    transport = _Transport(client)
+    transport = _PresentationTransport(client)
     assert workspace_cli.sync_workspace(workspace_root=workspace, transport=transport).status == "SYNCED"
     lock = json.loads((workspace / workspace_cli.INSTALLED_LOCK).read_text()); installed = {item["workflow_instance_id"]:item for item in lock["installed_capsules"]}
     assert [(installed[created[role]["workflow_instance_id"]]["workflow_definition_version"], installed[created[role]["workflow_instance_id"]]["capsule_version"]) for role in ("writing","review","revision")] == [("0.5.0","0.7.0"),("0.4.0","0.6.0"),("0.7.0","0.9.0")]
@@ -70,6 +86,12 @@ def test_public_workspace_sync_bind_materialize_preflight_and_role_selection(tmp
     manuscript_art = _seed_upstream(uow_factory=factory, project_id=project_id, instance=writing_pin, root=workspace/writing_pin["relative_path"], artifact_type="manuscript-draft/v4", content=manuscript, character="c")
     manuscript_exact = {"artifact_id":manuscript_art["artifact_id"],"artifact_type":"manuscript-draft/v4","sha256":manuscript_art["content_checksum"]}
     review_value, _ = _review(manuscript, exact_sources, v5, manuscript_ref=manuscript_exact); review_value = deepcopy(review_value)
+    review_value["issues"][0].update({
+        "category": "CLAIM_SCOPE",
+        "summary": "The exact evidence boundary needs clearer wording.",
+        "recommended_action": "State the limitation explicitly.",
+    })
+    _rehash_review_owner(review_value)
     review_pin = installed[created["review_fixture"]["workflow_instance_id"]]
     review_art = _seed_upstream(uow_factory=factory, project_id=project_id, instance=review_pin, root=workspace/review_pin["relative_path"], artifact_type="review-report/v3", content=review_value, character="d")
 
@@ -84,6 +106,25 @@ def test_public_workspace_sync_bind_materialize_preflight_and_role_selection(tmp
             response = client.post(f"/projects/{project_id}/workflow-instances/{instance_id}/artifact-dependencies", json={"requirement_key":key,"artifact_id":artifact["artifact_id"],"idempotency_key":str(uuid4())})
             assert response.status_code == 201, response.text
     workspace_cli.refresh_artifact_index(workspace_root=workspace, transport=transport)
+    reported = {
+        item["artifact_id"]: item
+        for item in client.get(f"/projects/{project_id}/artifacts?limit=100").json()["artifacts"]
+    }
+    assert reported[manuscript_art["artifact_id"]]["presentation"]["schema_identity"] == "reagent.artifact-presentation.manuscript-draft/v0.1"
+    assert reported[review_art["artifact_id"]]["presentation"]["schema_identity"] == "reagent.artifact-presentation.review-report/v0.2"
+    checksums = {
+        artifact_id: reported[artifact_id]["presentation"]["presentation_checksum"]
+        for artifact_id in (manuscript_art["artifact_id"], review_art["artifact_id"])
+    }
+    workspace_cli.refresh_artifact_index(workspace_root=workspace, transport=transport)
+    replay = {
+        item["artifact_id"]: item
+        for item in client.get(f"/projects/{project_id}/artifacts?limit=100").json()["artifacts"]
+    }
+    assert {
+        artifact_id: replay[artifact_id]["presentation"]["presentation_checksum"]
+        for artifact_id in checksums
+    } == checksums
     for role in bindings:
         assert workspace_cli.materialize_artifacts(workspace_root=workspace, consumer_workflow_instance_id=created[role]["workflow_instance_id"], transport=transport).materialized_count == len(bindings[role])
 

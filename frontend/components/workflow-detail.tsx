@@ -701,9 +701,9 @@ function GenericExperimentDetail({
   </div>;
 }
 
-function downstreamRole(instance: ProjectWorkflowInstance) {
+function downstreamRole(instance: ProjectWorkflowInstance, state: WorkflowInstanceProgress) {
   if (instance.workflow_definition_id === "review-local-experimental") return "REVIEW" as const;
-  return instance.workflow_version === "0.6.0" ? "REVISION" as const : "INITIAL" as const;
+  return state.workflow_role === "REVISION" ? "REVISION" as const : "INITIAL" as const;
 }
 
 function downstreamTask(role: "INITIAL" | "REVIEW" | "REVISION", stage: string, completed: boolean): { title: string; next: string } {
@@ -753,7 +753,7 @@ function DownstreamWorkflowDetail({
   instances: ProjectWorkflowInstance[];
   manifestRevision: number;
 }) {
-  const role = downstreamRole(instance);
+  const role = downstreamRole(instance, state);
   const [revisionPending, setRevisionPending] = useState(false);
   const [revisionError, setRevisionError] = useState<string | null>(null);
   const dependencies = progress.dependency_edges.filter((edge) => edge.consumer_workflow_instance_id === instance.workflow_instance_id && edge.state === "ACTIVE");
@@ -766,7 +766,10 @@ function DownstreamWorkflowDetail({
   const sourceTitle = role === "INITIAL" ? "Research inputs" : role === "REVIEW" ? "Manuscript under review" : "Revision source";
   const sourceRows = requirements;
   const reviewPresentationReady = role === "REVIEW"
-    && latestArtifact?.presentation?.schema_identity === "reagent.artifact-presentation.review-report/v0.1";
+    && [
+      "reagent.artifact-presentation.review-report/v0.1",
+      "reagent.artifact-presentation.review-report/v0.2",
+    ].includes(latestArtifact?.presentation?.schema_identity ?? "");
   const parentDependency = dependencies.find((edge) => edge.requirement_key === "manuscript");
   const canStartRevision = completed && reviewPresentationReady && parentDependency && latestArtifact;
 
@@ -802,7 +805,7 @@ function DownstreamWorkflowDetail({
 
     {canStartRevision ? <section className="plain-section" aria-labelledby="start-revision-title"><p className="eyebrow">Next step</p><h2 id="start-revision-title">Revise this manuscript</h2><p>Create one new Revision from the exact manuscript and Review shown above.</p><button type="button" className="button button-primary" disabled={revisionPending} onClick={startRevision}>{revisionPending ? "Starting revision…" : "Start manuscript revision"}</button>{revisionError ? <p role="alert">{revisionError}</p> : null}</section> : null}
 
-    {command ? <section id="local-workflow" className="run-local-details" aria-labelledby="downstream-local-title"><div><p className="eyebrow">Local Workflow</p><h2 id="downstream-local-title">Continue in the Local Workspace</h2><p>Research content and Agent reasoning remain on this computer.</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label={`${roleName} local workflow command`} /><p>Expected next state: {task.next} Run the same command to resume saved work.</p></div></section> : null}
+    {command ? <section id="local-workflow" className="run-local-details" aria-labelledby="downstream-local-title"><div><p className="eyebrow">Local Workflow</p><h2 id="downstream-local-title">Continue in the Local Workspace</h2><p>Research content and Agent reasoning remain on this computer.</p><p className="exact-command-label">One recommended command</p><CopyCommand command={command} label={`${roleName} local workflow command`} /><p>{state.action.next_action.code === "MATERIALIZE" ? "This prepares verified local copies of the selected research inputs." : `Expected next state: ${task.next} Run the same command to continue from durable work.`}</p></div></section> : null}
 
     <details className="technical-details"><summary>Technical details</summary><dl><div><dt>Workflow Definition</dt><dd><code>{instance.workflow_definition_id}@{instance.workflow_version}</code></dd></div><div><dt>Capsule</dt><dd><code>{instance.capsule_id}@{instance.capsule_version}</code></dd></div><div><dt>Workflow Instance</dt><dd><code>{instance.workflow_instance_id}</code></dd></div>{dependencies.map((edge) => <div key={edge.requirement_key}><dt>{edge.requirement_key}</dt><dd><code>{edge.artifact_id}</code></dd></div>)}{latestArtifact ? <><div><dt>Artifact type</dt><dd><code>{latestArtifact.artifact_type}</code></dd></div><div><dt>Artifact checksum</dt><dd><code>{latestArtifact.content_checksum}</code></dd></div></> : null}</dl></details>
   </div>;
@@ -846,7 +849,7 @@ export function WorkflowDetail({ projectId, workflowInstanceId }: { projectId: s
     />;
   }
   if (
-    (instance.workflow_definition_id === "writing-local-experimental" && ["0.5.0", "0.6.0"].includes(instance.workflow_version))
+    (instance.workflow_definition_id === "writing-local-experimental" && ["INITIAL", "REVISION"].includes(state.workflow_role ?? ""))
     || (instance.workflow_definition_id === "review-local-experimental" && instance.workflow_version === "0.4.0")
   ) {
     if (artifacts.isLoading) return <LoadingState label={`Loading ${instance.display_name}`} />;

@@ -25,6 +25,9 @@ test("renders human Activity with exact Progress provenance in Technical Details
   expect(screen.getByText(progressReportFixture.receipt_id)).toBeInTheDocument();
   expect(screen.getAllByText("Technical Details")[0].closest("details")).not.toHaveAttribute("open");
   expect(screen.getByText("Selected paper library")).toBeVisible();
+  expect(screen.getByText(`Progress report · round ${progressReportFixture.normalized_record?.execution_round}`)).toBeVisible();
+  expect(screen.getByText(/Report status · completed/)).toBeVisible();
+  expect(screen.queryByText(/Next:/)).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Activity" })).toHaveAttribute("aria-current", "page");
 
   fireEvent.change(screen.getByLabelText("Workflow"), { target: { value: workflowInstanceId } });

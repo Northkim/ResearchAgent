@@ -230,6 +230,9 @@ MANUSCRIPT_PRESENTATION_SCHEMA = (
 REVIEW_PRESENTATION_SCHEMA = (
     "reagent.artifact-presentation.review-report/v0.1"
 )
+REVIEW_PRESENTATION_SCHEMA_V2 = (
+    "reagent.artifact-presentation.review-report/v0.2"
+)
 EXPERIMENT_PRESENTATION_SCHEMA = (
     "reagent.artifact-presentation.experiment-record/v0.2"
 )
@@ -4062,6 +4065,13 @@ def _project_artifact_presentation(
         issues = value.get("issues")
         if not isinstance(issues, list) or len(issues) > 100:
             raise WorkspaceCLIError("LOCAL_ARTIFACT_DRIFT", "Review issues are invalid", EXIT_VALIDATION)
+        use_v2 = all(
+            isinstance(raw, dict)
+            and all(isinstance(raw.get(key), str) and raw[key].strip() for key in (
+                "category", "summary", "recommended_action",
+            ))
+            for raw in issues
+        )
         projected_issues: list[dict[str, Any]] = []
         requested: list[str] = []
         reproducibility: list[str] = []
@@ -4073,17 +4083,34 @@ def _project_artifact_presentation(
                 raise WorkspaceCLIError(
                     "LOCAL_ARTIFACT_DRIFT", "Review issue blocking state is invalid", EXIT_VALIDATION
                 )
-            requested_revision = _optional_issue_text(raw, ("requested_revision", "requested_change"), 1_000)
-            rationale = _optional_issue_text(raw, ("rationale", "description"), 1_000)
-            anchor = _optional_issue_text(raw, ("manuscript_anchor", "claim_anchor", "anchor"), 300)
-            projected_issues.append({
-                "issue_id": _bounded_projection_text(raw.get("issue_id"), "Review issue identity", 160),
-                "severity": _bounded_projection_text(raw.get("severity"), "Review issue severity", 20),
-                "blocking": blocking,
-                "anchor": anchor,
-                "rationale": rationale,
-                "requested_revision": requested_revision,
-            })
+            if use_v2:
+                requested_revision = _bounded_projection_text(
+                    raw.get("recommended_action"), "requested revision", 1_000
+                )
+                rationale = _bounded_projection_text(raw.get("summary"), "Review issue summary", 1_000)
+                category = _bounded_projection_text(raw.get("category"), "Review issue category", 80)
+                projected_issues.append({
+                    "issue_id": _bounded_projection_text(raw.get("issue_id"), "Review issue identity", 160),
+                    "category": category,
+                    "severity": _bounded_projection_text(raw.get("severity"), "Review issue severity", 20),
+                    "blocking": blocking,
+                    "summary": rationale,
+                    "requested_revision": requested_revision,
+                    "status": "REPORTED",
+                })
+            else:
+                requested_revision = _optional_issue_text(
+                    raw, ("requested_revision", "requested_change"), 1_000
+                )
+                rationale = _optional_issue_text(raw, ("rationale", "description"), 1_000)
+                projected_issues.append({
+                    "issue_id": _bounded_projection_text(raw.get("issue_id"), "Review issue identity", 160),
+                    "severity": _bounded_projection_text(raw.get("severity"), "Review issue severity", 20),
+                    "blocking": blocking,
+                    "anchor": _optional_issue_text(raw, ("manuscript_anchor", "claim_anchor", "anchor"), 300),
+                    "rationale": rationale,
+                    "requested_revision": requested_revision,
+                })
             if requested_revision:
                 requested.append(requested_revision)
             if raw.get("category") == "REPRODUCIBILITY" and rationale:
@@ -4109,7 +4136,7 @@ def _project_artifact_presentation(
                     if text:
                         gaps.append(text)
         payload = {
-            "schema": REVIEW_PRESENTATION_SCHEMA,
+            "schema": REVIEW_PRESENTATION_SCHEMA_V2 if use_v2 else REVIEW_PRESENTATION_SCHEMA,
             "artifact_id": artifact["artifact_id"],
             "artifact_checksum": artifact["content_checksum"],
             "reviewed_manuscript": _projection_reference(value.get("source_manuscript"), "manuscript-draft/v4"),
@@ -4117,12 +4144,13 @@ def _project_artifact_presentation(
             "status": _bounded_projection_text(value.get("assessment"), "Review status", 80),
             "summary": _bounded_projection_text(value.get("summary"), "Review summary", 2_000),
             "issues": projected_issues,
-            "requested_revisions": list(dict.fromkeys(requested))[:30],
             "unresolved_evidence_gaps": list(dict.fromkeys(gaps))[:30],
             "reproducibility_findings": list(dict.fromkeys(reproducibility))[:30],
             "limitations": _bounded_projection_texts(value.get("limitations"), "Review limitations", count=30, length=500),
             "owner_review_status": "APPROVED" if isinstance(value.get("owner_review"), dict) else "NOT_REPORTED",
         }
+        if not use_v2:
+            payload["requested_revisions"] = list(dict.fromkeys(requested))[:30]
     else:
         return None
     return {**payload, "presentation_checksum": canonical_hash(payload)}
@@ -9928,15 +9956,20 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             else None
         )
         role_name = document["workflow_type"]
+        explicit_writing_role = False
         if definition_id == "writing-local-experimental":
-            if item["workflow_definition_version"] == "0.5.0":
+            # The immutable installed descriptor is offline role authority.
+            # Versions and Installed Lock row order are not role semantics.
+            if (capsule / "workflow/real-writing.json").is_file():
                 role_name = "Initial Writing"
-            elif item["workflow_definition_version"] in {"0.6.0", "0.7.0"}:
+                explicit_writing_role = True
+            elif (capsule / "workflow/writing-revision.json").is_file():
                 role_name = "Writing Revision"
+                explicit_writing_role = True
         seen_counts[definition_id] = seen_counts.get(definition_id, 0) + 1
         friendly_label = (
             role_name
-            if all_counts[definition_id] == 1
+            if explicit_writing_role or all_counts[definition_id] == 1
             else f"{role_name} #{seen_counts[definition_id]}"
         )
         if item["lifecycle"] != "ACTIVE":

@@ -16,6 +16,7 @@ from backend.local_projects.service import LocalProjectService
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.project_workspaces import workspace_cli
+from backend.project_workspaces.owner_labels import OwnerWorkflowLabelInput, owner_workflow_labels
 from backend.project_workspaces.tests.test_generic_experiment_v5_workspace import _seed_forward
 from backend.progress_reports.aggregation import _readiness, _workflow_action
 
@@ -39,6 +40,19 @@ def _create(client, setup=None, custom=()):
         payload["workflow_setup"] = setup
         payload["custom_workflow_definition_ids"] = list(custom)
     return client.post("/projects", json=payload)
+
+
+def test_owner_labels_use_explicit_role_and_exact_identity_not_version_order() -> None:
+    labels = owner_workflow_labels([
+        OwnerWorkflowLabelInput("wfi-" + "9" * 32, "writing-local-experimental", "Writing", "INITIAL"),
+        OwnerWorkflowLabelInput("wfi-" + "1" * 32, "writing-local-experimental", "Writing", "REVISION"),
+        OwnerWorkflowLabelInput("wfi-" + "8" * 32, "literature-search-local-experimental", "Literature Search"),
+        OwnerWorkflowLabelInput("wfi-" + "2" * 32, "literature-search-local-experimental", "Literature Search"),
+    ])
+    assert labels["wfi-" + "9" * 32] == "Initial Writing"
+    assert labels["wfi-" + "1" * 32] == "Writing Revision"
+    assert labels["wfi-" + "2" * 32] == "Literature Search #1"
+    assert labels["wfi-" + "8" * 32] == "Literature Search #2"
 
 
 @pytest.mark.parametrize(("setup", "expected"), (
@@ -287,8 +301,27 @@ def test_full_preset_bootstrap_syncs_exactly_five_capsules_then_noops(tmp_path):
     })
     assert added.status_code == 201
     stale_progress = client.get(f"/projects/{project_id}/progress").json()
-    assert {item["installation_state"] for item in stale_progress["instances"]} == {"ACKNOWLEDGED_STALE"}
-    assert {item["action"]["next_action"]["code"] for item in stale_progress["instances"]} == {"SYNC"}
+    previous_ids = {item["workflow_instance_id"] for item in progress["instances"]}
+    by_id = {item["workflow_instance_id"]: item for item in stale_progress["instances"]}
+    assert {
+        by_id[instance_id]["installation_state"] for instance_id in previous_ids
+    } == {"ACKNOWLEDGED_CURRENT"}
+    added_id = added.json()["workflow_instance_id"]
+    assert by_id[added_id]["installation_state"] == "NOT_INSTALLED"
+    assert by_id[added_id]["action"]["stage"]["label"] == "Not added locally"
+    assert by_id[added_id]["action"]["next_action"]["code"] == "SYNC"
+    assert all(
+        by_id[instance_id]["action"]["next_action"]["code"] != "SYNC"
+        for instance_id in previous_ids
+    )
+    literature_labels = {
+        item["workflow_instance_id"]: item["friendly_instance_label"]
+        for item in stale_progress["instances"]
+        if item["workflow_definition_id"] == "literature-search-local-experimental"
+    }
+    assert [literature_labels[key] for key in sorted(literature_labels)] == [
+        "Literature Search #1", "Literature Search #2",
+    ]
     assert stale_progress["attention"]["action"]["next_action"]["code"] == "SYNC"
 
 
@@ -540,6 +573,10 @@ def test_review_action_is_exact_idempotent_and_public_sync_adds_only_revision(tm
     listed = workspace_cli.workflow_list(workspace)["workflows"]
     assert len(listed) == 6
     assert sum(item["display_name"] == "Writing Revision" for item in listed) == 1
+    assert {
+        item["instance_label"] for item in listed
+        if item["workflow_definition_id"] == "writing-local-experimental"
+    } == {"Initial Writing", "Writing Revision"}
     unchanged_initial = next(
         item for item in listed
         if item["workflow_instance_id"] == initial_writing_identity["workflow_instance_id"]

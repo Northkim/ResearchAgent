@@ -10,6 +10,7 @@ const PAPER_SCHEMA = "reagent.artifact-presentation.selected-paper-library/v0.1"
 const IDEA_SCHEMA = "reagent.artifact-presentation.selected-research-idea/v0.1";
 const MANUSCRIPT_SCHEMA = "reagent.artifact-presentation.manuscript-draft/v0.1";
 const REVIEW_SCHEMA = "reagent.artifact-presentation.review-report/v0.1";
+const REVIEW_SCHEMA_V2 = "reagent.artifact-presentation.review-report/v0.2";
 const EXPERIMENT_SCHEMA = "reagent.artifact-presentation.experiment-record/v0.2";
 
 type PaperPresentation = {
@@ -62,8 +63,8 @@ export type ReviewPresentation = {
   scope: string;
   status: "NO_BLOCKING_ISSUES" | "REVISION_REQUIRED" | "INSUFFICIENT_EVIDENCE";
   summary: string;
-  issues: Array<{ issue_id: string; severity: "MAJOR" | "MINOR"; blocking: boolean; anchor: string | null; rationale: string | null; requested_revision: string | null }>;
-  requested_revisions: string[];
+  issues: Array<{ issue_id: string; category?: string; severity: "MAJOR" | "MINOR"; blocking: boolean; anchor?: string | null; rationale?: string | null; summary?: string; requested_revision: string | null; status?: "REPORTED" }>;
+  requested_revisions?: string[];
   unresolved_evidence_gaps: string[];
   reproducibility_findings: string[];
   limitations: string[];
@@ -151,8 +152,8 @@ function ReviewPreview({ value, compact }: { value: ReviewPresentation; compact:
   return <section className="plain-section" aria-label="Review report preview">
     <p className="eyebrow">Review report</p><h3>{value.status.replaceAll("_", " ").toLocaleLowerCase()}</h3>
     <p>{value.summary}</p><p><strong>Review scope:</strong> {value.scope}</p>
-    {value.issues.length ? <div className="page-stack" aria-label="Structured Review issues">{value.issues.slice(0, compact ? 3 : value.issues.length).map((issue) => <article className="output-highlight" key={issue.issue_id}><strong>{issue.severity.toLocaleLowerCase()} issue{issue.blocking ? " · blocking" : ""}</strong>{issue.anchor ? <p>{issue.anchor}</p> : null}{issue.rationale ? <p>{issue.rationale}</p> : null}{issue.requested_revision ? <p><strong>Requested revision:</strong> {issue.requested_revision}</p> : null}</article>)}</div> : <p>No structured issues were reported.</p>}
-    {!compact ? <><List title="Requested revisions" values={value.requested_revisions} /><List title="Unresolved evidence gaps" values={value.unresolved_evidence_gaps} /><List title="Reproducibility findings" values={value.reproducibility_findings} /><List title="Limitations" values={value.limitations} /></> : null}
+    {value.issues.length ? <div className="review-issue-list" aria-label="Structured Review issues">{value.issues.slice(0, compact ? 3 : value.issues.length).map((issue) => <article className="review-issue-card" key={issue.issue_id}><div className="review-issue-heading"><strong>{issue.issue_id}</strong><span>{issue.severity.toLocaleLowerCase()} issue{issue.blocking ? " · blocking" : ""} · {issue.category?.replaceAll("_", " ").toLocaleLowerCase() ?? "review issue"}</span></div><p>{issue.summary ?? issue.rationale ?? issue.anchor ?? "Issue details remain in the Local Workspace."}</p>{issue.requested_revision ? <p><strong>Requested revision:</strong> {issue.requested_revision}</p> : null}<small>{issue.status?.toLocaleLowerCase() ?? "reported"}</small></article>)}</div> : <p>No structured issues were reported.</p>}
+    {!compact ? <><List title="Requested revisions" values={value.requested_revisions ?? []} /><details className="secondary-control"><summary>Evidence gaps and limitations</summary><List title="Unresolved evidence gaps" values={value.unresolved_evidence_gaps} /><List title="Reproducibility findings" values={value.reproducibility_findings} /><List title="Limitations" values={value.limitations} /></details></> : null}
     <p className="muted-copy">The complete Review remains in the Local Workspace.</p>
   </section>;
 }
@@ -177,7 +178,8 @@ export function ArtifactPresentationPreview({ artifact, compact = false, selecti
     return value ? <ManuscriptPreview value={value as unknown as ManuscriptPresentation} compact={compact} /> : <DownstreamMissing selection={selection} />;
   }
   if (artifact.artifact_type === "review-report/v3") {
-    const value = exactPayload(artifact, REVIEW_SCHEMA);
+    const schema = artifact.presentation?.schema_identity === REVIEW_SCHEMA_V2 ? REVIEW_SCHEMA_V2 : REVIEW_SCHEMA;
+    const value = exactPayload(artifact, schema);
     return value ? <ReviewPreview value={value as unknown as ReviewPresentation} compact={compact} /> : <DownstreamMissing selection={selection} />;
   }
   if (artifact.artifact_type === "experiment-record/v4" || artifact.artifact_type === "experiment-record/v5") {

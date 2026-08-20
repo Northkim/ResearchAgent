@@ -46,11 +46,13 @@ from .upstream_presentations import (
     MANUSCRIPT_PRESENTATION_SCHEMA,
     PAPER_LIBRARY_PRESENTATION_SCHEMA,
     REVIEW_PRESENTATION_SCHEMA,
+    REVIEW_PRESENTATION_SCHEMA_V2,
     RESEARCH_IDEA_PRESENTATION_SCHEMA,
     UpstreamPresentationError,
     validate_manuscript_presentation,
     validate_paper_library_presentation,
     validate_review_presentation,
+    validate_review_presentation_v2,
     validate_research_idea_presentation,
 )
 
@@ -1369,6 +1371,7 @@ _PRESENTATION_VALIDATORS = {
     ("manuscript-draft/v4", MANUSCRIPT_PRESENTATION_SCHEMA): validate_manuscript_presentation,
     ("manuscript-draft/v5", MANUSCRIPT_PRESENTATION_SCHEMA): validate_manuscript_presentation,
     ("review-report/v3", REVIEW_PRESENTATION_SCHEMA): validate_review_presentation,
+    ("review-report/v3", REVIEW_PRESENTATION_SCHEMA_V2): validate_review_presentation_v2,
 }
 
 

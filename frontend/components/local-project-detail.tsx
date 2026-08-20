@@ -85,6 +85,9 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
       />
       <ProjectNavigation projectId={projectId} active="Overview" />
 
+      {output ? <section className="completed-outcome-strip" aria-labelledby="project-achievement-title"><div><p className="eyebrow">Latest completed outcome</p><h2 id="project-achievement-title">{output.label} completed</h2><p>{output.produced_at ? formatDateTime(output.produced_at) : "Available now"}</p></div><Link href={`/projects/${projectId}/outputs`} className="button button-secondary">View output</Link></section> : null}
+
+      {output ? <p className="eyebrow remaining-work-label">Remaining work</p> : null}
       <WorkflowActionPanel
         action={attention.action}
         workflowLabel={attention.recommended_workflow_label}

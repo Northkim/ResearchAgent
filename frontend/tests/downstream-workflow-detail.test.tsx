@@ -24,6 +24,7 @@ function state(instance: Record<string, unknown>, role: "INITIAL" | "REVIEW" | "
   return {
     ...projectProgressFixture.instances[0],
     workflow_instance_id: instance.workflow_instance_id,
+    workflow_role: role === "REVIEW" ? null : role,
     workflow_display_name: role === "REVIEW" ? "Review" : "Writing",
     friendly_instance_label: role === "REVISION" ? "Writing Revision" : role === "INITIAL" ? "Initial Writing" : "Review",
     instance_display_name: role,

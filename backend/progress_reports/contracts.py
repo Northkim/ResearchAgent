@@ -720,6 +720,7 @@ class WorkflowInstanceProgressProjection(SerializableContract):
     workflow_instance_id: str
     workflow_definition_id: str
     workflow_definition_version: str
+    workflow_role: str | None
     core_capability_maturity: str
     workflow_display_name: str
     instance_display_name: str
@@ -754,6 +755,8 @@ class WorkflowInstanceProgressProjection(SerializableContract):
             raise ValueError("invalid Workflow Instance Progress schema")
         if self.core_capability_maturity not in {"REVIEWED_CORE", "SCAFFOLD_CORE"}:
             raise ValueError("invalid Workflow Instance core capability maturity")
+        if self.workflow_role not in {None, "INITIAL", "REVISION"}:
+            raise ValueError("invalid Workflow role")
         if self.report_count < 0:
             raise ValueError("report_count must be non-negative")
         if self.result_count < 0:

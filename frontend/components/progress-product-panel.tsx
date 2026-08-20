@@ -96,14 +96,13 @@ export function ProgressProductPanel({ projectId, initialWorkflowInstanceId }: {
                 <li key={report.receipt_id}>
                   <div className="progress-history-heading">
                     <div>
-                      <p className="eyebrow">{instance?.action.stage.label ?? "Workflow Activity"}</p>
+                      <p className="eyebrow">Progress report · round {report.normalized_record?.execution_round ?? "—"}</p>
                       <h3>{instance?.friendly_instance_label ?? instance?.instance_display_name ?? report.workflow_instance_id}</h3>
-                      <span>{instance?.action.actor === "NONE" ? "System record" : `${instance?.action.actor.toLowerCase()} activity`} · round {report.normalized_record?.execution_round ?? "—"}</span>
+                      <span>Report status · {(report.normalized_record?.status ?? report.validation_status).replaceAll("_", " ").toLocaleLowerCase()}</span>
                     </div>
                     <WorkflowStatusBadge value={report.normalized_record?.status ?? report.validation_status} dimension="research" />
                   </div>
                   <p>{report.normalized_record?.current_state ?? "No normalized summary is available."}</p>
-                  {instance ? <p><strong>Next:</strong> {instance.action.next_action.label}</p> : null}
                   {report.normalized_record?.output_artifacts.length ? (
                     <p className="activity-output"><strong>Output:</strong> {instance?.action.latest_output?.label ?? report.normalized_record.output_artifacts[0].artifact_kind.replaceAll("_", " ")}</p>
                   ) : null}

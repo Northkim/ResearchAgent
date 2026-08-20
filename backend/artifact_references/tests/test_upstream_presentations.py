@@ -9,11 +9,13 @@ from backend.artifact_references.upstream_presentations import (
     MANUSCRIPT_PRESENTATION_SCHEMA,
     PAPER_LIBRARY_PRESENTATION_SCHEMA,
     REVIEW_PRESENTATION_SCHEMA,
+    REVIEW_PRESENTATION_SCHEMA_V2,
     RESEARCH_IDEA_PRESENTATION_SCHEMA,
     UpstreamPresentationError,
     validate_manuscript_presentation,
     validate_paper_library_presentation,
     validate_review_presentation,
+    validate_review_presentation_v2,
     validate_research_idea_presentation,
 )
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
@@ -181,6 +183,29 @@ def _review_payload(**changes):
     return {**value, "presentation_checksum": canonical_hash(value)}
 
 
+def _review_payload_v2(**changes):
+    value = {
+        "schema": REVIEW_PRESENTATION_SCHEMA_V2,
+        "artifact_id": ARTIFACT_ID,
+        "artifact_checksum": HASH_B,
+        "reviewed_manuscript": {"artifact_id": "artifact-" + "2" * 32, "artifact_type": "manuscript-draft/v4", "artifact_checksum": HASH_A},
+        "scope": "Exact manuscript and selected supporting evidence.",
+        "status": "REVISION_REQUIRED",
+        "summary": "One bounded wording revision is required.",
+        "issues": [{
+            "issue_id": "RR-001", "category": "CLAIM_SCOPE", "severity": "MINOR",
+            "blocking": True, "summary": "The boundary needs clearer wording.",
+            "requested_revision": "State the limitation explicitly.", "status": "REPORTED",
+        }],
+        "unresolved_evidence_gaps": ["No full-text evidence is available."],
+        "reproducibility_findings": [],
+        "limitations": ["Review used exact supplied evidence only."],
+        "owner_review_status": "APPROVED",
+    }
+    value.update(changes)
+    return {**value, "presentation_checksum": canonical_hash(value)}
+
+
 def test_upstream_contracts_preserve_doi_stable_identity_and_generic_idea() -> None:
     papers = validate_paper_library_presentation(_paper_payload())
     idea = validate_research_idea_presentation(_idea_payload())
@@ -193,9 +218,12 @@ def test_downstream_contracts_preserve_small_initial_revision_and_review_preview
     initial = validate_manuscript_presentation(_manuscript_payload())
     revision = validate_manuscript_presentation(_manuscript_payload("REVISION"))
     review = validate_review_presentation(_review_payload())
+    review_v2 = validate_review_presentation_v2(_review_payload_v2())
     assert initial["mode"] == "INITIAL" and initial["parent_manuscript"] is None
     assert revision["issue_dispositions"] == [{"issue_id": "issue-1", "disposition": "ADDRESSED"}]
     assert review["status"] == "REVISION_REQUIRED" and review["issues"][0]["severity"] == "MINOR"
+    assert review_v2["issues"][0]["issue_id"] == "RR-001"
+    assert review_v2["issues"][0]["category"] == "CLAIM_SCOPE"
 
 
 def test_downstream_contracts_reject_full_private_or_ambiguous_content() -> None:
@@ -239,5 +267,16 @@ def test_service_registry_is_exact_immutable_and_unknown_pairs_fail_closed() -> 
         service.report_presentation(
             project_id=PROJECT_ID, artifact_id=ARTIFACT_ID, payload=stale
         )
+
+
+def test_service_accepts_review_v2_without_replacing_v1_contract() -> None:
+    service, _database = _service_for("review-report/v3")
+    reported = service.report_presentation(
+        project_id=PROJECT_ID,
+        artifact_id=ARTIFACT_ID,
+        payload=_review_payload_v2(),
+    )
+    assert reported["schema_identity"] == REVIEW_PRESENTATION_SCHEMA_V2
+    assert validate_review_presentation(_review_payload())["schema"] == REVIEW_PRESENTATION_SCHEMA
     validate_manuscript_presentation,
     validate_review_presentation,
