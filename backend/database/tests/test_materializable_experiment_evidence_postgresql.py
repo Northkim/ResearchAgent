@@ -45,7 +45,7 @@ def test_v5_publication_downgrade_reupgrade_and_conflict(postgres_engine) -> Non
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", database_url)
     with postgres_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260818_0031"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260820_0039"
     command.downgrade(config, "20260817_0030")
     with postgres_engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260817_0030"
@@ -54,9 +54,9 @@ def test_v5_publication_downgrade_reupgrade_and_conflict(postgres_engine) -> Non
             WHERE workflow_definition_id='reproduction-experiment-local-experimental'
               AND version='0.7.0'
         """)) == 0
-    command.upgrade(config, "20260818_0031")
+    command.upgrade(config, "20260820_0039")
     with postgres_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260818_0031"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260820_0039"
         with pytest.raises(RuntimeError, match="already occupied"):
             import_module(MIGRATION)._assert_preconditions(connection)
 

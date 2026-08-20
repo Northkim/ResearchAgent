@@ -569,6 +569,7 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
                             text(
                                 "SELECT name, count(*) FROM local_projects "
                                 "WHERE name IN ('H1 controlled product journey', "
+                                "'H1 first-time research journey', "
                                 "'F1F browser product width', "
                                 "'R4 explicit Literature composition') "
                                 "GROUP BY name ORDER BY name"
@@ -583,7 +584,7 @@ def _controlled_e2e(specs: tuple[str, ...]) -> int:
                         # selected on its own.
                         expected["H1 controlled product journey"] = 1
                     if any(Path(spec).name == "h1-product-journey.spec.ts" for spec in specs):
-                        expected["H1 controlled product journey"] = 1
+                        expected["H1 first-time research journey"] = 1
                     if any(Path(spec).name == "r4-literature-consolidation.spec.ts" for spec in specs):
                         expected["R4 explicit Literature composition"] = 1
                     if dict(markers) != expected:

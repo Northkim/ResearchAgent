@@ -193,11 +193,23 @@ def qualify_full_scaffold_chain(
 
 def _add(client: TestClient, project_id: str, workflow_id: str, revision: int) -> dict:
     detail = client.get(f"/workflow-definitions/{workflow_id}").json()
+    historical = {
+        "idea-discovery-local-experimental": ("0.2.0", "0.3.0"),
+        WRITING_WORKFLOW_ID: ("0.2.0", "0.4.0"),
+        REVIEW_WORKFLOW_ID: ("0.2.0", "0.4.0"),
+        EXPERIMENT_WORKFLOW_ID: ("0.3.0", "0.5.0"),
+    }
+    workflow_version, capsule_version = historical[workflow_id]
+    capsule = next(
+        item for item in detail["capsules"]
+        if item["workflow_version"] == workflow_version
+        and item["capsule_version"] == capsule_version
+    )
     response = client.post(f"/projects/{project_id}/workflow-instances", json={
         "workflow_definition_id": workflow_id,
-        "workflow_version": detail["recommended_version"]["version"],
-        "capsule_id": detail["recommended_capsule"]["capsule_id"],
-        "capsule_version": detail["recommended_capsule"]["capsule_version"],
+        "workflow_version": workflow_version,
+        "capsule_id": capsule["capsule_id"],
+        "capsule_version": capsule_version,
         "base_revision": revision,
     })
     assert response.status_code == 201, response.text
@@ -263,6 +275,28 @@ def _materialize_finalize(
     workspace_cli.refresh_artifact_index(
         workspace_root=workspace, transport=transport, now=now
     )
+    setup = client.get(
+        f"/projects/{instance['project_id']}/workflow-instances/"
+        f"{instance['workflow_instance_id']}/input-setup"
+    )
+    assert setup.status_code == 200, setup.text
+    omitted = setup.json()["omitted_optional_requirement_keys"]
+    if omitted:
+        decision = client.post(
+            f"/projects/{instance['project_id']}/workflow-instances/"
+            f"{instance['workflow_instance_id']}/input-setup-decisions",
+            json={
+                "omitted_optional_requirement_keys": omitted,
+                "idempotency_key": str(uuid.uuid4()),
+            },
+        )
+        assert decision.status_code == 201, decision.text
+        confirmed = client.get(
+            f"/projects/{instance['project_id']}/workflow-instances/"
+            f"{instance['workflow_instance_id']}/input-setup"
+        )
+        assert confirmed.status_code == 200, confirmed.text
+        assert confirmed.json()["current_decision"] is not None, confirmed.text
     workspace_cli.materialize_artifacts(
         workspace_root=workspace,
         consumer_workflow_instance_id=instance["workflow_instance_id"],

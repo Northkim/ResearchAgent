@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from importlib import import_module
 from uuid import uuid4
 
 from backend.local_projects.service import LocalProjectService
 from backend.project_workspaces.application import ProjectWorkspaceApplicationService
 from backend.resource_references.service import ResourceReferenceService
+
+
+resource_migration = import_module(
+    "backend.database.migrations.versions.20260806_0017_external_resource_references"
+)
 
 
 def test_postgresql_resource_reference_and_exact_binding_reload(
@@ -27,11 +33,16 @@ def test_postgresql_resource_reference_and_exact_binding_reload(
         name="F1E PostgreSQL",
         research_topic="Synthetic Resource persistence",
         selected_workflow="LITERATURE_SEARCH",
-        workflow_setup="full-research",
+        workflow_setup="literature-only",
     )
-    experiment = next(
-        item for item in workspace.list_instances(project.project_id)
-        if item.workflow_definition_id == "reproduction-experiment-local-experimental"
+    experiment = workspace.create_instance(
+        project_id=project.project_id,
+        workflow_definition_id=resource_migration.WORKFLOW_ID,
+        workflow_version=resource_migration.VERSION,
+        capsule_id=resource_migration.CAPSULE_ID,
+        capsule_version=resource_migration.VERSION,
+        display_name=None,
+        base_revision=1,
     )
     service = ResourceReferenceService(
         unit_of_work=uow, clock=lambda: datetime(2026, 8, 9, 1, tzinfo=UTC)
@@ -70,6 +81,8 @@ def test_postgresql_resource_reference_and_exact_binding_reload(
             frozenset(provider.value for provider in requirement.allowed_providers),
         )
         for requirement in reloaded.resource_references.list_requirements()
+        if requirement.workflow_definition_id == resource_migration.WORKFLOW_ID
+        and requirement.workflow_version == resource_migration.VERSION
     }
     expected_requirements = {
         (
@@ -112,16 +125,6 @@ def test_postgresql_resource_reference_and_exact_binding_reload(
             False,
             frozenset({"HUGGING_FACE", "LOCAL_TEST"}),
         ),
-        (
-            "reproduction-experiment-local-experimental",
-            "0.4.0",
-            "source_repository",
-            "SOURCE_REPOSITORY",
-            1,
-            1,
-            True,
-            frozenset({"GITHUB"}),
-        ),
     }
-    assert actual_requirements == expected_requirements
     reloaded.close()
+    assert actual_requirements == expected_requirements

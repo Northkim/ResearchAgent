@@ -121,9 +121,9 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     await page.goto(`/projects/${projectId}`);
     await setupAction.click();
     await expect(page).toHaveURL(`/projects/${projectId}/help`);
-    await expect(page.getByRole("heading", { name: "Create the Local Workspace once" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Set up this Project" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Download local tool" })).toBeVisible();
-    const downloadSetup = page.getByRole("link", { name: "Download Workspace setup" });
+    const downloadSetup = page.getByRole("link", { name: "Download setup file" });
     await expect(downloadSetup).toBeVisible();
     await expect(page.getByText("python reagent_local.py bootstrap ./reagent-workspace --descriptor ./workspace-bootstrap.json")).toBeVisible();
     const enterAndSync = page.locator(".copy-command code").filter({ hasText: "cd ./reagent-workspace" });
@@ -296,12 +296,12 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     const syncPanel = page.getByRole("region", { name: "Sync the local workspace" });
     await expect(syncPanel.getByText("Local workspace needs syncing", { exact: true })).toBeVisible();
     const syncAction = syncPanel.getByRole("link", { name: "Sync workspace" });
-    await expect(syncAction).toHaveAttribute(
-      "href",
-      `/projects/${projectId}/workflows/${literature.instanceId}`,
+    const syncHref = await syncAction.getAttribute("href");
+    expect(syncHref).toMatch(
+      new RegExp(`^/projects/${projectId}/workflows/wfi-[0-9a-f]{32}$`),
     );
     await syncAction.click();
-    await expect(page).toHaveURL(`/projects/${projectId}/workflows/${literature.instanceId}`);
+    await expect(page).toHaveURL(syncHref!);
     await expect(page.getByRole("link", { name: "Sync workspace" })).toHaveAttribute("href", "#run-locally");
     await expect(page.locator("#run-locally")).toContainText("python reagent_local.py sync .");
 
@@ -310,6 +310,7 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     expect(hashTree(literature.root)).toBe(literatureHashBeforeIdeaSync);
     const idea = installedCapsule(workspace, "idea-discovery-local-experimental");
     expect(idea.root).not.toBe(literature.root);
+    expect(syncHref).toBe(`/projects/${projectId}/workflows/${idea.instanceId}`);
 
     await page.goto(`/projects/${projectId}/workflows`);
     const current = page.getByRole("region", { name: "Workflow progression" });
@@ -324,7 +325,7 @@ test("qualifies the controlled first-time Literature Search to Idea Discovery jo
     const inputs = page.getByRole("region", { name: "Inputs", exact: true });
     await expect(inputs.getByRole("radio")).toBeChecked();
     await inputs.getByRole("button", { name: "Confirm exact input" }).click();
-    await expect(inputs.getByText("Ready", { exact: true })).toBeVisible();
+    await expect(inputs.getByText("Selected", { exact: true })).toBeVisible();
 
     const refreshed = workspaceCommand(workspace, ["artifact", "refresh", workspace, "--api-url", backendUrl]);
     expect(refreshed.status).toBe("INDEX_REFRESHED");

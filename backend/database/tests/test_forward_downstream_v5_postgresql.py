@@ -93,7 +93,7 @@ def test_optional_review_support_publication_is_additive_and_reversible(
     config.set_main_option("sqlalchemy.url", database_url)
     migration = import_module(OPTIONAL_SUPPORT_MIGRATION)
     with postgres_engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260819_0034"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "20260820_0039"
         new_row = connection.execute(text("""
             SELECT v.contract_checksum, v.output_schema_id,
                    v.compatibility->>'writing_role' AS writing_role,
@@ -133,7 +133,7 @@ def test_optional_review_support_publication_is_additive_and_reversible(
                   AND capsule_version='0.8.0'
             """), {"id": migration.WORKFLOW_ID}) == HISTORICAL_REVISION_CAPSULE_CHECKSUM
     finally:
-        command.upgrade(config, "20260819_0034")
+        command.upgrade(config, "20260820_0039")
 
 
 def test_forward_publication_is_exact_role_aware_and_reversible(postgres_engine) -> None:
@@ -252,8 +252,8 @@ def test_postgresql_project_creation_preserves_current_roles_and_presets(
         assert len(literature_instances) == 1
         assert {(item["workflow_definition_id"], item["workflow_version"], item["capsule_version"])
                 for item in custom_instances} == {
-            ("literature-search-local-experimental", "0.4.0", "0.6.0"),
-            ("idea-discovery-local-experimental", "0.2.0", "0.3.0"),
+            ("literature-search-local-experimental", "0.6.0", "0.8.0"),
+            ("idea-discovery-local-experimental", "0.4.0", "0.5.0"),
             ("writing-local-experimental", INITIAL_WRITING_VERSION,
              INITIAL_WRITING_CAPSULE_VERSION),
             ("review-local-experimental", REVIEW_VERSION, REVIEW_CAPSULE_VERSION),
@@ -280,7 +280,7 @@ def test_postgresql_project_creation_preserves_current_roles_and_presets(
         ).json()
         assert writing["recommended_version"]["version"] == INITIAL_WRITING_VERSION
         assert review["recommended_version"]["version"] == REVIEW_VERSION
-        assert experiment["recommended_version"]["version"] == "0.6.0"
+        assert experiment["recommended_version"]["version"] == "0.8.0"
     role_uow = SQLAlchemyUnitOfWork(session_factory)
     try:
         revision = role_uow.workflow_foundation.get_definition_version(

@@ -13,13 +13,25 @@ from backend.api import ApplicationContainer, create_app
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import workspace_cli
 
-HISTORICAL_RESOURCE_SETUP = [
-    "literature-search-local-experimental",
-    "idea-discovery-local-experimental",
-    "writing-local-experimental",
-    "review-local-experimental",
-    "reproduction-experiment-local-experimental",
-]
+EXPERIMENT_WORKFLOW_ID = "reproduction-experiment-local-experimental"
+
+
+def _add_resource_shell_experiment(client: TestClient, project_id: str) -> dict:
+    detail = client.get(f"/workflow-definitions/{EXPERIMENT_WORKFLOW_ID}").json()
+    capsule = next(
+        item for item in detail["capsules"]
+        if item["workflow_version"] == "0.3.0"
+        and item["capsule_version"] == "0.5.0"
+    )
+    response = client.post(f"/projects/{project_id}/workflow-instances", json={
+        "workflow_definition_id": EXPERIMENT_WORKFLOW_ID,
+        "workflow_version": "0.3.0",
+        "capsule_id": capsule["capsule_id"],
+        "capsule_version": "0.5.0",
+        "base_revision": 1,
+    })
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 def _client(tmp_path: Path):
@@ -32,16 +44,10 @@ def _client(tmp_path: Path):
         "name": "F1E synthetic project",
         "research_topic": "Synthetic external resource shell",
         "selected_workflow": "LITERATURE_SEARCH",
-        "workflow_setup": "custom",
-        "custom_workflow_definition_ids": HISTORICAL_RESOURCE_SETUP,
     })
     assert response.status_code == 201
     project_id = response.json()["project_id"]
-    instances = client.get(f"/projects/{project_id}/workflow-instances").json()["items"]
-    experiment = next(
-        item for item in instances
-        if item["workflow_definition_id"] == "reproduction-experiment-local-experimental"
-    )
+    experiment = _add_resource_shell_experiment(client, project_id)
     return client, project_id, experiment
 
 
@@ -75,8 +81,9 @@ def test_resource_api_is_project_scoped_exact_and_idempotent(tmp_path: Path) -> 
     detail = client.get(
         "/workflow-definitions/reproduction-experiment-local-experimental"
     ).json()
-    assert detail["recommended_version"]["version"] == "0.3.0"
-    requirements = detail["recommended_version"]["resource_requirements"]
+    assert detail["recommended_version"]["version"] == "0.8.0"
+    historical = next(item for item in detail["versions"] if item["version"] == "0.3.0")
+    requirements = historical["resource_requirements"]
     assert {item["requirement_key"] for item in requirements} == {
         "source_repository", "dataset", "model", "checkpoint"
     }
@@ -148,16 +155,8 @@ def test_resource_binding_rejects_wrong_kind_provider_and_project(tmp_path: Path
         "name": "F1E second synthetic project",
         "research_topic": "Cross-project Resource denial",
         "selected_workflow": "LITERATURE_SEARCH",
-        "workflow_setup": "custom",
-        "custom_workflow_definition_ids": HISTORICAL_RESOURCE_SETUP,
     }).json()
-    second_experiment = next(
-        item for item in client.get(
-            f"/projects/{second['project_id']}/workflow-instances"
-        ).json()["items"]
-        if item["workflow_definition_id"]
-        == "reproduction-experiment-local-experimental"
-    )
+    second_experiment = _add_resource_shell_experiment(client, second["project_id"])
     cross_project = client.post(
         f"/projects/{second['project_id']}/workflow-instances/"
         f"{second_experiment['workflow_instance_id']}/resource-bindings",
@@ -176,7 +175,7 @@ def test_resource_list_is_stably_paginated_at_qualification_scale(tmp_path: Path
     experiment_catalog = client.get(
         "/workflow-definitions/reproduction-experiment-local-experimental"
     ).json()
-    for base_revision in range(1, 16):
+    for base_revision in range(2, 17):
         added = client.post(
             f"/projects/{project_id}/workflow-instances",
             json={
@@ -191,7 +190,7 @@ def test_resource_list_is_stably_paginated_at_qualification_scale(tmp_path: Path
         )
         assert added.status_code == 201
     instances = client.get(f"/projects/{project_id}/workflow-instances").json()
-    assert instances["total"] == 20
+    assert instances["total"] == 17
     for index in range(100):
         created = client.post(
             f"/projects/{project_id}/resources",

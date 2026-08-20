@@ -14,6 +14,7 @@ from backend.api import ApplicationContainer, create_app
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import workspace_cli
 from backend.project_workspaces.tests.test_f1b_full_scaffold_flow import (
+    _add,
     _seed_upstream,
 )
 from backend.project_workspaces.tests.test_owner_real_research_gate import (
@@ -61,6 +62,28 @@ def _bind(
         },
     )
     assert response.status_code == 201, response.text
+
+
+def _continue_without_optional_evidence(
+    client: httpx.Client, project_id: str, consumer: dict, number: int,
+) -> None:
+    setup = client.get(
+        f"/projects/{project_id}/workflow-instances/"
+        f"{consumer['workflow_instance_id']}/input-setup"
+    )
+    assert setup.status_code == 200, setup.text
+    omitted = setup.json()["omitted_optional_requirement_keys"]
+    if not omitted:
+        return
+    decision = client.post(
+        f"/projects/{project_id}/workflow-instances/"
+        f"{consumer['workflow_instance_id']}/input-setup-decisions",
+        json={
+            "omitted_optional_requirement_keys": omitted,
+            "idempotency_key": f"00000000-0000-4000-8000-{number:012d}",
+        },
+    )
+    assert decision.status_code == 201, decision.text
 
 
 def _artifact(
@@ -138,16 +161,12 @@ def test_workspace_root_interactive_writing_review_revision_chain(
                 "name": "Interactive Writing Review chain",
                 "research_topic": "Synthetic immutable revision qualification",
                 "selected_workflow": "LITERATURE_SEARCH",
-                "workflow_setup": "custom",
-                "custom_workflow_definition_ids": [
-                    "literature-search-local-experimental",
-                    "idea-discovery-local-experimental",
-                    WRITING_WORKFLOW_ID,
-                    REVIEW_WORKFLOW_ID,
-                ],
             })
         assert created.status_code == 201, created.text
         project_id = created.json()["project_id"]
+        _add(client, project_id, IDEA_DISCOVERY_WORKFLOW_ID, 1)
+        _add(client, project_id, WRITING_WORKFLOW_ID, 2)
+        _add(client, project_id, REVIEW_WORKFLOW_ID, 3)
         instances = {
             item["workflow_definition_id"]: item
             for item in _instances(client, project_id)
@@ -200,6 +219,7 @@ def test_workspace_root_interactive_writing_review_revision_chain(
         )
         _bind(client, project_id, writing_a, "research_idea", selected_idea, 1)
         _bind(client, project_id, writing_a, "literature_library", library, 2)
+        _continue_without_optional_evidence(client, project_id, writing_a, 11)
         workspace_cli.materialize_artifacts(
             workspace_root=workspace,
             consumer_workflow_instance_id=writing_a["workflow_instance_id"],
@@ -223,6 +243,7 @@ def test_workspace_root_interactive_writing_review_revision_chain(
             workspace_root=workspace, transport=transport, now=now
         )
         _bind(client, project_id, review_a, "manuscript", draft_a, 3)
+        _continue_without_optional_evidence(client, project_id, review_a, 12)
         workspace_cli.materialize_artifacts(
             workspace_root=workspace,
             consumer_workflow_instance_id=review_a["workflow_instance_id"],
@@ -242,19 +263,7 @@ def test_workspace_root_interactive_writing_review_revision_chain(
         review_bytes = review_path.read_bytes()
         assert json.loads(review_bytes)["recommendation"] == "INSUFFICIENT_EVIDENCE"
 
-        detail = client.get(f"/workflow-definitions/{WRITING_WORKFLOW_ID}").json()
-        added = client.post(
-            f"/projects/{project_id}/workflow-instances",
-            json={
-                "workflow_definition_id": WRITING_WORKFLOW_ID,
-                "workflow_version": detail["recommended_version"]["version"],
-                "capsule_id": detail["recommended_capsule"]["capsule_id"],
-                "capsule_version": detail["recommended_capsule"]["capsule_version"],
-                "base_revision": 1,
-            },
-        )
-        assert added.status_code == 201, added.text
-        writing_b = added.json()
+        writing_b = _add(client, project_id, WRITING_WORKFLOW_ID, 4)
         assert (writing_b["workflow_version"], writing_b["capsule_version"]) == (
             "0.2.0", "0.4.0",
         )
@@ -272,6 +281,7 @@ def test_workspace_root_interactive_writing_review_revision_chain(
             ("review_feedback", review_report),
         ), start=4):
             _bind(client, project_id, writing_b, key, artifact, number)
+        _continue_without_optional_evidence(client, project_id, writing_b, 13)
         workspace_cli.materialize_artifacts(
             workspace_root=workspace,
             consumer_workflow_instance_id=writing_b["workflow_instance_id"],

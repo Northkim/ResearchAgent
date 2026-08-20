@@ -96,14 +96,46 @@ def _setup(tmp_path: Path):
         "name": "Real Experiment controlled Project",
         "research_topic": "Deterministic local computation",
         "selected_workflow": "LITERATURE_SEARCH",
-        "workflow_setup": "full-research",
     }).json()
-    instances = client.get(f"/projects/{project['project_id']}/workflow-instances").json()["items"]
-    experiment = next(
-        item for item in instances
-        if item["workflow_definition_id"]
-        == "reproduction-experiment-local-experimental"
+    idea_detail = client.get(
+        "/workflow-definitions/idea-discovery-local-experimental"
+    ).json()
+    idea_capsule = next(
+        item for item in idea_detail["capsules"]
+        if item["workflow_version"] == "0.2.0"
+        and item["capsule_version"] == "0.3.0"
     )
+    idea_response = client.post(
+        f"/projects/{project['project_id']}/workflow-instances",
+        json={
+            "workflow_definition_id": "idea-discovery-local-experimental",
+            "workflow_version": "0.2.0",
+            "capsule_id": idea_capsule["capsule_id"],
+            "capsule_version": "0.3.0",
+            "base_revision": 1,
+        },
+    )
+    assert idea_response.status_code == 201, idea_response.text
+    detail = client.get(
+        "/workflow-definitions/reproduction-experiment-local-experimental"
+    ).json()
+    capsule = next(
+        item for item in detail["capsules"]
+        if item["workflow_version"] == "0.4.0"
+        and item["capsule_version"] == "0.7.0"
+    )
+    response = client.post(
+        f"/projects/{project['project_id']}/workflow-instances",
+        json={
+            "workflow_definition_id": "reproduction-experiment-local-experimental",
+            "workflow_version": "0.4.0",
+            "capsule_id": capsule["capsule_id"],
+            "capsule_version": "0.7.0",
+            "base_revision": 2,
+        },
+    )
+    assert response.status_code == 201, response.text
+    experiment = response.json()
     assert (experiment["workflow_version"], experiment["capsule_version"]) == (
         "0.4.0", "0.7.0"
     )

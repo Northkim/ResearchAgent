@@ -13,7 +13,7 @@ import httpx
 from backend.api import ApplicationContainer, create_app
 from backend.persistence.adapters import InMemoryDatabase, InMemoryUnitOfWork
 from backend.project_workspaces import workspace_cli
-from backend.project_workspaces.tests.test_f1b_full_scaffold_flow import _seed_upstream
+from backend.project_workspaces.tests.test_f1b_full_scaffold_flow import _add, _seed_upstream
 from backend.project_workspaces.tests.test_owner_real_research_gate import _loopback_server
 from backend.workflow_packages.production_workflows import EXPERIMENT_WORKFLOW_ID
 
@@ -47,15 +47,11 @@ def test_workspace_root_experiment_run_auto_starts_input_review_and_uploads_prog
                 "name": "Experiment interactive product route",
                 "research_topic": "Synthetic multi-agent stress testing",
                 "selected_workflow": "LITERATURE_SEARCH",
-                "workflow_setup": "custom",
-                "custom_workflow_definition_ids": [
-                    "literature-search-local-experimental",
-                    "idea-discovery-local-experimental",
-                    EXPERIMENT_WORKFLOW_ID,
-                ],
             })
         assert created.status_code == 201, created.text
         project_id = created.json()["project_id"]
+        _add(client, project_id, "idea-discovery-local-experimental", 1)
+        _add(client, project_id, EXPERIMENT_WORKFLOW_ID, 2)
         instances = {
             item["workflow_definition_id"]: item
             for item in client.get(

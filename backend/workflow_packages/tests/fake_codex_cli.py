@@ -158,6 +158,31 @@ def synthesize(root: Path) -> None:
             "exclusion_summary": "Records outside the bounded representative set were excluded.",
         },
     )
+    write_json(
+        root / "memory/owner-decisions.json",
+        {
+            "schema_version": "reagent.owner-decision-snapshot.literature/v0.1",
+            "candidate_set_checksum": file_checksum(
+                root / "outputs/candidate_papers.json"
+            ),
+            "decision_revision": 1,
+            "decisions": [
+                {
+                    "candidate_id": item["candidate_id"],
+                    "disposition": (
+                        "SELECTED" if index < 3 else
+                        "UNCERTAIN" if index == 3 else "EXCLUDED"
+                    ),
+                    "reason": (
+                        "Owner retained this bounded record."
+                        if index < 3 else
+                        "Owner withheld this record from the selected evidence set."
+                    ),
+                }
+                for index, item in enumerate(candidates)
+            ],
+        },
+    )
     evidence_heading = (
         "REAL PROVIDER METADATA"
         if mode == "NORMAL"

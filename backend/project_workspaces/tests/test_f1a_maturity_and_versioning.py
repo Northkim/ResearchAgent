@@ -47,6 +47,7 @@ def test_catalog_exposes_reviewed_maturity_and_recommends_new_idea_version(
     ]
     assert set(database.workflow_definitions) == {
         "literature-search-local-experimental",
+        "literature-consolidation-local-experimental",
         "idea-discovery-local-experimental",
         "writing-local-experimental",
         "review-local-experimental",
@@ -135,8 +136,8 @@ def test_existing_experiment_0_3_capsule_is_not_silently_upgraded(tmp_path) -> N
     catalog = client.get(
         "/workflow-definitions/reproduction-experiment-local-experimental"
     ).json()
-    assert catalog["recommended_version"]["version"] == "0.3.0"
-    assert catalog["recommended_capsule"]["capsule_version"] == "0.5.0"
+    assert catalog["recommended_version"]["version"] == "0.8.0"
+    assert catalog["recommended_capsule"]["capsule_version"] == "0.11.0"
 
 
 @pytest.mark.parametrize(

@@ -200,11 +200,11 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
         for item in released_instances
     }
     assert released_pins == {
-        LITERATURE_SEARCH_WORKFLOW_ID: ("0.4.0", "0.6.0"),
-        IDEA_DISCOVERY_WORKFLOW_ID: ("0.2.0", "0.3.0"),
-        EXPERIMENT_WORKFLOW_ID: ("0.4.0", "0.7.0"),
-        WRITING_WORKFLOW_ID: ("0.3.0", "0.5.0"),
-        REVIEW_WORKFLOW_ID: ("0.3.0", "0.5.0"),
+        LITERATURE_SEARCH_WORKFLOW_ID: ("0.6.0", "0.8.0"),
+        IDEA_DISCOVERY_WORKFLOW_ID: ("0.4.0", "0.5.0"),
+        EXPERIMENT_WORKFLOW_ID: ("0.8.0", "0.11.0"),
+        WRITING_WORKFLOW_ID: ("0.5.0", "0.7.0"),
+        REVIEW_WORKFLOW_ID: ("0.4.0", "0.6.0"),
     }
     released_descriptor = client.get(
         f"/projects/{released_project_id}/workspace-bootstrap"
@@ -240,16 +240,16 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
         "workflow_setup": "custom",
         "custom_workflow_definition_ids": [
             LITERATURE_SEARCH_WORKFLOW_ID,
-            IDEA_DISCOVERY_WORKFLOW_ID,
-            WRITING_WORKFLOW_ID,
-            REVIEW_WORKFLOW_ID,
-            EXPERIMENT_WORKFLOW_ID,
         ],
     })
     assert created.status_code == 201, created.text
     project_id = created.json()["project_id"]
+    _add(client, project_id, IDEA_DISCOVERY_WORKFLOW_ID, 1)
+    _add(client, project_id, WRITING_WORKFLOW_ID, 2)
+    _add(client, project_id, REVIEW_WORKFLOW_ID, 3)
+    _add(client, project_id, EXPERIMENT_WORKFLOW_ID, 4)
     instance_page = client.get(f"/projects/{project_id}/workflow-instances").json()
-    assert instance_page["manifest_revision"] == 1
+    assert instance_page["manifest_revision"] == 5
     assert instance_page["total"] == 5
     instances = {item["workflow_definition_id"]: item for item in instance_page["items"]}
     assert set(instances) == {
@@ -260,7 +260,7 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
         key: (value["workflow_version"], value["capsule_version"])
         for key, value in instances.items()
     } == {
-        LITERATURE_SEARCH_WORKFLOW_ID: ("0.4.0", "0.6.0"),
+        LITERATURE_SEARCH_WORKFLOW_ID: ("0.6.0", "0.8.0"),
         IDEA_DISCOVERY_WORKFLOW_ID: ("0.2.0", "0.3.0"),
         WRITING_WORKFLOW_ID: ("0.2.0", "0.4.0"),
         REVIEW_WORKFLOW_ID: ("0.2.0", "0.4.0"),
@@ -301,6 +301,9 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
     literature_report = _finalize_progress(literature_root, state="COMPLETED")
     _post_production_literature_progress(
         client, literature_root, literature["workflow_instance_id"], literature_report
+    )
+    workspace_cli.refresh_artifact_index(
+        workspace_root=workspace, transport=transport, now=now
     )
     library = _artifact(client, project_id, "selected-paper-library/v1")
 
@@ -436,7 +439,7 @@ def qualify_complete_product_width(client: TestClient, tmp_path: Path) -> dict:
     assert review_value["recommendation"] == "INSUFFICIENT_EVIDENCE"
 
     # The reviewed product model preserves Draft A by creating Writing #2.
-    writing_b = _add(client, project_id, WRITING_WORKFLOW_ID, revision=1)
+    writing_b = _add(client, project_id, WRITING_WORKFLOW_ID, revision=5)
     third_sync = workspace_cli.sync_workspace(
         workspace_root=workspace, transport=transport, now=now + timedelta(minutes=7)
     )

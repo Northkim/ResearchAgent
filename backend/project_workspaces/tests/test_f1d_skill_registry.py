@@ -51,27 +51,51 @@ def test_skill_catalog_is_read_only_stable_and_projects_exact_pins(tmp_path) -> 
     }).status_code == 201
     page = client.get("/skills?offset=0&limit=1")
     assert page.status_code == 200
-    assert page.json()["total"] == 2
+    assert page.json()["total"] == 3
     assert len(page.json()["items"]) == 1
     all_items = client.get("/skills").json()["items"]
-    assert [item["skill_id"] for item in all_items] == sorted(
-        asset.skill_id for asset in PRODUCTION_SKILLS
-    )
+    expected_skill_ids = {
+        *(asset.skill_id for asset in PRODUCTION_SKILLS),
+        "sklearn-tabular-classification-preparation-local-builtin",
+    }
+    assert [item["skill_id"] for item in all_items] == sorted(expected_skill_ids)
+    expected_usages = {
+        "research-artifact-provenance-local-builtin": {
+            ("reproduction-experiment-local-experimental", "0.2.0"),
+            ("reproduction-experiment-local-experimental", "0.3.0"),
+            ("reproduction-experiment-local-experimental", "0.4.0"),
+            ("review-local-experimental", "0.2.0"),
+            ("review-local-experimental", "0.3.0"),
+            ("review-local-experimental", "0.4.0"),
+            ("writing-local-experimental", "0.2.0"),
+            ("writing-local-experimental", "0.3.0"),
+            ("writing-local-experimental", "0.4.0"),
+            ("writing-local-experimental", "0.5.0"),
+            ("writing-local-experimental", "0.7.0"),
+        },
+        "scaffold-core-safety-local-builtin": {
+            ("reproduction-experiment-local-experimental", "0.2.0"),
+            ("reproduction-experiment-local-experimental", "0.3.0"),
+            ("review-local-experimental", "0.2.0"),
+            ("writing-local-experimental", "0.2.0"),
+        },
+        "sklearn-tabular-classification-preparation-local-builtin": {
+            ("reproduction-experiment-local-experimental", "0.8.0"),
+        },
+    }
     for item in all_items:
         assert item["trust"] == "BUILT_IN_REVIEWED"
         assert item["current_version"]["version"] == "0.1.0"
         detail = client.get(f"/skills/{item['skill_id']}").json()
-        expected_count = 8 if item["skill_id"] == PRODUCTION_SKILLS[0].skill_id else 4
-        assert len(detail["workflow_usages"]) == expected_count
-        expected_versions = {"0.2.0", "0.3.0"}
-        if expected_count == 8:
-            expected_versions.add("0.4.0")
-        assert {use["workflow_version"] for use in detail["workflow_usages"]} == expected_versions
+        assert {
+            (usage["workflow_definition_id"], usage["workflow_version"])
+            for usage in detail["workflow_usages"]
+        } == expected_usages[item["skill_id"]]
     assert client.post("/skills", json={}).status_code == 405
     writing = client.get("/workflow-definitions/writing-local-experimental").json()
     skills = writing["recommended_version"]["skills"]
     assert [(item["skill_id"], item["version"]) for item in skills] == [
-        (asset.skill_id, "0.1.0") for asset in PRODUCTION_SKILLS
+        (PRODUCTION_SKILLS[0].skill_id, "0.1.0")
     ]
 
 
@@ -91,7 +115,9 @@ def test_old_scaffold_versions_remain_and_existing_instance_does_not_upgrade() -
     versions = uow.workflow_foundation.list_definition_versions(
         "writing-local-experimental"
     )
-    assert {item.version for item in versions} == {"0.1.0", "0.2.0", "0.3.0", "0.4.0"}
+    assert {item.version for item in versions} == {
+        "0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.7.0"
+    }
     old_capsules = [
         item for item in uow.workflow_foundation.list_capsule_versions(
             "writing-local-experimental"
@@ -139,21 +165,33 @@ def test_custom_setup_preserves_skill_backed_scaffold_versions(tmp_path) -> None
     ).json()["items"]
     by_id = {item["workflow_definition_id"]: item for item in instances}
     for workflow_id in SCAFFOLD_WORKFLOWS:
-        expected = (
-            "0.3.0"
-            if workflow_id == "reproduction-experiment-local-experimental"
-            else "0.2.0"
-        )
+        expected = {
+            "writing-local-experimental": "0.5.0",
+            "review-local-experimental": "0.4.0",
+            "reproduction-experiment-local-experimental": "0.8.0",
+        }[workflow_id]
         assert by_id[workflow_id]["workflow_version"] == expected
-        expected_capsule = (
-            "0.5.0"
-            if workflow_id == "reproduction-experiment-local-experimental"
-            else "0.4.0"
-        )
+        expected_capsule = {
+            "writing-local-experimental": "0.7.0",
+            "review-local-experimental": "0.6.0",
+            "reproduction-experiment-local-experimental": "0.11.0",
+        }[workflow_id]
         assert by_id[workflow_id]["capsule_version"] == expected_capsule
-        assert [item["skill_id"] for item in by_id[workflow_id]["skills"]] == [
-            asset.skill_id for asset in PRODUCTION_SKILLS
-        ]
+        expected_skills = {
+            "writing-local-experimental": [
+                ("research-artifact-provenance-local-builtin", "0.1.0")
+            ],
+            "review-local-experimental": [
+                ("research-artifact-provenance-local-builtin", "0.1.0")
+            ],
+            "reproduction-experiment-local-experimental": [
+                ("sklearn-tabular-classification-preparation-local-builtin", "0.1.0")
+            ],
+        }[workflow_id]
+        assert [
+            (item["skill_id"], item["version"])
+            for item in by_id[workflow_id]["skills"]
+        ] == expected_skills
     assert by_id["literature-search-local-experimental"]["skills"] == []
     assert by_id["idea-discovery-local-experimental"]["skills"] == []
 
@@ -251,7 +289,7 @@ def test_skill_projection_queries_are_bounded_for_large_catalog(monkeypatch) -> 
         monkeypatch.setattr(repository, method_name, counted)
     service = ProjectWorkspaceApplicationService(unit_of_work=uow, clock=lambda: NOW)
     definitions, total = service.list_skills(offset=0, limit=100)
-    assert total == 102 and len(definitions) == 100
+    assert total == 103 and len(definitions) == 100
     for definition in definitions:
         service.skill_versions_for(definition.skill_id)
     for _ in range(20):
@@ -288,7 +326,7 @@ def test_local_preflight_reports_tampered_bundled_skill(tmp_path) -> None:
     skill.write_text(skill.read_text() + "\nlocal drift\n")
     with pytest.raises(
         workspace_cli.WorkspaceCLIError,
-        match="required built-in Skill is missing or changed",
+        match="Immutable Package file checksum is invalid",
     ) as error:
         workspace_cli.run_workflow(
             workspace_root=workspace,
@@ -297,4 +335,4 @@ def test_local_preflight_reports_tampered_bundled_skill(tmp_path) -> None:
             api_url="http://127.0.0.1:8000",
             preflight_only=True,
         )
-    assert error.value.code == "LOCAL_CAPSULE_DRIFT"
+    assert error.value.code == "LEGACY_PACKAGE_CHECKSUM_MISMATCH"

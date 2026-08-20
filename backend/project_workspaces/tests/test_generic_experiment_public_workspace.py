@@ -119,9 +119,10 @@ def test_catalog_sync_materialize_public_checkpoint_and_durable_resume(tmp_path:
     project_id = project["project_id"]
     _seed_publication(database)
     detail = client.get(f"/workflow-definitions/{WORKFLOW_ID}").json()
-    assert detail["recommended_version"]["version"] == "0.6.0"
-    assert detail["recommended_capsule"]["capsule_version"] == "0.9.0"
-    assert detail["recommended_version"]["output_schema_id"] == "experiment-record/v4"
+    assert detail["recommended_version"]["version"] == "0.8.0"
+    assert detail["recommended_capsule"]["capsule_version"] == "0.11.0"
+    assert detail["recommended_version"]["output_schema_id"] == "experiment-record/v5"
+    assert any(item["version"] == "0.6.0" for item in detail["versions"])
 
     created = client.post(f"/projects/{project_id}/workflow-instances", json={
         "workflow_definition_id": WORKFLOW_ID,

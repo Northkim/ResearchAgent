@@ -35,10 +35,10 @@ test("qualifies the controlled browser surface at all B0 viewports", async ({ pa
   for (const viewport of viewports) {
     await page.setViewportSize(viewport); await page.goto(`/projects/${fixture.project_id}/workflows`);
     await expect(page.getByRole("heading", { name: `${fixture.project_name} workflows` })).toBeVisible();
-    const board = page.locator("section").filter({ has: page.getByRole("heading", { name: "Your Project workflows" }) });
-    const card = (workflow: string) => board.locator("article.workflow-card").filter({ hasText: fixture.instances[workflow] });
-    await expect(card("literature-search-local-experimental").getByText("Completed", { exact: true })).toBeVisible(); await expect(card("idea-discovery-local-experimental").getByText(/Blocked until an exact controlled input/)).toBeVisible();
-    await expect(card("writing-local-experimental").getByText(/Awaiting owner action/)).toBeVisible(); await expect(card("review-local-experimental").getByText("Installed · sync needed", { exact: true })).toBeVisible(); await assertBrowserSafe();
+    const board = page.getByRole("region", { name: "Workflow progression" });
+    const row = (name: string) => board.locator("article.workflow-work-row").filter({ hasText: name });
+    await expect(row("Literature Search").getByText("Literature Search completed", { exact: true })).toBeVisible(); await expect(row("Idea Discovery").getByText(/Blocked until an exact controlled input/)).toBeVisible();
+    await expect(row("Initial Writing").getByText(/Awaiting owner action/)).toBeVisible(); await expect(board.getByText("1 retired Workflow · history", { exact: true })).toBeVisible(); await assertBrowserSafe();
     await page.screenshot({ path: join(screenshotRoot, `projects-workflows__${viewport.width}x${viewport.height}__controlled-states__fold.png`), fullPage: false });
     await assertBrowserSafe();
   }
