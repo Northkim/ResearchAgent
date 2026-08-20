@@ -4329,16 +4329,23 @@ self-update (reproduced); the supported one-time legacy migration is
 re-downloading the current Local tool from Project Help and running sync once.
 `sync` self-update is fail-closed and runs before Cloud confirmation, so a
 required-but-failed CLI update never marks the Workspace ready. The current
-KNN Workspace CLI is the pre-fix `fa95d11` source and needs the one-time
-migration before Cloud copy-paste acceptance.
+KNN Workspace CLI already contains the self-update implementation (it is the
+`cdb4573`-era source), so it needs no legacy migration; one `sync` refreshes it
+to the current committed source before Cloud copy-paste acceptance.
 
 Interactive Codex restore (2026-08-20): Literature now runs attached interactive
-Codex TUI phases (planning, screening, finalization) with the pinned phase
-instruction supplied automatically and the Owner conversing directly with
-Codex; durable checkpoints separate the phases so Owner dwell never holds a
-Codex process. The headless AUTO_PLANNING/AUTO_SYNTHESIS `codex exec` transcript
-path was removed. The root `run` defaults to NORMAL and fails closed
-(`NORMAL_REQUIRED`) when the backend offers Demo; `--mode demo` is the explicit
-Demo path, and `--restart-round` reuses the reviewed reset semantics. The KNN
-backend currently reports `mode: DEMO`, so the normal run must be preceded by
-configuring real Provider access (or explicitly opting into Demo).
+Codex TUI as ONE attached interactive session per round: the Owner approves the
+search plan, reviews candidates, and types `finish` inside the same Codex
+session while the bounded Provider controller performs transport when the
+durable plan checkpoint is confirmed; Codex exits once and ReAgent then
+validates, finalizes, uploads, and stores the receipt. The headless
+AUTO_PLANNING/AUTO_SYNTHESIS `codex exec` transcript path and the
+multi-phase planning/screening/finalization TUI sessions were removed. The
+root `run` defaults to NORMAL and fails closed (`NORMAL_REQUIRED`) when the
+backend offers Demo; `--mode demo` is the explicit Demo path, and
+`--restart-round` reuses the reviewed reset semantics. Root in-process
+Writing/Review/Writing-Revision and Generic Experiment Harness phases now open
+attached interactive Codex TUIs (previously headless `codex exec`). The KNN
+backend currently runs the isolated-controlled-test profile reporting
+`mode: DEMO`; the authoritative real-owner profile is `local-development`
+(the default), which serves NORMAL when the real OpenAlex proxy is configured.

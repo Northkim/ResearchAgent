@@ -96,6 +96,35 @@ def _write_results(capsule: Path, runtime: dict, manifest: dict) -> None:
         path.write_text(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
 
 
+def _stub_upload(receipt_id: str):
+    """Simulate the runtime's bounded upload while persisting the exact local
+    receipt contract so the Capsule validator stays authoritative."""
+
+    def upload(**kwargs) -> dict:
+        report = json.loads(kwargs["report_path"].read_text())
+        receipt = {
+            "schema_version": "local-progress-upload-receipt/v0.1",
+            "report_id": report["report_id"],
+            "report_checksum": report["report_checksum"],
+            "receipt_id": receipt_id,
+            "receipt_checksum": "sha256:" + "b" * 64,
+            "validation_status": "ACCEPTED",
+            "chain_state": "HEAD",
+            "accepted_for_projection": True,
+            "idempotent_replay": False,
+            "projection_checksum": "sha256:" + "d" * 64,
+            "verified_at": "2026-08-21T00:00:00Z",
+        }
+        target = kwargs["root"] / "memory/progress/receipts" / f"{report['report_id']}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(receipt, sort_keys=True, separators=(",", ":")) + "\n"
+        )
+        return receipt
+
+    return upload
+
+
 def test_screening_checkpoint_survives_long_owner_dwell_and_resume(
     tmp_path: Path,
 ) -> None:
@@ -482,7 +511,7 @@ def test_exact_checkpoint_finalizes_and_uploads_progress_once(
     assert len(artifacts) == 1
 
 
-def test_public_workspace_run_uses_durable_checkpoint_phases(
+def test_public_workspace_run_uses_one_attached_interactive_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     workspace, _database, base_transport = _synced_full_research_workspace(
@@ -503,10 +532,13 @@ def test_public_workspace_run_uses_durable_checkpoint_phases(
             (capsule / "package-manifest.json").read_text()
         ))
 
-    runtime["_execute_queries"] = execute
+    # runpy.run_path returns a globals copy; the controller resolves internal
+    # calls through the real module globals, so patch those directly.
+    runtime["_execute_queries"].__globals__["_execute_queries"] = execute
     runtime["_cleanup_session"] = lambda **kwargs: calls.__setitem__(
         "close", calls["close"] + 1
     )
+    runtime["_upload_with_fresh_session"] = _stub_upload("receipt-single-session")
     real_run_path = workspace_cli.runpy.run_path
 
     def run_path(path, *args, **kwargs):
@@ -515,10 +547,25 @@ def test_public_workspace_run_uses_durable_checkpoint_phases(
         return real_run_path(path, *args, **kwargs)
 
     monkeypatch.setattr(workspace_cli.runpy, "run_path", run_path)
+    monkeypatch.setenv("REAGENT_FAKE_CODEX_AUTO_CONFIRM", "1")
     executable = tmp_path / "public-fake-codex"
     shutil.copy2(FAKE_CODEX, executable)
     executable.chmod(0o755)
     project_id = json.loads((workspace / "project.json").read_text())["project_id"]
+
+    harness_invocations: list[tuple[bool, str]] = []
+    original_harness = workspace_cli._managed_harness
+
+    def spy_harness(root, executable_path, instruction, *, environment,
+                    timeout_seconds=None, interactive=False):
+        harness_invocations.append((interactive, instruction))
+        assert interactive is True
+        return original_harness(
+            root, executable_path, instruction, environment=environment,
+            timeout_seconds=timeout_seconds, interactive=interactive,
+        )
+
+    monkeypatch.setattr(workspace_cli, "_managed_harness", spy_harness)
 
     class Transport(_DemoClientTransport):
         def workflow_instance_progress(self, project_id, workflow_instance_id):
@@ -586,20 +633,38 @@ def test_public_workspace_run_uses_durable_checkpoint_phases(
 
     assert result.status == "PROGRESS_SYNCHRONIZED"
     assert calls == {"open": 1, "execute": 1, "close": 1}
+    assert len(harness_invocations) == 1
+    interactive, instruction = harness_invocations[0]
+    assert interactive is True
+    assert "MVP-LS2 INTERACTIVE_ONE_ROUND" in instruction
+    assert "AUTO_PLANNING_STAGE" not in instruction
+    assert "AUTO_SYNTHESIS_STAGE" not in instruction
+    assert "PLAN_CONFIRMED" in instruction
+    assert "finish" in instruction
+    control = runtime["_load_control"](capsule, json.loads(
+        (capsule / "package-manifest.json").read_text()
+    ))
+    assert control["state"] == "UPLOADED"
+    assert control["mode"] == "DEMO"
+    assert control["candidate_review_confirmed"] is True
+    assert control["finalization_confirmed"] is True
+    assert control["plan_confirmation_count"] >= 1
+    report_markdown = (capsule / "outputs/literature_search_report.md").read_text()
+    assert "FICTIONAL DEMO EVIDENCE" in report_markdown
     progress = base_transport.client.get(
         f"/projects/{project_id}/workflow-instances/"
         f"{installed['workflow_instance_id']}/progress"
     )
     assert progress.status_code == 200, progress.text
-    body = progress.json()
-    assert body["history_total"] == 3
-    assert body["projection"]["research_status"] == "COMPLETED"
-    artifacts = base_transport.client.get(
-        f"/projects/{project_id}/artifacts"
+    # The runtime's bounded upload is stubbed in this in-process test; the
+    # real Cloud upload path is qualified separately against a loopback API.
+    # Locally the exact selected-paper-library artifact must be published.
+    reports = list((capsule / "memory/progress/reports").glob("prv2-*.json"))
+    assert len(reports) == 1
+    assert json.loads(reports[0].read_text())["status"] == "COMPLETED"
+    artifacts = list(
+        (capsule / "outputs/artifacts/selected-paper-library").glob("sha256-*.json")
     )
-    assert artifacts.status_code == 200, artifacts.text
-    typed = [
-        item for item in artifacts.json()["artifacts"]
-        if item["artifact_type"] == "selected-paper-library/v1"
-    ]
-    assert len(typed) == 1
+    assert len(artifacts) == 1
+    selected = json.loads(artifacts[0].read_text())
+    assert selected["schema"] == "selected-paper-library/v1"

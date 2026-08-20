@@ -19,11 +19,6 @@ RESPONSES = (
     (b"CHECKPOINT: CANDIDATE SCREENING", b"continue\n"),
     (b"CHECKPOINT: FINALIZATION", b"finish\n"),
 )
-WORKSPACE_RESPONSES = (
-    (b"Literature search plan is ready", b"approve\n"),
-    (b"Literature screening is ready", b"approve\n"),
-    (b"Literature result is ready to finalize", b"approve\n"),
-)
 REAL_PROVIDER_CONSENT_MARKER = b"Type continue-real-search"
 
 
@@ -191,11 +186,6 @@ def main() -> int:
         resume=args.resume,
         expect_marker=(
             args.expect_marker.encode("utf-8") if args.expect_marker else None
-        ),
-        responses_contract=(
-            WORKSPACE_RESPONSES
-            if args.workspace_root is not None
-            else RESPONSES
         ),
     )
     if result != args.expect_exit:

@@ -26,6 +26,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import uuid
 import urllib.error
 import urllib.parse
@@ -6800,6 +6801,17 @@ def _managed_harness(
             str(root),
             instruction,
         ]
+        child = subprocess.Popen(command, cwd=root, env=environment)
+        try:
+            returncode = child.wait()
+        except KeyboardInterrupt:
+            _terminate_attached_harness(child)
+            raise
+        if returncode != 0:
+            raise OwnerCheckpointInvalid(
+                "Managed Harness exited before completing the current phase"
+            )
+        return
     else:
         command = [
             executable,
@@ -6814,27 +6826,43 @@ def _managed_harness(
             str(root),
             instruction,
         ]
-    run_options: dict[str, Any] = {
-        "cwd": root,
-        "env": environment,
-        "check": False,
-    }
-    if not interactive:
-        run_options["stdin"] = subprocess.DEVNULL
-    if timeout_seconds is not None:
-        run_options["timeout"] = timeout_seconds
+        run_options: dict[str, Any] = {
+            "cwd": root,
+            "env": environment,
+            "check": False,
+            "stdin": subprocess.DEVNULL,
+        }
+        if timeout_seconds is not None:
+            run_options["timeout"] = timeout_seconds
+        try:
+            completed = subprocess.run(command, **run_options)
+        except subprocess.TimeoutExpired as error:
+            raise OwnerCheckpointInvalid(
+                "Managed Harness exceeded the active-work time limit"
+            ) from error
+        except OSError as error:
+            raise OwnerCheckpointInvalid("Managed Harness could not be started") from error
+        if completed.returncode != 0:
+            raise OwnerCheckpointInvalid(
+                "Managed Harness exited before completing the current phase"
+            )
+
+
+def _terminate_attached_harness(child: subprocess.Popen[Any]) -> None:
+    """Safely stop an attached interactive Codex child after an interrupt."""
+
+    if child.poll() is not None:
+        return
+    child.send_signal(signal.SIGINT)
     try:
-        completed = subprocess.run(command, **run_options)
-    except subprocess.TimeoutExpired as error:
-        raise OwnerCheckpointInvalid(
-            "Managed Harness exceeded the active-work time limit"
-        ) from error
-    except OSError as error:
-        raise OwnerCheckpointInvalid("Managed Harness could not be started") from error
-    if completed.returncode != 0:
-        raise OwnerCheckpointInvalid(
-            "Managed Harness exited before completing the current phase"
-        )
+        child.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        child.terminate()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=5)
 
 
 def _managed_codex_executable(value: str | None) -> str:
@@ -7644,6 +7672,123 @@ def _publish_literature_checkpoint(
     return artifact, report
 
 
+def _run_literature_interactive_round(
+    *,
+    capsule: Path,
+    manifest: dict[str, Any],
+    runtime: dict[str, Any],
+    api_url: str,
+    mode: str,
+    codex_executable: str | None,
+    resume: bool = False,
+) -> dict[str, Any]:
+    """Run one Literature round as ONE attached interactive Codex session.
+
+    Restores the reviewed single-session TUI contract: Codex owns the search
+    plan, candidate screening, and final ``finish`` conversation in one
+    process; the bounded Provider controller performs transport when the
+    durable plan checkpoint is confirmed while Codex stays open; Codex exits
+    once; ReAgent then validates, finalizes, uploads, and stores the receipt.
+    Owner waiting time never triggers a Harness timeout: the interactive Codex
+    process has no wall-clock kill, while Provider HTTP and Cloud operations
+    keep their bounded timeouts.
+    """
+
+    base_url = runtime["_base_url"](api_url)
+    executable = _managed_codex_executable(codex_executable)
+    if runtime["_reports"](capsule) and runtime["_receipts"](capsule):
+        return {"status": "ROUND_ALREADY_UPLOADED", "report_id": None}
+    runtime["_initialize_control"](
+        root=capsule,
+        manifest=manifest,
+        mode=mode,
+        execution_style="INTERACTIVE",
+    )
+    topic = _object(
+        _read_json(capsule / "inputs/research_request.json"),
+        "Literature research request",
+    )["topic"]
+    session = runtime["_open_session"](
+        base_url=base_url,
+        manifest=manifest,
+        mode=mode,
+    )
+    stop = threading.Event()
+    errors: list[BaseException] = []
+    controller = threading.Thread(
+        target=runtime["_provider_controller"],
+        kwargs={
+            "root": capsule,
+            "base_url": base_url,
+            "manifest": manifest,
+            "session": session,
+            "mode": mode,
+            "topic": topic,
+            "stop": stop,
+            "errors": errors,
+        },
+        name="reagent-bounded-provider-controller",
+    )
+    controller.start()
+    try:
+        try:
+            _managed_harness(
+                capsule,
+                executable,
+                runtime["_interactive_instruction"](mode, resume=resume),
+                environment=_capsule_child_environment(),
+                interactive=True,
+            )
+        except KeyboardInterrupt:
+            runtime["_mark_interrupted"](capsule, "INTERACTIVE_CODEX")
+            raise
+    finally:
+        stop.set()
+        controller.join(timeout=float(runtime["HTTP_TIMEOUT_SECONDS"]) + 2)
+        try:
+            runtime["_cleanup_session"](
+                base_url=base_url,
+                manifest=manifest,
+                session=session,
+                label="Search",
+            )
+        except Exception:
+            pass
+    if controller.is_alive():
+        raise OwnerCheckpointInvalid(
+            "Bounded Provider controller did not stop cleanly"
+        )
+    if errors:
+        error = errors[0]
+        raise OwnerCheckpointInvalid(
+            f"Bounded Provider controller failed: {error}"
+        ) from error
+    final_control = runtime["_load_control"](capsule, manifest)
+    if final_control["state"] == "INTERRUPTED":
+        raise OwnerCheckpointStopped(
+            "Owner aborted the interactive Codex round; valid files were preserved"
+        )
+    if final_control["state"] == "FAILED":
+        raise OwnerCheckpointInvalid(
+            "Interactive round stopped at a safe failed control state"
+        )
+    runtime["_validate_finalized_control"](capsule, manifest)
+    report_path = runtime["_finalize_report"](
+        capsule, final_control["context_before_checksum"]
+    )
+    runtime["_mark_report_finalized"](capsule, report_path)
+    runtime["_validate_package"](capsule)
+    receipt = runtime["_upload_with_fresh_session"](
+        root=capsule,
+        base_url=base_url,
+        manifest=manifest,
+        report_path=report_path,
+    )
+    runtime["_mark_uploaded"](capsule, receipt)
+    runtime["_validate_package"](capsule)
+    return {"status": "ROUND_COMPLETED", "report_id": receipt["report_id"]}
+
+
 def _advance_literature_checkpoint_workflow(
     *,
     workspace: Path,
@@ -7910,6 +8055,7 @@ def _writing(
             executable,
             runtime["_phase_one_instruction"](),
             environment=environment,
+            interactive=True,
         )
     brief, evidence_map, outline, outline_sha = runtime["_load_outline"](root, sources)
     approval = _existing(runtime, root / "memory/outline-approval.json", "Outline approval")
@@ -7951,6 +8097,7 @@ def _writing(
             executable,
             runtime["_phase_two_instruction"](),
             environment=environment,
+            interactive=True,
         )
     current_sources, current_library, current_experiment = runtime["_load_inputs"](root)
     current_brief, current_map, current_outline, _ = runtime["_load_outline"](
@@ -8040,6 +8187,7 @@ def _review(
             executable,
             runtime["_scope_instruction"](),
             environment=environment,
+            interactive=True,
         )
     scope, scope_sha = runtime["_load_scope"](root, sources)
     approval = _existing(runtime, root / "memory/scope-approval.json", "Review Scope approval")
@@ -8080,6 +8228,7 @@ def _review(
             executable,
             runtime["_audit_instruction"](),
             environment=environment,
+            interactive=True,
         )
     current_sources, current_manuscript, current_values = runtime["_load_inputs"](root)
     runtime["_verify_scope"](root, current_sources, scope, approval)
@@ -8159,6 +8308,7 @@ def _revision(
             executable,
             runtime["_phase_one_instruction"](),
             environment=environment,
+            interactive=True,
         )
     plan, plan_sha = runtime["_load_plan"](root, review, sources)
     approval = _existing(
@@ -8203,6 +8353,7 @@ def _revision(
             executable,
             runtime["_phase_two_instruction"](),
             environment=environment,
+            interactive=True,
         )
     current = runtime["_load_inputs"](root)
     if current != (inputs, prior, review, library, experiment):
@@ -9175,6 +9326,7 @@ def run_workflow(
                 _managed_harness(
                     root, executable, instruction,
                     environment=_capsule_child_environment(),
+                    interactive=True,
                 )
 
             def decide_generic_harness(
@@ -9286,26 +9438,30 @@ def run_workflow(
                     package_identity=package_identity,
                 )
             try:
-                coordinated_result = _advance_literature_checkpoint_workflow(
-                    workspace=workspace,
-                    descriptor=descriptor,
-                    installed=installed,
+                coordinated_result = _run_literature_interactive_round(
                     capsule=capsule,
                     manifest=manifest,
-                    transport=transport,
+                    runtime=literature_runtime,
                     api_url=api_url,
-                    mode=mode_response["mode"],
+                    mode=mode,
                     codex_executable=codex_executable,
-                    decision_input=consent_input,
                 )
             except OwnerCheckpointStopped as error:
-                raise WorkspaceCLIError(
-                    "OWNER_DECISION_REQUIRED", str(error), EXIT_VALIDATION
-                ) from error
+                return WorkflowRunResult(
+                    status="EXECUTION_INTERRUPTED",
+                    project_id=descriptor["project_id"],
+                    workspace_id=descriptor["workspace_id"],
+                    workflow_instance_id=workflow_instance_id,
+                    capsule_relative_path=installed["relative_path"],
+                    warnings=(
+                        f"{error}. Valid local files were preserved; run the same "
+                        "command to resume the round.",
+                    ),
+                )
             except OwnerCheckpointInvalid as error:
                 raise _identity(
                     "LOCAL_PROGRESS_INVALID",
-                    f"Literature checkpoint could not advance exactly: {error}",
+                    f"Literature interactive round failed: {error}",
                 ) from error
         elif is_literature_consolidation:
             _prepare_scaffold_input_provenance(

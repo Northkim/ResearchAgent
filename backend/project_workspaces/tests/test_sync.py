@@ -825,15 +825,13 @@ def test_capsule_launcher_path_is_interpreted_once_for_supported_workspace_forms
 
     def advance(**kwargs):
         captured.update(
-            workspace=kwargs["workspace"],
             capsule=kwargs["capsule"],
             mode=kwargs["mode"],
-            env=workspace_cli._capsule_child_environment(),
         )
         return {"status": "COMPLETED"}
 
     monkeypatch.setattr(
-        workspace_cli, "_advance_literature_checkpoint_workflow", advance
+        workspace_cli, "_run_literature_interactive_round", advance
     )
     sentinel = "synthetic-secret-sentinel"
     for key in workspace_cli.PROVIDER_CREDENTIAL_ENV_VARS:
@@ -848,14 +846,14 @@ def test_capsule_launcher_path_is_interpreted_once_for_supported_workspace_forms
     )
 
     assert result.status == "PROGRESS_SYNCHRONIZED"
-    assert captured["workspace"].resolve() == workspace.resolve()
     assert captured["capsule"].resolve() == (
         workspace.resolve() / installed["relative_path"]
     )
     assert captured["mode"] == "NORMAL"
     assert transport.consents == 1
-    assert all(key not in captured["env"] for key in workspace_cli.PROVIDER_CREDENTIAL_ENV_VARS)
-    assert "REAGENT_DATABASE_URL" not in captured["env"]
+    env = workspace_cli._capsule_child_environment()
+    assert all(key not in env for key in workspace_cli.PROVIDER_CREDENTIAL_ENV_VARS)
+    assert "REAGENT_DATABASE_URL" not in env
 
 
 def test_normal_run_cancelled_consent_never_starts_capsule(sync_fixture, monkeypatch):
@@ -914,7 +912,7 @@ def test_owner_copyable_dot_command_uses_downloaded_generic_launcher_once(
         return {"status": "COMPLETED"}
 
     namespace["run_workflow"].__globals__[
-        "_advance_literature_checkpoint_workflow"
+        "_run_literature_interactive_round"
     ] = advance
     namespace["continue_workflow"].__kwdefaults__["consent_input"] = (
         lambda _: workspace_cli.REAL_PROVIDER_CONFIRMATION
@@ -996,7 +994,7 @@ def test_owner_dot_command_projects_controlled_demo_mode_from_real_server_route(
             return {"status": "COMPLETED"}
 
         namespace["run_workflow"].__globals__[
-            "_advance_literature_checkpoint_workflow"
+            "_run_literature_interactive_round"
         ] = advance
         monkeypatch.chdir(workspace)
         exit_code = namespace["main"]([
@@ -1044,7 +1042,7 @@ def test_owner_search_completed_state_projects_resume_and_generic_run_uses_it(
         return {"status": "COMPLETED"}
 
     monkeypatch.setattr(
-        workspace_cli, "_advance_literature_checkpoint_workflow", advance
+        workspace_cli, "_run_literature_interactive_round", advance
     )
     monkeypatch.chdir(workspace)
     result = workspace_cli.run_workflow(
@@ -1073,6 +1071,11 @@ def test_failed_generic_harness_marks_valid_post_search_interruption(
 
     runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
     runtime["_check_backend"] = lambda _url: None
+    runtime["_open_session"] = lambda **kwargs: {
+        "session_id": "interrupted-session",
+        "session_token": "interrupted-token",
+    }
+    runtime["_cleanup_session"] = lambda **kwargs: None
     real_run_path = workspace_cli.runpy.run_path
 
     def run_path(path, *args, **kwargs):

@@ -330,6 +330,16 @@ def wait_for_state(root: Path, expected: str) -> None:
 def interactive(root: Path) -> None:
     delay = float(os.environ.get("REAGENT_FAKE_CODEX_DELAY_SECONDS", "0"))
     control = json.loads((root / "memory/round-control.json").read_text())
+    if os.environ.get("REAGENT_FAKE_CODEX_ABORT") == "1":
+        update_control(
+            root,
+            state="INTERRUPTED",
+            last_completed_state="NOT_STARTED",
+            interrupted_stage="SEARCH_PLAN",
+            failure_code=None,
+        )
+        print("Codex fixture aborted by owner before plan confirmation.", flush=True)
+        return
     state = (
         control["last_completed_state"]
         if control["state"] in {"INTERRUPTED", "FAILED"}
@@ -360,6 +370,8 @@ def interactive(root: Path) -> None:
     print("CHECKPOINT: FINALIZATION", flush=True)
     print("Four local outputs; three selected; bounded summary uploads; libraries stay local.", flush=True)
     print("Type finish to finalize the round.", flush=True)
+    if os.environ.get("REAGENT_FAKE_CODEX_REFUSE_FINISH") == "1":
+        raise RuntimeError("fixture refused finish; no finalization may occur")
     read_until("finish")
     if os.environ.get("REAGENT_FAKE_CODEX_NONZERO") == "1":
         raise RuntimeError("fixture requested a nonzero Codex exit")
