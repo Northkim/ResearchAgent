@@ -4186,3 +4186,22 @@ supersedes stale run-approval UI. All four repaired-D1 locks, controlled browser
 PostgreSQL publication/approval/preset gates, build/static checks, and disposable
 cleanup passed. The protected Owner D1 database and Project were not accessed.
 Safe next phase is R4 scientific-semantics recovery only.
+
+## Post-D1 R4 complete (2026-08-20)
+
+R4 publishes Literature Search 0.6 / Capsule 0.8 with bounded
+DIRECT/SUPPORTING/CONTEXTUAL/BACKGROUND query families and explicit Skill
+non-authority. It also publishes Literature Consolidation 0.1 / Capsule 0.1 as
+an explicit Local composition of exactly two Owner-selected
+`selected-paper-library/v1` Artifacts. The result remains v1, preserves exact
+source bindings and durable Owner dispositions, and can be recursively selected
+for a later explicit consolidation. No latest/implicit merge or Cloud byte
+processing was introduced.
+
+New Full Research Projects still contain exactly five initial Workflows and only
+their Literature pin advances to 0.6/0.8. Migration `20260820_0039` is
+schema-free; historical publications remain immutable. Controlled E1–E6,
+marked PostgreSQL upgrade/downgrade/re-upgrade, public Workspace materialization,
+fake-Harness finalization, downstream exact selection, frontend build, and all
+four D1 locks pass. The protected Owner D1 database and Project were untouched.
+ADR 0054 governs explicit Literature composition. Safe next phase is R5 only.
