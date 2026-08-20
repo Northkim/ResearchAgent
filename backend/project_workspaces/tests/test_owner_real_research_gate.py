@@ -213,6 +213,12 @@ def test_owner_normal_product_route_is_consent_bound_secret_isolated_and_hands_o
             timeout=90,
         )
         assert driven.returncode == 0, driven.stdout + driven.stderr
+        # The single attached Codex session must continue automatically from
+        # SEARCH_COMPLETED to candidate screening: no Owner "continue" input is
+        # fed by the PTY driver, and the concise default summary is presented.
+        assert "CHECKPOINT: CANDIDATE SCREENING" in driven.stdout
+        assert "Candidate screening complete:" in driven.stdout
+        assert "Type continue." not in driven.stdout
         assert adapter.invocation_count == 2
         assert credential.read_count == 2
         assert len(provider_transport.calls) == 2

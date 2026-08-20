@@ -4378,3 +4378,21 @@ previously-REJECTED exact reports are re-validated on retry instead of replaying
 their rejection; and the capsule upload path now raises the accurate
 `PROGRESS_UPLOAD_CONFLICT` message ("finalized and preserved locally ... no
 research work needs to be repeated") instead of INTERNAL_FAILURE.
+
+Lifecycle closure (2026-08-21): the same-round progress model is Model B
+(multiple accepted observations per round with one canonical terminal
+representative); schema allows multiple rows per round and `build_projection`
+already sorted by round+completed_at. `42cd857`'s supersession direction is
+confirmed and all accepted-history consumers are aligned: aggregation,
+projection, workspace CLI reconciliation, and continuation validation. The
+`workflow list` CLI now shows PROGRESS_UPLOAD_PENDING/CONTINUE (the recovery
+command) instead of falsely advertising Completed when a local terminal report
+is not yet Cloud-acknowledged; after recovery the Capsule receipt is persisted
+and round-control moves to UPLOADED so local and Cloud completion converge. The
+restored single-session instruction now directs the SAME Codex session to poll
+round-control after PLAN_CONFIRMED and automatically present candidate
+screening on SEARCH_COMPLETED (and surface FAILED) with no Owner keystroke, and
+to present a concise default screening summary with technical provenance hidden
+unless requested. The PTY owner-gate e2e feeds only proceed+finish and proves
+the automatic transition. Recovery requires backend deploy/restart + `sync`
+(root CLI self-update) + the same run command; `run` does not self-update.

@@ -157,6 +157,23 @@ def test_literature_run_selects_single_attached_interactive_session(
     ):
         assert relative in texts
         assert (capsule / relative).is_file()
+    # Automatic post-search continuation: the same session must proceed from
+    # SEARCH_COMPLETED to candidate screening without Owner input, and Provider
+    # failure must be surfaced automatically.
+    assert "AUTOMATIC CONTINUATION AFTER PROVIDER SEARCH" in texts
+    assert "do NOT ask the Owner anything" in texts
+    assert "The Owner is not required to type anything" in texts
+    assert "automatically proceed to the CANDIDATE-SCREENING CHECKPOINT below" in " ".join(
+        texts.split()
+    )
+    assert "no Owner keystroke is required to surface the failure" in texts
+    # Concise default candidate presentation with technical provenance hidden
+    # unless requested.
+    assert "CANDIDATE-SCREENING PRESENTATION" in texts
+    flattened = " ".join(texts.split())
+    assert "concise default summary, not a raw audit table" in flattened
+    assert "Do not dump OpenAlex W IDs" in flattened
+    assert "show all excluded papers" in texts
     control = runtime["_load_control"](capsule, manifest)
     assert control["state"] == "UPLOADED"
     assert control["plan_confirmation_count"] >= 1
@@ -454,3 +471,187 @@ def test_finalized_upload_failure_raises_accurate_partial_success_error(
     control = runtime["_load_control"](capsule, manifest)
     assert control["state"] == "REPORT_FINALIZED"
     assert control["receipt_id"] is None
+
+
+def test_provider_failure_is_surfaced_without_owner_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+) -> None:
+    _workspace, capsule, _descriptor, _installed, manifest, _control, executable = _fixture(
+        tmp_path
+    )
+    runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    control = runtime["_load_control"](capsule, manifest)
+    control.update({
+        "state": "NOT_STARTED",
+        "last_completed_state": "NOT_STARTED",
+        "plan_confirmation_count": 0,
+        "query_plan_checksum": None,
+        "search_result_checksums": [],
+    })
+    runtime["_write_control"](capsule, control)
+    for path in (
+        capsule / "outputs" / "search_plan.md",
+        capsule / "memory" / "search" / "query_plan.json",
+    ):
+        path.unlink(missing_ok=True)
+    runtime["_open_session"] = lambda **kwargs: {
+        "session_id": "session", "session_token": "token"
+    }
+
+    def failing_execute(**kwargs):
+        raise RuntimeError("provider transport failed")
+
+    runtime["_execute_queries"] = failing_execute
+    runtime["_cleanup_session"] = lambda **kwargs: None
+    event_log_path = tmp_path / "fake-codex-events.log"
+    monkeypatch.setenv("REAGENT_FAKE_CODEX_AUTO_CONFIRM", "1")
+    monkeypatch.setenv("REAGENT_FAKE_CODEX_EVENT_LOG", str(event_log_path))
+    with pytest.raises(
+        workspace_cli.OwnerCheckpointInvalid, match="Bounded Provider controller failed"
+    ):
+        workspace_cli._run_literature_interactive_round(
+            capsule=capsule,
+            manifest=manifest,
+            runtime=runtime,
+            api_url="http://127.0.0.1:8000",
+            mode="DEMO",
+            codex_executable=str(executable),
+        )
+    # The same Codex session surfaced the Provider failure without any Owner
+    # input (the fake records the event deterministically).
+    assert event_log_path.read_text().strip() == "PROVIDER_FAILURE_SURFACED"
+    control = runtime["_load_control"](capsule, manifest)
+    assert control["state"] == "FAILED"
+    assert control["failure_code"] == "BOUNDED_PROVIDER_CONTROLLER_FAILED"
+
+
+def _accepted_cloud_page(
+    manifest: dict,
+    report: dict,
+    *,
+    project_id: str,
+    instance_id: str,
+) -> dict:
+    row = {
+        "receipt_id": "progress-receipt-" + "f" * 64,
+        "project_id": project_id,
+        "workflow_instance_id": instance_id,
+        "package_id": manifest["package_id"],
+        "package_checksum": manifest["package_checksum"],
+        "report_id": report["report_id"],
+        "report_checksum": report["report_checksum"],
+        "report_schema_version": report["schema_version"],
+        "original_report_checksum": "sha256:" + "e" * 64,
+        "validation_status": "ACCEPTED",
+        "validation_errors": [],
+        "validation_warnings": [],
+        "chain_state": "VALID_CHAIN",
+        "accepted_for_projection": True,
+        "received_at": "2026-08-21T00:00:00Z",
+        "normalized_record": {
+            "project_id": project_id,
+            "package_id": manifest["package_id"],
+            "package_checksum": manifest["package_checksum"],
+            "workflow_id": manifest["workflow_id"],
+            "workflow_version": manifest["workflow_version"],
+            "workflow_checksum": manifest["workflow_checksum"],
+            "execution_round": report["execution_round"],
+            "report_id": report["report_id"],
+            "report_checksum": report["report_checksum"],
+            "status": "COMPLETED",
+            "completed_at": "2026-08-21T00:00:00Z",
+        },
+    }
+    return {
+        "schema_version": "reagent.workflow-instance-progress/v0.1",
+        "project_id": project_id,
+        "workflow_instance_id": instance_id,
+        "projection": {
+            "project_id": project_id,
+            "workflow_instance_id": instance_id,
+            "latest_execution_round": report["execution_round"],
+            "projection_checksum": "sha256:" + "d" * 64,
+        },
+        "history": [row],
+        "history_total": 1,
+        "has_more_history": False,
+    }
+
+
+def test_finalize_literature_upload_state_converges_capsule_and_cloud(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace, capsule, descriptor, installed, manifest, _control, executable = _fixture(
+        tmp_path
+    )
+    runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    control = runtime["_load_control"](capsule, manifest)
+    control.update({
+        "state": "NOT_STARTED",
+        "last_completed_state": "NOT_STARTED",
+        "plan_confirmation_count": 0,
+        "query_plan_checksum": None,
+        "search_result_checksums": [],
+    })
+    runtime["_write_control"](capsule, control)
+    for path in (
+        capsule / "outputs" / "search_plan.md",
+        capsule / "memory" / "search" / "query_plan.json",
+    ):
+        path.unlink(missing_ok=True)
+    runtime["_open_session"] = lambda **kwargs: {
+        "session_id": "session", "session_token": "token"
+    }
+    runtime["_execute_queries"] = lambda **kwargs: _write_results(
+        capsule, runtime, manifest
+    )
+    runtime["_cleanup_session"] = lambda **kwargs: None
+    runtime["_upload_with_fresh_session"] = lambda **kwargs: (_ for _ in ()).throw(
+        RuntimeError("simulated upload CONFLICT")
+    )
+    monkeypatch.setenv("REAGENT_FAKE_CODEX_AUTO_CONFIRM", "1")
+    with pytest.raises(workspace_cli.WorkspaceCLIError) as error:
+        workspace_cli._run_literature_interactive_round(
+            capsule=capsule,
+            manifest=manifest,
+            runtime=runtime,
+            api_url="http://127.0.0.1:8000",
+            mode="DEMO",
+            codex_executable=str(executable),
+        )
+    assert error.value.code == "PROGRESS_UPLOAD_CONFLICT"
+    control = runtime["_load_control"](capsule, manifest)
+    assert control["state"] == "REPORT_FINALIZED"
+    assert control["receipt_id"] is None
+
+    report = runtime["_load_object"](
+        runtime["_reports"](capsule)[0], "Progress Report"
+    )
+
+    class _RecoveryTransport:
+        def workflow_instance_progress(self, project_id, workflow_instance_id):
+            return _accepted_cloud_page(
+                manifest,
+                report,
+                project_id=project_id,
+                instance_id=workflow_instance_id,
+            )
+
+    workspace_cli._finalize_literature_upload_state(
+        workspace=workspace,
+        descriptor=descriptor,
+        installed=installed,
+        capsule=capsule,
+        manifest=manifest,
+        transport=_RecoveryTransport(),
+    )
+    control = runtime["_load_control"](capsule, manifest)
+    assert control["state"] == "UPLOADED"
+    assert control["receipt_id"] == "progress-receipt-" + "f" * 64
+    receipts = list((capsule / "memory/progress/receipts").glob("*.json"))
+    assert len(receipts) == 1
+    payload = json.loads(receipts[0].read_text())
+    assert payload["receipt_id"] == control["receipt_id"]
+    assert payload["receipt_checksum"] == control["receipt_checksum"]
+    assert payload["validation_status"] == "ACCEPTED"
+    assert payload["chain_state"] == "VALID_CHAIN"

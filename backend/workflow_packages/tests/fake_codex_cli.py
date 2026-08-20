@@ -30,6 +30,13 @@ def write_json(path: Path, value) -> None:
     temporary.replace(path)
 
 
+def event_log(message: str) -> None:
+    path = os.environ.get("REAGENT_FAKE_CODEX_EVENT_LOG")
+    if path:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(message + "\n")
+
+
 def update_control(root: Path, **changes) -> None:
     path = root / "memory/round-control.json"
     control = json.loads(path.read_text())
@@ -327,6 +334,23 @@ def wait_for_state(root: Path, expected: str) -> None:
     raise RuntimeError("launcher state transition timed out")
 
 
+def wait_for_state_or_failure(root: Path, expected: str) -> str:
+    """Return the observed terminal state; surfaces FAILED/INTERRUPTED without
+    requiring any Owner input, mirroring the automatic-continuation contract."""
+
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        control = json.loads((root / "memory/round-control.json").read_text())
+        if control["state"] == expected:
+            return "COMPLETED"
+        if control["state"] == "FAILED":
+            return "FAILED"
+        if control["state"] == "INTERRUPTED":
+            return "INTERRUPTED"
+        time.sleep(0.05)
+    raise RuntimeError("launcher state transition timed out")
+
+
 def interactive(root: Path) -> None:
     delay = float(os.environ.get("REAGENT_FAKE_CODEX_DELAY_SECONDS", "0"))
     control = json.loads((root / "memory/round-control.json").read_text())
@@ -355,18 +379,49 @@ def interactive(root: Path) -> None:
         plan(root)
         mark_plan_confirmed(root)
         print("Search plan confirmed; waiting for bounded Provider metadata.", flush=True)
-        wait_for_state(root, "SEARCH_COMPLETED")
     elif state == "PLAN_CONFIRMED":
         print("RESUME: confirmed plan preserved; waiting for bounded Provider metadata.", flush=True)
-        wait_for_state(root, "SEARCH_COMPLETED")
     elif state == "SEARCH_COMPLETED":
         print("RESUME: persisted search plan and Provider results loaded without chat history.", flush=True)
     else:
         raise RuntimeError(f"fixture cannot resume from {state}")
+    outcome = wait_for_state_or_failure(root, "SEARCH_COMPLETED")
+    if outcome == "FAILED":
+        event_log("PROVIDER_FAILURE_SURFACED")
+        print(
+            "Provider search failed; the bounded search did not complete. "
+            "No Owner input was required to see this failure.",
+            flush=True,
+        )
+        return
+    if outcome == "INTERRUPTED":
+        return
+    event_log("CANDIDATE_PRESENTED_AFTER_SEARCH")
     print("CHECKPOINT: CANDIDATE SCREENING", flush=True)
-    print("Retrieved 10; deduplicated 5; likely relevant 3; uncertain 1; excluded 1.", flush=True)
-    print("Themes: transparent continuity and portable local state. Type continue.", flush=True)
-    read_until("continue")
+    print(
+        "Candidate screening complete: 10 retrieved · 5 unique · "
+        "3 recommended · 1 needs review · 1 excluded",
+        flush=True,
+    )
+    print(
+        "Recommended evidence: transparent continuity (one-line reason); "
+        "portable local state (one-line reason); durable checkpoints (one-line reason).",
+        flush=True,
+    )
+    print(
+        "Needs your attention: one paper with uncertain relevance to the topic.",
+        flush=True,
+    )
+    print(
+        "Coverage gap: no retrieved record directly addresses the bounded question.",
+        flush=True,
+    )
+    print(
+        "You can accept the recommendations, inspect an uncertain paper, "
+        "change a decision, show excluded papers, or abort. "
+        "No confirmation input is required before the finalization checkpoint.",
+        flush=True,
+    )
     print("CHECKPOINT: FINALIZATION", flush=True)
     print("Four local outputs; three selected; bounded summary uploads; libraries stay local.", flush=True)
     print("Type finish to finalize the round.", flush=True)

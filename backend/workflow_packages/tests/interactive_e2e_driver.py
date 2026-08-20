@@ -16,7 +16,9 @@ from pathlib import Path
 
 RESPONSES = (
     (b"CHECKPOINT: SEARCH PLAN", b"proceed\n"),
-    (b"CHECKPOINT: CANDIDATE SCREENING", b"continue\n"),
+    # The candidate-screening checkpoint must appear automatically after the
+    # Provider stage; no Owner "continue" input is required.
+    (b"CHECKPOINT: CANDIDATE SCREENING", None),
     (b"CHECKPOINT: FINALIZATION", b"finish\n"),
 )
 REAL_PROVIDER_CONSENT_MARKER = b"Type continue-real-search"
@@ -95,7 +97,7 @@ def drive(
                             )
                         if interrupt_at == stage:
                             os.kill(pid, signal.SIGINT)
-                        else:
+                        elif response is not None:
                             os.write(descriptor, response)
                         next_response += 1
                         buffer = b""

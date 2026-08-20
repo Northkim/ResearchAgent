@@ -33,6 +33,7 @@ from .contracts import (
     WorkflowNextActionProjection,
     WorkflowOutputProjection,
     WorkflowStageProjection,
+    ProgressStatus,
 )
 
 
@@ -970,10 +971,14 @@ def _workflow_path_priority(definition_id: str) -> int:
     }.get(definition_id, 90)
 
 
-def _report_activity_key(report: UploadedProgressReport) -> tuple[datetime, datetime, str, str]:
+def _report_activity_key(report: UploadedProgressReport) -> tuple[datetime, datetime, int, str, str]:
+    record = report.normalized_record
     return (
         _parse_time(_report_activity_text(report)),
         _parse_time(report.received_at),
+        # A terminal COMPLETED report is the round's canonical representative
+        # even when a stale IN_PROGRESS checkpoint shares the same timestamps.
+        1 if record is not None and record.status is ProgressStatus.COMPLETED else 0,
         report.report_id,
         report.receipt_id,
     )

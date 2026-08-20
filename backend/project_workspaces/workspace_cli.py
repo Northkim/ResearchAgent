@@ -6768,6 +6768,79 @@ def _recover_progress_backlog(
     return uploaded_count
 
 
+def _finalize_literature_upload_state(
+    *,
+    workspace: Path,
+    descriptor: dict[str, Any],
+    installed: dict[str, Any],
+    capsule: Path,
+    manifest: dict[str, Any],
+    transport: Any,
+) -> None:
+    """Persist the Capsule receipt and move round-control to UPLOADED after the
+    exact terminal report is accepted by Cloud, so local and Cloud completion
+    converge. Idempotent: no-op when the Capsule already holds its receipt."""
+
+    runtime = runpy.run_path(str(capsule / "legacy_reagent_local.py"))
+    reports = runtime["_reports"](capsule)
+    if not reports or runtime["_receipts"](capsule):
+        return
+    control = runtime["_load_control"](capsule, manifest)
+    if control["state"] == "UPLOADED":
+        return
+    page = transport.workflow_instance_progress(
+        descriptor["project_id"], installed["workflow_instance_id"]
+    )
+    accepted = _accepted_cloud_progress(
+        page, descriptor=descriptor, installed=installed, manifest=manifest
+    )
+    report = runtime["_load_object"](reports[0], "Progress Report")
+    representative = next(
+        (
+            item
+            for item in accepted
+            if item["normalized_record"]["execution_round"]
+            == report["execution_round"]
+        ),
+        None,
+    )
+    if (
+        representative is None
+        or representative.get("report_id") != report["report_id"]
+        or representative.get("report_checksum") != report["report_checksum"]
+    ):
+        raise _identity(
+            "CLOUD_PROGRESS_INVALID",
+            "Cloud did not accept the exact terminal Progress Report",
+        )
+    receipt = _history_receipt(representative)
+    receipt_payload = {
+        "schema_version": "local-progress-upload-receipt/v0.1",
+        "report_id": report["report_id"],
+        "report_checksum": report["report_checksum"],
+        "receipt_id": receipt["receipt_id"],
+        "receipt_checksum": receipt["receipt_checksum"],
+        "validation_status": representative.get("validation_status"),
+        "chain_state": representative.get("chain_state"),
+        "accepted_for_projection": representative.get("accepted_for_projection"),
+        "idempotent_replay": False,
+        "projection_checksum": (page.get("projection") or {}).get(
+            "projection_checksum"
+        ),
+        "verified_at": representative.get("received_at"),
+    }
+    target = capsule / "memory/progress/receipts" / f"{report['report_id']}.json"
+    _atomic_write_json(target, receipt_payload)
+    runtime["_mark_uploaded"](
+        capsule,
+        {
+            "receipt_id": receipt["receipt_id"],
+            "receipt_checksum": receipt["receipt_checksum"],
+        },
+    )
+    runtime["_validate_package"](capsule)
+
+
 class OwnerCheckpointStopped(RuntimeError):
     """The Owner deliberately declined to advance the current checkpoint."""
 
@@ -7748,6 +7821,37 @@ exact OpenAlex identity, and the report Markdown must contain the six declared
 headings."""
 
 
+_LITERATURE_AUTOMATIC_CONTINUATION_DIRECTIVE = """\
+AUTOMATIC CONTINUATION AFTER PROVIDER SEARCH. After you atomically set the
+round-control object to PLAN_CONFIRMED, do NOT ask the Owner anything and do
+NOT stop. The launcher performs the bounded Provider search and then updates
+memory/round-control.json. You must actively re-read memory/round-control.json
+(for example by reading that file again) every few seconds until its state is
+SEARCH_COMPLETED or FAILED. The Owner is not required to type anything during
+this wait.
+
+- If the state becomes SEARCH_COMPLETED, automatically proceed to the
+  CANDIDATE-SCREENING CHECKPOINT below and present it to the Owner. Do not ask
+  the Owner to "continue" first.
+- If the state becomes FAILED, tell the Owner that the bounded Provider search
+  failed and stop; no Owner keystroke is required to surface the failure.
+- If an additional bounded search batch is later confirmed (round-control
+  returns to PLAN_CONFIRMED), repeat the same automatic wait and transition.
+
+CANDIDATE-SCREENING PRESENTATION. Present a concise default summary, not a raw
+audit table: retrieved and deduplicated counts, recommended count,
+needs-review count, excluded count, the top recommended evidence with one-line
+reasons, the needs-attention items with one-line uncertainties, and any
+coverage gap. Do not dump OpenAlex W IDs, checksums, provider IDs,
+source_query_ids, internal candidate IDs, or the full excluded table by
+default; keep them in the local research files and expand them only when the
+Owner asks (for example "show all excluded papers", "show OpenAlex IDs",
+"why was paper X excluded?"). The concise summary must still bind the exact
+candidate set: record the Owner's SELECTED / UNCERTAIN / EXCLUDED dispositions
+for every candidate and the exact candidate-set checksum, without weakening
+the durable decision contract."""
+
+
 def _literature_interactive_instruction(
     runtime: dict[str, Any],
     mode: str,
@@ -7760,6 +7864,8 @@ def _literature_interactive_instruction(
         runtime["_interactive_instruction"](mode, resume=resume)
         + "\n\n"
         + _LITERATURE_INTERACTIVE_SCHEMA_DIRECTIVE
+        + "\n\n"
+        + _LITERATURE_AUTOMATIC_CONTINUATION_DIRECTIVE
     )
 
 
@@ -9183,6 +9289,15 @@ def run_workflow(
                         capsule=capsule,
                         manifest=manifest,
                         reports=local_reports,
+                        transport=transport,
+                    )
+                if is_literature and not preflight_only:
+                    _finalize_literature_upload_state(
+                        workspace=workspace,
+                        descriptor=descriptor,
+                        installed=installed,
+                        capsule=capsule,
+                        manifest=manifest,
                         transport=transport,
                     )
                 if local_reports[-1]["status"] == "COMPLETED":
@@ -11709,7 +11824,6 @@ def workflow_list(workspace_root: str | Path) -> dict[str, Any]:
             next_action = "REPAIR_REQUIRED"
         elif (
             latest_status == "COMPLETED"
-            and definition_id != WORKFLOW_ID
             and progress_readiness.state in {
                 "RECOVERABLE_EXACT",
                 "RECOVERABLE_KNOWN_LEGACY_SCAFFOLD_DRIFT",

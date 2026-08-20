@@ -694,6 +694,76 @@ def test_h1_workflow_list_and_stable_selector_are_user_oriented_and_json_stable(
     assert capsys.readouterr().out.strip() == workspace_cli.canonical_json(synced.as_dict())
 
 
+def test_literature_completed_without_receipt_shows_upload_pending_not_completed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace, _descriptor, _transport = _synced_full_research_workspace(tmp_path)
+    report = {
+        "schema_version": "progress-report/v0.2",
+        "status": "COMPLETED",
+        "execution_round": 1,
+        "report_id": "prv2-" + "a" * 64,
+        "report_checksum": "sha256:" + "b" * 64,
+    }
+
+    class _Readiness:
+        state = "RECOVERABLE_EXACT"
+        reports = (report,)
+        reason = None
+
+    monkeypatch.setattr(
+        workspace_cli,
+        "_evaluate_local_progress_readiness",
+        lambda **kwargs: _Readiness(),
+    )
+    listed = workspace_cli.workflow_list(workspace)
+    literature = next(
+        item
+        for item in listed["workflows"]
+        if item["workflow_definition_id"] == "literature-search-local-experimental"
+    )
+    # A finalized-but-unacknowledged terminal report must NOT advertise normal
+    # downstream completion; the next action is the existing recovery command.
+    assert literature["local_readiness"] == "PROGRESS_UPLOAD_PENDING"
+    assert literature["next_action"] == "CONTINUE"
+    assert literature["next_command"] == literature["run_command"]
+
+
+def test_literature_acknowledged_completed_shows_completed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace, _descriptor, _transport = _synced_full_research_workspace(tmp_path)
+    report = {
+        "schema_version": "progress-report/v0.2",
+        "status": "COMPLETED",
+        "execution_round": 1,
+        "report_id": "prv2-" + "a" * 64,
+        "report_checksum": "sha256:" + "b" * 64,
+    }
+
+    class _Readiness:
+        state = "ACKNOWLEDGED"
+        reports = (report,)
+        reason = None
+
+    monkeypatch.setattr(
+        workspace_cli,
+        "_evaluate_local_progress_readiness",
+        lambda **kwargs: _Readiness(),
+    )
+    listed = workspace_cli.workflow_list(workspace)
+    literature = next(
+        item
+        for item in listed["workflows"]
+        if item["workflow_definition_id"] == "literature-search-local-experimental"
+    )
+    assert literature["local_readiness"] == "COMPLETED"
+    assert literature["next_action"] == "REVIEW_RESULT"
+    assert literature["next_command"] is None
+
+
 def test_workflow_list_cleans_only_bounded_managed_macos_metadata(sync_fixture):
     workspace = sync_fixture["workspace"]
     workspace_cli.sync_workspace(
@@ -783,6 +853,28 @@ def test_h1_human_error_explains_what_why_and_next(capsys):
     assert "Why it matters:" in error
     assert "Next:" in error
     assert "Code: WORKSPACE_DESCRIPTOR_INVALID" in error
+
+
+def test_progress_upload_conflict_outer_cli_message_is_accurate(capsys, monkeypatch):
+    def raise_conflict(**kwargs):
+        raise workspace_cli.WorkspaceCLIError(
+            "PROGRESS_UPLOAD_CONFLICT",
+            "Cloud Progress upload did not complete; the finalized local report was preserved",
+            workspace_cli.EXIT_CLOUD,
+        )
+
+    monkeypatch.setattr(workspace_cli, "continue_workflow", raise_conflict)
+    code = workspace_cli.main([
+        "run", ".", "--workflow", "literature-search-local-experimental",
+    ])
+    assert code == workspace_cli.EXIT_CLOUD
+    error = capsys.readouterr().err
+    assert "The Literature Search results were finalized and preserved locally" in error
+    assert "No research work needs to be repeated" in error
+    assert "retry the same command to reconcile the upload" in error
+    assert "Code: PROGRESS_UPLOAD_CONFLICT" in error
+    assert "No state was declared successful" not in error
+    assert "No research state was changed" not in error
 
 
 @pytest.mark.parametrize(

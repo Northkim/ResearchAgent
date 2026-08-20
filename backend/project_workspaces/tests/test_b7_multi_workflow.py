@@ -472,7 +472,15 @@ def qualify_real_multi_workflow_artifact_handoff(
         item["workflow_definition_id"]: item
         for item in workspace_cli.workflow_list(workspace)["workflows"]
     }
-    assert local_before_idea_progress[LITERATURE_SEARCH_WORKFLOW_ID]["next_action"] == "REVIEW_RESULT"
+    # The literature report is Cloud-accepted, but this test uploaded directly
+    # through the API without persisting the local acknowledgement, so the CLI
+    # correctly shows upload-pending (recovery) instead of falsely advertising
+    # normal downstream completion. A same-command rerun reconciles idempotently.
+    assert (
+        local_before_idea_progress[LITERATURE_SEARCH_WORKFLOW_ID]["local_readiness"]
+        == "PROGRESS_UPLOAD_PENDING"
+    )
+    assert local_before_idea_progress[LITERATURE_SEARCH_WORKFLOW_ID]["next_action"] == "CONTINUE"
     assert local_before_idea_progress[IDEA_DISCOVERY_WORKFLOW_ID]["local_readiness"] == "LOCALLY_MATERIALIZED"
     assert local_before_idea_progress[IDEA_DISCOVERY_WORKFLOW_ID]["next_action"] == "RUN"
 
