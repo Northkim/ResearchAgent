@@ -93,6 +93,15 @@ class UserSkillPageResponse(StrictDTO):
     total: int
 
 
+class UserSkillProjectUsageResponse(StrictDTO):
+    project_id: str
+    name: str
+
+
+class UserSkillDetailResponse(UserSkillResponse):
+    projects: list[UserSkillProjectUsageResponse]
+
+
 def _controlled_approval_service(services, unit_of_work):
     return ControlledLocalRunApprovalService(
         repository=unit_of_work.controlled_local_run_approvals,
@@ -279,13 +288,22 @@ async def create_user_skill(
     return _user_skill_response(value, services.user_skills)
 
 
-@router.get("/user-skills/{skill_id}", response_model=UserSkillResponse)
+@router.get("/user-skills/{skill_id}", response_model=UserSkillDetailResponse)
 async def get_user_skill(
     skill_id: str,
     services: LocalProductServicesDependency,
-) -> UserSkillResponse:
-    return _user_skill_response(
-        services.user_skills.get(skill_id), services.user_skills
+) -> UserSkillDetailResponse:
+    skill = services.user_skills.get(skill_id)
+    projects = [
+        UserSkillProjectUsageResponse(
+            project_id=project_id,
+            name=services.local_projects.get(project_id).name,
+        )
+        for project_id in services.user_skills.project_ids(skill_id)
+    ]
+    return UserSkillDetailResponse(
+        **_user_skill_response(skill, services.user_skills).model_dump(),
+        projects=projects,
     )
 
 

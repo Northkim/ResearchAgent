@@ -306,6 +306,12 @@ class UserSkillService:
     def usage_count(self, skill_id: str) -> int:
         return len(self._repository.list_skill_projects(skill_id))
 
+    def project_ids(self, skill_id: str) -> tuple[str, ...]:
+        self.get(skill_id)
+        return tuple(
+            item.project_id for item in self._repository.list_skill_projects(skill_id)
+        )
+
     def delete(self, skill_id: str) -> None:
         self.get(skill_id)
         count = self.usage_count(skill_id)

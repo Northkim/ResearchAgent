@@ -11,14 +11,14 @@ export default function LocalGuidePage() {
     <div className="page-stack page-narrow">
       <PageHeader
         eyebrow="Supported local path"
-        title="Run research in your Local Workspace."
-        description="The Local Workspace—not a cloud runtime—holds the complete task, inputs, outputs, memory, and continuation state."
+        title="Local Workspace reference"
+        description="General setup, safety, and recovery guidance for research that runs locally."
         action={<Link href="/projects" className="button button-ghost">Projects</Link>}
       />
       <section className="instruction-card instruction-card-large">
         <ol>
           <li>Create a Project using a fictional or public topic.</li>
-          <li>Open Project Help, download the Workspace setup file, and run its copyable bootstrap command.</li>
+          <li>Open that Project&apos;s Help page for its exact setup downloads and bootstrap command.</li>
           <li>Enter the Local Workspace and run <code>python reagent_local.py sync .</code>.</li>
           <li>Run <code>python reagent_local.py workflow list .</code> and use the displayed Literature Search command.</li>
           <li>The launcher validates the Package, starts a short-lived exact-Package session, and opens interactive Codex in the current terminal.</li>

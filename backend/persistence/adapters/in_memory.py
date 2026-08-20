@@ -160,6 +160,84 @@ class InMemoryDatabase:
     )
 
 
+def _purge_project_state(state: Any, project_id: str, *, prefix: str = "") -> None:
+    """Remove one Project graph from an in-memory transaction or database."""
+
+    def values(name: str):
+        return getattr(state, f"{prefix}{name}")
+
+    def replace(name: str, predicate) -> None:
+        current = values(name)
+        setattr(
+            state,
+            f"{prefix}{name}",
+            {key: value for key, value in current.items() if not predicate(key, value)},
+        )
+
+    run_ids = {
+        run_id
+        for run_id, record in values("executions").items()
+        if record.workflow_run.project_id == project_id
+    }
+    artifact_ids = {
+        artifact_id
+        for artifact_id, artifact in values("local_artifact_references").items()
+        if artifact.project_id == project_id
+    }
+    replace("checkpoint_records", lambda key, value: key in run_ids)
+    replace("memory_revisions", lambda key, value: key[0] == project_id)
+    replace("artifacts", lambda key, value: value.project_id == project_id)
+    replace("approvals", lambda key, value: value.project_id == project_id)
+    replace("execution_events", lambda key, value: key[0] == project_id)
+    replace(
+        "provider_operations",
+        lambda key, value: value.operation.project_id == project_id,
+    )
+    replace("executions", lambda key, value: key in run_ids)
+    replace("progress_reports", lambda key, value: value.project_id == project_id)
+    replace("progress_projections", lambda key, value: key[0] == project_id)
+    replace("local_projects", lambda key, value: key == project_id)
+    replace("project_user_skills", lambda key, value: key[0] == project_id)
+    replace(
+        "project_workflow_instances",
+        lambda key, value: value.project_id == project_id,
+    )
+    replace("projects", lambda key, value: key == project_id)
+    replace("desired_manifests", lambda key, value: key[0] == project_id)
+    replace("manifest_entries", lambda key, value: value.project_id == project_id)
+    replace("capsule_artifacts", lambda key, value: value.project_id == project_id)
+    replace(
+        "installation_acknowledgements",
+        lambda key, value: value.project_id == project_id,
+    )
+    replace(
+        "local_artifact_references",
+        lambda key, value: value.project_id == project_id,
+    )
+    replace("artifact_presentations", lambda key, value: key in artifact_ids)
+    replace("artifact_content_qualifications", lambda key, value: key in artifact_ids)
+    replace(
+        "artifact_dependency_bindings",
+        lambda key, value: value.project_id == project_id,
+    )
+    replace(
+        "workflow_input_setup_decisions",
+        lambda key, value: value.project_id == project_id,
+    )
+    replace(
+        "project_resource_references",
+        lambda key, value: value.project_id == project_id,
+    )
+    replace(
+        "workflow_resource_bindings",
+        lambda key, value: value.project_id == project_id,
+    )
+    replace(
+        "controlled_local_run_approvals",
+        lambda key, value: value.project_id == project_id,
+    )
+
+
 class InMemoryControlledLocalRunApprovalRepository:
     def __init__(self, unit_of_work: InMemoryUnitOfWork) -> None:
         self._uow = unit_of_work
@@ -1812,7 +1890,21 @@ class InMemoryUnitOfWork(UnitOfWork):
     def resource_references(self) -> ResourceReferenceRepository:
         return self._resource_reference_repository
 
+    def delete_project_cloud_state(self, project_id: str) -> None:
+        if project_id not in self._projects or project_id not in self._local_projects:
+            raise ValueError("Project deletion identity is unavailable")
+        self._deleted_project_ids.add(project_id)
+        _purge_project_state(self, project_id, prefix="_")
+
     def commit(self) -> None:
+        if self._deleted_project_ids:
+            for project_id in self._deleted_project_ids:
+                if project_id not in self.database.projects:
+                    raise StaleStateError("Project was deleted concurrently")
+            for project_id in self._deleted_project_ids:
+                _purge_project_state(self.database, project_id)
+            self._refresh()
+            return
         self._validate_concurrency()
         for run_id in self._dirty_workflows:
             self.database.executions[run_id] = self._executions[run_id]
@@ -2144,3 +2236,4 @@ class InMemoryUnitOfWork(UnitOfWork):
         self._dirty_workflow_resource_bindings: set[str] = set()
         self._dirty_controlled_local_run_approvals: set[str] = set()
         self._manifest_revision_expected: dict[str, int] = {}
+        self._deleted_project_ids: set[str] = set()

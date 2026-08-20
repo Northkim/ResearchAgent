@@ -49,6 +49,9 @@ export interface UserSkill {
 }
 
 export interface UserSkillPage { items: UserSkill[]; total: number }
+export interface UserSkillDetail extends UserSkill {
+  projects: Array<{ project_id: string; name: string }>;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -87,6 +90,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
 
+  if (response.status === 204) return undefined as T;
+
   return (await response.json()) as T;
 }
 
@@ -123,6 +128,10 @@ export const apiClient = {
     return request(`/projects/${encodeURIComponent(projectId)}`);
   },
 
+  deleteProject(projectId: string): Promise<void> {
+    return request(`/projects/${encodeURIComponent(projectId)}`, { method: "DELETE" });
+  },
+
   listUserSkills(): Promise<UserSkillPage> {
     return request("/user-skills");
   },
@@ -134,6 +143,14 @@ export const apiClient = {
     source_revision?: string;
   }): Promise<UserSkill> {
     return request("/user-skills", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  getUserSkill(skillId: string): Promise<UserSkillDetail> {
+    return request(`/user-skills/${encodeURIComponent(skillId)}`);
+  },
+
+  deleteUserSkill(skillId: string): Promise<void> {
+    return request(`/user-skills/${encodeURIComponent(skillId)}`, { method: "DELETE" });
   },
 
   listProjectUserSkills(projectId: string): Promise<UserSkillPage> {

@@ -1,6 +1,8 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
-  existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+  existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync,
+  statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,6 +14,24 @@ import { requireIsolatedQualification } from "./qualification-safety";
 const source = "https://github.com/reagent-controlled/sample-research-skill";
 
 test.beforeAll(() => requireIsolatedQualification());
+
+function treeFingerprint(root: string): string {
+  const files: string[] = [];
+  const visit = (directory: string) => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = join(directory, name);
+      if (statSync(path).isDirectory()) visit(path);
+      else files.push(path);
+    }
+  };
+  visit(root);
+  const hash = createHash("sha256");
+  for (const path of files) {
+    hash.update(path.slice(root.length));
+    hash.update(readFileSync(path));
+  }
+  return hash.digest("hex");
+}
 
 test("qualifies the lightweight Owner-managed Skill journey", async ({ page, request }) => {
   const backend = process.env.REAGENT_E2E_BACKEND_URL!;
@@ -40,6 +60,13 @@ test("qualifies the lightweight Owner-managed Skill journey", async ({ page, req
   ], { cwd: repository, env: process.env, encoding: "utf8" });
 
   try {
+    await page.goto(`/projects/${project.project_id}`);
+    await page.getByRole("link", { name: "Manage skills →" }).click();
+    await expect(page.getByRole("link", { name: "Add a skill" })).toBeVisible();
+    await page.getByRole("navigation", { name: "Primary navigation" })
+      .getByRole("link", { name: /Skills/ }).click();
+    await expect(page).toHaveURL(/\/skills$/);
+
     await page.goto("/skills");
     await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
     await expect(page.getByText("No skills yet.")).toBeVisible();
@@ -64,6 +91,12 @@ test("qualifies the lightweight Owner-managed Skill journey", async ({ page, req
     await expect(page.getByText("Used in 0 projects")).toBeVisible();
     await expect(page.getByText("Technical details")).toBeVisible();
     await page.screenshot({ path: join(screenshots, "03-skill-library.png"), fullPage: false });
+
+    await page.getByRole("link", { name: "Academic Literature Review" }).click();
+    await expect(page.getByRole("heading", { name: "Used in Projects" })).toBeVisible();
+    await expect(page.getByText("Not used in a Project yet.")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Open GitHub source/ })).toBeVisible();
+    await page.screenshot({ path: join(screenshots, "04-skill-detail.png"), fullPage: false });
 
     await page.goto(`/projects/${project.project_id}`);
     await expect(page.getByRole("heading", { name: "Skills", exact: true })).toBeVisible();
@@ -92,11 +125,19 @@ test("qualifies the lightweight Owner-managed Skill journey", async ({ page, req
     await page.goto(`/projects/${project.project_id}`);
     await expect(page.getByText("Academic Literature Review")).toBeVisible();
     await expect(page.getByText("Ready", { exact: true })).toBeVisible();
-    await page.screenshot({ path: join(screenshots, "04-project-skill-ready.png"), fullPage: false });
+    await page.screenshot({ path: join(screenshots, "05-project-skill-ready.png"), fullPage: false });
+
+    await page.goto("/skills");
+    await page.getByRole("link", { name: "Academic Literature Review" }).click();
+    await page.getByText("Skill settings").click();
+    await page.getByRole("button", { name: "Delete skill" }).click();
+    await expect(page.getByText(/Remove it from those Projects first/)).toBeVisible();
+    await expect(page.getByRole("alert").getByRole("button", { name: "Delete skill" })).toBeDisabled();
 
     const manual = join(workspace, ".agents/skills/owner-created/SKILL.md");
     mkdirSync(resolve(manual, ".."), { recursive: true });
     writeFileSync(manual, "# Owner-created Skill\n");
+    await page.goto(`/projects/${project.project_id}`);
     await page.getByRole("link", { name: "Manage skills →" }).click();
     await page.getByRole("checkbox", { name: /Academic Literature Review/ }).uncheck();
     await page.getByRole("button", { name: "Save" }).click();
@@ -106,7 +147,35 @@ test("qualifies the lightweight Owner-managed Skill journey", async ({ page, req
     expect(readFileSync(manual, "utf8")).toBe("# Owner-created Skill\n");
     await page.goto(`/projects/${project.project_id}`);
     await expect(page.getByText("No skills added yet.")).toBeVisible();
-    await page.screenshot({ path: join(screenshots, "05-project-skill-detached.png"), fullPage: false });
+    await page.screenshot({ path: join(screenshots, "06-project-skill-detached.png"), fullPage: false });
+
+    await page.goto("/skills");
+    await page.getByRole("link", { name: "Academic Literature Review" }).click();
+    await page.getByText("Skill settings").click();
+    await page.getByRole("button", { name: "Delete skill" }).click();
+    await page.getByRole("alert").getByRole("button", { name: "Delete skill" }).click();
+    await expect(page).toHaveURL(/\/skills$/);
+    await expect(page.getByText("No skills yet.")).toBeVisible();
+
+    const beforeDelete = treeFingerprint(workspace);
+    await page.goto(`/projects/${project.project_id}`);
+    await page.getByText("Project settings").click();
+    await page.getByRole("button", { name: "Delete project" }).click();
+    await expect(page.getByText(/Local Workspace and research files will not be deleted/)).toBeVisible();
+    await page.screenshot({ path: join(screenshots, "07-project-delete-confirmation.png"), fullPage: false });
+    await page.getByRole("button", { name: "Delete from ReAgent" }).click();
+    await expect(page).toHaveURL(/\/projects$/);
+    await expect(page.getByText("Skill M1 disposable Project")).toHaveCount(0);
+
+    const orphan = spawnSync("conda", [
+      "run", "--no-capture-output", "-n", "reagent-dev", "python",
+      "reagent_local.py", "sync", workspace, "--api-url", backend,
+    ], { cwd: repository, env: process.env, encoding: "utf8" });
+    expect(orphan.status).not.toBe(0);
+    expect(orphan.stderr).toContain("Cloud Project no longer exists");
+    expect(orphan.stderr).toContain("Local Workspace was not modified");
+    expect(treeFingerprint(workspace)).toBe(beforeDelete);
+    await page.screenshot({ path: join(screenshots, "08-project-deleted.png"), fullPage: false });
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }

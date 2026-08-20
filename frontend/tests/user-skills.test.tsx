@@ -67,6 +67,15 @@ test("attaches exact Owner-selected Skills and shows sync state", async () => {
   expect(await screen.findByText("Needs sync")).toBeVisible();
 });
 
+test("project-scoped empty state links directly to the unscoped Skill library", async () => {
+  window.history.replaceState({}, "", "/skills?project=project-1");
+  vi.spyOn(apiClient, "listUserSkills").mockResolvedValue({ items: [], total: 0 });
+  vi.spyOn(apiClient, "listProjectUserSkills").mockResolvedValue({ items: [], total: 0 });
+  render(<SkillsPage />);
+
+  expect(await screen.findByRole("link", { name: "Add a skill" })).toHaveAttribute("href", "/skills");
+});
+
 test("global navigation exposes one Skills destination", async () => {
   const { AppShell } = await import("@/components/app-shell");
   render(<AppShell><div>content</div></AppShell>);

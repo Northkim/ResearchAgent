@@ -1892,6 +1892,9 @@ class HTTPWorkspaceSyncTransport:
             "POST", f"/projects/{project_id}/workspace/sync-plan", payload
         )
 
+    def project_status(self, project_id: str) -> dict[str, Any]:
+        return self._json_get(f"/projects/{project_id}")
+
     def download(self, path: str, expected: dict[str, Any] | None = None) -> bytes:
         if not path.startswith("/projects/") or not path.endswith("/download"):
             raise WorkspaceCLIError(
@@ -2171,9 +2174,12 @@ class HTTPWorkspaceSyncTransport:
                 code = body.get("error", {}).get("code", "ARTIFACT_REFERENCE_NOT_FOUND")
             except Exception:
                 code = "ARTIFACT_REFERENCE_NOT_FOUND"
-            raise WorkspaceCLIError(
-                code, "Cloud rejected the Artifact metadata request", EXIT_CLOUD
-            ) from error
+            message = (
+                "Cloud Project no longer exists. This Local Workspace was not modified."
+                if code == "PROJECT_NOT_FOUND"
+                else "Cloud rejected the Artifact metadata request"
+            )
+            raise WorkspaceCLIError(code, message, EXIT_CLOUD) from error
         except (OSError, urllib.error.URLError) as error:
             raise WorkspaceCLIError(
                 "WORKSPACE_SYNC_NOT_AVAILABLE",
@@ -2409,6 +2415,10 @@ def sync_workspace(
     skill_source_resolver: Callable[[str, str], dict[str, bytes]] | None = None,
 ) -> WorkspaceSyncResult:
     workspace, descriptor, cached_bootstrap = load_workspace(workspace_root)
+    project_status = getattr(transport, "project_status", None)
+    if callable(project_status):
+        # Detect an orphaned Workspace before opening the Local write boundary.
+        project_status(descriptor["project_id"])
     with _WorkspaceWriteLock(workspace):
         pending = _pending_acknowledgements(workspace, descriptor)
         if pending:
@@ -10128,6 +10138,10 @@ _ERROR_GUIDANCE: dict[str, tuple[str, str]] = {
     "WORKSPACE_SYNC_NOT_AVAILABLE": (
         "The Cloud sync service could not be reached.",
         "Keep the Workspace unchanged, check the API connection, then retry the same sync command.",
+    ),
+    "PROJECT_NOT_FOUND": (
+        "This Local Workspace belongs to a Cloud Project that no longer exists.",
+        "The Local Workspace was not modified. Keep it for your records or delete it manually.",
     ),
     "CAPSULE_DOWNLOAD_FAILED": (
         "A required Workflow download did not complete or did not match its Cloud identity.",

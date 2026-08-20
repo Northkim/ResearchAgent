@@ -90,6 +90,11 @@ class UnitOfWork(ABC):
 
         raise NotImplementedError("Resource Reference persistence is unavailable")
 
+    def delete_project_cloud_state(self, project_id: str) -> None:
+        """Stage deletion of one Project's Cloud-owned persistence graph."""
+
+        raise NotImplementedError("Project deletion persistence is unavailable")
+
     @abstractmethod
     def commit(self) -> None:
         """Atomically publish all staged repository changes."""

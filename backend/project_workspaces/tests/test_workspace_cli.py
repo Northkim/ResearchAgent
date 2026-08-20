@@ -111,6 +111,46 @@ def test_bootstrap_creates_frozen_minimal_layout_and_is_idempotent(
     assert json.loads(status.stdout)["workspace_id"] == descriptor["workspace_id"]
 
 
+def test_deleted_cloud_project_fails_before_workspace_write(
+    tmp_path: Path,
+    workspace_fixture,
+) -> None:
+    target = tmp_path / "orphan-workspace"
+    workspace_cli.bootstrap_workspace(
+        target=target,
+        descriptor=workspace_fixture["descriptor"],
+    )
+
+    def fingerprint() -> dict[str, bytes]:
+        return {
+            path.relative_to(target).as_posix(): path.read_bytes()
+            for path in sorted(target.rglob("*"))
+            if path.is_file()
+        }
+
+    before = fingerprint()
+
+    class DeletedProjectTransport:
+        def project_status(self, project_id):
+            assert project_id == workspace_fixture["project_id"]
+            raise WorkspaceCLIError(
+                "PROJECT_NOT_FOUND",
+                "Cloud Project no longer exists. This Local Workspace was not modified.",
+                workspace_cli.EXIT_CLOUD,
+            )
+
+        def create_plan(self, *_args, **_kwargs):
+            raise AssertionError("sync planning must not run for a deleted Project")
+
+    with pytest.raises(WorkspaceCLIError) as stopped:
+        workspace_cli.sync_workspace(
+            workspace_root=target,
+            transport=DeletedProjectTransport(),
+        )
+    assert stopped.value.code == "PROJECT_NOT_FOUND"
+    assert fingerprint() == before
+
+
 def test_declared_artifact_allows_local_provenance_path_but_rejects_credentials(
     tmp_path: Path,
 ) -> None:

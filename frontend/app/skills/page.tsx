@@ -89,7 +89,7 @@ export default function SkillsPage() {
       ) : null}
 
       {!skills.length && !adding ? (
-        <section className="plain-section"><h2>No skills yet.</h2><p className="muted-copy">Add reusable instructions that you want to use across research projects.</p>{!projectId ? <button className="button button-primary" onClick={() => setAdding(true)}>Add skill</button> : null}</section>
+        <section className="plain-section"><h2>No skills yet.</h2><p className="muted-copy">Add reusable instructions that you want to use across research projects.</p>{!projectId ? <button className="button button-primary" onClick={() => setAdding(true)}>Add skill</button> : <Link href="/skills" className="button button-primary">Add a skill</Link>}</section>
       ) : (
         <section className="plain-section" aria-label="My Skills">
           <div className="overview-workflow-list">
@@ -102,7 +102,7 @@ export default function SkillsPage() {
                 </label>
               ) : (
                 <div key={skill.skill_id}>
-                  <div><strong>{skill.name}</strong><p>{skill.description}</p></div>
+                  <div><strong><Link href={`/skills/${skill.skill_id}`}>{skill.name}</Link></strong><p>{skill.description}</p></div>
                   <span>Used in {skill.usage_count} project{skill.usage_count === 1 ? "" : "s"}</span>
                 </div>
               )

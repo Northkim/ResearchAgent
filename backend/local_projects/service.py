@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from backend.application.errors import (
+    ApplicationCodedNotFoundError,
     ApplicationNotFoundError,
     ApplicationUnavailableError,
     ApplicationValidationError,
@@ -117,7 +118,9 @@ class LocalProjectService:
     def get(self, project_id: str) -> LocalProject:
         project = self._repository.get(project_id)
         if project is None:
-            raise ApplicationNotFoundError("Local project not found")
+            raise ApplicationCodedNotFoundError(
+                "Project not found", code="PROJECT_NOT_FOUND"
+            )
         return project
 
     def generate_package(self, project_id: str) -> LocalProject:

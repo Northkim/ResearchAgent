@@ -22,6 +22,9 @@ test("renders task-first Projects with backend-derived attention and next action
     "href",
     `/projects/${localProjectFixture.project_id}/outputs`,
   );
+  expect(screen.getByRole("link", { name: new RegExp(localProjectFixture.name) })).toHaveAttribute(
+    "href", `/projects/${localProjectFixture.project_id}`,
+  );
 });
 
 test("groups non-attention results under Other projects without a misleading All projects section", async () => {

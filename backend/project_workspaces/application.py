@@ -774,6 +774,17 @@ class ProjectWorkspaceApplicationService:
             )
         return project
 
+    def delete_project(self, project_id: str) -> None:
+        """Delete one Project's Cloud state; never access a Local Workspace."""
+
+        self._require_project(project_id)
+        try:
+            self._uow.delete_project_cloud_state(project_id)
+            self._uow.commit()
+        except Exception:
+            self._uow.rollback()
+            raise
+
     def _require_creatable_pin(
         self,
         *,

@@ -21,10 +21,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <nav aria-label="Primary navigation" className="sidebar-nav">
           {navigation.map((item) => (
-            <Link key={item.href} href={item.href} className="nav-link">
-              <span>{item.eyebrow}</span>
-              {item.label}
-            </Link>
+            item.href === "/skills" ? (
+              <a key={item.href} href={item.href} className="nav-link">
+                <span>{item.eyebrow}</span>
+                {item.label}
+              </a>
+            ) : (
+              <Link key={item.href} href={item.href} className="nav-link">
+                <span>{item.eyebrow}</span>
+                {item.label}
+              </Link>
+            )
           ))}
         </nav>
 

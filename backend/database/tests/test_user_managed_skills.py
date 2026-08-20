@@ -130,6 +130,9 @@ def test_user_skill_api_is_separate_idempotent_and_project_scoped() -> None:
             assert first.status_code == replay.status_code == 200
             assert first.json()["local_status"] == "Needs sync"
         assert client.get("/user-skills").json()["items"][0]["usage_count"] == 2
+        detail = client.get(f"/user-skills/{skill['skill_id']}")
+        assert detail.status_code == 200
+        assert {item["project_id"] for item in detail.json()["projects"]} == set(projects)
 
         blocked = client.delete(f"/user-skills/{skill['skill_id']}")
         assert blocked.status_code == 409
@@ -162,6 +165,11 @@ def test_user_skill_api_is_separate_idempotent_and_project_scoped() -> None:
                 f"/projects/{projects[0]}/user-skills/{skill['skill_id']}"
             ).status_code == 200
         assert client.get(f"/projects/{projects[1]}/user-skills").json()["total"] == 1
+        assert client.delete(
+            f"/projects/{projects[1]}/user-skills/{skill['skill_id']}"
+        ).status_code == 200
+        assert client.delete(f"/user-skills/{skill['skill_id']}").status_code == 200
+        assert client.get(f"/user-skills/{skill['skill_id']}").status_code == 404
 
 
 def test_user_skill_sql_round_trip_and_existing_project_default(sql_uow_factory) -> None:

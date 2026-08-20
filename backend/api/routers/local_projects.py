@@ -81,6 +81,15 @@ async def get_local_project(
     return _project_response(services.local_projects.get(project_id), services)
 
 
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_local_project(
+    project_id: str,
+    services: LocalProductServicesDependency,
+) -> Response:
+    services.project_workspaces.delete_project(project_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/{project_id}/packages",
     response_model=LocalPackageResponse,

@@ -5,6 +5,7 @@ const items = [
   { label: "Workflows", suffix: "/workflows" },
   { label: "Outputs", suffix: "/outputs" },
   { label: "Activity", suffix: "/progress" },
+  { label: "Help", suffix: "/help" },
 ] as const;
 
 export function ProjectNavigation({ projectId, active }: {

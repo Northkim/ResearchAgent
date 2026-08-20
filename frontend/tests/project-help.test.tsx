@@ -9,13 +9,13 @@ import { localProjectFixture } from "./fixtures";
 
 afterEach(() => vi.restoreAllMocks());
 
-test("guides setup, multi-Workflow work, continuation, and Cloud/local boundaries", async () => {
+test("keeps Project Help contextual and sends generic reference to Local guide", async () => {
   vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
   render(<Providers><ProjectHelp projectId={localProjectFixture.project_id} /></Providers>);
 
-  expect(await screen.findByRole("heading", { name: "Projects and continuity" })).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Your complete research files" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "Download Workspace setup" })).toHaveAttribute(
+  expect(await screen.findByRole("heading", { name: `Use ${localProjectFixture.name} locally` })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Set up this Project" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Download setup file" })).toHaveAttribute(
     "href", `/backend/projects/${localProjectFixture.project_id}/workspace-bootstrap`,
   );
   expect(screen.getByRole("link", { name: "Download local tool" })).toHaveAttribute(
@@ -25,11 +25,10 @@ test("guides setup, multi-Workflow work, continuation, and Cloud/local boundarie
     element?.tagName === "CODE"
     && element.textContent === "cd ./reagent-workspace\npython reagent_local.py sync ."
   ))).toBeVisible();
-  expect(screen.getByRole("button", { name: "Copy Workspace enter and sync commands" })).toBeVisible();
-  expect(screen.getByText(/browser never runs sync/i)).toBeVisible();
-  expect(screen.getByRole("heading", { name: "Cloud continuity is not backup" })).toBeVisible();
-  expect(screen.getByText(/Literature Search 0.3.0/)).toBeVisible();
-  expect(screen.getAllByText("python reagent_local.py workflow list .")).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "Copy Workspace sync command" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Open Workflow Board" })).toBeVisible();
+  expect(screen.getByRole("link", { name: /Open Local guide/ })).toHaveAttribute("href", "/local-guide");
   expect(screen.getByRole("link", { name: "Activity" })).toBeVisible();
-  expect(screen.queryByRole("link", { name: "Help" })).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Help" })).toHaveAttribute("aria-current", "page");
+  expect(screen.queryByText(/Literature Search 0.3.0/)).not.toBeInTheDocument();
 });

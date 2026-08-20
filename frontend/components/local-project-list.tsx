@@ -27,8 +27,10 @@ function ProjectRow({ project }: { project: LocalProject }) {
   return (
     <article className="project-work-row" data-attention-state={action.attention_state}>
       <div className="project-work-identity">
-        <div className="project-work-heading"><h3><Link href={`/projects/${project.project_id}`}>{project.name}</Link></h3></div>
-        <p>{project.research_topic}</p>
+        <Link href={`/projects/${project.project_id}`}>
+          <div className="project-work-heading"><h3>{project.name}</h3></div>
+          <p>{project.research_topic}</p>
+        </Link>
       </div>
       <div className="project-work-state">
         <span>Current step</span>

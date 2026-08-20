@@ -17,6 +17,12 @@ import {
   workflowInstancesFixture,
 } from "./fixtures";
 
+const push = vi.fn();
+const refresh = vi.fn();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push, refresh }),
+}));
+
 afterEach(() => vi.restoreAllMocks());
 
 const setupAction: WorkflowActionProjection = {
@@ -154,8 +160,25 @@ test("leads the Project Overview with the current research action", async () => 
   expect(screen.getByRole("link", { name: "Workflows" })).toBeVisible();
   expect(screen.getByRole("link", { name: "Outputs" })).toBeVisible();
   expect(screen.getByRole("link", { name: "Activity" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Help" })).toBeVisible();
   expect(screen.queryByRole("link", { name: "Download setup file" })).not.toBeInTheDocument();
   expect(screen.getByText("Technical Details")).toBeVisible();
+});
+
+test("deletes only after the explicit Cloud-only Project confirmation", async () => {
+  vi.spyOn(apiClient, "getProject").mockResolvedValue(localProjectFixture);
+  vi.spyOn(apiClient, "getProjectProgress").mockResolvedValue(projectProgressFixture);
+  const remove = vi.spyOn(apiClient, "deleteProject").mockResolvedValue();
+  render(<Providers><LocalProjectDetail projectId={localProjectFixture.project_id} /></Providers>);
+
+  await screen.findByRole("heading", { name: "Review the selected papers" });
+  await userEvent.click(screen.getByText("Project settings"));
+  await userEvent.click(screen.getByRole("button", { name: "Delete project" }));
+  expect(screen.getByText(/Your Local Workspace and research files will not be deleted/)).toBeVisible();
+  expect(remove).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Delete from ReAgent" }));
+  expect(remove).toHaveBeenCalledWith(localProjectFixture.project_id);
+  expect(push).toHaveBeenCalledWith("/projects");
 });
 
 test("routes fresh Projects and Project Overview to the canonical setup surface", async () => {

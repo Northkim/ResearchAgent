@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/api/client";
@@ -21,6 +23,10 @@ const WORKFLOW_PRESENTATION_ORDER: Record<string, number> = {
 };
 
 export function LocalProjectDetail({ projectId }: { projectId: string }) {
+  const router = useRouter();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const project = useProject(projectId);
   const progress = useProjectProgress(projectId);
   const skills = useQuery({
@@ -55,6 +61,19 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
       - (WORKFLOW_PRESENTATION_ORDER[right.workflow_definition_id] ?? 90)
     ))
     .slice(0, 5);
+
+  async function deleteProject() {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiClient.deleteProject(projectId);
+      router.push("/projects");
+      router.refresh();
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : "Project could not be deleted");
+      setDeleting(false);
+    }
+  }
 
   return (
     <div className="page-stack project-overview-page">
@@ -135,6 +154,23 @@ export function LocalProjectDetail({ projectId }: { projectId: string }) {
           <div><dt>Created</dt><dd>{formatDateTime(data.created_at)}</dd></div>
           {output ? <div><dt>Latest Artifact checksum</dt><dd><code>{output.checksum}</code></dd></div> : null}
         </dl>
+      </details>
+
+      <details className="technical-details">
+        <summary>Project settings</summary>
+        {!confirmDelete ? (
+          <button className="button button-ghost" type="button" onClick={() => setConfirmDelete(true)}>Delete project</button>
+        ) : (
+          <div className="plain-section" role="alert">
+            <h2>Delete {data.name}?</h2>
+            <p>This removes the Project and its Cloud records from ReAgent. Your Local Workspace and research files will not be deleted.</p>
+            <div className="button-row">
+              <button className="button button-ghost" type="button" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
+              <button className="button button-primary" type="button" onClick={deleteProject} disabled={deleting}>{deleting ? "Deleting…" : "Delete from ReAgent"}</button>
+            </div>
+            {deleteError ? <p className="form-error" role="status">{deleteError}</p> : null}
+          </div>
+        )}
       </details>
     </div>
   );

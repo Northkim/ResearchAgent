@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from sqlalchemy import case, select
+from sqlalchemy import case, delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.exc import StaleDataError
@@ -26,6 +26,8 @@ from backend.database.orm import (
     LocalWorkflowDefinitionORM,
     LocalWorkflowDefinitionVersionORM,
     ProviderOperationORM,
+    ProxyCapabilityTokenORM,
+    ProxyOperationORM,
     ProjectProgressProjectionORM,
     ProjectDesiredManifestORM,
     ProjectManifestEntryORM,
@@ -293,6 +295,59 @@ class SQLAlchemyUnitOfWork(UnitOfWork):
     @property
     def resource_references(self):
         return self._resource_references
+
+    def delete_project_cloud_state(self, project_id: str) -> None:
+        """Delete one Project-owned graph in FK-safe order in this transaction."""
+
+        project_rows = (
+            ArtifactDependencyBindingORM,
+            LocalArtifactReferenceORM,
+            UploadedProgressReportORM,
+            WorkflowInputSetupDecisionORM,
+            ControlledLocalRunApprovalORM,
+            WorkflowResourceBindingORM,
+            ProjectResourceReferenceORM,
+            WorkspaceInstallationAcknowledgementORM,
+            ProjectManifestEntryORM,
+            WorkflowCapsuleArtifactORM,
+            ProjectUserSkillORM,
+            ProjectProgressProjectionORM,
+        )
+        self.session.execute(
+            delete(ProxyOperationORM).where(ProxyOperationORM.project_id == project_id)
+        )
+        self.session.execute(
+            delete(ProxyCapabilityTokenORM).where(
+                ProxyCapabilityTokenORM.project_id == project_id
+            )
+        )
+        # Hosted compatibility rows are scoped by Workflow Run, not canonical
+        # Project FKs. Artifacts lack an ON DELETE action and must go first;
+        # the remaining run-owned graph cascades from WorkflowRunORM.
+        self.session.execute(
+            delete(ArtifactORM).where(ArtifactORM.project_id == project_id)
+        )
+        self.session.execute(
+            delete(WorkflowRunORM).where(WorkflowRunORM.project_id == project_id)
+        )
+        for model in project_rows:
+            self.session.execute(delete(model).where(model.project_id == project_id))
+        self.session.execute(
+            delete(ProjectWorkflowInstanceORM).where(
+                ProjectWorkflowInstanceORM.project_id == project_id
+            )
+        )
+        self.session.execute(
+            delete(ProjectDesiredManifestORM).where(
+                ProjectDesiredManifestORM.project_id == project_id
+            )
+        )
+        self.session.execute(
+            delete(ProjectORM).where(ProjectORM.project_id == project_id)
+        )
+        self.session.execute(
+            delete(LocalProjectORM).where(LocalProjectORM.project_id == project_id)
+        )
 
     def commit(self) -> None:
         try:
